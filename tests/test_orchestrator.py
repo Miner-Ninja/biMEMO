@@ -1370,8 +1370,10 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert not queue.empty()
-        event = queue.get_nowait()
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        event = next(item for item in events if item["type"] == "notification")
         assert event["type"] == "notification"
         assert event["tool"] == "file_write"
 
@@ -1410,7 +1412,10 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert queue.empty()
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        assert all(event["type"] == "tool_status" for event in events)
 
     async def test_no_queue_skips_notification(self):
         """Verify None sse_queue does not crash."""
@@ -1638,9 +1643,14 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        # Only YELLOW tool should emit notification
-        assert queue.qsize() == 1
-        event = queue.get_nowait()
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        notification_events = [
+            event for event in events if event["type"] == "notification"
+        ]
+        assert len(notification_events) == 1
+        event = notification_events[0]
         assert event["tool"] == "file_write"
 
     async def test_forced_memory_recall_injects_results_into_messages(

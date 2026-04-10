@@ -6,6 +6,7 @@ counting of summaries.
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
 
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
@@ -128,6 +129,7 @@ class TestListSummaries:
         """Orphaned summaries should surface with degraded effective score."""
         db = _open_db(tmp_path)
         _seed_observation(db, "o1", tainted=0)
+        fresh_timestamp = (datetime.now(tz=UTC) - timedelta(days=1)).isoformat()
         db.execute(
             "INSERT INTO summaries "
             "("
@@ -142,7 +144,7 @@ class TestListSummaries:
                 "medium",
                 2,
                 '["o1"]',
-                "2026-03-10T12:00:00",
+                fresh_timestamp,
             ),
         )
         db.execute(

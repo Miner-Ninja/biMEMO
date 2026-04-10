@@ -43,6 +43,7 @@ def _make_provider(transport):
         dialog_recorder_model="qwen3:1.7b",
         compute_config=config,
         capabilities_registry=CapabilitiesRegistry(),
+        num_ctx=8192,
     )
     provider._client = httpx.AsyncClient(
         transport=transport,

@@ -160,10 +160,10 @@ class TestSystemPromptUserProfile:
         """System prompt requires a 3-question suggestions block on every answer."""
         orchestrator = _make_orchestrator(user_profile={})
         prompt = orchestrator._build_system_prompt()
-        assert "```suggestions block" in prompt
-        assert "exactly 3 proactive follow-up questions" in prompt
-        assert "same language as the user's latest message" in prompt
-        assert "If the user writes in English" in prompt
+        assert "```suggestions" in prompt
+        assert "End every answer with exactly this format" in prompt
+        assert "the same language as the user's latest message" in prompt
+        assert "Never write suggestions addressed to the user" in prompt
 
     def test_empty_profile_no_section(self):
         """Empty profile does not add User Profile section."""
