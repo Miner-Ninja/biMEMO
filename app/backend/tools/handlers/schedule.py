@@ -42,9 +42,11 @@ def make_schedule_task_handler(
         Async handler function.
     """
 
-    async def handle_schedule_task(params: dict[str, Any]) -> str:
+    async def handle_schedule_task(
+        params: dict[str, Any] | ScheduleTaskInput,
+    ) -> str:
         """Handle schedule_task tool calls."""
-        p = ScheduleTaskInput(**params)
+        p = _normalize_schedule_task_input(params)
         action = p.action.lower().strip()
 
         # Resolve originating conversation_id from broker context if the
@@ -70,6 +72,15 @@ def make_schedule_task_handler(
         return f"Unknown action: {action}. Valid: create, list, pause, resume, remove"
 
     return handle_schedule_task
+
+
+def _normalize_schedule_task_input(
+    params: dict[str, Any] | ScheduleTaskInput,
+) -> ScheduleTaskInput:
+    """Return a ScheduleTaskInput from raw params or a validated model."""
+    if isinstance(params, ScheduleTaskInput):
+        return params
+    return ScheduleTaskInput(**params)
 
 
 async def _create_task(db_client: object, p: ScheduleTaskInput) -> str:

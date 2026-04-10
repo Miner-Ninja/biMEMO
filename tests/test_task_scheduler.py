@@ -626,6 +626,50 @@ class TestScheduleTaskTool:
         result = await handler({"action": "unknown"})
         assert "Unknown action" in result
 
+    @pytest.mark.asyncio
+    async def test_broker_executes_schedule_task_with_validated_model(self):
+        """Broker should pass validated models to schedule_task without crashing."""
+        from backend.tools.builtin import ScheduleTaskInput
+        from backend.tools.broker import ToolBroker
+        from backend.tools.handlers.schedule import make_schedule_task_handler
+        from backend.tools.registry import ToolDefinition, ToolRegistry, WorkerTarget
+        from backend.trust.zones import TrustZone
+
+        mock_db = AsyncMock()
+        mock_db.get_user_profile.return_value = {"profile": {"timezone": "UTC"}}
+        mock_db.create_scheduled_task.return_value = {
+            "task_id": "broker-123",
+            "next_run_at": "2026-04-06T11:00:00",
+        }
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="schedule_task",
+                description="Manage scheduled tasks",
+                input_model=ScheduleTaskInput,
+                zone=TrustZone.YELLOW,
+                worker=WorkerTarget.CORE,
+            )
+        )
+        broker = ToolBroker(registry=registry)
+        broker.set_handler("schedule_task", make_schedule_task_handler(mock_db))
+
+        result = await broker.execute(
+            "schedule_task",
+            {
+                "action": "create",
+                "name": "Daily AI digest",
+                "prompt": "Collect AI news",
+                "schedule": "0 7 * * *",
+                "task_type": "agent_task",
+                "allowed_tools": '["web_search"]',
+            },
+        )
+
+        assert result.success
+        assert "broker-123" in str(result.result)
+
 
 class TestAllowlistEnforcement:
     """Tests for tool allowlist enforcement in PromptBuilder and ToolExecutor."""
