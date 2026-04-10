@@ -1,0 +1,1555 @@
+import { useEffect, useCallback, useRef, useState } from "react";
+import { Layout } from "@/components/layout/Layout";
+import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/sidebar/Sidebar";
+import { MessageList } from "@/components/chat/MessageList";
+import { ChatBridgeDetailsModal } from "@/components/chat/ChatBridgeDetailsModal";
+import { ChatInput, type ChatInputHandle } from "@/components/chat/ChatInput";
+import { ToastContainer, useToasts } from "@/components/ui/Toast";
+import { ReauthModal } from "@/components/ReauthModal";
+import { DEFAULT_CHAT_TITLE, extractMessageImages, extractMessageText, useChat } from "@/hooks/useChat";
+import { useProcessingStages } from "@/hooks/useProcessingStages";
+import { ProcessingStages } from "@/components/chat/ProcessingStages";
+import { useSSE, type ConnectionStatus, type SSEEvent } from "@/hooks/useSSE";
+import { useAuth } from "@/hooks/useAuth";
+import { DEFAULT_CHAT_SETTINGS } from "@/types/chat";
+import { updateChatSettings } from "@/lib/bimemo-api";
+import { useConfirm } from "@/hooks/useConfirm";
+import {
+  apiRequest,
+  ApiError,
+  createChatBridgeLink,
+  disableChatBridgeLink,
+  enableChatBridgeLink,
+  fetchChatBridgeForConversation,
+  fetchChatBridgeProviders,
+  updateChatBridgeLinkSettings,
+  fetchFiles,
+  checkTtsStatus,
+  synthesizeSpeech,
+  uploadFile,
+} from "@/lib/bimemo-api";
+import type {
+  ChatBridgeLink,
+  ChatBridgeProviderItem,
+  IndexedFile,
+} from "@/lib/bimemo-api";
+import { generateId } from "@/lib/utils";
+import { loadCommandHistory, saveCommandHistory } from "@/lib/storage";
+import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
+import { TOOL_LABELS } from "@/types/chat";
+import type { ExtendedUsage } from "@/types/stats";
+import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
+
+type ChatResponsePayload = {
+  text: string;
+  conversation_id?: string;
+  retrieved_memories?: { summary: string; date: string }[];
+  transcription?: string;
+  stats?: ExtendedUsage;
+  pending_confirmations?: {
+    action_id: string;
+    tool_name: string;
+    parameters: Record<string, unknown>;
+  }[];
+};
+
+type TokenEventPayload = {
+  type?: string;
+  content?: string;
+};
+
+type ToolStatusEventPayload = {
+  type?: string;
+  name?: string;
+  status?: string;
+  duration_ms?: number;
+};
+
+type MultimodalContentPart =
+  | { type: "text"; text?: string }
+  | { type: "image_url"; image_url?: { url?: string } };
+
+type BridgeInboundMessageEventPayload = {
+  conversation_id?: string;
+  message?: {
+    id?: string;
+    role?: "user" | "assistant";
+    content?: string | MultimodalContentPart[];
+    created_at?: string;
+    source?: string;
+    author_name?: string;
+  };
+};
+
+type BridgeLinkUpdatedEventPayload = {
+  conversation_id?: string;
+  bridge_link?: ChatBridgeLink;
+};
+
+type ConversationUpdatedEventPayload = {
+  conversation_id?: string;
+  title?: string;
+  bridge_provider?: string | null;
+  settings?: { show_sql?: boolean; show_thinking?: boolean };
+  processing_status?: "idle" | "active";
+  processing_stage?: string;
+  processing_started_at?: string | null;
+  updated_at?: string;
+};
+
+type ConversationDeletedEventPayload = {
+  conversation_id?: string;
+};
+
+type ConversationCreatedEventPayload = {
+  conversation_id?: string;
+  title?: string;
+  bridge_provider?: string | null;
+  processing_status?: "idle" | "active";
+  processing_stage?: string;
+  processing_started_at?: string | null;
+  updated_at?: string;
+  created_at?: string;
+};
+
+type ActiveAssistantStream = {
+  assistantMessageId: string | null;
+  httpCompleted: boolean;
+  sseCompleted: boolean;
+};
+
+type PendingBridgeAction = {
+  conversationId: string;
+  provider: string;
+  enabled: boolean;
+};
+
+type PendingBridgeSettingsSave = {
+  bridgeLinkId: string;
+  conversationId: string;
+  deliveryMode: string;
+  personaMode: string;
+  personaUserId: string;
+};
+
+const DEFAULT_SERVER_PROCESSING_STAGE = "Processing...";
+const DISCORD_BRIDGE_PROVIDER = "discord";
+const PERSONA_DELIVERY_MODE = "persona_user_and_bot_assistant";
+const NEUTRAL_PERSONA_MODE = "neutral";
+
+function buildServerProcessingStage(
+  stageLabel: string,
+  startedAt?: Date,
+): ProcessingStage[] {
+  const wallClockDelayMs = startedAt
+    ? Math.max(0, Date.now() - startedAt.getTime())
+    : 0;
+  return [
+    {
+      id: "server-processing-stage",
+      label: stageLabel || DEFAULT_SERVER_PROCESSING_STAGE,
+      status: "active",
+      startedAt: performance.now() - wallClockDelayMs,
+    },
+  ];
+}
+
+function bridgeCreateSettings(
+  provider: string,
+  defaultPersonaUserId: string,
+): {
+  deliveryMode?: string;
+  personaMode?: string;
+  personaUserId?: string;
+} {
+  if (provider !== DISCORD_BRIDGE_PROVIDER) {
+    return {};
+  }
+  return {
+    deliveryMode: PERSONA_DELIVERY_MODE,
+    personaMode: defaultPersonaUserId
+      ? "mapped_user"
+      : NEUTRAL_PERSONA_MODE,
+    personaUserId: defaultPersonaUserId,
+  };
+}
+
+function buildAssistantMessageUpdate(
+  base: Partial<Message>,
+  thinking: string,
+): Partial<Message> {
+  // Never overwrite already received thinking with an empty value.
+  if (!thinking) {
+    return base;
+  }
+
+  return {
+    ...base,
+    thinking,
+  };
+}
+
+function nextConversationTitle(
+  currentTitle: string | undefined,
+  messageContent: string,
+): string {
+  const normalizedCurrentTitle = (currentTitle || "").trim();
+  if (normalizedCurrentTitle && normalizedCurrentTitle !== DEFAULT_CHAT_TITLE) {
+    return normalizedCurrentTitle;
+  }
+  const collapsedContent = messageContent.split(/\s+/).join(" ").trim();
+  if (!collapsedContent) {
+    return currentTitle || DEFAULT_CHAT_TITLE;
+  }
+  return collapsedContent.slice(0, 80);
+}
+
+function splitAttachedFiles(files: File[]): {
+  imageFiles: File[];
+  documentFiles: File[];
+} {
+  const imageMimeTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+  ]);
+  const imageFiles: File[] = [];
+  const documentFiles: File[] = [];
+  for (const file of files) {
+    if (imageMimeTypes.has(file.type)) {
+      imageFiles.push(file);
+      continue;
+    }
+    documentFiles.push(file);
+  }
+  return { imageFiles, documentFiles };
+}
+
+function bridgeProviderMap(chats: Chat[]): Record<string, string> {
+  return chats.reduce<Record<string, string>>((accumulator, chat) => {
+    if (chat.bridgeProvider) {
+      accumulator[chat.id] = chat.bridgeProvider;
+    }
+    return accumulator;
+  }, {});
+}
+
+function bridgeProviderFromLink(
+  bridgeLink: ChatBridgeLink | null,
+): string | null {
+  if (!bridgeLink || bridgeLink.status !== "active") {
+    return null;
+  }
+  return bridgeLink.provider;
+}
+
+async function imageFileDataUrl(file: File): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export function ChatPage() {
+  const {
+    chats,
+    activeChat,
+    activeChatId,
+    isLoading,
+    isReady,
+    setIsLoading,
+    createNewChat,
+    addOrUpdateConversation,
+    switchChat,
+    addMessage,
+    addMessageToConversation,
+    updateMessage,
+    deleteChat,
+    removeConversation,
+    renameChat,
+    truncateAfterMessage,
+    updateConversation,
+    updateConversationActivity,
+    ensureActiveChat,
+    refreshConversations,
+    refreshConversationMessages,
+  } = useChat();
+
+  const { logout } = useAuth();
+  const chatSettings = activeChat?.settings ?? DEFAULT_CHAT_SETTINGS;
+  const showSql = chatSettings.showSql;
+  const showThinking = chatSettings.showThinking;
+  const chatInputRef = useRef<ChatInputHandle>(null);
+  const assistantMessageIdRef = useRef<string | null>(null);
+  const streamedContentRef = useRef("");
+  const streamedThinkingRef = useRef("");
+  const activeAssistantStreamRef = useRef<ActiveAssistantStream>({
+    assistantMessageId: null,
+    httpCompleted: false,
+    sseCompleted: false,
+  });
+  const {
+    processingStages,
+    stagesRef,
+    addStage,
+    completeActiveStage,
+    errorActiveStage,
+    clearStages,
+  } = useProcessingStages();
+  const [autoScrollRequest, setAutoScrollRequest] = useState(0);
+  const [assistantName, setAssistantName] = useState("");
+  const { toasts, addToast, dismissToast } = useToasts();
+  const [activeFiles, setActiveFiles] = useState<string[]>([]);
+  const [availableFiles, setAvailableFiles] = useState<IndexedFile[]>([]);
+  const [fileRefreshKey, setFileRefreshKey] = useState(0);
+  const [uploadProgress, setUploadProgress] =
+    useState<UploadProgressData | null>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>(() =>
+    loadCommandHistory(),
+  );
+  const [ttsAvailable, setTtsAvailable] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(
+    () => localStorage.getItem("bm-voice-mode") === "true",
+  );
+  const [bridgeProviders, setBridgeProviders] = useState<
+    ChatBridgeProviderItem[]
+  >([]);
+  const [bridgeProvidersLoading, setBridgeProvidersLoading] = useState(false);
+  const [bridgeLinksByConversationId, setBridgeLinksByConversationId] =
+    useState<Record<string, ChatBridgeLink>>({});
+  const [bridgeActionLoadingProvider, setBridgeActionLoadingProvider] =
+    useState<string | null>(null);
+  const [showBridgeReauth, setShowBridgeReauth] = useState(false);
+  const [pendingBridgeAction, setPendingBridgeAction] =
+    useState<PendingBridgeAction | null>(null);
+  const [pendingBridgeSettingsSave, setPendingBridgeSettingsSave] =
+    useState<PendingBridgeSettingsSave | null>(null);
+  const [showBridgeDetails, setShowBridgeDetails] = useState(false);
+  const voiceModeRef = useRef(voiceMode);
+  const previousSseStatusRef = useRef<ConnectionStatus>("disconnected");
+  const { confirm, ConfirmDialog } = useConfirm();
+
+  const beginAssistantStream = useCallback((assistantMessageId: string) => {
+    assistantMessageIdRef.current = assistantMessageId;
+    streamedContentRef.current = "";
+    streamedThinkingRef.current = "";
+    activeAssistantStreamRef.current = {
+      assistantMessageId,
+      httpCompleted: false,
+      sseCompleted: false,
+    };
+  }, []);
+
+  const clearAssistantStream = useCallback(() => {
+    assistantMessageIdRef.current = null;
+    streamedContentRef.current = "";
+    streamedThinkingRef.current = "";
+    activeAssistantStreamRef.current = {
+      assistantMessageId: null,
+      httpCompleted: false,
+      sseCompleted: false,
+    };
+  }, []);
+
+  const finalizeAssistantStreamIfReady = useCallback(() => {
+    const activeStream = activeAssistantStreamRef.current;
+    if (!activeStream.httpCompleted || !activeStream.sseCompleted) {
+      return;
+    }
+    clearAssistantStream();
+  }, [clearAssistantStream]);
+
+  // Load available file names for @mention autocomplete
+  const refreshAvailableFiles = useCallback(() => {
+    fetchFiles()
+      .then((files) => {
+        setAvailableFiles(files);
+        const validIds = new Set(files.map((file) => file.file_id));
+        setActiveFiles((prev) => prev.filter((fileId) => validIds.has(fileId)));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshAvailableFiles();
+  }, [refreshAvailableFiles]);
+
+  const loadBridgeProvidersIfNeeded = useCallback(async (showError = true) => {
+    if (bridgeProvidersLoading || bridgeProviders.length > 0) {
+      return;
+    }
+    setBridgeProvidersLoading(true);
+    try {
+      setBridgeProviders(await fetchChatBridgeProviders());
+    } catch {
+      if (showError) {
+        addToast({
+          type: "error",
+          message: "Failed to load bridge providers",
+        });
+      }
+    } finally {
+      setBridgeProvidersLoading(false);
+    }
+  }, [addToast, bridgeProviders.length, bridgeProvidersLoading]);
+
+  useEffect(() => {
+    if (!isReady || bridgeProviders.length > 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void loadBridgeProvidersIfNeeded(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [bridgeProviders.length, isReady, loadBridgeProvidersIfNeeded]);
+
+  const availableFileNames = availableFiles.map((file) => file.filename);
+  const activeFileNames = activeFiles
+    .map(
+      (fileId) =>
+        availableFiles.find((file) => file.file_id === fileId)?.filename,
+    )
+    .filter((name): name is string => Boolean(name));
+
+  // Check TTS availability on mount
+  useEffect(() => {
+    checkTtsStatus().then(setTtsAvailable);
+  }, []);
+
+  // Load assistant name from profile on mount
+  useEffect(() => {
+    apiRequest<{ profile: { assistant_name?: string } }>("/admin/profile")
+      .then((data) => setAssistantName(data.profile?.assistant_name || ""))
+      .catch(() => {});
+  }, []);
+
+  // Keep voiceMode ref in sync
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+    localStorage.setItem("bm-voice-mode", String(voiceMode));
+  }, [voiceMode]);
+
+  const toggleVoiceMode = useCallback(() => {
+    setVoiceMode((v) => !v);
+  }, []);
+
+  const applyBridgeLink = useCallback(
+    (conversationId: string, bridgeLink: ChatBridgeLink) => {
+      setBridgeLinksByConversationId((previousLinks) => ({
+        ...previousLinks,
+        [conversationId]: bridgeLink,
+      }));
+      updateConversation(conversationId, {
+        bridgeProvider: bridgeProviderFromLink(bridgeLink),
+      });
+    },
+    [updateConversation],
+  );
+
+  const applyBridgeLinkStatus = useCallback(
+    (
+      conversationId: string,
+      bridgeLink: ChatBridgeLink,
+      status: ChatBridgeLink["status"],
+    ) => {
+      applyBridgeLink(conversationId, {
+        ...bridgeLink,
+        status,
+      });
+    },
+    [applyBridgeLink],
+  );
+
+  const removeStoredBridgeLink = useCallback((conversationId: string) => {
+    setBridgeLinksByConversationId((previousLinks) => {
+      const nextLinks = { ...previousLinks };
+      delete nextLinks[conversationId];
+      return nextLinks;
+    });
+  }, []);
+
+  // Auto-TTS + auto-record for voice mode
+  const playTtsAndAutoRecord = useCallback(
+    async (text: string) => {
+      if (!text || !voiceModeRef.current || !ttsAvailable) return;
+      try {
+        const blobUrl = await synthesizeSpeech(text);
+        if (!voiceModeRef.current) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        const audio = new Audio(blobUrl);
+        audio.addEventListener("ended", () => {
+          URL.revokeObjectURL(blobUrl);
+          if (voiceModeRef.current) {
+            setTimeout(() => {
+              if (voiceModeRef.current) {
+                chatInputRef.current?.startVoiceRecording?.();
+              }
+            }, 500);
+          }
+        });
+        audio.addEventListener("error", () => {
+          URL.revokeObjectURL(blobUrl);
+        });
+        await audio.play();
+      } catch {
+        // TTS failed — don't break the flow
+      }
+    },
+    [ttsAvailable],
+  );
+
+  const handleSSEEvent = useCallback(
+    (event: SSEEvent) => {
+      const eventPayload =
+        event.data && typeof event.data === "object"
+          ? (event.data as Record<string, unknown>)
+          : null;
+
+      if (event.type === "token" && assistantMessageIdRef.current) {
+        const tokenEvent = eventPayload as TokenEventPayload | null;
+        streamedContentRef.current +=
+          tokenEvent?.content || event.content || "";
+        updateMessage(assistantMessageIdRef.current, {
+          content: streamedContentRef.current,
+        });
+      } else if (event.type === "thinking" && assistantMessageIdRef.current) {
+        const tokenEvent = eventPayload as TokenEventPayload | null;
+        const thinkingChunk = tokenEvent?.content || event.content || "";
+        const isFirstThinkingChunk = streamedThinkingRef.current.length === 0;
+        streamedThinkingRef.current +=
+          tokenEvent?.content || event.content || "";
+        if (isFirstThinkingChunk && streamedContentRef.current) {
+          streamedContentRef.current = "";
+          updateMessage(assistantMessageIdRef.current, {
+            content: "",
+            thinking: thinkingChunk,
+          });
+        } else {
+          updateMessage(assistantMessageIdRef.current, {
+            thinking: streamedThinkingRef.current,
+          });
+        }
+      } else if (event.type === "tool_status") {
+        const status = eventPayload as ToolStatusEventPayload | null;
+        if (status?.status === "started") {
+          const toolName = status.name || "tool";
+          const label = TOOL_LABELS[toolName] || `Running ${toolName}...`;
+          addStage(label);
+        } else if (status?.status === "completed") {
+          completeActiveStage();
+        } else if (status?.status === "error") {
+          errorActiveStage();
+        }
+      } else if (event.type === "done") {
+        // Persist stage timing data to the assistant message
+        if (assistantMessageIdRef.current && stagesRef.current.length > 0) {
+          const now = performance.now();
+          const stageTimes = stagesRef.current.map((s) => ({
+            label: s.label,
+            durationMs: s.frozenDurationMs ?? now - s.startedAt,
+          }));
+          if (stageTimes.length > 0) {
+            updateMessage(assistantMessageIdRef.current, { stageTimes });
+          }
+        }
+        setIsLoading(false);
+        setTimeout(() => clearStages(), 1000);
+        activeAssistantStreamRef.current.sseCompleted = true;
+        finalizeAssistantStreamIfReady();
+      } else if (event.type === "bridge_inbound_message") {
+        const inboundEvent = eventPayload as BridgeInboundMessageEventPayload | null;
+        const conversationId = inboundEvent?.conversation_id || "";
+        const inboundMessage = inboundEvent?.message;
+        if (!conversationId || !inboundMessage?.id || !inboundMessage.content) {
+          return;
+        }
+        const rawContent = inboundMessage.content;
+        const messageTimestamp = inboundMessage.created_at
+          ? new Date(inboundMessage.created_at)
+          : new Date();
+        addMessageToConversation(conversationId, {
+          id: inboundMessage.id,
+          role: inboundMessage.role || "user",
+          content: extractMessageText(rawContent),
+          images: extractMessageImages(rawContent),
+          timestamp: messageTimestamp,
+        });
+        updateConversationActivity(conversationId, messageTimestamp);
+      } else if (event.type === "bridge_link_updated") {
+        const bridgeEvent = eventPayload as BridgeLinkUpdatedEventPayload | null;
+        const conversationId = bridgeEvent?.conversation_id || "";
+        const bridgeLink = bridgeEvent?.bridge_link;
+        if (!conversationId || !bridgeLink) {
+          return;
+        }
+        applyBridgeLink(conversationId, bridgeLink);
+      } else if (event.type === "conversation_updated") {
+        const conversationEvent =
+          eventPayload as ConversationUpdatedEventPayload | null;
+        const conversationId = conversationEvent?.conversation_id || "";
+        if (!conversationId) {
+          return;
+        }
+        updateConversation(conversationId, {
+          title: conversationEvent?.title,
+          bridgeProvider:
+            conversationEvent?.bridge_provider === undefined
+              ? undefined
+              : conversationEvent.bridge_provider,
+          settings: conversationEvent?.settings
+            ? {
+                showSql: conversationEvent.settings.show_sql ?? false,
+                showThinking: conversationEvent.settings.show_thinking ?? false,
+              }
+            : undefined,
+          processingStatus: conversationEvent?.processing_status,
+          processingStage: conversationEvent?.processing_stage,
+          processingStartedAt:
+            conversationEvent?.processing_started_at === undefined
+              ? undefined
+              : conversationEvent.processing_started_at
+                ? new Date(conversationEvent.processing_started_at)
+                : null,
+          updatedAt: conversationEvent?.updated_at
+            ? new Date(conversationEvent.updated_at)
+            : undefined,
+        });
+      } else if (event.type === "conversation_deleted") {
+        const conversationEvent =
+          eventPayload as ConversationDeletedEventPayload | null;
+        const conversationId = conversationEvent?.conversation_id || "";
+        if (!conversationId) {
+          return;
+        }
+        removeConversation(conversationId);
+      } else if (event.type === "conversation_created") {
+        const conversationEvent =
+          eventPayload as ConversationCreatedEventPayload | null;
+        const conversationId = conversationEvent?.conversation_id || "";
+        if (!conversationId) {
+          return;
+        }
+        addOrUpdateConversation({
+          id: conversationId,
+          title: conversationEvent?.title || DEFAULT_CHAT_TITLE,
+          bridgeProvider: conversationEvent?.bridge_provider || null,
+          processingStatus: conversationEvent?.processing_status || "idle",
+          processingStage: conversationEvent?.processing_stage || "",
+          processingStartedAt: conversationEvent?.processing_started_at
+            ? new Date(conversationEvent.processing_started_at)
+            : undefined,
+          createdAt: conversationEvent?.created_at
+            ? new Date(conversationEvent.created_at)
+            : new Date(),
+          updatedAt: conversationEvent?.updated_at
+            ? new Date(conversationEvent.updated_at)
+            : new Date(),
+        });
+      } else if (event.type === "scheduled_task_result") {
+        const taskName = String(eventPayload?.task_name || "Scheduled task");
+        const taskType = String(eventPayload?.task_type || "");
+        const resultText = String(eventPayload?.result_text || "");
+        const status = String(eventPayload?.status || "ok");
+        const isError = status === "error";
+        const summary = resultText.length > 200
+          ? resultText.slice(0, 200) + "..."
+          : resultText;
+        addToast({
+          type: isError ? "error" : "success",
+          message: taskType === "reminder"
+            ? `🔔 ${taskName}: ${summary}`
+            : `✅ ${taskName}: ${summary}`,
+        });
+      }
+    },
+    [
+      addOrUpdateConversation,
+      addMessageToConversation,
+      addToast,
+      applyBridgeLink,
+      updateConversation,
+      removeConversation,
+      updateMessage,
+      setIsLoading,
+      addStage,
+      completeActiveStage,
+      errorActiveStage,
+      clearStages,
+      stagesRef,
+      finalizeAssistantStreamIfReady,
+      updateConversationActivity,
+    ],
+  );
+
+  const { status: sseStatus, connect, disconnect } = useSSE(
+    handleSSEEvent,
+    activeChatId,
+  );
+
+  // Connect SSE on mount
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
+
+  const handleCommandClick = useCallback((command: string) => {
+    chatInputRef.current?.setValue(command);
+    chatInputRef.current?.focus();
+  }, []);
+
+  const requestAutoScrollToBottom = useCallback(() => {
+    setAutoScrollRequest((value) => value + 1);
+  }, []);
+
+  const replaceableUploadFiles = useCallback(
+    async (documentFiles: File[]): Promise<File[]> => {
+      const filesToUpload: File[] = [];
+      for (const file of documentFiles) {
+        const fileAlreadyExists = availableFiles.some(
+          (item) => item.filename === file.name,
+        );
+        if (!fileAlreadyExists) {
+          filesToUpload.push(file);
+          continue;
+        }
+        const shouldReplace = await confirm({
+          title: "File already exists",
+          description: `"${file.name}" already exists. The old version will be replaced.`,
+          confirmLabel: "Replace",
+          cancelLabel: "Skip",
+        });
+        if (shouldReplace) {
+          filesToUpload.push(file);
+        }
+      }
+      return filesToUpload;
+    },
+    [availableFiles, confirm],
+  );
+
+  const applyUploadedFileToActiveSelection = useCallback(
+    (uploadedFileId: string, uploadedFilename: string) => {
+      setActiveFiles((previousFileIds) => {
+        const filteredFileIds = previousFileIds.filter((fileId) => {
+          const existingFile = availableFiles.find(
+            (item) => item.file_id === fileId,
+          );
+          return existingFile?.filename !== uploadedFilename;
+        });
+        if (filteredFileIds.includes(uploadedFileId)) {
+          return filteredFileIds;
+        }
+        return [...filteredFileIds, uploadedFileId];
+      });
+    },
+    [availableFiles],
+  );
+
+  const uploadDocumentFiles = useCallback(
+    async (
+      documentFiles: File[],
+      baseMessageContent: string,
+    ): Promise<string> => {
+      const filesToUpload = await replaceableUploadFiles(documentFiles);
+      if (filesToUpload.length === 0) {
+        return baseMessageContent;
+      }
+
+      const results: Array<{ name: string; ok: boolean }> = [];
+
+      setUploadProgress({
+        current: 1,
+        total: filesToUpload.length,
+        filename: filesToUpload[0].name,
+        results: [],
+      });
+
+      for (const [index, file] of filesToUpload.entries()) {
+        setUploadProgress({
+          current: index + 1,
+          total: filesToUpload.length,
+          filename: file.name,
+          results: [...results],
+        });
+        try {
+          const uploadResult = await uploadFile(file);
+          results.push({ name: file.name, ok: true });
+          applyUploadedFileToActiveSelection(
+            uploadResult.file_id,
+            uploadResult.filename,
+          );
+          addToast({ type: "success", message: `${file.name} uploaded` });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          results.push({ name: file.name, ok: false });
+          addToast({
+            type: "error",
+            message: `Failed to upload ${file.name}: ${errorMessage}`,
+          });
+        }
+      }
+
+      setUploadProgress({
+        current: filesToUpload.length,
+        total: filesToUpload.length,
+        filename: filesToUpload[filesToUpload.length - 1].name,
+        results: [...results],
+      });
+      setTimeout(() => setUploadProgress(null), 3000);
+      setFileRefreshKey((value) => value + 1);
+      refreshAvailableFiles();
+      return baseMessageContent;
+    },
+    [
+      addToast,
+      applyUploadedFileToActiveSelection,
+      refreshAvailableFiles,
+      replaceableUploadFiles,
+    ],
+  );
+
+  const sendAndStream = async (
+    messageContent: string,
+    conversationId: string,
+    images?: string[],
+  ) => {
+    const assistantMessageId = generateId();
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
+    addMessage(assistantMessage);
+    beginAssistantStream(assistantMessageId);
+
+    setIsLoading(true);
+    clearStages();
+    addStage("Sending...");
+
+    try {
+      const body: Record<string, unknown> = {
+        message: messageContent,
+        conversation_id: conversationId,
+      };
+      if (images && images.length > 0) {
+        body.images = images;
+      }
+      if (activeFiles.length > 0) {
+        body.file_ids = activeFiles;
+      }
+      const response = await apiRequest<ChatResponsePayload>("/chat", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      const finalText = response.text || streamedContentRef.current;
+      const pendingConfirmations = response.pending_confirmations?.map(
+        (c) => ({ ...c, status: "pending" as const }),
+      );
+      updateMessage(
+        assistantMessageId,
+        buildAssistantMessageUpdate(
+          {
+            content: finalText,
+            stats: response.stats,
+            pendingConfirmations:
+              pendingConfirmations && pendingConfirmations.length > 0
+                ? pendingConfirmations
+                : undefined,
+          },
+          streamedThinkingRef.current,
+        ),
+      );
+      activeAssistantStreamRef.current.httpCompleted = true;
+      finalizeAssistantStreamIfReady();
+
+      // Voice mode: auto-play TTS
+      if (voiceModeRef.current && finalText) {
+        playTtsAndAutoRecord(finalText);
+      }
+
+      updateConversation(conversationId, {
+        processingStatus: "idle",
+        processingStage: "",
+        processingStartedAt: undefined,
+      });
+    } catch (err) {
+      updateMessage(
+        assistantMessageId,
+        buildAssistantMessageUpdate(
+          {
+            content: streamedContentRef.current || "",
+            error:
+              err instanceof Error ? err.message : "Failed to send message",
+          },
+          streamedThinkingRef.current,
+        ),
+      );
+      clearAssistantStream();
+      updateConversation(conversationId, {
+        processingStatus: "idle",
+        processingStage: "",
+        processingStartedAt: undefined,
+      });
+    } finally {
+      setIsLoading(false);
+      clearStages();
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    }
+  };
+
+  const handleSend = async (content: string, files?: File[]) => {
+    // Save to command history
+    setCommandHistory((prev) => {
+      const next = [content, ...prev.filter((h) => h !== content)].slice(0, 10);
+      saveCommandHistory(next);
+      return next;
+    });
+
+    const currentChat = await ensureActiveChat();
+    if (!currentChat) return;
+
+    const { imageFiles, documentFiles } = splitAttachedFiles(files || []);
+
+    const imageDataUrls = await Promise.all(
+      imageFiles.map((file) => imageFileDataUrl(file)),
+    );
+
+    let messageContent = content;
+    if (documentFiles.length > 0) {
+      messageContent = await uploadDocumentFiles(documentFiles, content);
+    }
+
+    // Add user message
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: messageContent,
+      images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
+      timestamp: new Date(),
+    };
+    updateConversation(currentChat.id, {
+      title: nextConversationTitle(currentChat.title, messageContent),
+      processingStatus: "active",
+      processingStage: DEFAULT_SERVER_PROCESSING_STAGE,
+      processingStartedAt: userMessage.timestamp,
+      updatedAt: userMessage.timestamp,
+    });
+    requestAutoScrollToBottom();
+    addMessage(userMessage);
+
+    await sendAndStream(
+      messageContent,
+      currentChat.id,
+      imageDataUrls.length > 0 ? imageDataUrls : undefined,
+    );
+  };
+
+  const handleConfirmationStatusChange = useCallback(
+    (actionId: string, status: PendingConfirmation["status"]) => {
+      const chat = activeChat;
+      if (!chat) return;
+      const targetMessage = chat.messages.find(
+        (m) =>
+          m.pendingConfirmations?.some(
+            (c) => c.action_id === actionId,
+          ),
+      );
+      if (!targetMessage) return;
+      updateMessage(targetMessage.id, {
+        pendingConfirmations: targetMessage.pendingConfirmations?.map(
+          (c) =>
+            c.action_id === actionId ? { ...c, status } : c,
+        ),
+      });
+    },
+    [activeChat, updateMessage],
+  );
+
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    updateMessage(messageId, { content: newContent });
+    truncateAfterMessage(messageId);
+    requestAutoScrollToBottom();
+    const ensuredChat = await ensureActiveChat();
+    const conversationId = activeChatId ?? ensuredChat?.id;
+    if (!conversationId) return;
+    updateConversation(conversationId, {
+      processingStatus: "active",
+      processingStage: DEFAULT_SERVER_PROCESSING_STAGE,
+      processingStartedAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await sendAndStream(newContent, conversationId);
+  };
+
+  const handleSendVoice = async (voiceDataUrl: string) => {
+    const currentChat = await ensureActiveChat();
+    if (!currentChat) return;
+
+    // Add user message with voice indicator and audio for playback
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: "",
+      isVoice: true,
+      voiceDataUrl,
+      timestamp: new Date(),
+    };
+    updateConversation(currentChat.id, {
+      processingStatus: "active",
+      processingStage: "Transcribing...",
+      processingStartedAt: userMessage.timestamp,
+      updatedAt: userMessage.timestamp,
+    });
+    requestAutoScrollToBottom();
+    addMessage(userMessage);
+
+    // Send voice to backend
+    const assistantMessageId = generateId();
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
+    addMessage(assistantMessage);
+    beginAssistantStream(assistantMessageId);
+
+    setIsLoading(true);
+    clearStages();
+    addStage("Transcribing...");
+
+    try {
+      const body: Record<string, unknown> = {
+        voice: voiceDataUrl,
+        conversation_id: currentChat.id,
+      };
+      if (activeFiles.length > 0) {
+        body.file_ids = activeFiles;
+      }
+      const response = await apiRequest<ChatResponsePayload>("/chat", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+
+      // Update user message with transcription
+      if (response.transcription) {
+        updateMessage(userMessage.id, {
+          content: response.transcription,
+          isVoice: true,
+        });
+        updateConversation(currentChat.id, {
+          title: nextConversationTitle(currentChat.title, response.transcription),
+        });
+      }
+
+      const finalText = response.text || streamedContentRef.current;
+      updateMessage(
+        assistantMessageId,
+        buildAssistantMessageUpdate(
+          {
+            content: finalText,
+            stats: response.stats,
+          },
+          streamedThinkingRef.current,
+        ),
+      );
+      activeAssistantStreamRef.current.httpCompleted = true;
+      finalizeAssistantStreamIfReady();
+
+      // Voice mode: auto-play TTS
+      if (voiceModeRef.current && finalText) {
+        playTtsAndAutoRecord(finalText);
+      }
+
+      updateConversation(currentChat.id, {
+        processingStatus: "idle",
+        processingStage: "",
+        processingStartedAt: undefined,
+      });
+    } catch (err) {
+      updateMessage(
+        assistantMessageId,
+        buildAssistantMessageUpdate(
+          {
+            content: streamedContentRef.current || "",
+            error:
+              err instanceof Error
+                ? err.message
+                : "Failed to send voice message",
+          },
+          streamedThinkingRef.current,
+        ),
+      );
+      clearAssistantStream();
+      updateConversation(currentChat.id, {
+        processingStatus: "idle",
+        processingStage: "",
+        processingStartedAt: undefined,
+      });
+    } finally {
+      setIsLoading(false);
+      clearStages();
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    }
+  };
+
+  const handleStop = async () => {
+    try {
+      await apiRequest("/stop", { method: "POST" });
+    } catch {
+      /* stop is best-effort */
+    }
+  };
+
+  const handleNewChat = useCallback(() => {
+    void createNewChat();
+  }, [createNewChat]);
+
+  const activeBridgeLink = activeChatId
+    ? bridgeLinksByConversationId[activeChatId] ?? null
+    : null;
+
+  const activeBridgeProvider = activeChat?.bridgeProvider || null;
+
+  const bridgeProvidersByChatId = bridgeProviderMap(chats);
+
+  useEffect(() => {
+    if (
+      !showBridgeDetails ||
+      !activeChatId ||
+      activeBridgeLink ||
+      !activeBridgeProvider
+    ) {
+      return;
+    }
+    let cancelled = false;
+    fetchChatBridgeForConversation(activeChatId)
+      .then((bridgeLink) => {
+        if (cancelled || !bridgeLink) {
+          return;
+        }
+        applyBridgeLink(activeChatId, bridgeLink);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeBridgeLink,
+    applyBridgeLink,
+    activeBridgeProvider,
+    activeChatId,
+    showBridgeDetails,
+  ]);
+
+  const handleToggleSql = useCallback(async () => {
+    if (!activeChatId) return;
+    const next = !showSql;
+    updateConversation(activeChatId, {
+      settings: { ...chatSettings, showSql: next },
+    });
+    try {
+      await updateChatSettings(activeChatId, { show_sql: next });
+    } catch {
+      updateConversation(activeChatId, {
+        settings: { ...chatSettings, showSql: !next },
+      });
+    }
+  }, [activeChatId, showSql, chatSettings, updateConversation]);
+
+  const handleToggleThinking = useCallback(async () => {
+    if (!activeChatId) return;
+    const next = !showThinking;
+    updateConversation(activeChatId, {
+      settings: { ...chatSettings, showThinking: next },
+    });
+    try {
+      await updateChatSettings(activeChatId, { show_thinking: next });
+    } catch {
+      updateConversation(activeChatId, {
+        settings: { ...chatSettings, showThinking: !next },
+      });
+    }
+  }, [activeChatId, showThinking, chatSettings, updateConversation]);
+
+  const handleBridgeToggleRequest = useCallback(
+    async (provider: string, enabled: boolean) => {
+      const currentChat = await ensureActiveChat();
+      if (!currentChat) {
+        return;
+      }
+      setPendingBridgeAction({
+        conversationId: currentChat.id,
+        provider,
+        enabled,
+      });
+      setShowBridgeReauth(true);
+    },
+    [ensureActiveChat],
+  );
+
+  const handleBridgeDetailsOpen = useCallback(() => {
+    setShowBridgeDetails(true);
+    void loadBridgeProvidersIfNeeded();
+  }, [loadBridgeProvidersIfNeeded]);
+
+  const handleBridgeSettingsSave = useCallback(
+    (settings: {
+      deliveryMode: string;
+      personaMode: string;
+      personaUserId: string;
+    }) => {
+      if (!activeBridgeLink || !activeChatId) {
+        return;
+      }
+      setPendingBridgeSettingsSave({
+        bridgeLinkId: activeBridgeLink.id,
+        conversationId: activeChatId,
+        deliveryMode: settings.deliveryMode,
+        personaMode: settings.personaMode,
+        personaUserId: settings.personaUserId,
+      });
+      setShowBridgeReauth(true);
+    },
+    [activeBridgeLink, activeChatId],
+  );
+
+  const enableStoredBridgeLink = useCallback(
+    async (
+      conversationId: string,
+      bridgeLink: ChatBridgeLink,
+      reauthToken: string,
+    ) => {
+      if (bridgeLink.status !== "active") {
+        await enableChatBridgeLink(bridgeLink.id, { reauthToken });
+      }
+      applyBridgeLinkStatus(conversationId, bridgeLink, "active");
+    },
+    [applyBridgeLinkStatus],
+  );
+
+  const createBridgeLinkForConversation = useCallback(
+    async (
+      conversationId: string,
+      provider: string,
+      title: string,
+      reauthToken: string,
+    ) => {
+      const providerItem = bridgeProviders.find(
+        (item) => item.provider === provider,
+      );
+      const createdBridgeLink = await createChatBridgeLink(
+        conversationId,
+        provider,
+        {
+          reauthToken,
+          ...bridgeCreateSettings(
+            provider,
+            providerItem?.default_persona_user_id || "",
+          ),
+        },
+        title,
+      );
+      applyBridgeLink(conversationId, createdBridgeLink);
+    },
+    [applyBridgeLink, bridgeProviders],
+  );
+
+  const disableStoredBridgeLink = useCallback(
+    async (
+      conversationId: string,
+      bridgeLink: ChatBridgeLink,
+      reauthToken: string,
+    ) => {
+      await disableChatBridgeLink(bridgeLink.id, { reauthToken });
+      applyBridgeLinkStatus(conversationId, bridgeLink, "disabled");
+    },
+    [applyBridgeLinkStatus],
+  );
+
+  const handleBridgeReauthSuccess = useCallback(
+    async (reauthToken?: string) => {
+      setShowBridgeReauth(false);
+      const pendingSettingsSave = pendingBridgeSettingsSave;
+      const bridgeAction = pendingBridgeAction;
+      if ((!bridgeAction && !pendingSettingsSave) || !reauthToken) {
+        setPendingBridgeAction(null);
+        setPendingBridgeSettingsSave(null);
+        return;
+      }
+      setBridgeActionLoadingProvider(
+        bridgeAction?.provider || activeBridgeProvider || DISCORD_BRIDGE_PROVIDER,
+      );
+      try {
+        if (pendingSettingsSave) {
+          const updatedBridgeLink = await updateChatBridgeLinkSettings(
+            pendingSettingsSave.bridgeLinkId,
+            {
+              reauthToken,
+              deliveryMode: pendingSettingsSave.deliveryMode,
+              personaMode: pendingSettingsSave.personaMode,
+              personaUserId: pendingSettingsSave.personaUserId,
+            },
+          );
+          if (updatedBridgeLink) {
+            applyBridgeLink(
+              pendingSettingsSave.conversationId,
+              updatedBridgeLink,
+            );
+          }
+          addToast({
+            type: "success",
+            message: "Bridge message settings saved",
+          });
+        } else if (bridgeAction) {
+          const currentBridgeLink = await fetchChatBridgeForConversation(
+            bridgeAction.conversationId,
+          );
+          if (bridgeAction.enabled) {
+            if (
+              currentBridgeLink &&
+              currentBridgeLink.provider === bridgeAction.provider
+            ) {
+              await enableStoredBridgeLink(
+                bridgeAction.conversationId,
+                currentBridgeLink,
+                reauthToken,
+              );
+            } else {
+              if (currentBridgeLink && currentBridgeLink.status === "active") {
+                await disableChatBridgeLink(currentBridgeLink.id, { reauthToken });
+              }
+              await createBridgeLinkForConversation(
+                bridgeAction.conversationId,
+                bridgeAction.provider,
+                activeChat?.title || bridgeAction.conversationId,
+                reauthToken,
+              );
+            }
+            addToast({
+              type: "success",
+              message: `${bridgeAction.provider} bridge connected`,
+            });
+          } else {
+            if (
+              currentBridgeLink &&
+              currentBridgeLink.provider === bridgeAction.provider &&
+              currentBridgeLink.status === "active"
+            ) {
+              await disableStoredBridgeLink(
+                bridgeAction.conversationId,
+                currentBridgeLink,
+                reauthToken,
+              );
+              addToast({
+                type: "success",
+                message: `${bridgeAction.provider} bridge disconnected`,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        const message =
+          error instanceof ApiError && error.status === 403
+            ? "Re-authentication required"
+            : error instanceof Error
+              ? error.message
+              : pendingSettingsSave
+                ? "Failed to save bridge message settings"
+                : "Failed to update chat bridge";
+        addToast({
+          type: "error",
+          message,
+        });
+      } finally {
+        setBridgeActionLoadingProvider(null);
+        setPendingBridgeAction(null);
+        setPendingBridgeSettingsSave(null);
+      }
+    },
+    [
+      activeBridgeProvider,
+      activeChat?.title,
+      addToast,
+      applyBridgeLink,
+      createBridgeLinkForConversation,
+      disableStoredBridgeLink,
+      enableStoredBridgeLink,
+      pendingBridgeAction,
+      pendingBridgeSettingsSave,
+    ],
+  );
+
+  useEffect(() => {
+    const previousSseStatus = previousSseStatusRef.current;
+    previousSseStatusRef.current = sseStatus;
+    if (!isReady || sseStatus !== "connected") {
+      return;
+    }
+    if (previousSseStatus === "connected") {
+      return;
+    }
+    void refreshConversations();
+    if (!activeChatId || isLoading) {
+      return;
+    }
+    void refreshConversationMessages(activeChatId);
+  }, [
+    activeChatId,
+    isLoading,
+    isReady,
+    refreshConversations,
+    refreshConversationMessages,
+    sseStatus,
+  ]);
+
+  const isUploading = uploadProgress !== null;
+  const isDisabled = isLoading || isUploading;
+  const serverProcessingStages =
+    !isLoading && activeChat?.processingStatus === "active"
+      ? buildServerProcessingStage(
+          activeChat.processingStage,
+          activeChat.processingStartedAt,
+        )
+      : [];
+  const displayedProcessingStages =
+    isLoading || processingStages.length > 0
+      ? processingStages
+      : serverProcessingStages;
+
+  const sidebar = (
+    <Sidebar
+      chats={chats}
+      bridgeProvidersByChatId={bridgeProvidersByChatId}
+      activeChatId={activeChatId}
+      onNewChat={handleNewChat}
+      onSelectChat={(chatId) => {
+        void switchChat(chatId);
+      }}
+      onDeleteChat={(chatId) => {
+        removeStoredBridgeLink(chatId);
+        void deleteChat(chatId);
+      }}
+      onRenameChat={(chatId, newTitle) => {
+        void renameChat(chatId, newTitle);
+      }}
+      onLogout={logout}
+      activeFiles={activeFiles}
+      onActiveFilesChange={setActiveFiles}
+      onFilesChange={refreshAvailableFiles}
+      fileRefreshKey={fileRefreshKey}
+      voiceMode={voiceMode && ttsAvailable}
+      onToggleVoiceMode={ttsAvailable ? toggleVoiceMode : undefined}
+    />
+  );
+
+  return (
+    <Layout
+      sidebar={sidebar}
+      header={
+        <Header
+          title={activeChat?.title || "New Chat"}
+          bridgeProvider={activeBridgeProvider}
+          onOpenBridgeDetails={handleBridgeDetailsOpen}
+        />
+      }
+    >
+      <MessageList
+        conversationKey={activeChatId}
+        autoScrollRequest={autoScrollRequest}
+        messages={activeChat?.messages ?? []}
+        isLoading={isLoading}
+        assistantName={assistantName}
+        onCommandClick={handleCommandClick}
+        onEditMessage={handleEditMessage}
+        showSql={showSql}
+        showThinking={showThinking}
+        ttsAvailable={ttsAvailable}
+        onConfirmationStatusChange={handleConfirmationStatusChange}
+      />
+      <div className="mx-auto w-full max-w-[1920px] min-h-[32px] px-2 sm:min-h-[40px] sm:px-4 2xl:px-[10%]">
+        {displayedProcessingStages && displayedProcessingStages.length > 0 && (
+          <ProcessingStages stages={displayedProcessingStages} className="px-2 py-1.5 sm:px-4 sm:py-2" />
+        )}
+      </div>
+      <ChatInput
+        ref={chatInputRef}
+        onSend={handleSend}
+        onSendVoice={handleSendVoice}
+        onAbort={handleStop}
+        disabled={isDisabled}
+        isLoading={isLoading}
+        uploadProgress={uploadProgress}
+        placeholder={
+          sseStatus === "connecting"
+            ? "Connecting to server..."
+            : sseStatus === "disconnected"
+              ? "Server disconnected. Reconnecting..."
+              : "Ask me anything..."
+        }
+        activeFiles={activeFileNames}
+        onDeactivateFile={(filename) => {
+          const match = availableFiles.find(
+            (file) => file.filename === filename,
+          );
+          if (!match) return;
+          setActiveFiles((prev) =>
+            prev.filter((fileId) => fileId !== match.file_id),
+          );
+        }}
+        availableFiles={availableFileNames}
+        commandHistory={commandHistory}
+        voiceMode={voiceMode && ttsAvailable}
+        bridgeProviders={bridgeProviders.map(({ provider }) => ({
+          provider,
+          enabled: activeBridgeProvider === provider,
+        }))}
+        bridgeProvidersLoading={bridgeProvidersLoading}
+        bridgeDisabled={isDisabled}
+        bridgeLoadingProvider={bridgeActionLoadingProvider}
+        onBridgeMenuOpenChange={(open) => {
+          if (open) {
+            void loadBridgeProvidersIfNeeded();
+          }
+        }}
+        onToggleBridgeProvider={handleBridgeToggleRequest}
+        showSql={showSql}
+        onToggleSql={handleToggleSql}
+        showThinking={showThinking}
+        onToggleThinking={handleToggleThinking}
+      />
+      <ConfirmDialog />
+      {showBridgeReauth ? (
+        <ReauthModal
+          onSuccess={handleBridgeReauthSuccess}
+          onClose={() => {
+            setShowBridgeReauth(false);
+            setPendingBridgeAction(null);
+            setPendingBridgeSettingsSave(null);
+          }}
+        />
+      ) : null}
+      {showBridgeDetails ? (
+        <ChatBridgeDetailsModal
+          key={activeBridgeLink?.id ?? "chat-bridge-details"}
+          chatTitle={activeChat?.title || "New Chat"}
+          bridgeLink={activeBridgeLink}
+          availableProviders={bridgeProviders}
+          settingsSaving={bridgeActionLoadingProvider !== null}
+          onSaveSettings={handleBridgeSettingsSave}
+          onClose={() => setShowBridgeDetails(false)}
+        />
+      ) : null}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </Layout>
+  );
+}

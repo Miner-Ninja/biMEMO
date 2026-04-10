@@ -1,0 +1,431 @@
+import { useState, useMemo, memo, useEffect } from 'react'
+import { ChevronRight, ChevronDown, AlertTriangle, BarChart3, Copy, Check, Pencil, X, Mic, Expand } from 'lucide-react'
+import { SpeakButton } from './SpeakButton'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { DataChart } from './DataChart'
+import { MarkdownCodeBlock } from './MarkdownCodeBlock'
+import { ResultsTable } from './ResultsTable'
+import { ThinkingBlock } from './ThinkingBlock'
+import { TokenStats } from './TokenStats'
+import { VoicePlayer } from './VoicePlayer'
+import { detectChartType } from '@/lib/chart-utils'
+import { extractSqlFromContent, extractSuggestions } from '@/lib/markdown-parsing'
+import { buildMarkdownComponents } from '@/lib/markdownComponents'
+import type { Message, PendingConfirmation } from '@/types/chat'
+import ConfirmationCard from './ConfirmationCard'
+import { cn, formatDate } from '@/lib/utils'
+
+interface ChatMessageProps {
+  message: Message
+  assistantName?: string
+  onCommandClick?: (command: string) => void
+  showSql?: boolean
+  showThinking?: boolean
+  isEditable?: boolean
+  onEdit?: (messageId: string, newContent: string) => void
+  ttsAvailable?: boolean
+  onConfirmationStatusChange?: (actionId: string, status: PendingConfirmation['status']) => void
+}
+
+/**
+ * Single chat message with collapsible SQL and Results sections.
+ * Memoized to prevent re-renders when other messages update.
+ */
+export const ChatMessage = memo(function ChatMessage({ message, assistantName, onCommandClick, showSql = true, showThinking = true, isEditable = false, onEdit, ttsAvailable = false, onConfirmationStatusChange }: ChatMessageProps) {
+  const [sqlOpen, setSqlOpen] = useState(false)
+  const [resultsOpen, setResultsOpen] = useState(false)
+  const [errorDetailOpen, setErrorDetailOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showFallbackChart, setShowFallbackChart] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState('')
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+
+  // Extract SQL from content if not already set
+  const { sql, contentWithoutSql } = useMemo(() => {
+    if (message.sql) {
+      return { sql: message.sql, contentWithoutSql: message.content }
+    }
+    return extractSqlFromContent(message.content)
+  }, [message.content, message.sql])
+
+  const isUser = message.role === 'user'
+  const hasError = Boolean(message.error)
+  const hasSql = Boolean(sql)
+  const hasResults = Boolean(message.results && message.results.data.length > 0)
+  const hasStats = Boolean(message.stats)
+  const hasThinking = Boolean(message.thinking)
+  const hasChartBlock = contentWithoutSql.includes('```chart')
+  const hasImages = Boolean(message.images && message.images.length > 0)
+
+  // Fallback chart detection from table results
+  const fallbackChart = useMemo(() => {
+    if (hasChartBlock || !hasResults || !message.results) return null
+    return detectChartType(
+      message.results.columns,
+      message.results.data as Record<string, unknown>[],
+    )
+  }, [hasChartBlock, hasResults, message.results])
+
+  const { cleanContent, suggestions } = useMemo(
+    () => extractSuggestions(contentWithoutSql, isUser),
+    [contentWithoutSql, isUser],
+  )
+
+  const markdownComponents = useMemo(
+    () => buildMarkdownComponents(onCommandClick),
+    [onCommandClick],
+  )
+
+  const handleCopyContent = async () => {
+    if (!contentWithoutSql) return
+    try {
+      await navigator.clipboard.writeText(contentWithoutSql)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+    }
+  }
+
+  const handleStartEdit = () => {
+    setEditValue(message.content)
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditValue('')
+  }
+
+  const handleSaveEdit = () => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== message.content && onEdit) {
+      onEdit(message.id, trimmed)
+    }
+    setIsEditing(false)
+    setEditValue('')
+  }
+
+  useEffect(() => {
+    if (!selectedImage) return undefined
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedImage(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedImage])
+
+  return (
+    <div
+      className={cn(
+        'relative group flex gap-2 rounded-xl px-3.5 py-3 sm:gap-3 sm:rounded-lg sm:px-4 sm:py-4',
+        isUser ? 'bg-transparent' : 'bg-muted/50'
+      )}
+    >
+      {/* Action buttons — top-right of the entire message row */}
+      {contentWithoutSql && !isEditing && (
+        <div className="absolute right-2.5 top-2.5 z-10 flex items-center gap-0.5 opacity-100 transition-opacity sm:right-4 sm:top-4 sm:opacity-0 sm:group-hover:opacity-100">
+          {ttsAvailable && !isUser && (
+            <SpeakButton text={contentWithoutSql} />
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleCopyContent}
+            className="h-8 w-8"
+            aria-label={copied ? 'Copied!' : 'Copy message'}
+          >
+            {copied ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* Edit button — bottom-right, only for the last user message */}
+      {isEditable && !isEditing && (
+        <div className="absolute bottom-2.5 right-2.5 z-10 opacity-100 transition-opacity sm:bottom-4 sm:right-4 sm:opacity-0 sm:group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleStartEdit}
+            className="h-8 w-8"
+            aria-label="Edit message"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Avatar */}
+      <Avatar className="mt-0.5 h-7 w-7 shrink-0 sm:h-8 sm:w-8">
+        {isUser ? (
+          <>
+            <AvatarImage src="/avatars/user" alt="User avatar" className="object-cover" />
+            <AvatarFallback className="bg-primary text-primary-foreground">U</AvatarFallback>
+          </>
+        ) : (
+          <>
+            <AvatarImage src="/avatars/ai" alt="AI avatar" className="object-cover" />
+            <AvatarFallback className="bg-muted">
+              <img src="/bimemo_mini.webp" alt="biMEMO AI avatar" className="h-full w-full object-cover" />
+            </AvatarFallback>
+          </>
+        )}
+      </Avatar>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 space-y-2.5 pr-4 sm:space-y-3 sm:pr-9">
+        {/* Header with role and timestamp */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pr-16 sm:pr-20">
+          <span className="text-sm font-medium sm:text-base">{isUser ? 'You' : (assistantName || 'Assistant')}</span>
+          {message.isVoice && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+              <Mic className="h-3 w-3" />
+              voice
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground">{formatDate(message.timestamp)}</span>
+        </div>
+
+        {/* Voice player for voice messages */}
+        {message.voiceDataUrl && (
+          <VoicePlayer src={message.voiceDataUrl} />
+        )}
+
+        {/* Attached images */}
+        {hasImages && (
+          <div className="grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {message.images!.map((imageUrl, imageIndex) => (
+              <button
+                key={`${message.id}-image-${imageIndex}`}
+                type="button"
+                className="group/image relative overflow-hidden rounded-lg border border-border bg-black/40 text-left"
+                onClick={() => setSelectedImage(imageUrl)}
+                aria-label={`Open image ${imageIndex + 1}`}
+              >
+                <img
+                  src={imageUrl}
+                  alt={`Attached image ${imageIndex + 1}`}
+                  className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
+                  loading="lazy"
+                />
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-xs text-white">
+                  <span>{`Image ${imageIndex + 1}`}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5">
+                    <Expand className="h-3 w-3" />
+                    Open
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Pending RED zone confirmations */}
+        {message.pendingConfirmations && message.pendingConfirmations.length > 0 && (
+          <div className="max-w-md">
+            {message.pendingConfirmations.map((c) => (
+              <ConfirmationCard
+                key={c.action_id}
+                confirmation={c}
+                onStatusChange={onConfirmationStatusChange || (() => {})}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Token stats for assistant messages — reserve space to prevent layout shift */}
+        {message.role === 'assistant' && (
+          <div className="min-h-[14px]">
+            {hasStats && (
+              <div className="animate-in fade-in duration-500">
+                <TokenStats stats={message.stats!} stageTimes={message.stageTimes} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Thinking block (collapsible) */}
+        {hasThinking && showThinking && <ThinkingBlock thinking={message.thinking!} />}
+
+        {/* Error message — structured or simple */}
+        {hasError && (
+          <div className="rounded border border-destructive/20 bg-destructive/5 p-3 space-y-2">
+            <div className="flex items-start gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-medium text-sm">{message.error}</p>
+                {message.errorSuggestion && (
+                  <p className="text-sm text-muted-foreground">{message.errorSuggestion}</p>
+                )}
+              </div>
+            </div>
+            {message.errorDetail && (
+              <div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setErrorDetailOpen(!errorDetailOpen)}
+                >
+                  {errorDetailOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  Technical information
+                </button>
+                {errorDetailOpen && (
+                  <pre className="mt-1 rounded bg-muted p-2 text-xs text-muted-foreground overflow-x-auto whitespace-pre-wrap">
+                    {message.errorDetail}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Main content — inline edit mode or markdown */}
+        {isEditing ? (
+          <div className="space-y-2">
+            <Textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSaveEdit()
+                } else if (e.key === 'Escape') {
+                  handleCancelEdit()
+                }
+              }}
+              className="min-h-20"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button variant="default" size="sm" onClick={handleSaveEdit} className="gap-1">
+                <Check className="h-3.5 w-3.5" />
+                Save & Submit
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleCancelEdit} className="gap-1">
+                <X className="h-3.5 w-3.5" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : contentWithoutSql ? (
+          <div>
+            <div className="markdown-content prose prose-sm dark:prose-invert max-w-none text-sm sm:text-base">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'style', 'link']}
+                unwrapDisallowed={true}
+                components={markdownComponents}
+              >
+                {cleanContent}
+              </ReactMarkdown>
+            </div>
+            {/* Clickable suggestion chips */}
+            {suggestions.length > 0 && onCommandClick && (
+              <div className="mt-6 flex flex-col items-stretch gap-2 sm:mt-8 sm:items-start sm:gap-2">
+                <hr className="w-full border-border" />
+                <span className="mb-1 text-[10px] font-medium text-muted-foreground sm:text-xs">Suggestions</span>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="rounded-xl border border-primary/40 bg-primary/15 px-3.5 py-2.5 text-left text-[13px] leading-5 text-primary transition-colors hover:bg-primary/25 cursor-pointer sm:rounded-full sm:px-3 sm:py-1 sm:text-sm dark:border-primary/40 dark:text-primary border-sky-600/50 text-sky-700"
+                    onClick={() => onCommandClick(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* SQL Query (collapsible, hidden when showSql=false) */}
+        {hasSql && showSql && (
+          <Collapsible open={sqlOpen} onOpenChange={setSqlOpen}>
+            <CollapsibleTrigger className="flex w-full items-center gap-2 rounded border border-border p-2 text-sm hover:bg-muted/50">
+              <ChevronRight
+                className={cn('h-4 w-4 transition-transform', sqlOpen && 'rotate-90')}
+              />
+              <span>SQL Query</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <MarkdownCodeBlock code={sql!} language="sql" />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+
+        {/* Results (collapsible) */}
+        {hasResults && (
+          <>
+            <Collapsible open={resultsOpen} onOpenChange={setResultsOpen}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <CollapsibleTrigger className="flex flex-1 items-center gap-2 rounded border border-border p-2 text-sm hover:bg-muted/50">
+                  <ChevronRight
+                    className={cn('h-4 w-4 transition-transform', resultsOpen && 'rotate-90')}
+                  />
+                  <span>Results ({message.results!.rowCount} rows)</span>
+                </CollapsibleTrigger>
+                {fallbackChart && !showFallbackChart && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 self-start sm:shrink-0"
+                    onClick={() => setShowFallbackChart(true)}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Chart
+                  </Button>
+                )}
+              </div>
+              <CollapsibleContent className="mt-2">
+                <ResultsTable results={message.results!} />
+              </CollapsibleContent>
+            </Collapsible>
+            {showFallbackChart && fallbackChart && (
+              <DataChart chart={fallbackChart} />
+            )}
+          </>
+        )}
+      </div>
+
+      {selectedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white transition-colors hover:bg-black/80"
+            onClick={() => setSelectedImage(null)}
+            aria-label="Close image preview"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={selectedImage}
+            alt="Selected attachment preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
+    </div>
+  )
+})

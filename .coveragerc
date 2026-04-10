@@ -1,0 +1,38 @@
+[run]
+source = backend
+branch = True
+omit =
+    */backend/agent/*
+    */backend/bot/*
+    */backend/bus/*
+    */backend/channels/*
+    */backend/chat_bridge/*
+    */backend/config.py
+    */backend/files/*
+    */backend/ipc/*
+    */backend/llm/*
+    */backend/logging_config.py
+    */backend/memory/*
+    */backend/middleware/*
+    */backend/models/requests.py
+    */backend/processes/*
+    */backend/security/cli.py
+    */backend/security/content_scanning.py
+    */backend/security/deletion.py
+    */backend/security/diagnostics_schema.py
+    */backend/security/keysource/protocol.py
+    */backend/security/migrate.py
+    */backend/security/schema.py
+    */backend/tools/broker.py
+    */backend/tools/handlers/registration.py
+    */backend/tools/handlers/system_status.py
+    */backend/tools/rate_limits.py
+    */backend/tools/registry.py
+    */backend/workers/*
+
+[report]
+fail_under = 100
+show_missing = True
+exclude_lines =
+    if TYPE_CHECKING:
+    pragma: no cover

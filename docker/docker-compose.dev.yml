@@ -1,0 +1,126 @@
+# biMEMO development Docker Compose (standalone).
+# Usage: docker-compose -f docker/docker-compose.dev.yml up -d --build
+# With local Ollama: docker-compose -f docker/docker-compose.dev.yml --profile gpu up -d
+
+services:
+  bimemo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: ../.env
+    expose:
+      - "8000"
+    volumes:
+      - keyfile-data:/data/keyfile
+      - db-data:/data/db
+      - files-data:/data/files
+      - ../app/backend:/app/backend
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../.coveragerc:/app/.coveragerc
+      - ../tests:/app/tests
+      - ../scripts:/app/scripts
+      - ./config:/data/config:ro
+    command: python -m backend.processes.supervisor
+    environment:
+      - BIMEMO_DEBUG=true
+    networks:
+      - bm-caddy
+      - bm-searxng
+    depends_on:
+      caddy:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+      whisper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    image: node:22-slim
+    working_dir: /app/frontend
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      - BIMEMO_DEV_PROXY_TARGET=http://bimemo:8000
+    ports:
+      - "5273:5173"
+    volumes:
+      - ../app/frontend:/app/frontend
+      - frontend-node-modules:/app/frontend/node_modules
+    depends_on:
+      bimemo:
+        condition: service_healthy
+    networks:
+      - bm-caddy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - ./caddy/certs:/etc/caddy/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - bm-caddy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    environment:
+      - WHISPER__MODEL=Systran/faster-whisper-small
+      - WHISPER__DEVICE=cpu
+      - WHISPER__COMPUTE_TYPE=int8
+      - HF_HUB_OFFLINE=0
+    volumes:
+      - whisper-cache:/root/.cache
+    networks:
+      - bm-caddy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng@sha256:4242059517c1cc183dde7876721435b447f3e25202716d09f502043d56e6f619
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - bm-searxng
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  bm-caddy:
+    driver: bridge
+  bm-searxng:
+    driver: bridge
+
+volumes:
+  keyfile-data:
+  db-data:
+  files-data:
+  frontend-node-modules:
+  caddy-data:
+  caddy-config:
+  whisper-cache:

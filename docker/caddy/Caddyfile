@@ -1,0 +1,42 @@
+{
+	auto_https off
+	admin off
+}
+
+# Internal: Ollama reverse proxy with Bearer token
+:8080 {
+	respond /health 200
+
+	@ollama path /api/*
+
+	route @ollama {
+		@wrong_token not header Authorization "Bearer {env.OLLAMA_BEARER_TOKEN}"
+		respond @wrong_token 401 {
+			body "Unauthorized"
+			close
+		}
+
+		reverse_proxy ollama:11434 {
+			header_up Host {upstream_hostport}
+		}
+	}
+
+	respond 404
+}
+
+# Web UI: TLS termination
+:443 {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+	}
+
+	reverse_proxy bimemo:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

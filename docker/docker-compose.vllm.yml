@@ -1,0 +1,109 @@
+# biMEMO experimental vLLM stack.
+# Usage:
+#   docker-compose -f docker/docker-compose.vllm.yml config
+#   docker-compose -f docker/docker-compose.vllm.yml up -d
+#
+# This file starts two separate vLLM OpenAI-compatible endpoints:
+# - vllm-primary: primary chat model on port 12434
+# - vllm-dialog-recorder: dialog recorder/summary distiller model on port 12435
+#
+# Important:
+# biMEMO currently supports separate dialog recorder endpoints for Ollama only.
+# This compose file prepares the infrastructure for a vLLM experiment, but
+# the app still needs custom-provider dialog_recorder_base_url support before it can
+# route primary and dialog recorder requests to different vLLM URLs.
+#
+# Tensor parallelism guidance for the current hardware:
+# - Start with tensor-parallel-size=1 for both services.
+# - For the primary model, try tensor-parallel-size=2 only if:
+#   - a single 3090 runs out of memory, or
+#   - you later optimize for larger batched throughput instead of
+#     single-user latency.
+# - Keep the 2B dialog recorder at tensor-parallel-size=1.
+
+version: "3.9"
+
+services:
+  vllm-primary:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-primary
+    restart: unless-stopped
+    ipc: host
+    ports:
+      - "12434:8000"
+    volumes:
+      - vllm_primary_cache:/root/.cache/huggingface
+    environment:
+      HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
+      CUDA_VISIBLE_DEVICES: "0"
+    command:
+      - --model
+      - Qwen/Qwen3.5-4B
+      - --served-model-name
+      - qwen3.5:4b
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --max-model-len
+      - "16384"
+      - --tensor-parallel-size
+      - "1"
+      - --gpu-memory-utilization
+      - "0.92"
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_xml
+      - --trust-remote-code
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+  vllm-dialog-recorder:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-dialog-recorder
+    restart: unless-stopped
+    ipc: host
+    ports:
+      - "12435:8000"
+    volumes:
+      - vllm_dialog_recorder_cache:/root/.cache/huggingface
+    environment:
+      HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
+      CUDA_VISIBLE_DEVICES: "1"
+    command:
+      - --model
+      - Qwen/Qwen3.5-2B
+      - --served-model-name
+      - qwen3.5:2b
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --max-model-len
+      - "16384"
+      - --tensor-parallel-size
+      - "1"
+      - --gpu-memory-utilization
+      - "0.85"
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_xml
+      - --trust-remote-code
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+volumes:
+  vllm_primary_cache: {}
+  vllm_dialog_recorder_cache: {}

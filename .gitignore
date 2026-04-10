@@ -1,0 +1,54 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+
+# --- Virtual environments ---
+.venv/
+venv/
+
+# --- Environment variables ---
+.env
+
+# --- IDE / Editors ---
+.idea/
+.vscode/
+.obsidian/
+*.swp
+*.swo
+*~
+
+# --- Docker ---
+.docker/
+
+# --- Coverage ---
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# --- pytest ---
+.pytest_cache/
+
+# --- Ruff ---
+.ruff_cache/
+
+# --- Frontend build and test caches ---
+app/frontend/.vite/
+node_modules/.vite/vitest/
+
+# --- TLS certificates ---
+caddy/certs/*.pem
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Local analysis / scratch ---
+tmp/
+CLAUDE.md

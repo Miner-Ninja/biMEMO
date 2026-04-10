@@ -1,0 +1,29 @@
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
+
+:443 {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+
+	reverse_proxy bimemo:8000
+}
+
+:8080 {
+	respond /health 200
+
+	# OpenRouter API proxy
+	@api path /api/*
+	route @api {
+		reverse_proxy https://openrouter.ai {
+			header_up Host openrouter.ai
+			header_up X-Forwarded-Host openrouter.ai
+		}
+	}
+
+	respond 404
+}

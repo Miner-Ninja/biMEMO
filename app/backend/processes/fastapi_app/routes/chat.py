@@ -1,0 +1,361 @@
+"""Chat, stream, stop, confirm routes."""
+
+import asyncio
+import uuid
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
+
+from backend.channels.jwt_auth import SessionManager, TokenClaims
+from backend.channels.sse import SSEManager
+from backend.chat_bridge import ChatBridgeService
+from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
+from backend.ipc.models import StopRequest as IPCStopRequest
+from backend.ipc.models import StreamEventType
+from backend.models.requests import ChatRequest as HTTPChatRequest
+from backend.models.requests import ChatSettingsUpdateRequest
+from backend.models.requests import ConfirmRequest as HTTPConfirmRequest
+from backend.models.requests import (
+    ConversationCreateRequest as HTTPConversationCreateRequest,
+)
+from backend.models.requests import (
+    ConversationUpdateRequest as HTTPConversationUpdateRequest,
+)
+from backend.models.responses import ChatResponse as HTTPChatResponse
+from backend.models.responses import ChatSettingsResponse
+from backend.models.responses import (
+    ConversationCreateResponse as HTTPConversationCreateResponse,
+)
+from backend.models.responses import (
+    ConversationDeleteResponse as HTTPConversationDeleteResponse,
+)
+from backend.models.responses import ConversationItem as HTTPConversationItem
+from backend.models.responses import (
+    ConversationMessageItem as HTTPConversationMessageItem,
+)
+from backend.models.responses import StopResponse as HTTPStopResponse
+
+from ..clients import AdminDBClient, OrchestratorClient
+from ..deps import (
+    _get_admin_client,
+    _get_optional_chat_bridge_service,
+    _get_orchestrator_client,
+    _get_session_manager,
+    _get_sse_manager,
+    _require_auth,
+)
+from .chat_helpers import (
+    DEFAULT_CONVERSATION_LIST_LIMIT,
+    DEFAULT_CONVERSATION_MESSAGES_LIMIT,
+    build_busy_chat_response,
+    build_confirm_response,
+    chat_settings_from_raw,
+    create_persisted_conversation,
+    delete_conversation_item,
+    list_conversation_items,
+    list_conversation_message_items,
+    run_web_chat_request,
+    send_ipc_control_request,
+    update_conversation_item,
+)
+from .chat_stream import (
+    build_stream_headers,
+    connect_stream_session,
+    conversation_created_event_data,
+    conversation_deleted_event_data,
+    conversation_updated_event_data,
+    stream_events,
+)
+
+
+chat_router = APIRouter()
+
+
+@chat_router.post("/chat")
+async def chat(
+    body: HTTPChatRequest,
+    request: Request,
+    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    chat_bridge_service: ChatBridgeService | None = Depends(  # noqa: B008
+        _get_optional_chat_bridge_service
+    ),
+) -> HTTPChatResponse | dict:
+    """Process a chat message via Orchestrator IPC.
+
+    Returns 202 when the Orchestrator is already processing.
+
+    Args:
+        body: Chat request with message text.
+        request: FastAPI request.
+        claims: Authenticated token claims.
+        orchestrator_client: Orchestrator IPC client.
+        admin_client: Database client for file metadata lookup.
+        chat_bridge_service: Optional chat bridge service for auto-created links.
+
+    Returns:
+        ChatResponse or 202 accepted.
+    """
+    if orchestrator_client.is_processing:
+        return build_busy_chat_response()
+
+    return await run_web_chat_request(
+        body=body,
+        request=request,
+        claims=claims,
+        orchestrator_client=orchestrator_client,
+        admin_client=admin_client,
+        chat_bridge_service=chat_bridge_service,
+    )
+
+
+@chat_router.post("/chat/conversations")
+async def create_conversation(
+    body: HTTPConversationCreateRequest,
+    request: Request,
+    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+    chat_bridge_service: ChatBridgeService | None = Depends(  # noqa: B008
+        _get_optional_chat_bridge_service
+    ),
+) -> HTTPConversationCreateResponse:
+    """Create one empty persisted conversation."""
+    conversation = await create_persisted_conversation(
+        title=body.title,
+        admin_client=admin_client,
+    )
+    await orchestrator_client.publish_conversation_event(
+        conversation_id=conversation.id,
+        event_type=StreamEventType.CONVERSATION_CREATED,
+        data=conversation_created_event_data(conversation),
+    )
+    return HTTPConversationCreateResponse(conversation_id=conversation.id)
+
+
+@chat_router.get("/chat/conversations")
+async def list_conversations(
+    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    limit: int = DEFAULT_CONVERSATION_LIST_LIMIT,
+    offset: int = 0,
+) -> list[HTTPConversationItem]:
+    """List persisted conversations ordered by most recent activity."""
+    return await list_conversation_items(
+        admin_client=admin_client,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@chat_router.get("/chat/conversations/{conversation_id}/messages")
+async def list_conversation_messages(
+    conversation_id: str,
+    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    limit: int = DEFAULT_CONVERSATION_MESSAGES_LIMIT,
+    offset: int = 0,
+) -> list[HTTPConversationMessageItem]:
+    """List persisted messages for one conversation."""
+    return await list_conversation_message_items(
+        admin_client=admin_client,
+        conversation_id=conversation_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@chat_router.put("/chat/conversations/{conversation_id}")
+async def update_conversation(
+    conversation_id: str,
+    body: HTTPConversationUpdateRequest,
+    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+) -> HTTPConversationItem:
+    """Update one persisted conversation title."""
+    conversation = await update_conversation_item(
+        admin_client=admin_client,
+        conversation_id=conversation_id,
+        title=body.title,
+    )
+    await orchestrator_client.publish_conversation_event(
+        conversation_id=conversation_id,
+        event_type=StreamEventType.CONVERSATION_UPDATED,
+        data=conversation_updated_event_data(conversation),
+    )
+    return conversation
+
+
+@chat_router.patch("/chat/conversations/{conversation_id}/settings")
+async def update_conversation_settings(
+    conversation_id: str,
+    body: ChatSettingsUpdateRequest,
+    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+) -> ChatSettingsResponse:
+    """Update per-conversation display settings."""
+    entries: list[dict[str, str]] = []
+    if body.show_sql is not None:
+        entries.append({"key": "show_sql", "value": "1" if body.show_sql else "0"})
+    if body.show_thinking is not None:
+        entries.append(
+            {"key": "show_thinking", "value": "1" if body.show_thinking else "0"}
+        )
+    if entries:
+        raw = await admin_client.upsert_chat_settings(conversation_id, entries)
+    else:
+        raw = await admin_client.list_chat_settings(conversation_id)
+    settings = chat_settings_from_raw(raw)
+    await orchestrator_client.publish_conversation_event(
+        conversation_id=conversation_id,
+        event_type=StreamEventType.CONVERSATION_UPDATED,
+        data={"conversation_id": conversation_id, "settings": settings.model_dump()},
+    )
+    return settings
+
+
+@chat_router.delete("/chat/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+) -> HTTPConversationDeleteResponse:
+    """Delete one persisted conversation and related data."""
+    response = await delete_conversation_item(
+        admin_client=admin_client,
+        conversation_id=conversation_id,
+    )
+    await orchestrator_client.publish_conversation_event(
+        conversation_id=conversation_id,
+        event_type=StreamEventType.CONVERSATION_DELETED,
+        data=conversation_deleted_event_data(conversation_id),
+    )
+    return response
+
+
+@chat_router.get("/stream")
+async def stream(
+    request: Request,
+    conversation_id: str = "",
+    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+    sse_manager: SSEManager = Depends(_get_sse_manager),  # noqa: B008
+    session_manager: SessionManager = Depends(_get_session_manager),  # noqa: B008
+) -> StreamingResponse:
+    """Establish SSE connection for real-time streaming.
+
+    Reads StreamEvent messages from the Orchestrator IPC and
+    forwards them to the browser as SSE events.
+
+    Args:
+        request: FastAPI request.
+        conversation_id: Currently open chat id for direct chat events.
+        claims: Authenticated token claims.
+        orchestrator_client: Orchestrator IPC client.
+        sse_manager: SSE connection manager.
+        session_manager: Session tracking for SSE connection limits.
+
+    Returns:
+        StreamingResponse with SSE content type.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    connect_stream_session(
+        session_id=claims.jti,
+        session_exp=claims.exp,
+        conversation_id=conversation_id,
+        queue=queue,
+        orchestrator_client=orchestrator_client,
+        sse_manager=sse_manager,
+        session_manager=session_manager,
+    )
+
+    return StreamingResponse(
+        stream_events(
+            queue=queue,
+            session_id=claims.jti,
+            orchestrator_client=orchestrator_client,
+            sse_manager=sse_manager,
+        ),
+        media_type="text/event-stream",
+        headers=build_stream_headers(),
+    )
+
+
+@chat_router.post("/stop")
+async def stop(
+    request: Request,
+    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+) -> HTTPStopResponse:
+    """Stop the active agentic loop via Orchestrator IPC.
+
+    Args:
+        request: FastAPI request.
+        claims: Authenticated token claims.
+        orchestrator_client: Orchestrator IPC client.
+
+    Returns:
+        StopResponse indicating whether a loop was stopped.
+    """
+    request_id = str(uuid.uuid4())
+    ipc_request = IPCStopRequest(request_id=request_id)
+    ipc_response = await send_ipc_control_request(
+        send_fn=orchestrator_client.send_stop,
+        ipc_request=ipc_request,
+    )
+
+    return HTTPStopResponse(stopped=ipc_response.stopped)
+
+
+@chat_router.post("/confirm")
+async def confirm(
+    body: HTTPConfirmRequest,
+    request: Request,
+    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+        _get_orchestrator_client
+    ),
+) -> dict:
+    """Process trust confirmation decision via Orchestrator IPC.
+
+    Args:
+        body: Confirmation request with action_id and decision.
+        request: FastAPI request.
+        claims: Authenticated token claims.
+        orchestrator_client: Orchestrator IPC client.
+
+    Returns:
+        Confirmation result.
+    """
+    request_id = str(uuid.uuid4())
+    ipc_request = IPCConfirmRequest(
+        request_id=request_id,
+        action_id=body.action_id,
+        decision=body.decision,
+    )
+    ipc_response = await send_ipc_control_request(
+        send_fn=orchestrator_client.send_confirm,
+        ipc_request=ipc_request,
+    )
+    return build_confirm_response(
+        accepted=ipc_response.accepted,
+        action_id=body.action_id,
+    )

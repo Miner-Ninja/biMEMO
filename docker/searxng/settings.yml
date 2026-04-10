@@ -1,0 +1,22 @@
+use_default_settings: true
+
+general:
+  enable_metrics: false
+
+server:
+  secret_key: "dev-secret-key-change-in-production"
+  method: POST
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+  default_theme: simple
+
+enabled_plugins: []
