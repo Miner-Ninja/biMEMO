@@ -55,10 +55,17 @@ from backend.security.diagnostics_schema import (
 from pydantic import ValidationError
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 67
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 43
+EXPECTED_SOCKET_A_OPERATION_COUNT = 71
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 39
 EXPECTED_SOCKET_B_OPERATION_COUNT = 64
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
+
+SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
+    "create_scheduled_task",
+    "list_scheduled_tasks",
+    "update_scheduled_task",
+    "delete_scheduled_task",
+}
 
 
 class FakeDB:
@@ -1553,6 +1560,14 @@ class TestAllowlistEnforcement:
         """Allows core operations on socket A."""
         allowlist = build_allowlist()
         for operation in SOCKET_A_OPERATIONS:
+            assert allowlist.is_allowed(CHANNEL_A, operation), (
+                f"Socket A should allow {operation}"
+            )
+
+    def test_socket_a_includes_scheduled_task_writes(self) -> None:
+        """Allows scheduled task writes on socket A for chat-created tasks."""
+        allowlist = build_allowlist()
+        for operation in SCHEDULED_TASK_SOCKET_A_OPERATIONS:
             assert allowlist.is_allowed(CHANNEL_A, operation), (
                 f"Socket A should allow {operation}"
             )
