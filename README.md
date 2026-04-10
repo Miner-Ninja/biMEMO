@@ -160,7 +160,7 @@ docker-compose -f docker/docker-compose.dev.yml exec bimemo \
 
 ## Tech Stack
 
-- **Backend**: Python 3.12, FastAPI, Pydantic
+- **Backend**: Python 3.14.4, FastAPI, Pydantic
 - **Database**: SQLite + SQLCipher + sqlite-vec
 - **LLM**: Ollama, OpenRouter
 - **Bots**: aiogram (Telegram), discord.py (Discord)

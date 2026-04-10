@@ -60,7 +60,7 @@ class TestCompressMessages:
         obs_plain_text = (
             "SUMMARY: User discussed project setup\n"
             "KEY_FACTS:\n"
-            "- Python 3.12\n"
+            "- Python 3.14.4\n"
             "- FastAPI\n"
             "ACTION_ITEMS:\n"
             "- Create dockerfile\n"

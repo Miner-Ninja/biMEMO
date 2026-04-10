@@ -59,7 +59,7 @@ def _sample_observations():
     return [
         Record(
             summary="User prefers Python",
-            key_facts=["Uses Python 3.12"],
+            key_facts=["Uses Python 3.14.4"],
             action_items=[],
         ),
         Record(
@@ -81,7 +81,7 @@ class TestSynthesizeRecords:
                 "TRUST_LEVEL: high",
                 "SCOPE: long_term",
                 "BASED_ON:",
-                "- Uses Python 3.12",
+                "- Uses Python 3.14.4",
                 "- Uses FastAPI",
             ]
         )
@@ -211,7 +211,7 @@ def _make_distillation():
     """Build a Summary for tests."""
     return Summary(
         main_point="User prefers Python",
-        based_on=["Uses Python 3.12"],
+        based_on=["Uses Python 3.14.4"],
         trust_level="high",
         scope="long_term",
         record_relations=["supports"],
@@ -580,7 +580,7 @@ class TestProcessSummary:
         mock_db.fetch_untainted_records.assert_awaited_once()
         mock_db.save_summary.assert_awaited_once_with(
             main_point="User prefers Python",
-            based_on=["Uses Python 3.12"],
+            based_on=["Uses Python 3.14.4"],
             trust_level="high",
             summary_scope="long_term",
             source_record_ids=["obs-1"],

@@ -432,7 +432,7 @@ test.describe('Memory zone statistics', () => {
 
     // First conversation: user shares specific facts
     await createNewChat(page)
-    await sendMessageAndWait(page, 'Наш проект использует Python 3.12, FastAPI и PostgreSQL')
+    await sendMessageAndWait(page, 'Наш проект использует Python 3.14.4, FastAPI и PostgreSQL')
     await sendMessageAndWait(page, 'Для тестов мы используем pytest с фикстурами')
 
     // Wait for DialogRecorder to process into searchable records

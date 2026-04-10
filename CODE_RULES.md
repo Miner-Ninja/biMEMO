@@ -1,6 +1,6 @@
 # Python Code Rules
 
-> Python 3.12+ · PEP 8 · Ruff 0.15+ · Docker + Docker Compose
+> Python 3.14.4 · PEP 8 · Ruff 0.15+ · Docker + Docker Compose
 > This file is for AI coding agents. Symlink as needed:
 > `ln -s CODE_RULES.md CLAUDE.md` or `ln -s CODE_RULES.md AGENTS.md`
 >
@@ -144,7 +144,7 @@ MAX_PAGE_SIZE = 100
 **ALWAYS** use type hints on function signatures and return values (including `-> None`).
 
 ```python
-# ✅ Modern syntax (Python 3.12+)
+# ✅ Modern syntax (Python 3.14+)
 def process(items: list[str]) -> dict[str, int]: ...
 def fetch(url: str) -> str | None: ...
 
@@ -465,7 +465,7 @@ def safe_path(base_dir: Path, user_filename: str) -> Path:
 
 This applies to:
 - Python packages (PyPI): `httpx`, `fastapi`, `pydantic`, `sqlalchemy`, `ruff`, etc.
-- System components: Python, Docker images (`python:3.12-slim`, `postgres:16`, `redis:7`).
+- System components: Python, Docker images (`python:3.14-slim`, `postgres:16`, `redis:7`).
 - Base images and tools used in `Dockerfile` and `docker-compose.yml`.
 - Any library, SDK, or framework referenced in code or documentation.
 
@@ -648,15 +648,15 @@ When a file grows beyond ~300 lines, split it following this pattern:
 
 ```dockerfile
 # ✅ Multi-stage, non-root, minimal image
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /build
 COPY pyproject.toml .
 RUN pip install --no-cache-dir --target=/deps -r requirements.txt
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 RUN useradd --create-home appuser
 WORKDIR /app
-COPY --from=builder /deps /usr/local/lib/python3.12/site-packages
+COPY --from=builder /deps /usr/local/lib/python3.14/site-packages
 COPY src/ ./src/
 COPY tests/ ./tests/
 COPY pyproject.toml .
@@ -667,7 +667,7 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
 - **ALWAYS** use multi-stage builds to minimize image size.
 - **ALWAYS** run as non-root user (`USER appuser`).
 - **ALWAYS** include `ruff` and `pytest` in the image so lint/test commands work inside the container.
-- **NEVER** use `latest` tag for base images — pin to specific version (`python:3.12-slim`, not `python:slim`).
+- **NEVER** use `latest` tag for base images — pin to specific version (`python:3.14-slim`, not `python:slim`).
 
 **docker-compose.yml conventions:**
 
@@ -861,7 +861,7 @@ The project uses this `pyproject.toml` config. **Do not modify ruff settings wit
 
 ```toml
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 src = ["app", "tests"]
 exclude = [".git", ".venv", "__pycache__", "migrations"]
