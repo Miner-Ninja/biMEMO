@@ -12,6 +12,7 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REMOTE="${1:-${DEFAULT_REMOTE}}"
 BRANCH="${2:-${DEFAULT_BRANCH}}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEFAULT_COMPOSE_FILE}}"
+ALLOW_DEV_DEPLOY="${ALLOW_DEV_DEPLOY:-false}"
 
 
 log() {
@@ -29,10 +30,21 @@ require_command() {
 }
 
 
+validate_compose_file() {
+  if [[ "${COMPOSE_FILE}" == *".dev.yml" && "${ALLOW_DEV_DEPLOY}" != "true" ]]; then
+    printf '%s\n' \
+      "deploy.sh targets ${COMPOSE_FILE}, which is a development compose file." \
+      "Set ALLOW_DEV_DEPLOY=true to confirm this is intentional." >&2
+    exit 1
+  fi
+}
+
+
 main() {
   local compose_cmd=()
 
   require_command "git"
+  validate_compose_file
 
   if docker compose version >/dev/null 2>&1; then
     compose_cmd=(docker compose)

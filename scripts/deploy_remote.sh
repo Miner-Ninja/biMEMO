@@ -10,6 +10,7 @@ DEFAULT_REPO_URL="http://192.168.0.205:3000/recoder/biMEMO.git"
 DEFAULT_BRANCH="main"
 DEFAULT_COMPOSE_FILE="docker/docker-compose.dev.yml"
 DEFAULT_LOCAL_ENV_PATH=".env"
+DEFAULT_DEPLOY_WAIT_SECONDS="180"
 
 SSH_KEY="${SSH_KEY:-${DEFAULT_SSH_KEY}}"
 VM_USER="${VM_USER:-${DEFAULT_VM_USER}}"
@@ -19,6 +20,8 @@ REPO_URL="${REPO_URL:-${DEFAULT_REPO_URL}}"
 BRANCH="${BRANCH:-${DEFAULT_BRANCH}}"
 COMPOSE_FILE="${COMPOSE_FILE:-${DEFAULT_COMPOSE_FILE}}"
 LOCAL_ENV_PATH="${LOCAL_ENV_PATH:-${DEFAULT_LOCAL_ENV_PATH}}"
+ALLOW_DEV_REMOTE_DEPLOY="${ALLOW_DEV_REMOTE_DEPLOY:-false}"
+DEPLOY_WAIT_SECONDS="${DEPLOY_WAIT_SECONDS:-${DEFAULT_DEPLOY_WAIT_SECONDS}}"
 
 REMOTE_TARGET="${VM_USER}@${VM_HOST}"
 
@@ -33,6 +36,31 @@ require_command() {
 
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     printf 'Missing required command: %s\n' "${command_name}" >&2
+    exit 1
+  fi
+}
+
+
+validate_remote_path() {
+  if [[ -z "${REMOTE_PATH}" ]]; then
+    printf 'REMOTE_PATH must not be empty\n' >&2
+    exit 1
+  fi
+
+  case "${REMOTE_PATH}" in
+    /|/home|/home/"${VM_USER}")
+      printf 'Refusing unsafe REMOTE_PATH: %s\n' "${REMOTE_PATH}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+
+validate_compose_file() {
+  if [[ "${COMPOSE_FILE}" == *".dev.yml" && "${ALLOW_DEV_REMOTE_DEPLOY}" != "true" ]]; then
+    printf '%s\n' \
+      "Refusing to deploy remote VM with dev compose file (${COMPOSE_FILE})." \
+      "Set ALLOW_DEV_REMOTE_DEPLOY=true to confirm this is intentional." >&2
     exit 1
   fi
 }
@@ -74,6 +102,8 @@ main() {
   require_command "git"
   require_command "base64"
   require_command "scp"
+  validate_remote_path
+  validate_compose_file
 
   if [[ ! -f "${SSH_KEY}" ]]; then
     printf 'SSH key not found: %s\n' "${SSH_KEY}" >&2
@@ -119,9 +149,15 @@ else
   exit 1
 fi
 
+mkdir -p "$(dirname "${REMOTE_PATH}")"
+
+if [[ -e "${REMOTE_PATH}" && ! -d "${REMOTE_PATH}/.git" ]]; then
+  printf 'Remote path exists but is not a git checkout: %s\n' "${REMOTE_PATH}" >&2
+  exit 1
+fi
+
 if [[ ! -d "${REMOTE_PATH}/.git" ]]; then
   log "Cloning repository into ${REMOTE_PATH}"
-  rm -rf "${REMOTE_PATH}"
   git -c http.extraHeader='${git_auth_header}' clone "${REPO_URL}" "${REMOTE_PATH}"
 fi
 
@@ -171,7 +207,19 @@ log "Building and starting the stack"
 log "Container status"
 "\${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" ps
 
-log "Health check"
+log "Waiting for bimemo health endpoint"
+deadline=\$((SECONDS + ${DEPLOY_WAIT_SECONDS}))
+until "\${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" exec -T bimemo python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())" >/dev/null 2>&1
+do
+  if (( SECONDS >= deadline )); then
+    printf 'Timed out waiting for bimemo health endpoint after %s seconds\n' "${DEPLOY_WAIT_SECONDS}" >&2
+    "\${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" ps >&2
+    exit 1
+  fi
+  sleep 5
+done
+
+log "Health check passed"
 "\${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" exec -T bimemo python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 EOF
 }
