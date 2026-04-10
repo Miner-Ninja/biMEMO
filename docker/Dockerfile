@@ -10,7 +10,7 @@ COPY app/frontend/ .
 RUN npm run build
 
 # Stage 2: Install Python dependencies
-FROM python:3.12-slim@sha256:ac212230555ffb7ec17c214fb4cf036ced11b30b5b460994376b0725c7f6c151 AS builder
+FROM python:3.14-slim@sha256:71b358f8bff55413f4a6b95af80acb07ab97b5636cd3b869f35c3680d31d1650 AS builder
 
 WORKDIR /build
 COPY pyproject.toml .
@@ -19,13 +19,13 @@ COPY app/backend/ ./app/backend/
 RUN pip install --no-cache-dir ".[dev]"
 
 # Stage 3: Runtime
-FROM python:3.12-slim@sha256:ac212230555ffb7ec17c214fb4cf036ced11b30b5b460994376b0725c7f6c151
+FROM python:3.14-slim@sha256:71b358f8bff55413f4a6b95af80acb07ab97b5636cd3b869f35c3680d31d1650
 
 RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY pyproject.toml .
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
