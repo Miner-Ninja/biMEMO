@@ -2,7 +2,7 @@
 name = "bimemo"
 version = "0.1.0"
 description = "Self-hosted personal AI assistant with security-first architecture"
-requires-python = ">=3.12"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi==0.129.0",             # Verified 2026-02-14
     "uvicorn[standard]==0.40.0",    # Verified 2026-02-14
@@ -44,7 +44,7 @@ where = ["."]
 include = ["app*"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 src = ["app", "tests"]
 exclude = [".git", ".venv", "__pycache__", "migrations"]
