@@ -509,8 +509,7 @@ export function SkillDetailPage() {
                           <>
                             <Separator />
                             <div>
-                              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Note</div>
-                              <div className="mt-2 text-xs italic leading-relaxed text-muted-foreground">{step.note}</div>
+                              <div className="text-xs italic leading-relaxed text-muted-foreground">{step.note}</div>
                             </div>
                           </>
                         )}
