@@ -11,8 +11,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { cn } from '@/lib/utils'
 import { getSidebarActionButtonClassName } from './sidebar-chrome'
 
 interface UserMenuProps {
@@ -77,19 +77,11 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
               >
                 <AudioLines className="mr-2 h-4 w-4" />
                 <span className="flex-1">Voice Mode</span>
-                <span
-                  className={cn(
-                    'relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors',
-                    voiceMode ? 'bg-primary' : 'bg-muted'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'pointer-events-none inline-block h-3 w-3 rounded-full bg-background shadow-sm transition-transform',
-                      voiceMode ? 'translate-x-3' : 'translate-x-0'
-                    )}
-                  />
-                </span>
+                <Switch
+                  checked={Boolean(voiceMode)}
+                  className="pointer-events-none ml-auto scale-75"
+                  aria-label="Voice mode"
+                />
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
