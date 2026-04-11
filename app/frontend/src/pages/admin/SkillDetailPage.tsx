@@ -367,7 +367,7 @@ export function SkillDetailPage() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-stretch">
             <div className="grid grid-cols-2 gap-3 lg:w-[240px] lg:grid-cols-1">
               {summaryMetrics.map((metric) => (
-                <div key={metric.label} className="rounded-xl border border-border/70 bg-background/30 px-4 py-3">
+                <div key={metric.label} className="rounded-xl border border-border/70 bg-muted/50 px-4 py-3">
                   <div className="text-2xl font-semibold leading-none">{metric.value}</div>
                   <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{metric.label}</div>
                 </div>
@@ -380,7 +380,7 @@ export function SkillDetailPage() {
               {timeMetrics.map((metric) => {
                 const Icon = metric.icon
                 return (
-                  <div key={metric.label} className="rounded-xl border border-border/70 bg-background/20 px-4 py-3.5">
+                  <div key={metric.label} className="rounded-xl border border-border/70 bg-muted/50 px-4 py-3.5">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <Badge variant="outline" className="uppercase tracking-[0.16em] text-[10px]">
                         {metric.label}
