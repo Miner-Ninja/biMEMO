@@ -5,10 +5,9 @@ import { ChatList } from './ChatList'
 import { ChatSearch } from './ChatSearch'
 import { FileList } from './FileList'
 import { UserMenu } from './UserMenu'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Chat } from '@/types/chat'
-import { cn } from '@/lib/utils'
 import {
-  getSidebarItemClassName,
   SidebarFooterPanel,
   SidebarPanel,
   SidebarShell,
@@ -67,24 +66,24 @@ export function Sidebar({
       subtitle="Workspace"
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => switchTab('chats')}
-              className={cn(getSidebarItemClassName(activeTab === 'chats'), 'justify-center')}
-            >
-              <MessageSquare className="h-4 w-4" />
-              Chats
-            </button>
-            <button
-              type="button"
-              onClick={() => switchTab('files')}
-              className={cn(getSidebarItemClassName(activeTab === 'files'), 'justify-center')}
-            >
-              <FileText className="h-4 w-4" />
-              Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
-            </button>
-          </div>
+          <Tabs value={activeTab} onValueChange={(value) => switchTab(value as 'chats' | 'files')}>
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-2 border-sidebar-border bg-sidebar-accent/30 p-1">
+              <TabsTrigger
+                value="chats"
+                className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
+              >
+                <MessageSquare className="h-4 w-4" />
+                Chats
+              </TabsTrigger>
+              <TabsTrigger
+                value="files"
+                className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
+              >
+                <FileText className="h-4 w-4" />
+                Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           <ChatSearch
             value={searchQuery}
