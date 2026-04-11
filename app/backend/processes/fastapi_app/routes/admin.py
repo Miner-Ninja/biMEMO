@@ -55,6 +55,17 @@ def _spa_index_response(request: Request) -> FileResponse | None:
     )
 
 
+def _require_request_auth(request: Request) -> TokenClaims:
+    """Return request claims or raise 401 when the request is unauthenticated."""
+    claims = request.state._state.get("claims")
+    if claims is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+        )
+    return claims
+
+
 def _detail_response(detail: str) -> dict[str, str]:
     """Build one short success response with a detail message."""
     return {"detail": detail}
@@ -706,7 +717,6 @@ def _avatar_file_extension(filename: str) -> str:
 @admin_router.get("/skills")
 async def list_skills(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
     admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
 ) -> dict[str, list[dict]]:
     """List all saved skills.
@@ -718,10 +728,10 @@ async def list_skills(
     Returns:
         List of skills with name, title, description, use_count.
     """
-    del claims
     spa_response = _spa_index_response(request)
     if spa_response is not None:
         return spa_response
+    _require_request_auth(request)
     skills = await admin.list_skills()
     return {"skills": skills}
 
@@ -783,7 +793,6 @@ async def update_skill(
 async def get_skill(
     name: str,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
     admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
 ) -> dict:
     """Get a single skill with full data and usage log.
@@ -796,10 +805,10 @@ async def get_skill(
     Returns:
         Skill data with usage logs.
     """
-    del claims
     spa_response = _spa_index_response(request)
     if spa_response is not None:
         return spa_response
+    _require_request_auth(request)
     skill = await admin.get_skill(name)
     if skill is None:
         from fastapi import HTTPException
