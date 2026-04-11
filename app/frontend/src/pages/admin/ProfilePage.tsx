@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Save, Upload, Trash2, User, Bot } from 'lucide-react'
 import { AdminLayout } from '@/components/layout/AdminLayout'
+import { TimezoneCombobox } from '@/components/TimezoneCombobox'
 import { FormSkeleton } from '@/components/ui/skeletons'
 import { type UserProfile, getProfile, saveProfile, uploadAvatar, deleteAvatar } from '@/api/profile'
 
@@ -274,13 +275,9 @@ export function ProfilePage() {
           <label htmlFor="timezone" className="text-sm font-medium">
             Timezone
           </label>
-          <input
-            id="timezone"
-            type="text"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            placeholder="Europe/Moscow"
+          <TimezoneCombobox
             value={profile.timezone}
-            onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
+            onChange={(timezone) => setProfile({ ...profile, timezone })}
           />
         </div>
 
