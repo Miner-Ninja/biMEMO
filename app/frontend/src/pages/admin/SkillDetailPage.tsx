@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { AdminCardSkeleton } from '@/components/ui/skeletons'
 import { apiRequest, encodePathSegment } from '@/lib/bimemo-api'
@@ -448,53 +449,78 @@ export function SkillDetailPage() {
             <SkillSection index={2} title="Tools & Arguments">
               <div className="space-y-3">
                 {proc.map((step, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/50 p-4">
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-[11px] font-bold text-primary">
-                      {i + 1}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {editing ? (
-                        <>
-                          <div className="space-y-3">
-                            <div>
-                              <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
-                              <div className="flex gap-2">
-                                <select
-                                  value={step.tool}
-                                  onChange={(e) => updateStep(i, 'tool', e.target.value)}
-                                  className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
-                                >
-                                  {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
-                              <Input
-                                value={step.query}
-                                onChange={(e) => updateStep(i, 'query', e.target.value)}
-                                placeholder="Query or parameters"
-                                className="text-sm"
-                              />
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                  <Card key={i} className="border-border/70 bg-muted/50 shadow-none">
+                    <CardHeader className="gap-4 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-xs font-bold text-primary">
+                          {i + 1}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Step</div>
+                          <CardTitle className="mt-2 text-sm sm:text-base">Tool invocation</CardTitle>
+                        </div>
+                      </div>
+                      <div className="min-w-0 sm:text-right">
+                        <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                        {editing ? null : (
                           <Badge variant="info" className="mt-2 text-[11px]">
                             {step.tool}
                           </Badge>
-                          <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
-                          <div className="mt-2 text-sm leading-relaxed text-foreground/85">{step.query}</div>
-                          {step.note && <div className="mt-1.5 text-xs italic text-muted-foreground">{step.note}</div>}
-                        </>
+                        )}
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="space-y-4">
+                      {editing ? (
+                        <div className="space-y-4">
+                          <div>
+                            <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                            <div className="flex gap-2">
+                              <select
+                                value={step.tool}
+                                onChange={(e) => updateStep(i, 'tool', e.target.value)}
+                                className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
+                              >
+                                {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <Separator />
+
+                          <div>
+                            <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
+                            <Input
+                              value={step.query}
+                              onChange={(e) => updateStep(i, 'query', e.target.value)}
+                              placeholder="Query or parameters"
+                              className="text-sm"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div>
+                            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
+                            <div className="mt-2 text-sm leading-relaxed text-foreground/85">{step.query}</div>
+                          </div>
+
+                          {step.note && (
+                            <>
+                              <Separator />
+                              <div>
+                                <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Note</div>
+                                <div className="mt-2 text-xs italic leading-relaxed text-muted-foreground">{step.note}</div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       )}
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
               {editing && (
