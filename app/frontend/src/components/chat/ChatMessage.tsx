@@ -343,7 +343,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
           </div>
         ) : contentWithoutSql ? (
           <div>
-            <div className="markdown-content prose prose-sm dark:prose-invert max-w-none text-sm sm:text-base">
+            <div className="markdown-content prose prose-sm prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-td:text-foreground prose-a:text-primary max-w-none text-sm sm:text-base">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'style', 'link']}
