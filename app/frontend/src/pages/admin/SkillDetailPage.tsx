@@ -384,7 +384,7 @@ export function SkillDetailPage() {
         {activeTab === 'logic' && (
           <div className="space-y-8">
             <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">1. When to use</h4>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">1. Trigger</h4>
               {editing ? (
                 <Textarea
                   value={editData.trigger || ''}
