@@ -48,7 +48,7 @@ interface UsageLog {
 
 const TABS = [
   { key: 'logic', label: 'Skill Logic' },
-  { key: 'logs', label: 'Skill Logs' },
+  { key: 'logs', label: 'History' },
 ]
 
 const TOOL_OPTIONS = [
@@ -358,13 +358,13 @@ export function SkillDetailPage() {
                 setActiveTab(t.key)
               }}
               className={cn(
-                'relative shrink-0 rounded-t-lg border px-3.5 py-3 text-[13px] transition-colors sm:px-5',
+                'relative shrink-0 rounded-t-lg border px-3.5 py-3 transition-colors sm:px-5',
                 activeTab === t.key
                   ? 'border-border border-b-transparent bg-card text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {t.label}
+              <h4 className="text-[13px] font-semibold tracking-tight">{t.label}</h4>
             </button>
           ))}
         </div>
