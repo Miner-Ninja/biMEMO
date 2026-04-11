@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Pencil, Trash2, Check, X, Plus, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -98,6 +98,8 @@ export function SkillDetailPage() {
   const [editData, setEditData] = useState<Partial<Skill>>({})
   const [showDelete, setShowDelete] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [panelMinHeight, setPanelMinHeight] = useState(200)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!name) return
@@ -109,6 +111,22 @@ export function SkillDetailPage() {
       .catch((e) => setError(e.message || 'Failed to load skill'))
       .finally(() => setLoading(false))
   }, [name])
+
+  useEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      setPanelMinHeight((current) =>
+        Math.max(current, Math.ceil(entry.contentRect.height)),
+      )
+    })
+
+    resizeObserver.observe(panel)
+    return () => resizeObserver.disconnect()
+  }, [activeTab, editing])
 
   const startEdit = () => {
     if (!skill) return
@@ -334,7 +352,11 @@ export function SkillDetailPage() {
             <button
               key={t.key}
               type="button"
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => {
+                const currentHeight = panelRef.current?.offsetHeight ?? 0
+                setPanelMinHeight((current) => Math.max(current, currentHeight))
+                setActiveTab(t.key)
+              }}
               className={cn(
                 'relative shrink-0 rounded-t-lg border px-3.5 py-3 text-[13px] transition-colors sm:px-5',
                 activeTab === t.key
@@ -348,8 +370,10 @@ export function SkillDetailPage() {
         </div>
 
         <div
+          ref={panelRef}
+          style={{ minHeight: `${panelMinHeight}px` }}
           className={cn(
-            'animate-in fade-in duration-200 rounded-xl rounded-tl-none border bg-card p-7 min-h-[200px] transition-colors',
+            'animate-in fade-in duration-200 rounded-xl rounded-tl-none border bg-card p-7 transition-colors',
             editing ? 'border-primary/30' : 'border-border',
           )}
         >
