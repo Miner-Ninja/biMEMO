@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Pencil, Trash2, Check, X, Plus, Activity } from 'lucide-react'
+import { Pencil, Trash2, Check, X, Plus, Activity, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -237,8 +237,12 @@ export function SkillDetailPage() {
     <div className="flex-1 overflow-y-auto p-4 space-y-5 sm:p-6">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link to="/admin/skills" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Skills
+        <Link
+          to="/admin/skills"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Skills
         </Link>
         <div className="flex items-center gap-2">
           {saved && (
