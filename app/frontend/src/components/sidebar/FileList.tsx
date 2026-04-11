@@ -9,6 +9,7 @@ import type { IndexedFile } from '@/lib/bimemo-api'
 import { useConfirm } from '@/hooks/useConfirm'
 import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from '@/lib/file-upload-contract'
 import { FileListSkeleton } from '@/components/ui/skeletons'
+import { SidebarSectionLabel } from './sidebar-chrome'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
@@ -332,15 +333,15 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
             className={cn(
               'flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors',
               dragOver
-                ? 'border-primary bg-primary/5'
-                : 'border-muted-foreground/25 hover:border-muted-foreground/40'
+                ? 'border-sidebar-primary bg-sidebar-primary/10'
+                : 'border-sidebar-border bg-sidebar-accent/20 hover:border-sidebar-foreground/20 hover:bg-sidebar-accent/30'
             )}
           >
             <Upload className={cn(
               'h-10 w-10 transition-colors',
-              dragOver ? 'text-primary' : 'text-muted-foreground/50'
+              dragOver ? 'text-sidebar-primary' : 'text-sidebar-foreground/45'
             )} />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-sidebar-foreground/72">
               Drag files here or click to upload
             </p>
             <Button
@@ -354,7 +355,7 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
               <Upload className="h-4 w-4" />
               Upload files
             </Button>
-            <p className="text-xs text-muted-foreground/60">
+            <p className="text-xs text-sidebar-foreground/55">
               PDF, DOCX, XLSX, CSV, TXT, JSON, Images
               <span className="mx-1.5">&middot;</span>
               Max 10 MB per file
@@ -380,7 +381,7 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
       {/* Drag overlay */}
       {dragOver && (
         <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5 pointer-events-none">
-          <div className="flex flex-col items-center gap-2 text-primary">
+          <div className="flex flex-col items-center gap-2 text-sidebar-primary">
             <Upload className="h-10 w-10" />
             <p className="text-sm font-medium">Drop files to upload</p>
           </div>
@@ -389,12 +390,13 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
 
       {/* Header with select-all and upload */}
       <div className="flex items-center gap-2 px-3 py-2">
+        <SidebarSectionLabel className="mr-auto">Library</SidebarSectionLabel>
         <Button
           variant="ghost"
           size="sm"
           onClick={handleUploadClick}
           disabled={uploading}
-          className="h-7 text-xs gap-1"
+          className="h-7 gap-1 text-xs text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
           Upload
@@ -405,23 +407,22 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
             size="sm"
             onClick={handleDeleteSelected}
             disabled={bulkDeleting}
-            className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="h-7 gap-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             {activeSet.size}
           </Button>
         )}
-        <div className="flex-1" />
         <button
           type="button"
-          className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none"
+          className="flex cursor-pointer select-none items-center gap-2 text-xs text-sidebar-foreground/55"
           onClick={toggleAll}
         >
           <span className={cn(
             'flex h-4 w-4 items-center justify-center rounded-sm border transition-colors',
             allActive
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-zinc-500 bg-zinc-700/50'
+              ? 'border-sidebar-primary bg-sidebar-primary text-sidebar-primary-foreground'
+              : 'border-sidebar-border bg-sidebar-accent/40'
           )}>
             {allActive && <Check className="h-3 w-3" />}
           </span>
@@ -439,7 +440,7 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
       {/* File grid */}
       <div className="flex-1 min-h-0 overflow-y-auto p-2">
         {filteredFiles.length === 0 ? (
-          <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-4 text-center text-sm text-sidebar-foreground/55">
             No files found{searchQuery && <> for &ldquo;{searchQuery}&rdquo;</>}
           </p>
         ) : (

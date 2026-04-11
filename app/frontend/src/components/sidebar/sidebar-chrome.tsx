@@ -16,6 +16,11 @@ interface SidebarPanelProps {
   className?: string
 }
 
+interface SidebarSectionLabelProps {
+  children: ReactNode
+  className?: string
+}
+
 const SIDEBAR_PANEL_CLASS_NAME = "rounded-xl border border-sidebar-border bg-sidebar-accent/35"
 
 /**
@@ -49,6 +54,29 @@ export function getSidebarSearchInputClassName(): string {
  */
 export function SidebarPanel({ children, className }: SidebarPanelProps) {
   return <div className={cn(SIDEBAR_PANEL_CLASS_NAME, className)}>{children}</div>
+}
+
+/**
+ * Render the shared small uppercase section label used across sidebar blocks.
+ */
+export function SidebarSectionLabel({ children, className }: SidebarSectionLabelProps) {
+  return (
+    <div
+      className={cn(
+        "text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/55",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Render the shared footer surface used by both sidebars.
+ */
+export function SidebarFooterPanel({ children, className }: SidebarPanelProps) {
+  return <SidebarPanel className={cn("flex flex-col gap-2 p-2", className)}>{children}</SidebarPanel>
 }
 
 /**

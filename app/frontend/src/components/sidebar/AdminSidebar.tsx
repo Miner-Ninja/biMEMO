@@ -2,11 +2,15 @@ import { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Settings, Database, Cpu, User, Bug, Sparkles, MessageSquare, Shield, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/useAuth'
+import { UserMenu } from './UserMenu'
 import { ChatSearch } from './ChatSearch'
 import {
   getSidebarActionButtonClassName,
   getSidebarItemClassName,
+  SidebarFooterPanel,
   SidebarPanel,
+  SidebarSectionLabel,
   SidebarShell,
 } from './sidebar-chrome'
 
@@ -26,6 +30,7 @@ const adminLinks = [
  */
 export function AdminSidebar() {
   const { pathname } = useLocation()
+  const { logout } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
 
   const isActive = (to: string): boolean => {
@@ -46,9 +51,7 @@ export function AdminSidebar() {
       subtitle="Administration"
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
-          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/55">
-            Navigation
-          </div>
+          <SidebarSectionLabel>Navigation</SidebarSectionLabel>
           <ChatSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -80,13 +83,16 @@ export function AdminSidebar() {
         </SidebarPanel>
       }
       footer={
-        <Link
-          to="/"
-          className={getSidebarActionButtonClassName()}
-        >
-          <MessageSquare className="h-4 w-4 shrink-0" />
-          Back to Chat
-        </Link>
+        <SidebarFooterPanel>
+          <Link
+            to="/"
+            className={getSidebarActionButtonClassName()}
+          >
+            <MessageSquare className="h-4 w-4 shrink-0" />
+            Back to Chat
+          </Link>
+          <UserMenu onLogout={logout} />
+        </SidebarFooterPanel>
       }
     />
   )

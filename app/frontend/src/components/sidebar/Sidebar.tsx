@@ -7,7 +7,12 @@ import { FileList } from './FileList'
 import { UserMenu } from './UserMenu'
 import type { Chat } from '@/types/chat'
 import { cn } from '@/lib/utils'
-import { getSidebarItemClassName, SidebarPanel, SidebarShell } from './sidebar-chrome'
+import {
+  getSidebarItemClassName,
+  SidebarFooterPanel,
+  SidebarPanel,
+  SidebarShell,
+} from './sidebar-chrome'
 
 interface SidebarProps {
   chats: Chat[]
@@ -112,7 +117,7 @@ export function Sidebar({
         </SidebarPanel>
       }
       footer={
-        <div className="space-y-2">
+        <SidebarFooterPanel>
           <NewChatButton onClick={onNewChat} />
           <UserMenu
             userName={username || 'User'}
@@ -120,7 +125,7 @@ export function Sidebar({
             voiceMode={voiceMode}
             onToggleVoiceMode={onToggleVoiceMode}
           />
-        </div>
+        </SidebarFooterPanel>
       }
     />
   )

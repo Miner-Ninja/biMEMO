@@ -3,6 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatItem } from './ChatItem'
 import { groupChatsByDate, GROUP_ORDER } from '@/lib/chat-groups'
 import type { Chat } from '@/types/chat'
+import { SidebarSectionLabel } from './sidebar-chrome'
 
 interface ChatListProps {
   chats: Chat[]
@@ -46,7 +47,7 @@ export function ChatList({
 
   if (chats.length === 0) {
     return (
-      <div className="flex-1 px-3 py-4 text-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-sidebar-foreground/55">
         No chats yet.
         <br />
         Start a new chat!
@@ -56,7 +57,7 @@ export function ChatList({
 
   if (filteredChats.length === 0 && searchQuery) {
     return (
-      <div className="flex-1 px-3 pt-16 text-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-sidebar-foreground/55">
         No results for &ldquo;{searchQuery}&rdquo;
       </div>
     )
@@ -64,16 +65,14 @@ export function ChatList({
 
   return (
     <ScrollArea className="h-full">
-      <div className="space-y-4 pt-2">
+      <div className="flex flex-col gap-4 p-2">
         {GROUP_ORDER.map((groupName) => {
           const groupChats = groups.get(groupName)
           if (!groupChats || groupChats.length === 0) return null
 
           return (
-            <div key={groupName}>
-              <h3 className="mb-1 px-3 text-xs font-medium text-muted-foreground/70">
-                {groupName}
-              </h3>
+            <div key={groupName} className="flex flex-col gap-1">
+              <SidebarSectionLabel className="px-3">{groupName}</SidebarSectionLabel>
               <div>
                 {groupChats.map((chat) => (
                   <ChatItem
