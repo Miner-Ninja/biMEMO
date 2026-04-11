@@ -357,7 +357,7 @@ export function SkillDetailPage() {
         {activeTab === 'logic' && (
           <div className="space-y-8">
             <section>
-              <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">When to use</h3>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">When to use</h4>
               {editing ? (
                 <Textarea
                   value={editData.trigger || ''}
@@ -371,7 +371,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">Procedure</h3>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Procedure</h4>
               <div className="space-y-3">
                 {proc.map((step, i) => (
                   <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
@@ -421,7 +421,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">Errors & Solutions</h3>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Errors & Solutions</h4>
               <div className="space-y-3">
                 {errs.map((err, i) => (
                   <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
@@ -467,7 +467,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <h3 className="mb-4 text-lg font-semibold tracking-tight text-foreground">Result verification</h3>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Result verification</h4>
               {editing ? (
                 <Textarea
                   value={editData.verification || ''}
