@@ -93,7 +93,7 @@ function SkillSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-border/80 bg-card p-5 sm:p-6">
+    <section className="rounded-2xl border border-border/80 bg-background/30 p-5 sm:p-6">
       <div className="mb-4 flex items-center gap-3">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm font-semibold text-primary">
           {index}
