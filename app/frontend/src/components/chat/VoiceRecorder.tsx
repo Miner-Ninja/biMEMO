@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Mic, Square, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 const MAX_RECORDING_SECONDS = 120
@@ -219,24 +221,22 @@ export function VoiceRecorder({
 
   if (recording) {
     return (
-      <div
+      <Card
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5',
-          embedded
-            ? 'min-h-[44px]'
-            : 'rounded-lg border border-destructive/30 bg-destructive/5',
+          embedded ? 'border-0 bg-transparent shadow-none' : 'border-destructive/30 bg-destructive/5 shadow-none',
           className,
         )}
       >
-        <div className="flex items-center gap-1.5">
+        <CardContent className="flex items-center gap-2 px-3 py-1.5">
+        <Badge variant="danger" className="gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
           </span>
-          <span className="text-xs font-mono tabular-nums text-destructive font-medium">
+          <span className="font-mono text-xs tabular-nums font-medium">
             {formatTime(seconds)}
           </span>
-        </div>
+        </Badge>
 
         <canvas
           ref={canvasRef}
@@ -266,7 +266,8 @@ export function VoiceRecorder({
         >
           <Square className="h-4 w-4" />
         </Button>
-      </div>
+        </CardContent>
+      </Card>
     )
   }
 
