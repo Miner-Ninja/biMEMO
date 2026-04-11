@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Pencil, Trash2, Check, X, Plus, Activity, ArrowLeft } from 'lucide-react'
+import { Pencil, Trash2, Check, X, Plus, Activity, ArrowLeft, CalendarClock, RefreshCw, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -254,6 +255,15 @@ export function SkillDetailPage() {
 
   const proc = editing ? (editData.procedure || []) : skill.procedure
   const errs = editing ? (editData.errors || []) : skill.errors
+  const summaryMetrics = [
+    { value: String(skill.use_count), label: 'Uses' },
+    { value: `${skill.procedure.length} steps`, label: 'Procedure' },
+  ]
+  const timeMetrics = [
+    { label: 'Created', value: formatDate(skill.created_at), icon: CalendarClock },
+    { label: 'Updated', value: formatDate(skill.updated_at), icon: RefreshCw },
+    { label: 'Last Used', value: logs.length > 0 ? formatDate(logs[0].created_at) : '—', icon: History },
+  ]
 
   return (
     <AdminLayout title={skill.title || 'Skill'}>
@@ -353,19 +363,36 @@ export function SkillDetailPage() {
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 border-t border-border">
-          {[
-            { val: String(skill.use_count), label: 'USES' },
-            { val: `${skill.procedure.length} steps`, label: 'PROCEDURE' },
-            { val: formatDate(skill.created_at), label: 'CREATED' },
-            { val: formatDate(skill.updated_at), label: 'UPDATED' },
-            { val: logs.length > 0 ? formatDate(logs[0].created_at) : '—', label: 'LAST USED' },
-          ].map((m, i) => (
-            <div key={i} className="border-b border-r border-border py-3.5 text-center last:border-r-0 sm:[&:nth-child(3n)]:border-r-0 md:[&:nth-child(3n)]:border-r md:last:border-r-0 md:[&:nth-child(-n+5)]:border-b-0">
-              <div className="text-xs font-semibold sm:text-sm">{m.val}</div>
-              <div className="text-[8px] text-muted-foreground/70 uppercase tracking-widest mt-1 sm:text-[9px]">{m.label}</div>
+        <div className="border-t border-border px-6 py-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-stretch">
+            <div className="grid grid-cols-2 gap-3 lg:w-[240px] lg:grid-cols-1">
+              {summaryMetrics.map((metric) => (
+                <div key={metric.label} className="rounded-xl border border-border/70 bg-background/30 px-4 py-3">
+                  <div className="text-2xl font-semibold leading-none">{metric.value}</div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{metric.label}</div>
+                </div>
+              ))}
             </div>
-          ))}
+
+            <Separator orientation="vertical" className="hidden lg:block" />
+
+            <div className="grid flex-1 gap-3 md:grid-cols-3">
+              {timeMetrics.map((metric) => {
+                const Icon = metric.icon
+                return (
+                  <div key={metric.label} className="rounded-xl border border-border/70 bg-background/20 px-4 py-3.5">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <Badge variant="outline" className="uppercase tracking-[0.16em] text-[10px]">
+                        {metric.label}
+                      </Badge>
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="text-lg font-semibold leading-tight text-foreground">{metric.value}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
