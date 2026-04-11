@@ -2,8 +2,11 @@
 
 import base64
 import mimetypes
+import os
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse
 
 from backend.channels.endpoints import ReauthManager
 from backend.channels.jwt_auth import TokenClaims
@@ -37,6 +40,19 @@ from ..deps import (
 
 
 admin_router = APIRouter(prefix="/admin")
+FRONTEND_DIST = Path(os.environ.get("PYTHONPATH", "/app")) / "frontend" / "dist"
+
+
+def _spa_index_response(request: Request) -> FileResponse | None:
+    """Return frontend index.html for browser navigations to SPA-backed routes."""
+    accept = request.headers.get("accept", "")
+    index_html = FRONTEND_DIST / "index.html"
+    if "text/html" not in accept or not index_html.is_file():
+        return None
+    return FileResponse(
+        index_html,
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 def _detail_response(detail: str) -> dict[str, str]:
@@ -689,6 +705,7 @@ def _avatar_file_extension(filename: str) -> str:
 
 @admin_router.get("/skills")
 async def list_skills(
+    request: Request,
     claims: TokenClaims = Depends(_require_auth),  # noqa: B008
     admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
 ) -> dict[str, list[dict]]:
@@ -702,6 +719,9 @@ async def list_skills(
         List of skills with name, title, description, use_count.
     """
     del claims
+    spa_response = _spa_index_response(request)
+    if spa_response is not None:
+        return spa_response
     skills = await admin.list_skills()
     return {"skills": skills}
 
@@ -762,6 +782,7 @@ async def update_skill(
 @admin_router.get("/skills/{name}")
 async def get_skill(
     name: str,
+    request: Request,
     claims: TokenClaims = Depends(_require_auth),  # noqa: B008
     admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
 ) -> dict:
@@ -776,6 +797,9 @@ async def get_skill(
         Skill data with usage logs.
     """
     del claims
+    spa_response = _spa_index_response(request)
+    if spa_response is not None:
+        return spa_response
     skill = await admin.get_skill(name)
     if skill is None:
         from fastapi import HTTPException

@@ -329,17 +329,17 @@ export function SkillDetailPage() {
 
       {/* Tabs + Panel connected */}
       <div>
-        <div className="relative flex overflow-x-auto scrollbar-none -mb-px">
+        <div className="relative z-10 flex overflow-x-auto scrollbar-none -mb-px">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setActiveTab(t.key)}
               className={cn(
-                'relative z-10 shrink-0 px-3.5 py-3 text-[13px] transition-colors rounded-t-lg border border-transparent sm:px-5',
+                'relative shrink-0 rounded-t-lg border px-3.5 py-3 text-[13px] transition-colors sm:px-5',
                 activeTab === t.key
-                  ? 'text-foreground bg-card border-border border-b-card'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'border-border border-b-transparent bg-card text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
               {t.label}
@@ -350,14 +350,14 @@ export function SkillDetailPage() {
         <div
           key={activeTab}
           className={cn(
-            'animate-in fade-in duration-200 rounded-xl border bg-card p-7 min-h-[200px] transition-colors',
+            'animate-in fade-in duration-200 rounded-xl rounded-tl-none border bg-card p-7 min-h-[200px] transition-colors',
             editing ? 'border-primary/30' : 'border-border',
           )}
         >
         {activeTab === 'logic' && (
           <div className="space-y-8">
             <section>
-              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">When to use</div>
+              <h2 className="mb-4 text-xl font-semibold tracking-tight text-foreground">When to use</h2>
               {editing ? (
                 <Textarea
                   value={editData.trigger || ''}
@@ -371,7 +371,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Procedure</div>
+              <h2 className="mb-4 text-xl font-semibold tracking-tight text-foreground">Procedure</h2>
               <div className="space-y-3">
                 {proc.map((step, i) => (
                   <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
@@ -421,7 +421,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Errors & Solutions</div>
+              <h2 className="mb-4 text-xl font-semibold tracking-tight text-foreground">Errors & Solutions</h2>
               <div className="space-y-3">
                 {errs.map((err, i) => (
                   <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
@@ -467,7 +467,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Result verification</div>
+              <h2 className="mb-4 text-xl font-semibold tracking-tight text-foreground">Result verification</h2>
               {editing ? (
                 <Textarea
                   value={editData.verification || ''}
