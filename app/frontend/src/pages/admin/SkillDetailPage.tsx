@@ -348,7 +348,6 @@ export function SkillDetailPage() {
         </div>
 
         <div
-          key={activeTab}
           className={cn(
             'animate-in fade-in duration-200 rounded-xl rounded-tl-none border bg-card p-7 min-h-[200px] transition-colors',
             editing ? 'border-primary/30' : 'border-border',
