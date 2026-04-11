@@ -394,7 +394,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Procedure</h4>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Action Flow</h4>
               <div className="space-y-3">
                 {proc.map((step, i) => (
                   <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
