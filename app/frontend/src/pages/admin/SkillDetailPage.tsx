@@ -47,11 +47,8 @@ interface UsageLog {
 }
 
 const TABS = [
-  { key: 'trigger', label: 'Trigger' },
-  { key: 'procedure', label: 'Procedure' },
-  { key: 'errors', label: 'Errors' },
-  { key: 'verification', label: 'Verification' },
-  { key: 'log', label: 'Skill Log' },
+  { key: 'logic', label: 'Skill Logic' },
+  { key: 'logs', label: 'Skill Logs' },
 ]
 
 const TOOL_OPTIONS = [
@@ -96,7 +93,7 @@ export function SkillDetailPage() {
   const [logs, setLogs] = useState<UsageLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('trigger')
+  const [activeTab, setActiveTab] = useState('logic')
   const [editing, setEditing] = useState(false)
   const [editData, setEditData] = useState<Partial<Skill>>({})
   const [showDelete, setShowDelete] = useState(false)
@@ -155,7 +152,9 @@ export function SkillDetailPage() {
         body: JSON.stringify({ enabled: next ? 1 : 0 }),
       })
       setSkill({ ...skill, enabled: next })
-    } catch {}
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update skill status')
+    }
   }
 
   const handleDelete = async () => {
@@ -355,144 +354,135 @@ export function SkillDetailPage() {
             editing ? 'border-primary/30' : 'border-border',
           )}
         >
-        {/* TRIGGER */}
-        {activeTab === 'trigger' && (
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-4 font-medium">When to use</div>
-            {editing ? (
-              <Textarea
-                value={editData.trigger || ''}
-                onChange={(e) => setEditData((d) => ({ ...d, trigger: e.target.value }))}
-                rows={5}
-                placeholder="Describe when this skill should be triggered"
-              />
-            ) : (
-              <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
-            )}
-          </div>
-        )}
+        {activeTab === 'logic' && (
+          <div className="space-y-8">
+            <section>
+              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">When to use</div>
+              {editing ? (
+                <Textarea
+                  value={editData.trigger || ''}
+                  onChange={(e) => setEditData((d) => ({ ...d, trigger: e.target.value }))}
+                  rows={5}
+                  placeholder="Describe when this skill should be triggered"
+                />
+              ) : (
+                <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
+              )}
+            </section>
 
-        {/* PROCEDURE */}
-        {activeTab === 'procedure' && (
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-4 font-medium">Steps</div>
-            <div className="space-y-3">
-              {proc.map((step, i) => (
-                <div key={i} className="flex gap-3 items-start rounded-xl border border-border bg-muted/30 p-4">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-[11px] font-bold text-primary shrink-0 mt-0.5">
-                    {i + 1}
+            <section>
+              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Procedure</div>
+              <div className="space-y-3">
+                {proc.map((step, i) => (
+                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-[11px] font-bold text-primary">
+                      {i + 1}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {editing ? (
+                        <>
+                          <div className="mb-2 flex gap-2">
+                            <select
+                              value={step.tool}
+                              onChange={(e) => updateStep(i, 'tool', e.target.value)}
+                              className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
+                            >
+                              {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <Input
+                            value={step.query}
+                            onChange={(e) => updateStep(i, 'query', e.target.value)}
+                            placeholder="Query or parameters"
+                            className="text-sm"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            {step.tool}
+                          </span>
+                          <div className="mt-2 text-sm leading-relaxed text-foreground/85">{step.query}</div>
+                          {step.note && <div className="mt-1.5 text-xs italic text-muted-foreground">{step.note}</div>}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
+                ))}
+              </div>
+              {editing && (
+                <button type="button" onClick={addStep} className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline">
+                  <Plus className="h-3.5 w-3.5" /> Add step
+                </button>
+              )}
+            </section>
+
+            <section>
+              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Errors & Solutions</div>
+              <div className="space-y-3">
+                {errs.map((err, i) => (
+                  <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
                     {editing ? (
-                      <>
-                        <div className="flex gap-2 mb-2">
-                          <select
-                            value={step.tool}
-                            onChange={(e) => updateStep(i, 'tool', e.target.value)}
-                            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
-                          >
-                            {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground hover:text-destructive transition-colors">
-                            <X className="h-4 w-4" />
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-medium uppercase tracking-[0.06em] text-amber-400">Error</label>
+                          <button type="button" onClick={() => removeError(i)} className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive">
+                            <X className="h-3 w-3" /> Remove
                           </button>
                         </div>
                         <Input
-                          value={step.query}
-                          onChange={(e) => updateStep(i, 'query', e.target.value)}
-                          placeholder="Query or parameters"
-                          className="text-sm"
+                          value={err.name}
+                          onChange={(e) => updateError(i, 'name', e.target.value)}
+                          placeholder="Error name"
+                          className="font-medium"
                         />
-                      </>
+                        <label className="block text-[10px] font-medium uppercase tracking-[0.06em] text-emerald-400">Solution</label>
+                        <Textarea
+                          value={err.fix}
+                          onChange={(e) => updateError(i, 'fix', e.target.value)}
+                          rows={2}
+                          placeholder="How to handle this error"
+                        />
+                      </div>
                     ) : (
-                      <>
-                        <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-mono font-medium text-primary">
-                          {step.tool}
-                        </span>
-                        <div className="text-sm mt-2 text-foreground/85 leading-relaxed">{step.query}</div>
-                        {step.note && <div className="text-xs text-muted-foreground mt-1.5 italic">{step.note}</div>}
-                      </>
+                      <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                          {err.name}
+                        </div>
+                        <div className="text-sm leading-relaxed text-muted-foreground">{err.fix}</div>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-            {editing && (
-              <button type="button" onClick={addStep} className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline">
-                <Plus className="h-3.5 w-3.5" /> Add step
-              </button>
-            )}
+                ))}
+              </div>
+              {editing && (
+                <button type="button" onClick={addError} className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline">
+                  <Plus className="h-3.5 w-3.5" /> Add error
+                </button>
+              )}
+            </section>
+
+            <section>
+              <div className="mb-4 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Result verification</div>
+              {editing ? (
+                <Textarea
+                  value={editData.verification || ''}
+                  onChange={(e) => setEditData((d) => ({ ...d, verification: e.target.value }))}
+                  rows={5}
+                  placeholder="How to confirm the result is correct"
+                />
+              ) : (
+                <p className="text-sm leading-relaxed text-foreground/85">{skill.verification || 'No verification criteria'}</p>
+              )}
+            </section>
           </div>
         )}
 
-        {/* ERRORS */}
-        {activeTab === 'errors' && (
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-4 font-medium">Errors & Solutions</div>
-            <div className="space-y-3">
-              {errs.map((err, i) => (
-                <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
-                  {editing ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] uppercase tracking-[0.06em] font-medium text-amber-400">Error</label>
-                        <button type="button" onClick={() => removeError(i)} className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 transition-colors">
-                          <X className="h-3 w-3" /> Remove
-                        </button>
-                      </div>
-                      <Input
-                        value={err.name}
-                        onChange={(e) => updateError(i, 'name', e.target.value)}
-                        placeholder="Error name"
-                        className="font-medium"
-                      />
-                      <label className="text-[10px] uppercase tracking-[0.06em] font-medium text-emerald-400 block">Solution</label>
-                      <Textarea
-                        value={err.fix}
-                        onChange={(e) => updateError(i, 'fix', e.target.value)}
-                        rows={2}
-                        placeholder="How to handle this error"
-                      />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-[140px_1fr] gap-4 items-baseline">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                        {err.name}
-                      </div>
-                      <div className="text-sm text-muted-foreground leading-relaxed">{err.fix}</div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {editing && (
-              <button type="button" onClick={addError} className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline">
-                <Plus className="h-3.5 w-3.5" /> Add error
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* VERIFICATION */}
-        {activeTab === 'verification' && (
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-4 font-medium">Result verification</div>
-            {editing ? (
-              <Textarea
-                value={editData.verification || ''}
-                onChange={(e) => setEditData((d) => ({ ...d, verification: e.target.value }))}
-                rows={5}
-                placeholder="How to confirm the result is correct"
-              />
-            ) : (
-              <p className="text-sm leading-relaxed text-foreground/85">{skill.verification || 'No verification criteria'}</p>
-            )}
-          </div>
-        )}
-
-        {/* LOG */}
-        {activeTab === 'log' && (
+        {activeTab === 'logs' && (
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-medium">Usage history</div>

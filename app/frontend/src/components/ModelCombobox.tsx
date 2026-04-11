@@ -33,11 +33,6 @@ export function ModelCombobox({ value, onChange, models, loading, placeholder }:
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
 
-  // Reset highlight when filter changes
-  useEffect(() => {
-    setHighlighted(-1)
-  }, [value])
-
   // Scroll highlighted item into view
   useEffect(() => {
     if (highlighted >= 0 && listRef.current) {
@@ -78,8 +73,14 @@ export function ModelCombobox({ value, onChange, models, loading, placeholder }:
           onChange={(e) => {
             onChange(e.target.value)
             setOpen(true)
+            setHighlighted(-1)
           }}
-          onFocus={() => models.length > 0 && setOpen(true)}
+          onFocus={() => {
+            if (models.length > 0) {
+              setOpen(true)
+              setHighlighted(-1)
+            }
+          }}
           onKeyDown={handleKeyDown}
           placeholder={loading ? 'Loading models…' : placeholder}
           disabled={loading}
