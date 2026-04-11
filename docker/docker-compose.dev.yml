@@ -71,8 +71,8 @@ services:
     devices:
       - /dev/dri:/dev/dri
     group_add:
-      - render
-      - video
+      - "988"
+      - "984"
     volumes:
       - ollama-data:/root/.ollama
     networks:
