@@ -39,7 +39,7 @@ export function getSidebarItemClassName(isActive = false): string {
  * Return shared classes for full-width sidebar action buttons.
  */
 export function getSidebarActionButtonClassName(): string {
-  return "h-11 w-full justify-start gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/35 text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+  return "inline-flex h-11 w-full items-center justify-start gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/35 px-3 text-sidebar-foreground shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 }
 
 /**
