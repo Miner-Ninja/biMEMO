@@ -450,7 +450,7 @@ export function SkillDetailPage() {
                 {proc.map((step, i) => (
                   <div key={i} className="rounded-xl border border-border/70 bg-muted/50 p-4 sm:p-5">
                     <div className="grid gap-4 sm:grid-cols-[180px_1fr] sm:gap-5">
-                      <div className="space-y-4 sm:border-r sm:border-border/60 sm:pr-5">
+                      <div className="space-y-3 sm:border-r sm:border-border/60 sm:pr-5">
                         <div className="flex items-start gap-3">
                           <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-xs font-bold text-primary">
                             {i + 1}
@@ -458,11 +458,6 @@ export function SkillDetailPage() {
                           <div>
                             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Step</div>
                             <div className="mt-1.5 text-sm font-semibold text-foreground">Tool call</div>
-                            {editing ? null : (
-                              <Badge variant="info" className="mt-3 text-[11px]">
-                                {step.tool}
-                              </Badge>
-                            )}
                           </div>
                         </div>
 
@@ -481,7 +476,11 @@ export function SkillDetailPage() {
                                 <X className="h-4 w-4" />
                               </button>
                             </div>
-                          ) : null}
+                          ) : (
+                            <Badge variant="info" className="mt-2 text-[11px]">
+                              {step.tool}
+                            </Badge>
+                          )}
                         </div>
                       </div>
 
