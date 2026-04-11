@@ -1,6 +1,7 @@
 # biMEMO development Docker Compose (standalone).
 # Usage: docker-compose -f docker/docker-compose.dev.yml up -d --build
-# With local Ollama: docker-compose -f docker/docker-compose.dev.yml --profile gpu up -d
+# With local Ollama on integrated GPU:
+#   docker-compose -f docker/docker-compose.dev.yml --profile gpu up -d
 
 services:
   bimemo:
@@ -58,6 +59,46 @@ services:
     networks:
       - bm-caddy
     restart: unless-stopped
+
+  ollama:
+    profiles: ["gpu"]
+    image: ollama/ollama:latest
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=24h
+    ports:
+      - "11434:11434"
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - render
+      - video
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - bm-caddy
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama-qwen35-9b:
+    profiles: ["gpu"]
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    command: ["pull", "qwen3.5:9b"]
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - bm-caddy
+    restart: "no"
 
   caddy:
     image: caddy:2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
@@ -124,3 +165,4 @@ volumes:
   caddy-data:
   caddy-config:
   whisper-cache:
+  ollama-data:
