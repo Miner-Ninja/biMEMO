@@ -1,8 +1,15 @@
-import { useState, useRef, memo, forwardRef, useImperativeHandle, type KeyboardEvent, type ChangeEvent, type ClipboardEvent } from 'react'
+import { useState, useRef, memo, forwardRef, useImperativeHandle, type KeyboardEvent, type ChangeEvent, type ClipboardEvent, type MouseEvent } from 'react'
 import { CornerDownLeft, Square, X, FileText, AudioLines, Waypoints, Settings, Code, Brain } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from '@/components/ui/command'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { UploadProgressPanel } from '@/components/ui/UploadProgressPanel'
@@ -329,25 +336,39 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
           {showCommands && filteredCommands.length > 0 && (
             <div className="absolute bottom-full left-0 right-0 z-50 mb-2 sm:ml-11">
               <Card className="shadow-md">
-                <CardContent className="flex flex-col gap-1 p-1">
-                {filteredCommands.map((cmd, index) => (
-                  <Button
-                    key={cmd.name}
-                    type="button"
-                    variant="ghost"
-                    className={cn(
-                      'h-auto w-full justify-start gap-3 px-3 py-2 text-left text-sm',
-                      index === selectedIndex
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-popover-foreground hover:bg-accent/50'
-                    )}
-                    onMouseDown={(e) => { e.preventDefault(); handleSelectCommand(cmd) }}
-                    onMouseEnter={() => setSelectedIndex(index)}
-                  >
-                    <span className="font-medium text-primary">{cmd.name}</span>
-                    <span className="text-muted-foreground">{cmd.description}</span>
-                  </Button>
-                ))}
+                <CardContent className="p-1">
+                  <Command shouldFilter={false} className="bg-transparent">
+                    <CommandList>
+                      <CommandGroup heading="Commands">
+                        {filteredCommands.map((cmd, index) => (
+                          <CommandItem
+                            key={cmd.name}
+                            value={cmd.name}
+                            onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
+                              e.preventDefault()
+                              handleSelectCommand(cmd)
+                            }}
+                            onMouseEnter={() => setSelectedIndex(index)}
+                            onSelect={() => handleSelectCommand(cmd)}
+                            className={cn(
+                              'gap-3 px-3 py-2',
+                              index === selectedIndex && 'bg-accent text-accent-foreground',
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                              <span className="font-medium text-primary">{cmd.name}</span>
+                              <span className="truncate text-xs text-muted-foreground">
+                                {cmd.description}
+                              </span>
+                            </div>
+                            <CommandShortcut>
+                              {cmd.hasArgs ? 'args' : 'ready'}
+                            </CommandShortcut>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
                 </CardContent>
               </Card>
             </div>
