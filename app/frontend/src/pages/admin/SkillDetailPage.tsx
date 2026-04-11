@@ -464,16 +464,21 @@ export function SkillDetailPage() {
                           <div>
                             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
                             {editing ? (
-                              <div className="mt-2 flex gap-2">
+                              <div className="mt-2 space-y-2">
                                 <select
                                   value={step.tool}
                                   onChange={(e) => updateStep(i, 'tool', e.target.value)}
-                                  className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
+                                  className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
                                 >
                                   {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                                 </select>
-                                <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
-                                  <X className="h-4 w-4" />
+                                <button
+                                  type="button"
+                                  onClick={() => removeStep(i)}
+                                  className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  Remove step
                                 </button>
                               </div>
                             ) : (
