@@ -412,7 +412,7 @@ export function SkillDetailPage() {
                   placeholder="Describe when this skill should be triggered"
                 />
               ) : (
-                <div className="p-1 sm:p-2">
+                <div className="rounded-xl border border-border/70 bg-card p-4 sm:p-5">
                   <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
                 </div>
               )}
@@ -421,7 +421,7 @@ export function SkillDetailPage() {
             <SkillSection index={2} title="Tools & Arguments">
               <div className="space-y-3">
                 {proc.map((step, i) => (
-                  <div key={i} className="flex items-start gap-3 p-1">
+                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border/70 bg-card p-4">
                     <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-[11px] font-bold text-primary">
                       {i + 1}
                     </div>
@@ -470,7 +470,7 @@ export function SkillDetailPage() {
             <SkillSection index={3} title="Issues & Fixes">
               <div className="space-y-3">
                 {errs.map((err, i) => (
-                  <div key={i} className="p-1">
+                  <div key={i} className="rounded-xl border border-border/70 bg-card p-4">
                     {editing ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -522,7 +522,7 @@ export function SkillDetailPage() {
                   placeholder="How to confirm the result is correct"
                 />
               ) : (
-                <div className="p-1 sm:p-2">
+                <div className="rounded-xl border border-border/70 bg-card p-4 sm:p-5">
                   <p className="text-sm leading-relaxed text-foreground/85">{skill.verification || 'No verification criteria'}</p>
                 </div>
               )}
