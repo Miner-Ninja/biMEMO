@@ -4,7 +4,6 @@ import { Pencil, Trash2, Check, X, Plus, Activity, ArrowLeft } from 'lucide-reac
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -82,6 +81,28 @@ const STATUS_DOT: Record<string, string> = {
   success: 'bg-emerald-500',
   partial: 'bg-amber-500',
   error: 'bg-red-500',
+}
+
+function SkillSection({
+  index,
+  title,
+  children,
+}: {
+  index: number
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-muted/20 p-5 sm:p-6">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm font-semibold text-primary">
+          {index}
+        </div>
+        <h4 className="text-base font-semibold tracking-tight text-foreground">{title}</h4>
+      </div>
+      {children}
+    </section>
+  )
 }
 
 /**
@@ -381,9 +402,8 @@ export function SkillDetailPage() {
           )}
         >
         {activeTab === 'logic' && (
-          <div className="flex flex-col">
-            <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">1. Trigger</h4>
+          <div className="flex flex-col gap-4">
+            <SkillSection index={1} title="Trigger">
               {editing ? (
                 <Textarea
                   value={editData.trigger || ''}
@@ -392,17 +412,16 @@ export function SkillDetailPage() {
                   placeholder="Describe when this skill should be triggered"
                 />
               ) : (
-                <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
+                <div className="rounded-xl border border-border bg-background/60 p-4 sm:p-5">
+                  <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
+                </div>
               )}
-            </section>
+            </SkillSection>
 
-            <Separator className="my-8" />
-
-            <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">2. Tools &amp; Arguments</h4>
+            <SkillSection index={2} title="Tools & Arguments">
               <div className="space-y-3">
                 {proc.map((step, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
+                  <div key={i} className="flex items-start gap-3 rounded-xl border border-border bg-background/60 p-4">
                     <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-[11px] font-bold text-primary">
                       {i + 1}
                     </div>
@@ -446,15 +465,12 @@ export function SkillDetailPage() {
                   <Plus className="h-3.5 w-3.5" /> Add step
                 </button>
               )}
-            </section>
+            </SkillSection>
 
-            <Separator className="my-8" />
-
-            <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">3. Issues &amp; Fixes</h4>
+            <SkillSection index={3} title="Issues & Fixes">
               <div className="space-y-3">
                 {errs.map((err, i) => (
-                  <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
+                  <div key={i} className="rounded-xl border border-border bg-background/60 p-4">
                     {editing ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -478,9 +494,8 @@ export function SkillDetailPage() {
                         />
                       </div>
                     ) : (
-                      <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
+                      <div className="grid gap-3 sm:grid-cols-[180px_1fr] sm:items-start">
                         <div className="flex items-center gap-2">
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                           <Badge variant="warning" className="text-xs font-semibold">
                             {err.name}
                           </Badge>
@@ -496,12 +511,9 @@ export function SkillDetailPage() {
                   <Plus className="h-3.5 w-3.5" /> Add error
                 </button>
               )}
-            </section>
+            </SkillSection>
 
-            <Separator className="my-8" />
-
-            <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">4. Result verification</h4>
+            <SkillSection index={4} title="Result verification">
               {editing ? (
                 <Textarea
                   value={editData.verification || ''}
@@ -510,9 +522,11 @@ export function SkillDetailPage() {
                   placeholder="How to confirm the result is correct"
                 />
               ) : (
-                <p className="text-sm leading-relaxed text-foreground/85">{skill.verification || 'No verification criteria'}</p>
+                <div className="rounded-xl border border-border bg-background/60 p-4 sm:p-5">
+                  <p className="text-sm leading-relaxed text-foreground/85">{skill.verification || 'No verification criteria'}</p>
+                </div>
               )}
-            </section>
+            </SkillSection>
           </div>
         )}
 
@@ -522,7 +536,6 @@ export function SkillDetailPage() {
               <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-medium">Usage history</div>
               <Badge variant="outline">{logs.length} entries</Badge>
             </div>
-            <Separator className="mb-4" />
             {logs.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">No usage recorded yet</p>
             ) : (
