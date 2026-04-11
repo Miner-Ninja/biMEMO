@@ -1,4 +1,7 @@
 import { Check, X, Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 
 export interface UploadProgressData {
   current: number
@@ -14,36 +17,50 @@ interface UploadProgressPanelProps {
 export function UploadProgressPanel({ progress }: UploadProgressPanelProps) {
   const isComplete = progress.results.length === progress.total
   const percent = Math.round((progress.results.length / progress.total) * 100)
+  const title = isComplete
+    ? `Uploaded ${progress.total} file${progress.total > 1 ? 's' : ''}`
+    : `Uploading ${progress.current} of ${progress.total}`
 
   return (
-    <div className="rounded-lg border bg-card p-3 text-sm">
-      <p className="font-medium mb-2">
-        {isComplete
-          ? `Uploaded ${progress.total} file${progress.total > 1 ? 's' : ''}`
-          : `Uploading ${progress.current} of ${progress.total}...`}
-      </p>
-      <div className="h-1.5 w-full rounded-full bg-muted mb-2">
-        <div
-          className="h-full rounded-full bg-primary transition-all duration-300"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <div className="space-y-1">
-        {progress.results.map((r, i) => (
-          <div key={i} className="flex items-center gap-1.5 text-xs">
-            {r.ok
-              ? <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-              : <X className="h-3.5 w-3.5 text-destructive shrink-0" />}
-            <span className="truncate">{r.name}</span>
+    <Card className="shadow-none">
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{title}</p>
+            <p className="text-xs text-muted-foreground">
+              {isComplete ? 'Upload queue finished' : `Current file: ${progress.filename}`}
+            </p>
           </div>
-        ))}
-        {!isComplete && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-            <span className="truncate">{progress.filename}</span>
-          </div>
-        )}
-      </div>
-    </div>
+          <Badge variant={isComplete ? 'success' : 'info'}>{percent}%</Badge>
+        </div>
+
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+
+        {progress.results.length > 0 ? <Separator /> : null}
+
+        <div className="flex flex-col gap-1.5">
+          {progress.results.map((result, index) => (
+            <div key={`${result.name}-${index}`} className="flex items-center gap-2 text-xs">
+              <Badge variant={result.ok ? 'success' : 'danger'} className="shrink-0 gap-1 border-transparent px-1.5 py-0">
+                {result.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+              </Badge>
+              <span className="truncate">{result.name}</span>
+            </div>
+          ))}
+
+          {!isComplete && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              <span className="truncate">{progress.filename}</span>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
