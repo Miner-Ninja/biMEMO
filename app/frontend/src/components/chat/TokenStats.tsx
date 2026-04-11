@@ -1,4 +1,5 @@
 import { Clock, Cpu, Database, Layers } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import type { ExtendedUsage } from '@/types/stats'
 import { cn } from '@/lib/utils'
 
@@ -39,21 +40,20 @@ export function TokenStats({ stats, stageTimes, className }: TokenStatsProps) {
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-none text-muted-foreground sm:gap-x-3 sm:text-xs',
+        'flex flex-wrap items-center gap-1.5 text-[10px] leading-none sm:text-xs',
         className
       )}
     >
-      {/* Tokens */}
-      <div className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums" title="Input / Output tokens">
+      <Badge variant="secondary" className="gap-1 whitespace-nowrap tabular-nums">
         <Cpu className="h-3 w-3 shrink-0" />
-        <span className="whitespace-nowrap">
+        <span title="Input / Output tokens" className="whitespace-nowrap">
           {formatTokens(stats.prompt_tokens)} in / {formatTokens(stats.completion_tokens)} out
         </span>
-      </div>
+      </Badge>
 
-      {/* Time */}
-      <div
-        className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
+      <Badge
+        variant="secondary"
+        className="gap-1 whitespace-nowrap tabular-nums"
         title={
           stageTimes && stageTimes.length > 0
             ? stageTimes.map((s) => `${s.label.replace('...', '')}  ${formatTime(s.durationMs)}`).join('\n')
@@ -65,38 +65,35 @@ export function TokenStats({ stats, stageTimes, className }: TokenStatsProps) {
         {stats.iterations > 1 && (
           <span className="whitespace-nowrap text-muted-foreground/70">({stats.iterations} iter)</span>
         )}
-      </div>
+      </Badge>
 
-      {/* Generation speed */}
       {tokensPerSecond !== null && (
-        <div
-          className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
+        <Badge
+          variant="secondary"
+          className="gap-1 whitespace-nowrap tabular-nums"
           title={`Generation speed: ${tokensPerSecond.toFixed(1)} tokens per second`}
         >
           <span className="whitespace-nowrap">{tokensPerSecond.toFixed(1)} tok/s</span>
-        </div>
+        </Badge>
       )}
 
-      {/* Context */}
       {hasContextUsage && contextUsage && (
-        <div
-          className={cn(
-            'inline-flex items-center gap-1 whitespace-nowrap tabular-nums',
-            isContextWarning && 'text-orange-500 dark:text-orange-400'
-          )}
+        <Badge
+          variant={isContextWarning ? 'warning' : 'secondary'}
+          className="gap-1 whitespace-nowrap tabular-nums"
           title={`Context: ${contextUsage.used} / ${contextUsage.total} tokens (${contextUsage.free} free)`}
         >
           <Database className="h-3 w-3 shrink-0" />
           <span className="whitespace-nowrap">
             {formatTokens(contextUsage.used)} / {formatTokens(contextUsage.total)} ctx ({Math.round(contextPercent)}%)
           </span>
-        </div>
+        </Badge>
       )}
 
-      {/* Memory zones */}
       {stats.memory_zones && (
-        <div
-          className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
+        <Badge
+          variant="secondary"
+          className="gap-1 whitespace-nowrap tabular-nums"
           title={`Working: ${stats.memory_zones.working_memory.used}/${stats.memory_zones.working_memory.budget}, Summary: ${stats.memory_zones.conversation_summary.used}/${stats.memory_zones.conversation_summary.budget}, Recall: ${stats.memory_zones.recall_results.used}/${stats.memory_zones.recall_results.budget}`}
         >
           <Layers className="h-3 w-3 shrink-0" />
@@ -105,9 +102,8 @@ export function TokenStats({ stats, stageTimes, className }: TokenStatsProps) {
             S:{formatTokens(stats.memory_zones.conversation_summary.used)}/{formatTokens(stats.memory_zones.conversation_summary.budget)}{' '}
             R:{formatTokens(stats.memory_zones.recall_results.used)}/{formatTokens(stats.memory_zones.recall_results.budget)}
           </span>
-        </div>
+        </Badge>
       )}
-
     </div>
   )
 }

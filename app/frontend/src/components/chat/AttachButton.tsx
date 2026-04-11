@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { Paperclip, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from '@/lib/file-upload-contract'
@@ -78,10 +79,13 @@ export function AttachButton({ onFileSelect, disabled, className }: AttachButton
         <Paperclip className="h-4 w-4" />
       </Button>
       {error && (
-        <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground whitespace-nowrap">
+        <Badge
+          variant="danger"
+          className="absolute bottom-full left-0 mb-2 flex whitespace-nowrap px-2 py-1 text-xs"
+        >
           <AlertCircle className="h-3 w-3" />
           {error}
-        </div>
+        </Badge>
       )}
     </div>
   )
