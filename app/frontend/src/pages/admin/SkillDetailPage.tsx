@@ -450,37 +450,38 @@ export function SkillDetailPage() {
                 {proc.map((step, i) => (
                   <div key={i} className="rounded-xl border border-border/70 bg-muted/50 p-4 sm:p-5">
                     <div className="grid gap-4 sm:grid-cols-[180px_1fr] sm:gap-5">
-                      <div className="space-y-3 sm:border-r sm:border-border/60 sm:pr-5">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-xs font-bold text-primary">
+                      <div className="sm:border-r sm:border-border/60 sm:pr-5">
+                        <div className="grid grid-cols-[32px_1fr] gap-x-3 gap-y-4">
+                          <div className="row-span-2 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-xs font-bold text-primary">
                             {i + 1}
                           </div>
+
                           <div>
                             <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Step</div>
                             <div className="mt-1.5 text-sm font-semibold text-foreground">Tool call</div>
                           </div>
-                        </div>
 
-                        <div>
-                          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
-                          {editing ? (
-                            <div className="mt-2 flex gap-2">
-                              <select
-                                value={step.tool}
-                                onChange={(e) => updateStep(i, 'tool', e.target.value)}
-                                className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
-                              >
-                                {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                              </select>
-                              <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ) : (
-                            <Badge variant="info" className="mt-2 text-[11px]">
-                              {step.tool}
-                            </Badge>
-                          )}
+                          <div>
+                            <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                            {editing ? (
+                              <div className="mt-2 flex gap-2">
+                                <select
+                                  value={step.tool}
+                                  onChange={(e) => updateStep(i, 'tool', e.target.value)}
+                                  className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
+                                >
+                                  {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <Badge variant="info" className="mt-2 text-[11px]">
+                                {step.tool}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
 
