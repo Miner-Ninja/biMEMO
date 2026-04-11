@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Pencil, Trash2, Check, X, Plus, Activity, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -322,12 +324,9 @@ export function SkillDetailPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <span className={cn(
-              'text-xs font-medium',
-              skill.enabled ? 'text-emerald-400' : 'text-muted-foreground'
-            )}>
+            <Badge variant={skill.enabled ? 'success' : 'outline'}>
               {skill.enabled ? 'On' : 'Off'}
-            </span>
+            </Badge>
             <Switch checked={skill.enabled} onCheckedChange={handleToggle} />
           </div>
         </div>
@@ -382,7 +381,7 @@ export function SkillDetailPage() {
           )}
         >
         {activeTab === 'logic' && (
-          <div className="space-y-8">
+          <div className="flex flex-col">
             <section>
               <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">1. Trigger</h4>
               {editing ? (
@@ -396,6 +395,8 @@ export function SkillDetailPage() {
                 <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
               )}
             </section>
+
+            <Separator className="my-8" />
 
             <section>
               <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">2. Tools &amp; Arguments</h4>
@@ -429,9 +430,9 @@ export function SkillDetailPage() {
                         </>
                       ) : (
                         <>
-                          <span className="inline-block rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                          <Badge variant="info" className="text-[11px]">
                             {step.tool}
-                          </span>
+                          </Badge>
                           <div className="mt-2 text-sm leading-relaxed text-foreground/85">{step.query}</div>
                           {step.note && <div className="mt-1.5 text-xs italic text-muted-foreground">{step.note}</div>}
                         </>
@@ -446,6 +447,8 @@ export function SkillDetailPage() {
                 </button>
               )}
             </section>
+
+            <Separator className="my-8" />
 
             <section>
               <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">3. Issues &amp; Fixes</h4>
@@ -476,9 +479,11 @@ export function SkillDetailPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-[140px_1fr] items-baseline gap-4">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                        <div className="flex items-center gap-2">
                           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                          {err.name}
+                          <Badge variant="warning" className="text-xs font-semibold">
+                            {err.name}
+                          </Badge>
                         </div>
                         <div className="text-sm leading-relaxed text-muted-foreground">{err.fix}</div>
                       </div>
@@ -492,6 +497,8 @@ export function SkillDetailPage() {
                 </button>
               )}
             </section>
+
+            <Separator className="my-8" />
 
             <section>
               <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">4. Result verification</h4>
@@ -513,8 +520,9 @@ export function SkillDetailPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-medium">Usage history</div>
-              <span className="text-xs text-muted-foreground">{logs.length} entries</span>
+              <Badge variant="outline">{logs.length} entries</Badge>
             </div>
+            <Separator className="mb-4" />
             {logs.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">No usage recorded yet</p>
             ) : (
@@ -528,12 +536,9 @@ export function SkillDetailPage() {
                         <div className="flex items-center gap-2.5">
                           <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', dot)} />
                           <span className="text-xs text-muted-foreground font-mono">{formatDate(log.created_at)}</span>
-                          <span className={cn(
-                            'text-[10px] px-2 py-0.5 rounded-full font-medium border',
-                            style.bg, style.text, style.border,
-                          )}>
+                          <Badge className={cn('text-[10px]', style.bg, style.text, style.border)}>
                             {style.label}
-                          </span>
+                          </Badge>
                         </div>
                         <span className="text-xs text-muted-foreground">{formatDuration(log.duration_ms)}</span>
                       </div>
