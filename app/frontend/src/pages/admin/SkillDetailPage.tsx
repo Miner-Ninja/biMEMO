@@ -455,30 +455,40 @@ export function SkillDetailPage() {
                     <div className="min-w-0 flex-1">
                       {editing ? (
                         <>
-                          <div className="mb-2 flex gap-2">
-                            <select
-                              value={step.tool}
-                              onChange={(e) => updateStep(i, 'tool', e.target.value)}
-                              className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
-                            >
-                              {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                            <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
-                              <X className="h-4 w-4" />
-                            </button>
+                          <div className="space-y-3">
+                            <div>
+                              <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                              <div className="flex gap-2">
+                                <select
+                                  value={step.tool}
+                                  onChange={(e) => updateStep(i, 'tool', e.target.value)}
+                                  className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
+                                >
+                                  {TOOL_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <button type="button" onClick={() => removeStep(i)} className="text-muted-foreground transition-colors hover:text-destructive">
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
+                              <Input
+                                value={step.query}
+                                onChange={(e) => updateStep(i, 'query', e.target.value)}
+                                placeholder="Query or parameters"
+                                className="text-sm"
+                              />
+                            </div>
                           </div>
-                          <Input
-                            value={step.query}
-                            onChange={(e) => updateStep(i, 'query', e.target.value)}
-                            placeholder="Query or parameters"
-                            className="text-sm"
-                          />
                         </>
                       ) : (
                         <>
-                          <Badge variant="info" className="text-[11px]">
+                          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Tool</div>
+                          <Badge variant="info" className="mt-2 text-[11px]">
                             {step.tool}
                           </Badge>
+                          <div className="mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Arguments</div>
                           <div className="mt-2 text-sm leading-relaxed text-foreground/85">{step.query}</div>
                           {step.note && <div className="mt-1.5 text-xs italic text-muted-foreground">{step.note}</div>}
                         </>
