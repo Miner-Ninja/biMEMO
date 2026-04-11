@@ -1,6 +1,7 @@
 import { Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { getSidebarSearchInputClassName } from './sidebar-chrome'
 
 interface ChatSearchProps {
   value: string
@@ -9,24 +10,24 @@ interface ChatSearchProps {
 }
 
 /**
- * Search input for filtering chats or files
+ * Search input for filtering sidebar content.
  */
 export function ChatSearch({ value, onChange, placeholder = 'Search...' }: ChatSearchProps) {
   return (
-    <div className="relative px-2">
-      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground/45" />
       <Input
         type="text"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 pl-8 pr-8 text-sm bg-background border-input"
+        className={getSidebarSearchInputClassName()}
       />
       {value && (
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2"
+          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           onClick={() => onChange('')}
           aria-label="Clear search"
         >

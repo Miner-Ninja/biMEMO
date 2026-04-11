@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { getSidebarActionButtonClassName } from './sidebar-chrome'
 
 interface UserMenuProps {
   userName?: string
@@ -40,7 +41,7 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="h-11 w-full justify-start gap-2"
+          className={getSidebarActionButtonClassName()}
         >
           <Avatar className="h-8 w-8">
             <AvatarImage src="/avatars/user" alt="User avatar" className="object-cover" />

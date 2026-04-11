@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { PanelLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LayoutProps {
@@ -33,7 +34,7 @@ export function Layout({ sidebar, header, children }: LayoutProps) {
           {/* Sidebar container */}
           <aside
             className={cn(
-              'fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-72 flex-col border-r border-border bg-sidebar',
+              'fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-80 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl',
               'transform transition-transform duration-200 ease-in-out',
               'md:relative md:translate-x-0',
               sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -52,25 +53,11 @@ export function Layout({ sidebar, header, children }: LayoutProps) {
             {/* Mobile menu button */}
             <button
               type="button"
-              className="flex h-12 w-12 shrink-0 items-center justify-center md:hidden"
+              className="flex h-12 w-12 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground md:hidden"
               onClick={toggleSidebar}
               aria-label="Toggle sidebar"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="4" x2="20" y1="12" y2="12" />
-                <line x1="4" x2="20" y1="6" y2="6" />
-                <line x1="4" x2="20" y1="18" y2="18" />
-              </svg>
+              <PanelLeft className="h-5 w-5" />
             </button>
             <div className="flex-1">{header}</div>
           </div>

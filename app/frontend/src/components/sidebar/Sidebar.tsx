@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Shield, MessageSquare, FileText } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
 import { NewChatButton } from './NewChatButton'
 import { ChatList } from './ChatList'
 import { ChatSearch } from './ChatSearch'
 import { FileList } from './FileList'
 import { UserMenu } from './UserMenu'
 import type { Chat } from '@/types/chat'
+import { cn } from '@/lib/utils'
+import { getSidebarItemClassName, SidebarPanel, SidebarShell } from './sidebar-chrome'
 
 interface SidebarProps {
   chats: Chat[]
@@ -55,73 +56,72 @@ export function Sidebar({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header - fixed */}
-      <div className="shrink-0">
-        <div className="flex h-14 items-center gap-2 px-4">
-          <Shield className="h-5 w-5 text-primary" />
-          <span className="font-semibold">biMEMO</span>
-        </div>
-        <Separator />
+    <SidebarShell
+      icon={Shield}
+      title="biMEMO"
+      subtitle="Workspace"
+      toolbar={
+        <SidebarPanel className="space-y-3 p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => switchTab('chats')}
+              className={cn(getSidebarItemClassName(activeTab === 'chats'), 'justify-center')}
+            >
+              <MessageSquare className="h-4 w-4" />
+              Chats
+            </button>
+            <button
+              type="button"
+              onClick={() => switchTab('files')}
+              className={cn(getSidebarItemClassName(activeTab === 'files'), 'justify-center')}
+            >
+              <FileText className="h-4 w-4" />
+              Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
+            </button>
+          </div>
 
-        {/* Tabs */}
-        <div className="flex px-2 pt-2 gap-1">
-          <button
-            onClick={() => switchTab('chats')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === 'chats'
-                ? 'bg-background border border-input text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            Chats
-          </button>
-          <button
-            onClick={() => switchTab('files')}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === 'files'
-                ? 'bg-background border border-input text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-            }`}
-          >
-            <FileText className="h-4 w-4" />
-            Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
-          </button>
-        </div>
-
-        {/* Search — works for both chats and files */}
-        <div className="py-2">
           <ChatSearch
             value={searchQuery}
             onChange={setSearchQuery}
             placeholder={activeTab === 'chats' ? 'Search chats...' : 'Search files...'}
           />
-        </div>
-      </div>
-
-      {/* Content - scrollable */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === 'chats' ? (
-          <ChatList
-            chats={chats}
-            bridgeProvidersByChatId={bridgeProvidersByChatId}
-            activeChatId={activeChatId}
-            searchQuery={searchQuery}
-            onSelectChat={onSelectChat}
-            onDeleteChat={onDeleteChat}
-            onRenameChat={onRenameChat}
+        </SidebarPanel>
+      }
+      content={
+        <SidebarPanel className="h-full min-h-0 overflow-hidden">
+          {activeTab === 'chats' ? (
+            <ChatList
+              chats={chats}
+              bridgeProvidersByChatId={bridgeProvidersByChatId}
+              activeChatId={activeChatId}
+              searchQuery={searchQuery}
+              onSelectChat={onSelectChat}
+              onDeleteChat={onDeleteChat}
+              onRenameChat={onRenameChat}
+            />
+          ) : (
+            <FileList
+              activeFiles={activeFiles}
+              onActiveFilesChange={onActiveFilesChange}
+              onFilesChange={onFilesChange}
+              refreshKey={fileRefreshKey}
+              searchQuery={searchQuery}
+            />
+          )}
+        </SidebarPanel>
+      }
+      footer={
+        <div className="space-y-2">
+          <NewChatButton onClick={onNewChat} />
+          <UserMenu
+            userName={username || 'User'}
+            onLogout={onLogout}
+            voiceMode={voiceMode}
+            onToggleVoiceMode={onToggleVoiceMode}
           />
-        ) : (
-          <FileList activeFiles={activeFiles} onActiveFilesChange={onActiveFilesChange} onFilesChange={onFilesChange} refreshKey={fileRefreshKey} searchQuery={searchQuery} />
-        )}
-      </div>
-
-      {/* Footer - fixed */}
-      <div className="shrink-0 flex flex-col gap-2 px-2 pb-4 pt-2">
-        <NewChatButton onClick={onNewChat} />
-        <UserMenu userName={username || 'User'} onLogout={onLogout} voiceMode={voiceMode} onToggleVoiceMode={onToggleVoiceMode} />
-      </div>
-    </div>
+        </div>
+      }
+    />
   )
 }

@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Chat } from '@/types/chat'
 import { cn, truncate } from '@/lib/utils'
+import { getSidebarItemClassName } from './sidebar-chrome'
 
 interface ChatItemProps {
   chat: Chat
@@ -95,11 +96,9 @@ export function ChatItem({
       onClick={isEditing ? undefined : onSelect}
       onKeyDown={isEditing ? undefined : handleItemKeyDown}
       className={cn(
-        'group relative flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-        'hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:outline-none',
-        'min-h-[44px]',
+        'group relative min-h-[44px] text-left focus-visible:outline-none',
         isEditing ? 'cursor-default' : 'cursor-pointer',
-        isActive && 'bg-sidebar-accent'
+        getSidebarItemClassName(isActive)
       )}
     >
       {/* Chat icon and title */}
@@ -132,7 +131,7 @@ export function ChatItem({
 
       {/* Fade gradient - always visible */}
       {!isEditing && (
-        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-20 bg-gradient-to-r from-transparent to-sidebar group-hover:to-sidebar-accent" />
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-16 bg-gradient-to-r from-transparent to-sidebar-accent/20 group-hover:to-sidebar-accent" />
       )}
 
       {/* Actions menu - visible on hover */}
