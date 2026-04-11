@@ -412,7 +412,7 @@ export function SkillDetailPage() {
                   placeholder="Describe when this skill should be triggered"
                 />
               ) : (
-                <div className="rounded-xl bg-background/40 p-4 sm:p-5">
+                <div className="rounded-xl bg-muted/50 p-4 sm:p-5">
                   <p className="text-sm leading-relaxed text-foreground/85">{skill.trigger || 'No trigger description'}</p>
                 </div>
               )}
