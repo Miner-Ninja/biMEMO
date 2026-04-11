@@ -218,27 +218,31 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
         {hasImages && (
           <div className="grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {message.images!.map((imageUrl, imageIndex) => (
-              <button
+              <Card
                 key={`${message.id}-image-${imageIndex}`}
-                type="button"
-                className="group/image relative overflow-hidden rounded-lg border border-border bg-black/40 text-left"
-                onClick={() => setSelectedImage(imageUrl)}
-                aria-label={`Open image ${imageIndex + 1}`}
+                className="group/image overflow-hidden border-border/70 bg-card shadow-none"
               >
-                <img
-                  src={imageUrl}
-                  alt={`Attached image ${imageIndex + 1}`}
-                  className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
-                  loading="lazy"
-                />
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-xs text-white">
-                  <span>{`Image ${imageIndex + 1}`}</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5">
-                    <Expand className="h-3 w-3" />
-                    Open
-                  </span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() => setSelectedImage(imageUrl)}
+                  aria-label={`Open image ${imageIndex + 1}`}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={`Attached image ${imageIndex + 1}`}
+                    className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
+                    loading="lazy"
+                  />
+                  <CardContent className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="text-xs text-muted-foreground">{`Image ${imageIndex + 1}`}</span>
+                    <Badge variant="outline" className="gap-1 border-border/70 px-2 py-0.5">
+                      <Expand className="h-3 w-3" />
+                      Open
+                    </Badge>
+                  </CardContent>
+                </button>
+              </Card>
             ))}
           </div>
         )}

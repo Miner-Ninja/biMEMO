@@ -241,7 +241,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
   return (
     <div
       className={cn(
-        'border-t border-border bg-muted/50 dark:bg-background px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:p-4',
+        'border-t border-border bg-muted/50 px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:p-4',
         isLoading && '[&_*]:cursor-wait',
         voiceMode && 'border-t-primary/50'
       )}
