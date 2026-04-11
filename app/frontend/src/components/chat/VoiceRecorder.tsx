@@ -9,6 +9,7 @@ const MAX_RECORDING_SECONDS = 120
 const BAR_COUNT = 40
 const BAR_GAP = 2
 const BAR_WIDTH = 3
+const FALLBACK_WAVEFORM_COLOR = "hsl(0 72% 51%)"
 
 interface VoiceRecorderProps {
   onRecorded: (voiceDataUrl: string) => void
@@ -53,6 +54,23 @@ export function VoiceRecorder({
     )
   }, [])
 
+  const getWaveformColor = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return FALLBACK_WAVEFORM_COLOR
+    }
+
+    const destructiveColor = window
+      .getComputedStyle(document.documentElement)
+      .getPropertyValue('--destructive')
+      .trim()
+
+    if (!destructiveColor) {
+      return FALLBACK_WAVEFORM_COLOR
+    }
+
+    return `oklch(${destructiveColor})`
+  }, [])
+
   const drawWaveform = useCallback(() => {
     const analyser = analyserRef.current
     const canvas = canvasRef.current
@@ -85,14 +103,14 @@ export function VoiceRecorder({
       const x = startX + i * totalBarWidth
       const y = (h - barHeight) / 2
 
-      ctx.fillStyle = 'hsl(0, 72%, 51%)' // destructive red
+      ctx.fillStyle = getWaveformColor()
       ctx.beginPath()
       ctx.roundRect(x, y, BAR_WIDTH, barHeight, 1.5)
       ctx.fill()
     }
 
     animFrameRef.current = requestAnimationFrame(drawWaveform)
-  }, [])
+  }, [getWaveformColor])
 
   const cleanup = useCallback(() => {
     if (animFrameRef.current) {
@@ -242,7 +260,7 @@ export function VoiceRecorder({
           ref={canvasRef}
           width={BAR_COUNT * (BAR_WIDTH + BAR_GAP)}
           height={32}
-          className="h-8"
+          className="h-8 flex-1"
         />
 
         <Button
