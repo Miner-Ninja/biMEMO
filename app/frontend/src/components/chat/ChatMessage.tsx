@@ -155,7 +155,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
             aria-label={copied ? 'Copied!' : 'Copy message'}
           >
             {copied ? (
-              <Check className="h-4 w-4 text-green-500" />
+              <Check className="h-4 w-4 text-primary" />
             ) : (
               <Copy className="h-4 w-4" />
             )}

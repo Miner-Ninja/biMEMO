@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Play, Pause, Mic } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 const BAR_COUNT = 50
@@ -203,16 +205,14 @@ export function VoicePlayer({ src, className }: VoicePlayerProps) {
   const canvasWidth = BAR_COUNT * (BAR_WIDTH + BAR_GAP)
 
   return (
-    <div className={cn(
-      'inline-flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2',
-      className,
-    )}>
+    <Card className={cn('inline-flex shadow-none', className)}>
+      <CardContent className="inline-flex items-center gap-2 px-3 py-2">
       <Button
         type="button"
         onClick={togglePlay}
         variant="ghost"
         size="icon"
-        className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+        className="h-8 w-8 shrink-0 rounded-full"
       >
         {playing
           ? <Pause className="h-3.5 w-3.5" />
@@ -232,7 +232,10 @@ export function VoicePlayer({ src, className }: VoicePlayerProps) {
         {displayTime}
       </span>
 
-      <Mic className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-    </div>
+      <Badge variant="secondary" className="shrink-0 gap-1">
+        <Mic className="h-3.5 w-3.5" />
+      </Badge>
+      </CardContent>
+    </Card>
   )
 }

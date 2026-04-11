@@ -13,9 +13,9 @@ interface ProcessingStagesProps {
 
 const BouncingDots = () => (
   <div className="flex items-center gap-1">
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0 [animation-delay:-0.3s]" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0 [animation-delay:-0.15s]" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0" />
   </div>
 )
 

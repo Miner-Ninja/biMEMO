@@ -40,7 +40,7 @@ export function Header({
             >
               <BridgeProviderIcon provider={bridgeProvider} className="h-3 w-3" />
               <span className="hidden sm:inline">{bridgeProviderLabel(bridgeProvider)}</span>
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <Badge variant="success" className="h-2 w-2 rounded-full border-0 p-0" />
             </Badge>
           ) : null}
         </div>
