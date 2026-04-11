@@ -364,7 +364,7 @@ export function SkillDetailPage() {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              <h4 className="text-[13px] font-semibold tracking-tight">{t.label}</h4>
+              <h4 className="text-base font-semibold tracking-tight">{t.label}</h4>
             </button>
           ))}
         </div>
