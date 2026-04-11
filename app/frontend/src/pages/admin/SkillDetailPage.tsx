@@ -444,7 +444,7 @@ export function SkillDetailPage() {
             </section>
 
             <section>
-              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Errors & Solutions</h4>
+              <h4 className="mb-4 text-base font-semibold tracking-tight text-foreground">Issues & Fixes</h4>
               <div className="space-y-3">
                 {errs.map((err, i) => (
                   <div key={i} className="rounded-xl border border-border bg-muted/30 p-4">
