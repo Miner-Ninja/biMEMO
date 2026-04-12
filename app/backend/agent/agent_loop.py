@@ -494,7 +494,7 @@ class AgentOrchestrator:
     def _finalize_assistant_response(
         self,
         *,
-        final_text: str,
+        raw_final_text: str,
         structured_content: StructuredAssistantContent | None,
         loop: AgenticLoop,
         call_usages: list[LLMCallUsage],
@@ -502,7 +502,7 @@ class AgentOrchestrator:
         zone_usage: dict[str, int] | None = None,
     ) -> FinalizedAssistantResponse:
         """Build the final filtered assistant response and aggregated stats."""
-        output_result = filter_output(final_text)
+        output_result = filter_output(raw_final_text)
         filtered_structured_content = structured_content
         if structured_content is not None:
             filtered_structured_content = replace(
@@ -510,7 +510,7 @@ class AgentOrchestrator:
                 answer=output_result.text,
             )
         return FinalizedAssistantResponse(
-            loop_result=loop.complete(final_text),
+            loop_result=loop.complete(raw_final_text),
             output_text=output_result.text,
             output_filtered=bool(
                 output_result.credentials_found or output_result.blocked
@@ -527,7 +527,7 @@ class AgentOrchestrator:
     async def _build_gateway_response(
         self,
         *,
-        final_text: str,
+        raw_final_text: str,
         structured_content: StructuredAssistantContent | None,
         filtered_message: str,
         conversation_id: str,
@@ -543,7 +543,7 @@ class AgentOrchestrator:
     ) -> AgentResponse:
         """Filter, persist, and wrap the final assistant answer."""
         finalized_response = self._finalize_assistant_response(
-            final_text=final_text,
+            raw_final_text=raw_final_text,
             structured_content=structured_content,
             loop=loop,
             call_usages=call_usages,
@@ -553,7 +553,7 @@ class AgentOrchestrator:
 
         await self.persistence.persist_final_turn_messages(
             conversation_id=conversation_id,
-            final_text=final_text,
+            final_text=raw_final_text,
             session_id=session_id,
             filtered_message=filtered_message,
             assistant_text=finalized_response.output_text,
@@ -579,7 +579,7 @@ class AgentOrchestrator:
         self,
         *,
         prepared_turn: TurnPreparation,
-        final_text: str,
+        raw_final_text: str,
         structured_content: StructuredAssistantContent | None,
         session_id: str,
         conversation_id: str,
@@ -587,7 +587,7 @@ class AgentOrchestrator:
     ) -> AgentResponse:
         """Build the final gateway response from one prepared turn."""
         return await self._build_gateway_response(
-            final_text=final_text,
+            raw_final_text=raw_final_text,
             structured_content=structured_content,
             filtered_message=prepared_turn.filtered_message,
             conversation_id=conversation_id,
@@ -624,13 +624,13 @@ class AgentOrchestrator:
         loop: AgenticLoop,
     ) -> AgentResponse:
         """Build the final response for a long-term memory question."""
-        final_text = self._build_long_term_memory_answer_text(
+        raw_final_text = self._build_long_term_memory_answer_text(
             prepared_turn=prepared_turn,
             session_id=session_id,
         )
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
-            final_text=final_text,
+            raw_final_text=raw_final_text,
             structured_content=None,
             session_id=session_id,
             conversation_id=conversation_id,
@@ -641,7 +641,7 @@ class AgentOrchestrator:
         self,
         *,
         prepared_turn: TurnPreparation,
-        final_text: str,
+        raw_final_text: str,
         structured_content: StructuredAssistantContent | None,
         session_id: str,
         conversation_id: str,
@@ -650,7 +650,7 @@ class AgentOrchestrator:
         """Persist and return the final response for one prepared turn."""
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
-            final_text=final_text,
+            raw_final_text=raw_final_text,
             structured_content=structured_content,
             session_id=session_id,
             conversation_id=conversation_id,
@@ -1027,7 +1027,7 @@ class AgentOrchestrator:
 
         return await self._complete_prepared_turn(
             prepared_turn=prepared_turn,
-            final_text=model_loop_result.final_text,
+            raw_final_text=model_loop_result.raw_final_text,
             structured_content=model_loop_result.structured_content,
             session_id=session_id,
             conversation_id=conversation_id,

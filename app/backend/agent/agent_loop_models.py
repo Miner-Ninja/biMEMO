@@ -73,7 +73,7 @@ class PreparedContext:
 class ToolRoundResult:
     """Result of one model tool round."""
 
-    final_text: str
+    raw_final_text: str
     structured_content: StructuredAssistantContent | None
     executed_immediate_tools: bool
     should_continue: bool
@@ -83,7 +83,7 @@ class ToolRoundResult:
 class ModelLoopResult:
     """Final model-loop output before assistant-response post-processing."""
 
-    final_text: str
+    raw_final_text: str
     structured_content: StructuredAssistantContent | None = None
 
 

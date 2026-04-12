@@ -284,13 +284,13 @@ class TestFinalAnswerRecovery:
         tool_executor.run_one_tool_round = AsyncMock(
             side_effect=[
                 MagicMock(
-                    final_text="",
+                    raw_final_text="",
                     structured_content=None,
                     executed_immediate_tools=True,
                     should_continue=True,
                 ),
                 MagicMock(
-                    final_text="",
+                    raw_final_text="",
                     structured_content=None,
                     executed_immediate_tools=False,
                     should_continue=False,
@@ -325,7 +325,7 @@ class TestFinalAnswerRecovery:
             tool_executor=tool_executor,
         )
 
-        assert result.final_text == "Visible answer"
+        assert result.raw_final_text == "Visible answer"
         assert result.structured_content == StructuredAssistantContent(
             answer="Visible answer",
             suggestions=["Next step"],
@@ -368,7 +368,7 @@ class TestAgentOrchestrator:
         )
 
         finalized_response = orchestrator._finalize_assistant_response(
-            final_text="password=secret",
+            raw_final_text="password=secret",
             loop=loop,
             call_usages=[],
             request_started_at=time.perf_counter(),

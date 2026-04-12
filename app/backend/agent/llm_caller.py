@@ -310,7 +310,7 @@ class LLMCaller:
         force_web_search: bool = False,
     ) -> ModelLoopResult:
         """Run the model/tool loop until a final answer is available."""
-        final_text = ""
+        raw_final_text = ""
         structured_content = None
         executed_immediate_tools = False
         first_iteration = True
@@ -340,8 +340,8 @@ class LLMCaller:
                 channel=channel,
                 user_intent_tools=user_intent_tools,
             )
-            if round_result.final_text:
-                final_text = round_result.final_text
+            if round_result.raw_final_text:
+                raw_final_text = round_result.raw_final_text
                 structured_content = round_result.structured_content
                 break
             if round_result.executed_immediate_tools:
@@ -351,23 +351,23 @@ class LLMCaller:
 
             loop.advance()
 
-        if not final_text.strip() and executed_immediate_tools:
+        if not raw_final_text.strip() and executed_immediate_tools:
             recovered_response = await request_non_empty_final_answer(
                 llm_call=llm_call,
                 messages=messages,
                 call_usages=call_usages,
             )
             if recovered_response is not None and recovered_response.answer.strip():
-                final_text = recovered_response.answer
+                raw_final_text = recovered_response.answer
                 structured_content = recovered_response
 
-        if final_text.strip():
+        if raw_final_text.strip():
             return ModelLoopResult(
-                final_text=final_text,
+                raw_final_text=raw_final_text,
                 structured_content=structured_content,
             )
         return ModelLoopResult(
-            final_text=(
+            raw_final_text=(
                 "I could not produce a final answer for that request. Please try again."
             ),
         )
