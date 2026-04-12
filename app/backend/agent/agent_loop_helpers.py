@@ -192,13 +192,13 @@ async def request_non_empty_final_answer(
 
 def build_dialog_step_record_input(
     user_text: str,
-    assistant_text: str,
+    response_text: str,
 ) -> str:
     """Build a compact dialog-step transcript for dialog recorder compression."""
     return TURN_OBSERVATION_SECTION_SEPARATOR.join(
         [
             f"{TURN_OBSERVATION_USER_LABEL}: {user_text}",
-            f"{TURN_OBSERVATION_ASSISTANT_LABEL}: {assistant_text}",
+            f"{TURN_OBSERVATION_ASSISTANT_LABEL}: {response_text}",
         ]
     )
 

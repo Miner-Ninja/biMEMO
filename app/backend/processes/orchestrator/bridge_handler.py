@@ -153,7 +153,7 @@ async def _process_bridge_inbound_message(
     """Run one inbound external bridge message through the normal chat loop.
 
     Returns:
-        Tuple of (user_message_id, assistant_text, assistant_message_id).
+        Tuple of (user_message_id, response_text, assistant_message_id).
     """
     if llm_call is None:
         raise RuntimeError("No LLM provider configured for bridge inbound sync")
@@ -172,7 +172,7 @@ async def _process_bridge_inbound_message(
             message_source=BRIDGE_MESSAGE_META_SOURCE,
             captured_ids=captured_ids,
         )
-        assistant_text = await _run_with_processing_state(
+        response_text = await _run_with_processing_state(
             db_client=db_client,
             conversation_id=conversation_id,
             processing_stage=DEFAULT_CONVERSATION_PROCESSING_STAGE,
@@ -192,7 +192,7 @@ async def _process_bridge_inbound_message(
         raise RuntimeError("Bridge inbound sync did not persist the user message")
     return (
         captured_ids["user"],
-        assistant_text or "",
+        response_text or "",
         captured_ids["assistant"] or "",
     )
 
