@@ -1,4 +1,21 @@
-"""Helpers for structured assistant responses."""
+"""Helpers for structured assistant responses.
+
+Contract summary for assistant replies:
+
+- ``StructuredAssistantContent.answer`` is the final user-facing reply text.
+- Stored assistant messages keep that same final reply text in
+  ``messages.content``.
+- ``messages.meta["structured_content"]`` keeps only extra sections that are
+  not duplicated in ``messages.content``: ``thinking``, ``sql``, and
+  ``suggestions``.
+- ``raw_final_text`` means the raw model output before output filtering.
+- ``response_text`` means the final reply text after output filtering.
+
+This keeps one clear split:
+- main reply text lives in ``content`` and ``StructuredAssistantContent.answer``
+- extra sections live in structured metadata
+- raw model output stays an internal lower-layer value only
+"""
 
 from __future__ import annotations
 
@@ -53,7 +70,12 @@ OPENAI_STRUCTURED_RESPONSE_FORMAT: dict[str, object] = {
 
 @dataclass(frozen=True)
 class StructuredAssistantContent:
-    """Structured assistant content ready for UI rendering."""
+    """Structured assistant content ready for UI rendering.
+
+    ``answer`` is always the final reply text shown to the user.
+    The optional fields store extra sections that are rendered separately and
+    are stored in message metadata instead of duplicating the main reply text.
+    """
 
     answer: str
     thinking: str | None = None

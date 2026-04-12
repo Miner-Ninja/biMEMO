@@ -121,7 +121,12 @@ class TurnInputState:
 
 @dataclass(frozen=True)
 class FinalizedAssistantResponse:
-    """Final assistant text after output filtering and usage aggregation."""
+    """Final assistant reply after output filtering and usage aggregation.
+
+    ``response_text`` is the final reply text shown to the user after output
+    filtering. It is the filtered form of the lower-layer ``raw_final_text``.
+    ``structured_content.answer`` should match this final reply text.
+    """
 
     loop_result: LoopResult
     response_text: str

@@ -142,7 +142,11 @@ def build_assistant_message_meta(
     stats: object | None,
     structured_content: StructuredAssistantContent | None,
 ) -> dict[str, object] | None:
-    """Build persisted metadata for one saved assistant message."""
+    """Build persisted metadata for one saved assistant message.
+
+    The visible reply text is stored in the main message content field, so the
+    metadata keeps only extra sections and usage data.
+    """
     message_meta: dict[str, object] = {}
     if stats is not None:
         message_meta[MESSAGE_META_STATS_KEY] = stats.model_dump(mode="json")
