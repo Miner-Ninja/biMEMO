@@ -1,4 +1,5 @@
 import { Download } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -8,6 +9,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import type { QueryResult } from '@/types/chat'
 import { cn } from '@/lib/utils'
 import { exportTableToCsv } from '@/lib/csv-export'
@@ -41,15 +44,18 @@ export function ResultsTable({ results, className }: ResultsTableProps) {
 
   if (data.length === 0) {
     return (
-      <div className={cn('p-4 text-center text-muted-foreground', className)}>
-        No results found
-      </div>
+      <Card className={cn('shadow-none', className)}>
+        <CardContent className="p-4 text-center text-muted-foreground">
+          No results found
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <div data-slot="table-container" className="w-full overflow-x-auto rounded border" style={{ contain: 'inline-size' }}>
+    <Card className={cn('shadow-none', className)}>
+      <CardContent className="flex flex-col gap-3 p-0">
+      <div data-slot="table-container" className="w-full overflow-x-auto rounded-t-xl" style={{ contain: 'inline-size' }}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -77,10 +83,11 @@ export function ResultsTable({ results, className }: ResultsTableProps) {
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
+      <Separator />
+      <div className="flex items-center justify-between px-4 pb-4">
+        <Badge variant="secondary">
           {rowCount} {rowCount === 1 ? 'row' : 'rows'}
-        </p>
+        </Badge>
         <Button
           variant="ghost"
           size="sm"
@@ -91,6 +98,7 @@ export function ResultsTable({ results, className }: ResultsTableProps) {
           Export CSV
         </Button>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   )
 }

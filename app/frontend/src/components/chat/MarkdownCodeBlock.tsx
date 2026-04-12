@@ -14,7 +14,9 @@ import cssLanguage from 'highlight.js/lib/languages/css'
 import plaintextLanguage from 'highlight.js/lib/languages/plaintext'
 import 'highlight.js/styles/atom-one-dark.css'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 
@@ -198,28 +200,33 @@ export function MarkdownCodeBlock({
   }
 
   return (
-    <div className={cn('not-prose relative group my-3', className)}>
-      <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
+    <Card className={cn('not-prose group my-3 overflow-hidden bg-card/80 shadow-none', className)}>
+      <CardContent className="p-0">
+      <div className="flex items-center justify-between border-b border-border/70 px-4 py-2">
+        <Badge variant="secondary">
+          {resolveLanguage(code, language)}
+        </Badge>
         <Button
           variant="ghost"
           size="icon"
           onClick={handleCopy}
-          className="h-8 w-8 bg-black/10 text-white hover:bg-black/20 hover:text-white dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+          className="h-8 w-8"
           aria-label={copied ? 'Copied!' : 'Copy code'}
         >
           {copied ? (
-            <Check className="h-4 w-4 text-green-400" />
+            <Check className="h-4 w-4 text-primary" />
           ) : (
             <Copy className="h-4 w-4" />
           )}
         </Button>
       </div>
-      <pre className="hljs overflow-x-auto rounded-lg border border-sidebar-border !bg-sidebar p-4 text-base shadow-xs text-sidebar-foreground">
+      <pre className="hljs overflow-x-auto border-0 !bg-sidebar p-4 text-base text-sidebar-foreground">
         <code
           className="font-mono text-inherit"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </pre>
-    </div>
+      </CardContent>
+    </Card>
   )
 }

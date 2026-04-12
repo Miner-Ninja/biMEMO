@@ -1,4 +1,5 @@
 import { useEffect, useRef, useMemo, memo } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatMessage } from './ChatMessage'
 import type { Message, PendingConfirmation } from '@/types/chat'
@@ -111,12 +112,14 @@ export const MessageList = memo(function MessageList({ conversationKey, autoScro
       <>
         <div className={cn('flex-1', className)} />
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <h2 className="text-xl font-semibold">biMEMO</h2>
-            <p className="mt-2 text-muted-foreground">
+          <Card className="pointer-events-auto w-full max-w-sm shadow-none">
+            <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+              <h2 className="text-xl font-semibold">biMEMO</h2>
+              <p className="text-muted-foreground">
               Your personal AI assistant
-            </p>
-          </div>
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </>
     )

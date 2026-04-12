@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { CheckCircle2, XCircle, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn, generateId } from '@/lib/utils'
 
 export interface Toast {
@@ -16,6 +19,7 @@ interface ToastItemProps {
 
 function ToastItem({ toast, onDismiss }: ToastItemProps) {
   const [visible, setVisible] = useState(false)
+  const statusLabel = toast.type === 'success' ? 'Success' : 'Error'
 
   useEffect(() => {
     // Animate in
@@ -30,32 +34,40 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
   }, [toast, onDismiss])
 
   return (
-    <div
+    <Card
       className={cn(
-        'flex items-center gap-2 rounded-lg border px-4 py-3 shadow-lg transition-all duration-200',
+        'shadow-lg transition-all duration-200',
         visible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0',
         toast.type === 'success'
-          ? 'border-green-500/20 bg-background text-foreground'
-          : 'border-destructive/20 bg-background text-foreground'
+          ? 'border-success/20 bg-card'
+          : 'border-destructive/20 bg-card'
       )}
     >
-      {toast.type === 'success' ? (
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-      ) : (
-        <XCircle className="h-4 w-4 shrink-0 text-destructive" />
-      )}
-      <span className="text-sm flex-1">{toast.message}</span>
-      <button
-        type="button"
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          setVisible(false)
-          setTimeout(() => onDismiss(toast.id), 200)
-        }}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
+      <CardContent className="flex items-start gap-3 p-4">
+        <Badge variant={toast.type === 'success' ? 'success' : 'danger'} className="shrink-0 gap-1.5">
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          ) : (
+            <XCircle className="h-3.5 w-3.5" />
+          )}
+          {statusLabel}
+        </Badge>
+        <span className="flex-1 text-sm">{toast.message}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          onClick={() => {
+            setVisible(false)
+            setTimeout(() => onDismiss(toast.id), 200)
+          }}
+          aria-label="Dismiss toast"
+        >
+          <X />
+        </Button>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -68,7 +80,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
+    <div className="fixed right-4 top-4 z-50 flex w-80 flex-col gap-2">
       {toasts.slice(0, 3).map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}

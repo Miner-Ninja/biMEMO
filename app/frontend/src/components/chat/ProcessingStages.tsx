@@ -1,5 +1,7 @@
 import { memo } from 'react'
 import { Check, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { LiveTimer } from './LiveTimer'
 import { cn } from '@/lib/utils'
 import type { ProcessingStage } from '@/types/chat'
@@ -11,24 +13,10 @@ interface ProcessingStagesProps {
 
 const BouncingDots = () => (
   <div className="flex items-center gap-1">
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
-    <span className="h-2 w-2 animate-bounce rounded-full bg-primary" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0 [animation-delay:-0.3s]" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0 [animation-delay:-0.15s]" />
+    <Badge variant="info" className="h-2 w-2 animate-bounce rounded-full border-0 p-0" />
   </div>
-)
-
-const PulsingText = ({ text }: { text: string }) => (
-  <span className="inline-flex text-sm text-muted-foreground">
-    {text.split('').map((char, i) => (
-      <span
-        key={i}
-        className="animate-pulse"
-        style={{ animationDelay: `${i * 0.1}s` }}
-      >
-        {char === ' ' ? '\u00A0' : char}
-      </span>
-    ))}
-  </span>
 )
 
 const StatusIcon = ({ status }: { status: ProcessingStage['status'] }) => {
@@ -50,28 +38,38 @@ export const ProcessingStages = memo(function ProcessingStages({ stages, classNa
   if (stages.length === 0) return null
 
   const current = stages[stages.length - 1]
+  const statusBadgeVariant = current.status === 'completed'
+    ? 'secondary'
+    : current.status === 'error'
+      ? 'danger'
+      : 'info'
 
   return (
     <div className={cn('px-2 py-2 sm:px-4 sm:py-3', className)}>
-      <div
-        key={current.id}
-        className={cn(
-          'flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300',
-          current.status === 'completed' && 'text-muted-foreground',
-          current.status === 'error' && 'text-destructive',
-        )}
-      >
-        <StatusIcon status={current.status} />
-        {current.status === 'active' ? (
-          <PulsingText text={current.label} />
-        ) : (
-          <span className="text-xs sm:text-sm">{current.label}</span>
-        )}
-        <LiveTimer
-          startedAt={current.startedAt}
-          frozenMs={current.frozenDurationMs}
-        />
-      </div>
+      <Card className="border-border/70 bg-card/80 shadow-none">
+        <CardContent className="flex items-center gap-3 p-3 sm:p-4">
+          <div
+            key={current.id}
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300',
+              current.status === 'completed' && 'text-muted-foreground',
+              current.status === 'error' && 'text-destructive',
+            )}
+          >
+            <StatusIcon status={current.status} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm">{current.label}</div>
+            </div>
+            <Badge variant={statusBadgeVariant}>
+              {current.status}
+            </Badge>
+            <LiveTimer
+              startedAt={current.startedAt}
+              frozenMs={current.frozenDurationMs}
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 })

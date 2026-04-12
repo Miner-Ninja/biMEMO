@@ -3,9 +3,18 @@ import { ChevronRight, ChevronDown, AlertTriangle, BarChart3, Copy, Check, Penci
 import { SpeakButton } from './SpeakButton'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { DataChart } from './DataChart'
 import { MarkdownCodeBlock } from './MarkdownCodeBlock'
@@ -146,7 +155,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
             aria-label={copied ? 'Copied!' : 'Copy message'}
           >
             {copied ? (
-              <Check className="h-4 w-4 text-green-500" />
+              <Check className="h-4 w-4 text-primary" />
             ) : (
               <Copy className="h-4 w-4" />
             )}
@@ -192,10 +201,10 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pr-16 sm:pr-20">
           <span className="text-sm font-medium sm:text-base">{isUser ? 'You' : (assistantName || 'Assistant')}</span>
           {message.isVoice && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+            <Badge variant="info" className="gap-1">
               <Mic className="h-3 w-3" />
               voice
-            </span>
+            </Badge>
           )}
           <span className="text-xs text-muted-foreground">{formatDate(message.timestamp)}</span>
         </div>
@@ -209,27 +218,31 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
         {hasImages && (
           <div className="grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {message.images!.map((imageUrl, imageIndex) => (
-              <button
+              <Card
                 key={`${message.id}-image-${imageIndex}`}
-                type="button"
-                className="group/image relative overflow-hidden rounded-lg border border-border bg-black/40 text-left"
-                onClick={() => setSelectedImage(imageUrl)}
-                aria-label={`Open image ${imageIndex + 1}`}
+                className="group/image overflow-hidden border-border/70 bg-card shadow-none"
               >
-                <img
-                  src={imageUrl}
-                  alt={`Attached image ${imageIndex + 1}`}
-                  className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
-                  loading="lazy"
-                />
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 to-transparent px-3 py-2 text-xs text-white">
-                  <span>{`Image ${imageIndex + 1}`}</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5">
-                    <Expand className="h-3 w-3" />
-                    Open
-                  </span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() => setSelectedImage(imageUrl)}
+                  aria-label={`Open image ${imageIndex + 1}`}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={`Attached image ${imageIndex + 1}`}
+                    className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
+                    loading="lazy"
+                  />
+                  <CardContent className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="text-xs text-muted-foreground">{`Image ${imageIndex + 1}`}</span>
+                    <Badge variant="outline" className="gap-1 border-border/70 px-2 py-0.5">
+                      <Expand className="h-3 w-3" />
+                      Open
+                    </Badge>
+                  </CardContent>
+                </button>
+              </Card>
             ))}
           </div>
         )}
@@ -263,34 +276,41 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
 
         {/* Error message — structured or simple */}
         {hasError && (
-          <div className="rounded border border-destructive/20 bg-destructive/5 p-3 space-y-2">
-            <div className="flex items-start gap-2 text-destructive">
+          <Card className="border-destructive/20 bg-destructive/5 shadow-none">
+            <CardContent className="flex flex-col gap-3 p-4">
+              <div className="flex items-start gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-medium text-sm">{message.error}</p>
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">{message.error}</p>
                 {message.errorSuggestion && (
                   <p className="text-sm text-muted-foreground">{message.errorSuggestion}</p>
                 )}
               </div>
-            </div>
-            {message.errorDetail && (
-              <div>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setErrorDetailOpen(!errorDetailOpen)}
-                >
-                  {errorDetailOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                  Technical information
-                </button>
-                {errorDetailOpen && (
-                  <pre className="mt-1 rounded bg-muted p-2 text-xs text-muted-foreground overflow-x-auto whitespace-pre-wrap">
-                    {message.errorDetail}
-                  </pre>
-                )}
               </div>
-            )}
-          </div>
+              {message.errorDetail && (
+                <>
+                  <Separator />
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-fit px-0 text-xs text-muted-foreground hover:bg-transparent"
+                      onClick={() => setErrorDetailOpen(!errorDetailOpen)}
+                    >
+                      {errorDetailOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      Technical information
+                    </Button>
+                    {errorDetailOpen && (
+                      <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+                        {message.errorDetail}
+                      </pre>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Main content — inline edit mode or markdown */}
@@ -323,7 +343,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
           </div>
         ) : contentWithoutSql ? (
           <div>
-            <div className="markdown-content prose prose-sm dark:prose-invert max-w-none text-sm sm:text-base">
+            <div className="markdown-content prose prose-sm prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-td:text-foreground prose-a:text-primary max-w-none text-sm sm:text-base">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'style', 'link']}
@@ -336,17 +356,18 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
             {/* Clickable suggestion chips */}
             {suggestions.length > 0 && onCommandClick && (
               <div className="mt-6 flex flex-col items-stretch gap-2 sm:mt-8 sm:items-start sm:gap-2">
-                <hr className="w-full border-border" />
+                <Separator />
                 <span className="mb-1 text-[10px] font-medium text-muted-foreground sm:text-xs">Suggestions</span>
                 {suggestions.map((s, i) => (
-                  <button
+                  <Button
                     key={i}
                     type="button"
-                    className="rounded-xl border border-primary/40 bg-primary/15 px-3.5 py-2.5 text-left text-[13px] leading-5 text-primary transition-colors hover:bg-primary/25 cursor-pointer sm:rounded-full sm:px-3 sm:py-1 sm:text-sm dark:border-primary/40 dark:text-primary border-sky-600/50 text-sky-700"
+                    variant="outline"
+                    className="h-auto justify-start whitespace-normal rounded-xl border-primary/30 bg-primary/10 px-3.5 py-2.5 text-left text-[13px] leading-5 text-primary hover:bg-primary/15 sm:rounded-full sm:px-3 sm:py-1 sm:text-sm"
                     onClick={() => onCommandClick(s)}
                   >
                     {s}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -402,30 +423,20 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
         )}
       </div>
 
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Image preview"
-          onClick={() => setSelectedImage(null)}
-        >
-          <button
-            type="button"
-            className="absolute right-4 top-4 rounded-full bg-black/60 p-2 text-white transition-colors hover:bg-black/80"
-            onClick={() => setSelectedImage(null)}
-            aria-label="Close image preview"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <img
-            src={selectedImage}
-            alt="Selected attachment preview"
-            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          />
-        </div>
-      )}
+      <Dialog open={Boolean(selectedImage)} onOpenChange={(open) => !open && setSelectedImage(null)}>
+        <DialogContent className="max-w-[min(96vw,72rem)] border-none bg-transparent p-0 shadow-none">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image preview</DialogTitle>
+          </DialogHeader>
+          {selectedImage ? (
+            <img
+              src={selectedImage}
+              alt="Selected attachment preview"
+              className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 })

@@ -1,12 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Mic, Square, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 const MAX_RECORDING_SECONDS = 120
 const BAR_COUNT = 40
 const BAR_GAP = 2
 const BAR_WIDTH = 3
+const FALLBACK_WAVEFORM_COLOR = "hsl(0 72% 51%)"
 
 interface VoiceRecorderProps {
   onRecorded: (voiceDataUrl: string) => void
@@ -51,6 +54,23 @@ export function VoiceRecorder({
     )
   }, [])
 
+  const getWaveformColor = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return FALLBACK_WAVEFORM_COLOR
+    }
+
+    const destructiveColor = window
+      .getComputedStyle(document.documentElement)
+      .getPropertyValue('--destructive')
+      .trim()
+
+    if (!destructiveColor) {
+      return FALLBACK_WAVEFORM_COLOR
+    }
+
+    return `oklch(${destructiveColor})`
+  }, [])
+
   const drawWaveform = useCallback(() => {
     const analyser = analyserRef.current
     const canvas = canvasRef.current
@@ -83,14 +103,14 @@ export function VoiceRecorder({
       const x = startX + i * totalBarWidth
       const y = (h - barHeight) / 2
 
-      ctx.fillStyle = 'hsl(0, 72%, 51%)' // destructive red
+      ctx.fillStyle = getWaveformColor()
       ctx.beginPath()
       ctx.roundRect(x, y, BAR_WIDTH, barHeight, 1.5)
       ctx.fill()
     }
 
     animFrameRef.current = requestAnimationFrame(drawWaveform)
-  }, [])
+  }, [getWaveformColor])
 
   const cleanup = useCallback(() => {
     if (animFrameRef.current) {
@@ -219,30 +239,28 @@ export function VoiceRecorder({
 
   if (recording) {
     return (
-      <div
+      <Card
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5',
-          embedded
-            ? 'min-h-[44px]'
-            : 'rounded-lg border border-destructive/30 bg-destructive/5',
+          embedded ? 'border-0 bg-transparent shadow-none' : 'border-destructive/30 bg-destructive/5 shadow-none',
           className,
         )}
       >
-        <div className="flex items-center gap-1.5">
+        <CardContent className="flex items-center gap-2 px-3 py-1.5">
+        <Badge variant="danger" className="gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
           </span>
-          <span className="text-xs font-mono tabular-nums text-destructive font-medium">
+          <span className="font-mono text-xs tabular-nums font-medium">
             {formatTime(seconds)}
           </span>
-        </div>
+        </Badge>
 
         <canvas
           ref={canvasRef}
           width={BAR_COUNT * (BAR_WIDTH + BAR_GAP)}
           height={32}
-          className="h-8"
+          className="h-8 flex-1"
         />
 
         <Button
@@ -266,7 +284,8 @@ export function VoiceRecorder({
         >
           <Square className="h-4 w-4" />
         </Button>
-      </div>
+        </CardContent>
+      </Card>
     )
   }
 

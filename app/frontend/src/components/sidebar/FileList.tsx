@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react'
 import { FileText, Trash2, Upload, Loader2, Check } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { UploadProgressPanel } from '@/components/ui/UploadProgressPanel'
 import type { UploadProgressData } from '@/components/ui/UploadProgressPanel'
 import { cn } from '@/lib/utils'
@@ -9,6 +12,7 @@ import type { IndexedFile } from '@/lib/bimemo-api'
 import { useConfirm } from '@/hooks/useConfirm'
 import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from '@/lib/file-upload-contract'
 import { FileListSkeleton } from '@/components/ui/skeletons'
+import { SidebarSectionLabel } from './sidebar-chrome'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 
@@ -321,45 +325,52 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
   }
 
   if (files.length === 0) {
-    // Empty state — prominent drag & drop zone
     return (
       <>
         <ConfirmDialog />
         <div className="h-full flex flex-col justify-center px-3">
-          <div
+          <Card
             {...dragHandlers}
             onClick={handleUploadClick}
             className={cn(
-              'flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors',
+              'cursor-pointer border-2 border-dashed shadow-none transition-colors',
               dragOver
-                ? 'border-primary bg-primary/5'
-                : 'border-muted-foreground/25 hover:border-muted-foreground/40'
+                ? 'border-sidebar-primary bg-sidebar-primary/10'
+                : 'border-sidebar-border bg-sidebar-accent/20 hover:border-sidebar-foreground/20 hover:bg-sidebar-accent/30'
             )}
           >
-            <Upload className={cn(
-              'h-10 w-10 transition-colors',
-              dragOver ? 'text-primary' : 'text-muted-foreground/50'
-            )} />
-            <p className="text-sm text-muted-foreground">
-              Drag files here or click to upload
-            </p>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={(e: MouseEvent<HTMLButtonElement>) => {
-                e.stopPropagation()
-                handleUploadClick()
-              }}
-            >
-              <Upload className="h-4 w-4" />
-              Upload files
-            </Button>
-            <p className="text-xs text-muted-foreground/60">
-              PDF, DOCX, XLSX, CSV, TXT, JSON, Images
-              <span className="mx-1.5">&middot;</span>
-              Max 10 MB per file
-            </p>
-          </div>
+            <CardContent className="p-0">
+              <Empty className="gap-4 px-6 py-8 text-center">
+                <EmptyHeader>
+                  <EmptyMedia className={cn(
+                    'border-0 bg-transparent shadow-none',
+                    dragOver ? 'text-sidebar-primary' : 'text-sidebar-foreground/45',
+                  )}>
+                    <Upload />
+                  </EmptyMedia>
+                  <EmptyTitle>Drag files here or click to upload</EmptyTitle>
+                  <EmptyDescription>
+                    PDF, DOCX, XLSX, CSV, TXT, JSON, Images
+                    <span className="mx-1.5">&middot;</span>
+                    Max 10 MB per file
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                      e.stopPropagation()
+                      handleUploadClick()
+                    }}
+                  >
+                    <Upload />
+                    Upload files
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            </CardContent>
+          </Card>
           {uploadError && (
             <p className="mt-2 text-center text-xs text-destructive">{uploadError}</p>
           )}
@@ -379,22 +390,25 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
       <ConfirmDialog />
       {/* Drag overlay */}
       {dragOver && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5 pointer-events-none">
-          <div className="flex flex-col items-center gap-2 text-primary">
-            <Upload className="h-10 w-10" />
-            <p className="text-sm font-medium">Drop files to upload</p>
-          </div>
+        <div className="pointer-events-none absolute inset-0 z-30 rounded-lg border-2 border-dashed border-primary bg-primary/5 p-3">
+          <Card className="flex h-full items-center justify-center border-primary/20 bg-background/85 shadow-none">
+            <CardContent className="flex flex-col items-center gap-2 p-6 text-sidebar-primary">
+              <Upload className="h-10 w-10" />
+              <p className="text-sm font-medium">Drop files to upload</p>
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* Header with select-all and upload */}
       <div className="flex items-center gap-2 px-3 py-2">
+        <SidebarSectionLabel className="mr-auto">Library</SidebarSectionLabel>
         <Button
           variant="ghost"
           size="sm"
           onClick={handleUploadClick}
           disabled={uploading}
-          className="h-7 text-xs gap-1"
+          className="h-7 gap-1 text-xs text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
           Upload
@@ -405,28 +419,27 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
             size="sm"
             onClick={handleDeleteSelected}
             disabled={bulkDeleting}
-            className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="h-7 gap-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             {activeSet.size}
           </Button>
         )}
-        <div className="flex-1" />
-        <button
+        <Button
           type="button"
-          className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-2 px-2 text-xs text-sidebar-foreground/72 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           onClick={toggleAll}
         >
-          <span className={cn(
-            'flex h-4 w-4 items-center justify-center rounded-sm border transition-colors',
-            allActive
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-zinc-500 bg-zinc-700/50'
-          )}>
-            {allActive && <Check className="h-3 w-3" />}
-          </span>
+          <Badge
+            variant={allActive ? 'info' : 'outline'}
+            className="border-transparent px-1.5 py-0"
+          >
+            {allActive ? <Check className="h-3 w-3" /> : null}
+          </Badge>
           All
-        </button>
+        </Button>
       </div>
 
       {/* Upload error */}
@@ -439,7 +452,7 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
       {/* File grid */}
       <div className="flex-1 min-h-0 overflow-y-auto p-2">
         {filteredFiles.length === 0 ? (
-          <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-4 text-center text-sm text-sidebar-foreground/55">
             No files found{searchQuery && <> for &ldquo;{searchQuery}&rdquo;</>}
           </p>
         ) : (
@@ -448,51 +461,51 @@ export function FileList({ activeFiles, onActiveFilesChange, onFilesChange, refr
             const isActive = activeSet.has(file.file_id)
             const isDeleting = deletingId === file.file_id
             return (
-              <div
+              <Card
                 key={file.file_id}
                 className={cn(
-                  'group relative flex flex-col items-center gap-1 rounded-lg p-2 cursor-pointer transition-all select-none',
+                  'group relative cursor-pointer select-none border-border/60 shadow-none transition-all',
                   isActive
-                    ? 'bg-primary/10 ring-2 ring-primary'
-                    : 'hover:bg-accent'
+                    ? 'border-primary/40 bg-primary/10 ring-2 ring-primary/50'
+                    : 'hover:bg-accent/70'
                 )}
                 onClick={() => toggleActive(file.file_id)}
               >
-                {/* Active checkmark badge */}
                 {isActive && (
-                  <div className="absolute top-1 left-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Badge
+                    variant="info"
+                    className="absolute left-1 top-1 z-10 border-transparent px-1.5 py-0"
+                  >
                     <Check className="h-3 w-3" />
-                  </div>
+                  </Badge>
                 )}
 
-                {/* Hover controls overlay */}
-                <div className="absolute inset-0 z-10 flex flex-col justify-between rounded-lg p-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  {/* Top row: trash (right-aligned) */}
-                  <div className="flex items-start justify-end">
-                    <button
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive transition-colors"
+                <CardContent className="flex flex-col items-center gap-2 p-2">
+                  <div className="flex w-full justify-end">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                       disabled={isDeleting}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDelete(file.file_id)
                       }}
+                      aria-label={`Delete ${file.filename}`}
                     >
                       {isDeleting
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
+                    </Button>
                   </div>
 
-                </div>
+                  <FileText className="h-8 w-8 text-muted-foreground transition-colors group-hover:text-accent-foreground" />
 
-                {/* File icon */}
-                <FileText className="h-8 w-8 text-muted-foreground group-hover:text-accent-foreground transition-colors" />
-
-                {/* Filename */}
-                <span className="text-xs text-center leading-tight line-clamp-2 w-full break-all">
-                  {file.filename}
-                </span>
-              </div>
+                  <span className="w-full break-all text-center text-xs leading-tight line-clamp-2">
+                    {file.filename}
+                  </span>
+                </CardContent>
+              </Card>
             )
           })}
         </div>

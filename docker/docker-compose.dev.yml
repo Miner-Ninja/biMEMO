@@ -1,6 +1,5 @@
 # biMEMO development Docker Compose (standalone).
 # Usage: docker-compose -f docker/docker-compose.dev.yml up -d --build
-# With local Ollama: docker-compose -f docker/docker-compose.dev.yml --profile gpu up -d
 
 services:
   bimemo:

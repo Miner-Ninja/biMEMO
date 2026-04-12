@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { MessageSquare, MoreVertical, Pencil, Trash2 } from 'lucide-react'
 import { BridgeProviderIcon } from '@/components/icons/BridgeProviderIcon'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Chat } from '@/types/chat'
 import { cn, truncate } from '@/lib/utils'
+import { getSidebarItemClassName } from './sidebar-chrome'
 
 interface ChatItemProps {
   chat: Chat
@@ -95,11 +97,9 @@ export function ChatItem({
       onClick={isEditing ? undefined : onSelect}
       onKeyDown={isEditing ? undefined : handleItemKeyDown}
       className={cn(
-        'group relative flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-        'hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:outline-none',
-        'min-h-[44px]',
+        'group relative min-h-[44px] text-left focus-visible:outline-none',
         isEditing ? 'cursor-default' : 'cursor-pointer',
-        isActive && 'bg-sidebar-accent'
+        getSidebarItemClassName(isActive)
       )}
     >
       {/* Chat icon and title */}
@@ -120,25 +120,21 @@ export function ChatItem({
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="truncate text-left">{truncate(chat.title, 30)}</span>
           {bridgeProvider ? (
-            <span
-              className="inline-flex shrink-0 items-center text-primary"
+            <Badge
+              variant="info"
+              className="shrink-0 border-transparent px-1.5 py-0"
               title={bridgeTitle}
             >
               <BridgeProviderIcon provider={bridgeProvider} />
-            </span>
+            </Badge>
           ) : null}
         </div>
-      )}
-
-      {/* Fade gradient - always visible */}
-      {!isEditing && (
-        <div className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-20 bg-gradient-to-r from-transparent to-sidebar group-hover:to-sidebar-accent" />
       )}
 
       {/* Actions menu - visible on hover */}
       {!isEditing && (
         <div
-          className="absolute -right-1 top-0 bottom-0 z-20 flex items-center opacity-0 group-hover:opacity-100"
+          className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>

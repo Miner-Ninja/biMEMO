@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { getSidebarActionButtonClassName } from './sidebar-chrome'
 
 interface NewChatButtonProps {
   onClick: () => void
@@ -12,7 +13,7 @@ export function NewChatButton({ onClick }: NewChatButtonProps) {
   return (
     <Button
       variant="outline"
-      className="h-11 w-full justify-start gap-2"
+      className={getSidebarActionButtonClassName()}
       onClick={onClick}
     >
       <Plus className="h-4 w-4" />

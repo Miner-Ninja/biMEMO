@@ -1,6 +1,16 @@
-import { useState, useRef, memo, forwardRef, useImperativeHandle, type KeyboardEvent, type ChangeEvent, type ClipboardEvent } from 'react'
+import { useState, useRef, memo, forwardRef, useImperativeHandle, type KeyboardEvent, type ChangeEvent, type ClipboardEvent, type MouseEvent } from 'react'
 import { CornerDownLeft, Square, X, FileText, AudioLines, Waypoints, Settings, Code, Brain } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from '@/components/ui/command'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { UploadProgressPanel } from '@/components/ui/UploadProgressPanel'
 import type { UploadProgressData } from '@/components/ui/UploadProgressPanel'
@@ -8,6 +18,8 @@ import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -229,7 +241,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
   return (
     <div
       className={cn(
-        'border-t border-border bg-muted/50 dark:bg-background px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:p-4',
+        'bg-background px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:p-4',
         isLoading && '[&_*]:cursor-wait',
         voiceMode && 'border-t-primary/50'
       )}
@@ -240,20 +252,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
         {activeFiles && activeFiles.length > 0 && (
           <div className="mx-auto mb-2 flex max-w-3xl flex-wrap justify-start gap-1.5 sm:justify-center">
             {activeFiles.map((filename) => (
-              <div key={filename} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">
-                <FileText className="h-3 w-3" />
-                <span className="max-w-[140px] truncate sm:max-w-[180px]">{filename}</span>
-                {onDeactivateFile && (
-                  <button
-                    type="button"
-                    onClick={() => onDeactivateFile(filename)}
-                    className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20 transition-colors"
-                    aria-label={`Deactivate ${filename}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
+              <Card key={filename} className="max-w-full border-primary/20 bg-primary/10 shadow-none">
+                <CardContent className="flex items-center gap-1.5 px-2.5 py-1">
+                  <Badge variant="info" className="gap-1.5 border-transparent">
+                    <FileText className="h-3 w-3" />
+                    <span className="max-w-[140px] truncate sm:max-w-[180px]">{filename}</span>
+                  </Badge>
+                  {onDeactivateFile && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onDeactivateFile(filename)}
+                      className="h-5 w-5 rounded-full p-0"
+                      aria-label={`Deactivate ${filename}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
@@ -262,23 +280,27 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
         {attachedFiles.length > 0 && (
           <div className="mx-auto mb-2 flex max-w-3xl flex-wrap justify-start gap-1.5 sm:justify-center">
             {attachedFiles.map((file, index) => (
-              <div key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-2 rounded bg-muted px-3 py-1.5 text-sm">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="max-w-[130px] truncate sm:max-w-[200px]">{file.name}</span>
-                <span className="hidden text-xs text-muted-foreground sm:inline">
-                  ({(file.size / 1024).toFixed(1)} KB)
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemoveFile(index)}
-                  className="h-5 w-5 p-0"
-                  aria-label="Remove file"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
+              <Card key={`${file.name}-${index}`} className="max-w-full bg-muted/70 shadow-none">
+                <CardContent className="flex items-center gap-2 px-3 py-1.5">
+                  <Badge variant="secondary" className="gap-2 border-transparent text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="max-w-[130px] truncate sm:max-w-[200px]">{file.name}</span>
+                    <span className="hidden text-xs text-muted-foreground sm:inline">
+                      ({(file.size / 1024).toFixed(1)} KB)
+                    </span>
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveFile(index)}
+                    className="h-5 w-5 p-0"
+                    aria-label="Remove file"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
@@ -291,10 +313,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
         )}
 
         {voiceMode && (
-          <div className="mx-auto mb-2 flex max-w-3xl items-center justify-center gap-1.5 px-2 text-center text-xs text-primary">
+          <Badge variant="info" className="mx-auto mb-2 flex max-w-3xl items-center justify-center gap-1.5 px-2 py-1 text-center text-xs">
             <AudioLines className="h-3.5 w-3.5 animate-pulse" />
             <span>Voice mode active</span>
-          </div>
+          </Badge>
         )}
 
         <div className="relative mx-auto max-w-3xl">
@@ -313,24 +335,42 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
           {/* Slash command autocomplete popup */}
           {showCommands && filteredCommands.length > 0 && (
             <div className="absolute bottom-full left-0 right-0 z-50 mb-2 sm:ml-11">
-              <div className="rounded-md border border-border bg-popover p-1 shadow-md">
-                {filteredCommands.map((cmd, index) => (
-                  <button
-                    key={cmd.name}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm',
-                      index === selectedIndex
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-popover-foreground hover:bg-accent/50'
-                    )}
-                    onMouseDown={(e) => { e.preventDefault(); handleSelectCommand(cmd) }}
-                    onMouseEnter={() => setSelectedIndex(index)}
-                  >
-                    <span className="font-medium text-primary">{cmd.name}</span>
-                    <span className="text-muted-foreground">{cmd.description}</span>
-                  </button>
-                ))}
-              </div>
+              <Card className="shadow-md">
+                <CardContent className="p-1">
+                  <Command shouldFilter={false} className="bg-transparent">
+                    <CommandList>
+                      <CommandGroup heading="Commands">
+                        {filteredCommands.map((cmd, index) => (
+                          <CommandItem
+                            key={cmd.name}
+                            value={cmd.name}
+                            onMouseDown={(e: MouseEvent<HTMLDivElement>) => {
+                              e.preventDefault()
+                              handleSelectCommand(cmd)
+                            }}
+                            onMouseEnter={() => setSelectedIndex(index)}
+                            onSelect={() => handleSelectCommand(cmd)}
+                            className={cn(
+                              'gap-3 px-3 py-2',
+                              index === selectedIndex && 'bg-accent text-accent-foreground',
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                              <span className="font-medium text-primary">{cmd.name}</span>
+                              <span className="truncate text-xs text-muted-foreground">
+                                {cmd.description}
+                              </span>
+                            </div>
+                            <CommandShortcut>
+                              {cmd.hasArgs ? 'args' : 'ready'}
+                            </CommandShortcut>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -402,16 +442,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
                           Loading providers...
                         </div>
                       ) : bridgeProviders.length > 0 ? (
-                        <div className="space-y-1 p-1">
+                        <DropdownMenuGroup>
                           {bridgeProviders.map(({ provider, enabled }) => {
                             const isLoadingProvider =
                               bridgeLoadingProvider === provider
                             return (
-                              <button
+                              <DropdownMenuItem
                                 key={provider}
-                                type="button"
-                                role="switch"
-                                aria-checked={enabled}
                                 disabled={
                                   disabled ||
                                   bridgeDisabled ||
@@ -420,32 +457,23 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
                                 onClick={() =>
                                   onToggleBridgeProvider(provider, !enabled)
                                 }
-                                className={cn(
-                                  'flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors',
-                                  'hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-60'
-                                )}
                               >
                                 <span className="flex items-center gap-2">
                                   <BridgeProviderIcon provider={provider} className="h-4 w-4" />
                                   {bridgeProviderLabel(provider)}
                                 </span>
-                                <span
-                                  className={cn(
-                                    'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                                    enabled ? 'bg-primary' : 'bg-muted-foreground/30'
-                                  )}
-                                >
-                                  <span
-                                    className={cn(
-                                      'absolute h-4 w-4 rounded-full bg-background shadow-sm transition-transform',
-                                      enabled ? 'translate-x-4' : 'translate-x-0.5'
-                                    )}
-                                  />
-                                </span>
-                              </button>
+                                <Switch
+                                  checked={enabled}
+                                  disabled={
+                                    disabled ||
+                                    bridgeDisabled ||
+                                    isLoadingProvider
+                                  }
+                                />
+                              </DropdownMenuItem>
                             )
                           })}
-                        </div>
+                        </DropdownMenuGroup>
                       ) : (
                         <div className="p-2 text-sm text-muted-foreground">
                           No bridge providers are configured right now.
@@ -470,62 +498,30 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(functi
                     <DropdownMenuContent align="start" className="w-56">
                       <DropdownMenuLabel>Chat Settings</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <div className="space-y-1 p-1">
+                      <DropdownMenuGroup>
                         {onToggleSql && (
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={showSql}
+                          <DropdownMenuItem
                             onClick={onToggleSql}
-                            className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent/60"
                           >
                             <span className="flex items-center gap-2">
                               <Code className="h-4 w-4" />
                               Show SQL
                             </span>
-                            <span
-                              className={cn(
-                                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                                showSql ? 'bg-primary' : 'bg-muted-foreground/30'
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  'absolute h-4 w-4 rounded-full bg-background shadow-sm transition-transform',
-                                  showSql ? 'translate-x-4' : 'translate-x-0.5'
-                                )}
-                              />
-                            </span>
-                          </button>
+                            <Switch checked={Boolean(showSql)} />
+                          </DropdownMenuItem>
                         )}
                         {onToggleThinking && (
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={showThinking}
+                          <DropdownMenuItem
                             onClick={onToggleThinking}
-                            className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent/60"
                           >
                             <span className="flex items-center gap-2">
                               <Brain className="h-4 w-4" />
                               Show Thinking
                             </span>
-                            <span
-                              className={cn(
-                                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                                showThinking ? 'bg-primary' : 'bg-muted-foreground/30'
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  'absolute h-4 w-4 rounded-full bg-background shadow-sm transition-transform',
-                                  showThinking ? 'translate-x-4' : 'translate-x-0.5'
-                                )}
-                              />
-                            </span>
-                          </button>
+                            <Switch checked={Boolean(showThinking)} />
+                          </DropdownMenuItem>
                         )}
-                      </div>
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : null}
