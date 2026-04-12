@@ -15,7 +15,8 @@ import asyncio
 import inspect
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import TYPE_CHECKING
 
@@ -56,12 +57,32 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.concurrency import AgentConcurrency
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
 
 
 logger = logging.getLogger(__name__)
+
+FRESH_SKILL_WINDOW_HOURS = 24
+BACKGROUND_SKILL_TASK_NAME = "background-skill-generation"
+SKILL_JSON_RESPONSE_DESCRIPTION = (
+    '  "description": "One sentence: when and why to use this skill",\n'
+)
+SKILL_JSON_RESPONSE_TRIGGER = (
+    '  "trigger": "Description of what user request triggers this skill",\n'
+)
+SKILL_JSON_RESPONSE_PROCEDURE_STEP = (
+    '    {"tool": "web_search", "query": '
+    '"search query text", "note": "optional note"},\n'
+)
+SKILL_JSON_RESPONSE_ERROR = (
+    '    {"name": "Error name", "fix": "How to handle this error"}\n'
+)
+SKILL_JSON_RESPONSE_VERIFICATION = (
+    '  "verification": "How to confirm the result is correct"\n'
+)
 
 # Re-export for backward compatibility (used by tests)
 __all__ = [
@@ -250,13 +271,25 @@ class AgentOrchestrator:
             return
         if completion_tokens < self.MIN_COMPLETION_TOKENS_FOR_SKILL:
             return
-        asyncio.ensure_future(
+        background_task = asyncio.create_task(
             self._generate_and_save_skill(
                 message=message,
                 tool_call_count=tool_call_count,
                 llm_call=llm_call,
-            )
+            ),
+            name=BACKGROUND_SKILL_TASK_NAME,
         )
+        background_task.add_done_callback(self._log_background_skill_failure)
+
+    def _log_background_skill_failure(self, task: asyncio.Task[None]) -> None:
+        """Log one background skill-generation failure."""
+        try:
+            task.result()
+        except Exception:
+            logger.warning(
+                "Background skill generation failed",
+                exc_info=True,
+            )
 
     async def _generate_and_save_skill(
         self,
@@ -277,22 +310,24 @@ class AgentOrchestrator:
                     if inspect.isawaitable(existing):
                         existing = await existing
                     if existing:
-                        from datetime import UTC, datetime, timedelta
-
                         for skill in existing:
                             updated = skill.get("updated_at", "")
                             if updated:
                                 try:
                                     skill_time = datetime.fromisoformat(updated)
                                     age = datetime.now(tz=UTC) - skill_time
-                                    if age < timedelta(hours=24):
+                                    if age < timedelta(hours=FRESH_SKILL_WINDOW_HOURS):
                                         logger.info(
-                                            "Skipping skill creation — similar skill '%s' is fresh (%s old)",
+                                            (
+                                                "Skipping skill creation — "
+                                                "similar skill '%s' is fresh "
+                                                "(%s old)"
+                                            ),
                                             skill.get("name", ""),
                                             age,
                                         )
                                         return
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     pass
                         # Existing skill is old — will be updated via upsert
                         logger.info("Updating existing skill (older than 24h)")
@@ -302,30 +337,32 @@ class AgentOrchestrator:
             skill_prompt = [
                 {
                     "role": "system",
-                    "content": (
-                        "You are a skill extractor. Based on the task below, "
-                        "create a reusable skill document.\n\n"
-                        "Respond with a JSON object containing exactly 6 fields:\n"
-                        "{\n"
-                        '  "title": "Short skill name (5-10 words)",\n'
-                        '  "description": "One sentence: when and why to use this skill",\n'
-                        '  "trigger": "Description of what user request triggers this skill",\n'
-                        '  "procedure": [\n'
-                        '    {"tool": "web_search", "query": "search query text", "note": "optional note"},\n'
-                        '    {"tool": "web_search", "query": "another query"}\n'
-                        "  ],\n"
-                        '  "errors": [\n'
-                        '    {"name": "Error name", "fix": "How to handle this error"}\n'
-                        "  ],\n"
-                        '  "verification": "How to confirm the result is correct"\n'
-                        "}\n\n"
-                        "The skill must describe the PROCEDURE "
-                        "(what tools to call and in what order), "
-                        "NOT the data or results.\n"
-                        "Write concisely. "
-                        "Write in the same language as the user's message.\n\n"
-                        "IMPORTANT: Respond with JSON only. "
-                        "Do NOT call any tools or functions."
+                    "content": "".join(
+                        [
+                            "You are a skill extractor. Based on the task below, ",
+                            "create a reusable skill document.\n\n",
+                            "Respond with a JSON object containing exactly 6 fields:\n",
+                            "{\n",
+                            '  "title": "Short skill name (5-10 words)",\n',
+                            SKILL_JSON_RESPONSE_DESCRIPTION,
+                            SKILL_JSON_RESPONSE_TRIGGER,
+                            '  "procedure": [\n',
+                            SKILL_JSON_RESPONSE_PROCEDURE_STEP,
+                            '    {"tool": "web_search", "query": "another query"}\n',
+                            "  ],\n",
+                            '  "errors": [\n',
+                            SKILL_JSON_RESPONSE_ERROR,
+                            "  ],\n",
+                            SKILL_JSON_RESPONSE_VERIFICATION,
+                            "}\n\n",
+                            "The skill must describe the PROCEDURE ",
+                            "(what tools to call and in what order), ",
+                            "NOT the data or results.\n",
+                            "Write concisely. ",
+                            "Write in the same language as the user's message.\n\n",
+                            "IMPORTANT: Respond with JSON only. ",
+                            "Do NOT call any tools or functions.",
+                        ]
                     ),
                 },
                 {
@@ -391,7 +428,7 @@ class AgentOrchestrator:
                         json.dumps(errs) if isinstance(errs, list) else str(errs)
                     )
                     skill_verification = parsed.get("verification", "")
-            except (json.JSONDecodeError, ValueError):
+            except json.JSONDecodeError, ValueError:
                 # Fallback: put entire response into trigger
                 logger.debug("Skill LLM response is not JSON, using as trigger text")
                 skill_trigger = raw_text
@@ -448,6 +485,7 @@ class AgentOrchestrator:
         self,
         *,
         final_text: str,
+        structured_content: StructuredAssistantContent | None,
         loop: AgenticLoop,
         call_usages: list[LLMCallUsage],
         request_started_at: float,
@@ -455,6 +493,12 @@ class AgentOrchestrator:
     ) -> FinalizedAssistantResponse:
         """Build the final filtered assistant response and aggregated stats."""
         output_result = filter_output(final_text)
+        filtered_structured_content = structured_content
+        if structured_content is not None:
+            filtered_structured_content = replace(
+                structured_content,
+                answer=output_result.text,
+            )
         return FinalizedAssistantResponse(
             loop_result=loop.complete(final_text),
             output_text=output_result.text,
@@ -467,12 +511,14 @@ class AgentOrchestrator:
                 total_wall_time_ms=(perf_counter() - request_started_at) * 1000,
                 zone_usage=zone_usage,
             ),
+            structured_content=filtered_structured_content,
         )
 
     async def _build_gateway_response(
         self,
         *,
         final_text: str,
+        structured_content: StructuredAssistantContent | None,
         filtered_message: str,
         conversation_id: str,
         session_id: str,
@@ -488,6 +534,7 @@ class AgentOrchestrator:
         """Filter, persist, and wrap the final assistant answer."""
         finalized_response = self._finalize_assistant_response(
             final_text=final_text,
+            structured_content=structured_content,
             loop=loop,
             call_usages=call_usages,
             request_started_at=request_started_at,
@@ -512,6 +559,7 @@ class AgentOrchestrator:
             retrieved_memories=retrieved_memories,
             retrieved_messages=retrieved_messages,
             stats=finalized_response.stats,
+            structured_content=finalized_response.structured_content,
         )
 
     async def _build_prepared_turn_response(
@@ -519,6 +567,7 @@ class AgentOrchestrator:
         *,
         prepared_turn: TurnPreparation,
         final_text: str,
+        structured_content: StructuredAssistantContent | None,
         session_id: str,
         conversation_id: str,
         loop: AgenticLoop,
@@ -526,6 +575,7 @@ class AgentOrchestrator:
         """Build the final gateway response from one prepared turn."""
         return await self._build_gateway_response(
             final_text=final_text,
+            structured_content=structured_content,
             filtered_message=prepared_turn.filtered_message,
             conversation_id=conversation_id,
             session_id=session_id,
@@ -568,6 +618,7 @@ class AgentOrchestrator:
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
             final_text=final_text,
+            structured_content=None,
             session_id=session_id,
             conversation_id=conversation_id,
             loop=loop,
@@ -578,6 +629,7 @@ class AgentOrchestrator:
         *,
         prepared_turn: TurnPreparation,
         final_text: str,
+        structured_content: StructuredAssistantContent | None,
         session_id: str,
         conversation_id: str,
         loop: AgenticLoop,
@@ -586,6 +638,7 @@ class AgentOrchestrator:
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
             final_text=final_text,
+            structured_content=structured_content,
             session_id=session_id,
             conversation_id=conversation_id,
             loop=loop,
@@ -946,7 +999,7 @@ class AgentOrchestrator:
         user_intent = extract_user_intent_tools(
             prepared_turn.filtered_message,
         )
-        final_text = await self.llm_caller.run_model_loop(
+        model_loop_result = await self.llm_caller.run_model_loop(
             loop=loop,
             llm_call=llm_call,
             messages=prepared_turn.messages,
@@ -959,7 +1012,8 @@ class AgentOrchestrator:
 
         return await self._complete_prepared_turn(
             prepared_turn=prepared_turn,
-            final_text=final_text,
+            final_text=model_loop_result.final_text,
+            structured_content=model_loop_result.structured_content,
             session_id=session_id,
             conversation_id=conversation_id,
             loop=loop,

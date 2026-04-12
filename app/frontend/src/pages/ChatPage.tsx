@@ -879,7 +879,7 @@ export function ChatPage() {
                 ? pendingConfirmations
                 : undefined,
           },
-          streamedThinkingRef.current,
+          streamedThinkingRef.current || structuredContent?.thinking || "",
         ),
       );
       activeAssistantStreamRef.current.httpCompleted = true;
@@ -1081,7 +1081,7 @@ export function ChatPage() {
                 ? structuredContent.suggestions
                 : undefined,
           },
-          streamedThinkingRef.current,
+          streamedThinkingRef.current || structuredContent?.thinking || "",
         ),
       );
       activeAssistantStreamRef.current.httpCompleted = true;

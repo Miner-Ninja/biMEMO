@@ -37,7 +37,11 @@ OLLAMA_PROVIDER_NAME = "ollama"
 PREBUILT_CAPABILITIES_SOURCE = "test:prebuilt"
 
 
-def _prebuilt_registry(model: str, ctx: int = DEFAULT_TEST_NUM_CTX):
+def _prebuilt_registry(
+    model: str,
+    ctx: int = DEFAULT_TEST_NUM_CTX,
+    response_format: LlmResponseFormat = LlmResponseFormat.TEXT,
+):
     """Return a CapabilitiesRegistry pre-populated for the given test model."""
     from backend.llm.capabilities import ModelCapabilities
     from backend.llm.capabilities_registry import CapabilitiesRegistry
@@ -48,7 +52,7 @@ def _prebuilt_registry(model: str, ctx: int = DEFAULT_TEST_NUM_CTX):
         model=model,
         max_context_tokens=ctx,
         source=PREBUILT_CAPABILITIES_SOURCE,
-        llm_response_format=LlmResponseFormat.JSON_SCHEMA,
+        llm_response_format=response_format,
     )
     return registry
 
@@ -636,7 +640,117 @@ class TestChat:
 
         result = await client.chat([{"role": "user", "content": "Hi"}])
         assert result.text == "Hello world"
-        assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert result.llm_response_format is LlmResponseFormat.TEXT
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_structured_mode_returns_typed_content(self, tmp_path):
+        """Verify Ollama JSON mode returns parsed structured assistant content."""
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            assert body["format"]["type"] == "object"
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {
+                                "answer": "Visible answer",
+                                "sql": "SELECT 1",
+                                "suggestions": ["Next step"],
+                            }
+                        ),
+                        "thinking": "internal plan",
+                    },
+                    "prompt_eval_count": 3,
+                    "eval_count": 2,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+
+        result = await client.chat([{"role": "user", "content": "Hi"}])
+        assert result.text == "Visible answer"
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "Visible answer"
+        assert result.structured_content.thinking == "internal plan"
+        assert result.structured_content.sql == "SELECT 1"
+        assert result.structured_content.suggestions == ["Next step"]
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_structured_mode_returns_tool_call_without_final_text(
+        self,
+        tmp_path,
+    ):
+        """Verify JSON mode still surfaces tool calls before a final answer."""
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "thinking": "search first",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "web_search",
+                                    "arguments": {"query": "bitcoin price"},
+                                }
+                            }
+                        ],
+                    },
+                    "prompt_eval_count": 3,
+                    "eval_count": 2,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+
+        result = await client.chat(
+            [{"role": "user", "content": "Find bitcoin price"}],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+        assert result.text == ""
+        assert result.structured_content is None
+        assert result.tool_calls[0].name == "web_search"
+        assert result.tool_calls[0].arguments == {"query": "bitcoin price"}
         await client.close()
 
     @pytest.mark.asyncio

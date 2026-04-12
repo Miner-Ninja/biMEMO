@@ -20,6 +20,7 @@ from backend.agent.agent_loop_helpers import (
     message_requires_forced_web_search,
     request_non_empty_final_answer,
 )
+from backend.agent.agent_loop_models import ModelLoopResult
 from backend.agent.loop import (
     AgenticLoop,
     LoopState,
@@ -307,9 +308,10 @@ class LLMCaller:
         tool_executor: ToolExecutor,
         user_intent_tools: set[str] | None = None,
         force_web_search: bool = False,
-    ) -> str:
+    ) -> ModelLoopResult:
         """Run the model/tool loop until a final answer is available."""
         final_text = ""
+        structured_content = None
         executed_immediate_tools = False
         first_iteration = True
         while True:
@@ -340,6 +342,7 @@ class LLMCaller:
             )
             if round_result.final_text:
                 final_text = round_result.final_text
+                structured_content = round_result.structured_content
                 break
             if round_result.executed_immediate_tools:
                 executed_immediate_tools = True
@@ -358,5 +361,12 @@ class LLMCaller:
                 final_text = recovered_final_text
 
         if final_text.strip():
-            return final_text
-        return "I could not produce a final answer for that request. Please try again."
+            return ModelLoopResult(
+                final_text=final_text,
+                structured_content=structured_content,
+            )
+        return ModelLoopResult(
+            final_text=(
+                "I could not produce a final answer for that request. Please try again."
+            ),
+        )

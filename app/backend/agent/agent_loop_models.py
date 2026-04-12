@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from backend.agent.loop import LoopResult
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.memory.classification.question_router import MemoryQuestionRoute
     from backend.memory.classification.trace import MemoryQuestionRouteTrace
@@ -55,6 +56,7 @@ class AgentResponse:
     retrieved_memories: list[dict[str, str]] = field(default_factory=list)
     retrieved_messages: list[dict[str, str]] | None = None
     stats: ExtendedUsage | None = None
+    structured_content: StructuredAssistantContent | None = None
 
 
 @dataclass(frozen=True)
@@ -73,8 +75,17 @@ class ToolRoundResult:
     """Result of one model tool round."""
 
     final_text: str
+    structured_content: StructuredAssistantContent | None
     executed_immediate_tools: bool
     should_continue: bool
+
+
+@dataclass(frozen=True)
+class ModelLoopResult:
+    """Final model-loop output before assistant-response post-processing."""
+
+    final_text: str
+    structured_content: StructuredAssistantContent | None = None
 
 
 @dataclass(frozen=True)
@@ -117,3 +128,4 @@ class FinalizedAssistantResponse:
     output_text: str
     output_filtered: bool
     stats: ExtendedUsage | None
+    structured_content: StructuredAssistantContent | None = None

@@ -17,6 +17,7 @@ from backend.llm.capabilities import LlmResponseFormat
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
 
 
@@ -57,6 +58,7 @@ class LLMResponse:
     raw_message: dict = field(default_factory=dict)
     usage: LLMCallUsage | None = None
     llm_response_format: LlmResponseFormat = LlmResponseFormat.TEXT
+    structured_content: StructuredAssistantContent | None = None
 
 
 class LLMClient(Protocol):

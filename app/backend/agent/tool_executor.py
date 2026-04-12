@@ -182,6 +182,7 @@ class ToolExecutor:
         if not llm_response.tool_calls:
             return ToolRoundResult(
                 final_text=llm_response.text,
+                structured_content=llm_response.structured_content,
                 executed_immediate_tools=False,
                 should_continue=False,
             )
@@ -204,12 +205,14 @@ class ToolExecutor:
         if not immediate and red:
             return ToolRoundResult(
                 final_text=llm_response.text,
+                structured_content=llm_response.structured_content,
                 executed_immediate_tools=False,
                 should_continue=False,
             )
 
         return ToolRoundResult(
             final_text="",
+            structured_content=None,
             executed_immediate_tools=bool(results),
             should_continue=True,
         )

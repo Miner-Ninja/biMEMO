@@ -22,7 +22,11 @@ from backend.llm.call_factory import (
     LLMResponse,
     LLMToolCall,
 )
-from backend.llm.capabilities import ContextDetectionError, ModelCapabilities
+from backend.llm.capabilities import (
+    ContextDetectionError,
+    LlmResponseFormat,
+    ModelCapabilities,
+)
 from backend.llm.ollama.capabilities import (
     OllamaCapabilityError,
     detect_ollama_model_capabilities,
@@ -30,6 +34,12 @@ from backend.llm.ollama.capabilities import (
 from backend.llm.ollama.messages import convert_messages_for_ollama
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
+from backend.llm.structured_response import (
+    OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION,
+    OLLAMA_STRUCTURED_RESPONSE_SCHEMA,
+    StructuredAssistantContent,
+    parse_structured_response_json,
+)
 from backend.llm.usage import LLMCallUsage
 
 
@@ -320,6 +330,23 @@ class OllamaClient:
         """
         return {"num_ctx": capabilities.max_context_tokens}
 
+    def _uses_structured_response(
+        self,
+        capabilities: ModelCapabilities,
+    ) -> bool:
+        """Return whether this Ollama request should use JSON schema output."""
+        return capabilities.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+
+    def _structured_response_messages(
+        self,
+        messages: list[dict],
+    ) -> list[dict]:
+        """Append the structured-response instruction to one chat request."""
+        return [
+            {"role": "system", "content": OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION},
+            *messages,
+        ]
+
     def _build_chat_payload(
         self,
         messages: list[dict],
@@ -332,12 +359,19 @@ class OllamaClient:
         Capabilities are required: it is syntactically impossible to
         construct a payload without a known context window.
         """
+        request_messages = (
+            self._structured_response_messages(messages)
+            if self._uses_structured_response(capabilities)
+            else messages
+        )
         payload: dict[str, object] = {
             "model": self.model,
-            "messages": convert_messages_for_ollama(messages),
-            "stream": True,
+            "messages": convert_messages_for_ollama(request_messages),
+            "stream": not self._uses_structured_response(capabilities),
             "options": self._build_options(capabilities),
         }
+        if self._uses_structured_response(capabilities):
+            payload["format"] = OLLAMA_STRUCTURED_RESPONSE_SCHEMA
         if tools:
             payload["tools"] = tools
         return payload
@@ -476,6 +510,37 @@ class OllamaClient:
 
         return full_text, tool_calls, final_usage
 
+    async def _request_structured_chat(
+        self,
+        payload: dict[str, object],
+        capabilities: ModelCapabilities,
+    ) -> tuple[str, str, list[LLMToolCall], LLMCallUsage | None]:
+        """Request one non-streaming structured Ollama chat response."""
+        response = await self._client.post("/api/chat", json=payload)
+        response.raise_for_status()
+        chunk = response.json()
+        message = chunk.get("message", {})
+        content = str(message.get("content", ""))
+        thinking = str(message.get("thinking", ""))
+        tool_calls = self._extract_tool_calls(message)
+        final_usage = await self._build_usage_from_done_chunk(chunk, capabilities)
+        return content, thinking, tool_calls, final_usage
+
+    def _structured_content_from_ollama(
+        self,
+        *,
+        text: str,
+        thinking: str,
+        tool_calls: list[LLMToolCall],
+    ) -> StructuredAssistantContent | None:
+        """Build structured assistant content from one Ollama JSON response."""
+        if tool_calls:
+            return None
+        return parse_structured_response_json(
+            text,
+            thinking=thinking,
+        )
+
     def _final_visible_text(self, full_text: list[str]) -> str:
         """Return the assembled visible text with a defensive ``<think>`` strip.
 
@@ -544,14 +609,29 @@ class OllamaClient:
             capabilities=capabilities,
         )
         try:
-            full_text, tool_calls, final_usage = await self._stream_chat_chunks(
-                payload,
-                sse_queue,
-                capabilities,
-            )
+            if self._uses_structured_response(capabilities):
+                (
+                    raw_text,
+                    raw_thinking,
+                    tool_calls,
+                    final_usage,
+                ) = await self._request_structured_chat(payload, capabilities)
+                structured_content = self._structured_content_from_ollama(
+                    text=raw_text,
+                    thinking=raw_thinking,
+                    tool_calls=tool_calls,
+                )
+                text = structured_content.answer if structured_content else ""
+            else:
+                full_text, tool_calls, final_usage = await self._stream_chat_chunks(
+                    payload,
+                    sse_queue,
+                    capabilities,
+                )
+                text = self._final_visible_text(full_text)
+                structured_content = None
         except httpx.HTTPError as e:
             raise OllamaClientError(f"Chat request failed: {e}") from e
-        text = self._final_visible_text(full_text)
         raw_message = self._raw_assistant_message(text, tool_calls)
         return LLMResponse(
             text=text,
@@ -559,4 +639,5 @@ class OllamaClient:
             raw_message=raw_message,
             usage=final_usage,
             llm_response_format=capabilities.llm_response_format,
+            structured_content=structured_content,
         )

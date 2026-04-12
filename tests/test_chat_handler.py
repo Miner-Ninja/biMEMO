@@ -1,11 +1,11 @@
-"""Tests for orchestrator chat-response shaping helpers."""
+"""Tests for structured assistant-response helpers."""
 
-from backend.processes.orchestrator.chat_handler import _build_structured_content
+from backend.llm.structured_response import normalize_legacy_response_text
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
     """Extract SQL and suggestion blocks from one assistant answer."""
-    structured = _build_structured_content(
+    structured = normalize_legacy_response_text(
         "\n".join(
             [
                 "Main answer.",
@@ -28,7 +28,7 @@ def test_build_structured_content_extracts_sql_and_suggestions() -> None:
 
 def test_build_structured_content_drops_language_mismatched_suggestions() -> None:
     """Drop suggestions when their script does not match the answer."""
-    structured = _build_structured_content(
+    structured = normalize_legacy_response_text(
         "\n".join(
             [
                 "Русский ответ.",
