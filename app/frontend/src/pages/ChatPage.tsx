@@ -48,7 +48,6 @@ import type { ExtendedUsage } from "@/types/stats";
 import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
 
 type ChatResponsePayload = {
-  text: string;
   conversation_id?: string;
   retrieved_memories?: { summary: string; date: string }[];
   transcription?: string;

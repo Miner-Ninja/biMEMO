@@ -58,7 +58,6 @@ class ChatResponse(StrictResponseModel):
     """Chat endpoint response.
 
     Attributes:
-        text: LLM response text.
         input_filtered: Whether input content filter was triggered.
         output_filtered: Whether output content filter was triggered.
         pending_confirmations: RED zone actions awaiting approval.
@@ -66,7 +65,6 @@ class ChatResponse(StrictResponseModel):
         retrieved_messages: Debug metadata for FTS-matched messages.
     """
 
-    text: str
     conversation_id: str = ""
     input_filtered: bool
     output_filtered: bool

@@ -20,14 +20,13 @@ class TestChatResponse:
     def test_serialization(self):
         """Verify JSON structure matches schema."""
         resp = ChatResponse(
-            text="Hello",
             input_filtered=False,
             output_filtered=False,
             pending_confirmations=[],
+            structured_content=StructuredAssistantContent(answer="Hello"),
         )
         data = resp.model_dump()
         assert data == {
-            "text": "Hello",
             "conversation_id": "",
             "input_filtered": False,
             "output_filtered": False,
@@ -36,7 +35,12 @@ class TestChatResponse:
             "retrieved_messages": None,
             "transcription": None,
             "stats": None,
-            "structured_content": None,
+            "structured_content": {
+                "answer": "Hello",
+                "thinking": None,
+                "sql": None,
+                "suggestions": [],
+            },
         }
 
     def test_with_confirmations(self):
@@ -47,10 +51,10 @@ class TestChatResponse:
             parameters={"url": "https://example.com"},
         )
         resp = ChatResponse(
-            text="Pending",
             input_filtered=False,
             output_filtered=False,
             pending_confirmations=[item],
+            structured_content=StructuredAssistantContent(answer="Pending"),
         )
         data = resp.model_dump()
         assert len(data["pending_confirmations"]) == 1
@@ -59,7 +63,6 @@ class TestChatResponse:
     def test_with_structured_content(self):
         """Verify structured assistant content is serialized."""
         resp = ChatResponse(
-            text="Answer",
             input_filtered=False,
             output_filtered=False,
             pending_confirmations=[],

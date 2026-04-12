@@ -253,7 +253,6 @@ def build_http_chat_response(
         fallback_answer=ipc_response.text,
     )
     return HTTPChatResponse(
-        text=ipc_response.text,
         conversation_id=conversation_id,
         input_filtered=ipc_response.input_filtered,
         output_filtered=ipc_response.output_filtered,

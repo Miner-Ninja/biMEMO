@@ -155,7 +155,6 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
         transcription=None,
     )
 
-    assert chat_response.text == "Main answer."
     assert chat_response.structured_content is not None
     assert chat_response.structured_content.answer == "Main answer."
     assert chat_response.structured_content.sql == "SELECT 1"
@@ -174,7 +173,6 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
         ),
     )
 
-    assert http_response.text == "Plain answer"
     assert http_response.structured_content == StructuredAssistantContent(
         answer="Plain answer",
         thinking=None,
