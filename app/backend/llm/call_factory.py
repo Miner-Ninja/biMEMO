@@ -4,18 +4,26 @@ Wraps a client's .chat() method with timeout protection and
 optional SSE queue forwarding.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from backend.llm.usage import LLMCallUsage
+from backend.llm.capabilities import LlmResponseFormat
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from backend.llm.usage import LLMCallUsage
 
 
 logger = logging.getLogger(__name__)
 
-LLM_CALL_TIMEOUT = 300.0  # 5 minutes
+LLM_CALL_TIMEOUT_SECONDS = 300.0
+LLM_CALL_TIMEOUT = LLM_CALL_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -41,12 +49,14 @@ class LLMResponse:
         text: Response text (empty when tool_calls present).
         tool_calls: Tool calls requested by the model.
         raw_message: Full assistant message dict for conversation history.
+        llm_response_format: Transport mode used for the model response.
     """
 
     text: str
     tool_calls: list[LLMToolCall] = field(default_factory=list)
     raw_message: dict = field(default_factory=dict)
     usage: LLMCallUsage | None = None
+    llm_response_format: LlmResponseFormat = LlmResponseFormat.TEXT
 
 
 class LLMClient(Protocol):

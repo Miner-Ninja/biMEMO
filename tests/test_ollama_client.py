@@ -12,6 +12,7 @@ import json
 import httpx
 import pytest
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, make_llm_call
+from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import (
     ComputeConfig,
@@ -32,6 +33,8 @@ from backend.llm.ollama.provider import OllamaProvider
 # --- Test constants ---
 DEFAULT_TEST_NUM_CTX = 32768
 LARGE_TEST_NUM_CTX = 262144
+OLLAMA_PROVIDER_NAME = "ollama"
+PREBUILT_CAPABILITIES_SOURCE = "test:prebuilt"
 
 
 def _prebuilt_registry(model: str, ctx: int = DEFAULT_TEST_NUM_CTX):
@@ -40,11 +43,12 @@ def _prebuilt_registry(model: str, ctx: int = DEFAULT_TEST_NUM_CTX):
     from backend.llm.capabilities_registry import CapabilitiesRegistry
 
     registry = CapabilitiesRegistry()
-    registry._cache[("ollama", model)] = ModelCapabilities(
-        provider="ollama",
+    registry._cache[(OLLAMA_PROVIDER_NAME, model)] = ModelCapabilities(
+        provider=OLLAMA_PROVIDER_NAME,
         model=model,
         max_context_tokens=ctx,
-        source="test:prebuilt",
+        source=PREBUILT_CAPABILITIES_SOURCE,
+        llm_response_format=LlmResponseFormat.JSON_SCHEMA,
     )
     return registry
 
@@ -632,6 +636,7 @@ class TestChat:
 
         result = await client.chat([{"role": "user", "content": "Hi"}])
         assert result.text == "Hello world"
+        assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
         await client.close()
 
     @pytest.mark.asyncio

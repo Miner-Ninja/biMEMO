@@ -120,6 +120,7 @@ class TestChat:
         result = await client.chat([{"role": "user", "content": "Hi"}])
         assert isinstance(result, LLMResponse)
         assert result.text == "Hello world"
+        assert result.llm_response_format is LlmResponseFormat.TEXT
         assert result.tool_calls == []
         await client.close()
 

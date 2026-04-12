@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, ClassVar
 import httpx
 
 from backend.llm.call_factory import LLMResponse, LLMToolCall
-from backend.llm.capabilities import ContextDetectionError, ModelCapabilities
+from backend.llm.capabilities import (
+    ContextDetectionError,
+    LlmResponseFormat,
+    ModelCapabilities,
+)
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.usage import LLMCallUsage
@@ -116,6 +120,18 @@ def _chat_payload(
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
     return payload
+
+
+def _chat_response_format(
+    *,
+    provider_name: str,
+    model_name: str,
+) -> LlmResponseFormat:
+    """Resolve the response format used by one chat request."""
+    return resolve_llm_response_format(
+        provider_name=provider_name,
+        model_name=model_name,
+    )
 
 
 def _usage_from_chunk(
@@ -417,4 +433,8 @@ class OpenRouterClient:
             tool_calls=tool_calls,
             raw_message=raw_message,
             usage=final_usage,
+            llm_response_format=_chat_response_format(
+                provider_name=self.name,
+                model_name=self.model,
+            ),
         )

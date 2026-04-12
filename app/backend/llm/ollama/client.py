@@ -558,4 +558,5 @@ class OllamaClient:
             tool_calls=tool_calls,
             raw_message=raw_message,
             usage=final_usage,
+            llm_response_format=capabilities.llm_response_format,
         )
