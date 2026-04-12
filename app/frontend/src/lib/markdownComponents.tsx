@@ -47,6 +47,16 @@ function extractCodeBlockContent(children: ComponentPropsWithoutRef<'pre'>['chil
 
 export function buildMarkdownComponents(onCommandClick?: (command: string) => void) {
   return {
+    a: ({ href, children, ...props }: ComponentPropsWithoutRef<'a'>) => (
+      <a
+        {...props}
+        href={href}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
+        {children}
+      </a>
+    ),
     pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
       const extractedCodeBlock = extractCodeBlockContent(children)
 
