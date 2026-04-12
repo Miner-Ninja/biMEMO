@@ -267,6 +267,18 @@ function should_use_structured_pseudo_stream(
   );
 }
 
+function visible_assistant_answer(
+  structuredContent: ChatResponsePayload["structured_content"] | undefined,
+  responseText: string,
+  streamedContent: string,
+): string {
+  // Resolve the final visible assistant answer from one response payload.
+  if (structuredContent) {
+    return structuredContent.answer;
+  }
+  return responseText || streamedContent;
+}
+
 function nextConversationTitle(
   currentTitle: string | undefined,
   messageContent: string,
@@ -1031,16 +1043,18 @@ export function ChatPage() {
       )
         ? structuredContent
         : null;
+      const visibleAnswer = visible_assistant_answer(
+        structuredContent,
+        response.text,
+        streamedContentRef.current,
+      );
       const finalText = structuredContentForPseudoStream
         ? await playStructuredAssistantResponse({
             assistantMessageId,
             stats: response.stats,
             sections: {
               thinking: structuredContentForPseudoStream.thinking || "",
-              answer:
-                structuredContentForPseudoStream.answer ||
-                response.text ||
-                "",
+              answer: visibleAnswer,
               sql: structuredContentForPseudoStream.sql || "",
               suggestions: structuredContentForPseudoStream.suggestions,
             },
@@ -1049,9 +1063,7 @@ export function ChatPage() {
                 ? pendingConfirmations
                 : undefined,
           })
-        : structuredContent?.answer ||
-          response.text ||
-          streamedContentRef.current;
+        : visibleAnswer;
       if (!structuredContentForPseudoStream) {
         updateMessage(
           assistantMessageId,
@@ -1265,23 +1277,23 @@ export function ChatPage() {
       )
         ? structuredContent
         : null;
+      const visibleAnswer = visible_assistant_answer(
+        structuredContent,
+        response.text,
+        streamedContentRef.current,
+      );
       const finalText = structuredContentForPseudoStream
         ? await playStructuredAssistantResponse({
             assistantMessageId,
             stats: response.stats,
             sections: {
               thinking: structuredContentForPseudoStream.thinking || "",
-              answer:
-                structuredContentForPseudoStream.answer ||
-                response.text ||
-                "",
+              answer: visibleAnswer,
               sql: structuredContentForPseudoStream.sql || "",
               suggestions: structuredContentForPseudoStream.suggestions,
             },
           })
-        : structuredContent?.answer ||
-          response.text ||
-          streamedContentRef.current;
+        : visibleAnswer;
       if (!structuredContentForPseudoStream) {
         updateMessage(
           assistantMessageId,

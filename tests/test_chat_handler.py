@@ -1,10 +1,12 @@
 """Tests for structured assistant-response helpers."""
 
+from backend.agent.agent_loop_models import AgentResponse
 from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import StructuredAssistantContent
 from backend.processes.fastapi_app.routes.chat_helpers import (
     build_conversation_message_item,
 )
+from backend.processes.orchestrator.chat_handler import _build_chat_response
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
@@ -103,3 +105,29 @@ def test_build_conversation_message_item_normalizes_legacy_assistant_text() -> N
         sql="SELECT 1",
         suggestions=["Next step"],
     )
+
+
+def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
+    """Return the normalized answer text when structured content is available."""
+    chat_response = _build_chat_response(
+        request_id="request-1",
+        response=AgentResponse(
+            text="\n".join(
+                [
+                    "Main answer.",
+                    "",
+                    "```sql",
+                    "SELECT 1",
+                    "```",
+                ]
+            ),
+            loop_result=object(),
+        ),
+        transcription=None,
+    )
+
+    assert chat_response.text == "Main answer."
+    assert chat_response.structured_content is not None
+    assert chat_response.structured_content.answer == "Main answer."
+    assert chat_response.structured_content.sql == "SELECT 1"
+    assert chat_response.structured_content.suggestions == []

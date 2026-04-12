@@ -174,9 +174,10 @@ def _build_chat_response(
     structured_content = response.structured_content or normalize_legacy_response_text(
         response.text
     )
+    visible_answer = structured_content.answer
     return ChatResponse(
         request_id=request_id,
-        text=response.text,
+        text=visible_answer,
         input_filtered=response.input_filtered,
         output_filtered=response.output_filtered,
         retrieved_memories=response.retrieved_memories or None,
