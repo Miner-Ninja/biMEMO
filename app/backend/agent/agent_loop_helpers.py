@@ -149,6 +149,7 @@ def build_assistant_message_meta(
     if structured_content is not None:
         message_meta[MESSAGE_META_STRUCTURED_CONTENT_KEY] = {
             "answer": structured_content.answer,
+            "thinking": structured_content.thinking,
             "sql": structured_content.sql,
             "suggestions": structured_content.suggestions,
         }

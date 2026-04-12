@@ -248,16 +248,7 @@ def build_http_chat_response(
     ipc_response: IPCChatResponse,
 ) -> HTTPChatResponse:
     """Build the final HTTP chat response from one IPC response."""
-    structured_content = (
-        HTTPStructuredAssistantContent(
-            answer=ipc_response.structured_content.answer,
-            thinking=ipc_response.structured_content.thinking,
-            sql=ipc_response.structured_content.sql,
-            suggestions=ipc_response.structured_content.suggestions,
-        )
-        if ipc_response.structured_content is not None
-        else None
-    )
+    structured_content = build_http_structured_content(ipc_response.structured_content)
     return HTTPChatResponse(
         text=ipc_response.text,
         conversation_id=conversation_id,
@@ -289,6 +280,46 @@ def parse_message_meta(
     return parsed_meta
 
 
+def build_http_structured_content(
+    structured_content: object,
+) -> HTTPStructuredAssistantContent | None:
+    """Convert one structured assistant object into the HTTP response shape."""
+    if structured_content is None:
+        return None
+    if isinstance(structured_content, dict):
+        answer_value = structured_content.get("answer", "")
+        thinking_value = structured_content.get("thinking")
+        raw_sql = structured_content.get("sql")
+        raw_suggestions = structured_content.get("suggestions", [])
+    else:
+        answer_value = getattr(structured_content, "answer", "")
+        thinking_value = getattr(structured_content, "thinking", None)
+        raw_sql = getattr(structured_content, "sql", None)
+        raw_suggestions = getattr(structured_content, "suggestions", [])
+    answer = str(answer_value).strip()
+    thinking = (
+        str(thinking_value).strip()
+        if isinstance(thinking_value, str) and thinking_value.strip()
+        else None
+    )
+    sql = str(raw_sql).strip() if isinstance(raw_sql, str) and raw_sql.strip() else None
+    suggestions = (
+        [
+            str(suggestion).strip()
+            for suggestion in raw_suggestions
+            if str(suggestion).strip()
+        ]
+        if isinstance(raw_suggestions, list)
+        else []
+    )
+    return HTTPStructuredAssistantContent(
+        answer=answer,
+        thinking=thinking,
+        sql=sql,
+        suggestions=suggestions,
+    )
+
+
 def build_persisted_structured_content(
     *,
     role: str,
@@ -302,35 +333,10 @@ def build_persisted_structured_content(
     message_meta = parse_message_meta(raw_meta)
     stored_content = message_meta.get(MESSAGE_META_STRUCTURED_CONTENT_KEY)
     if isinstance(stored_content, dict):
-        answer = str(stored_content.get("answer", "")).strip()
-        raw_sql = stored_content.get("sql")
-        sql = (
-            str(raw_sql).strip()
-            if isinstance(raw_sql, str) and raw_sql.strip()
-            else None
-        )
-        raw_suggestions = stored_content.get("suggestions", [])
-        suggestions = (
-            [
-                str(suggestion).strip()
-                for suggestion in raw_suggestions
-                if str(suggestion).strip()
-            ]
-            if isinstance(raw_suggestions, list)
-            else []
-        )
-        return HTTPStructuredAssistantContent(
-            answer=answer,
-            sql=sql,
-            suggestions=suggestions,
-        )
+        return build_http_structured_content(stored_content)
 
     normalized_content = normalize_legacy_response_text(content)
-    return HTTPStructuredAssistantContent(
-        answer=normalized_content.answer,
-        sql=normalized_content.sql,
-        suggestions=normalized_content.suggestions,
-    )
+    return build_http_structured_content(normalized_content)
 
 
 def build_conversation_message_item(

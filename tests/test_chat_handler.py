@@ -61,7 +61,8 @@ def test_build_conversation_message_item_uses_saved_structured_content() -> None
             "created_at": "2026-04-12T10:00:00",
             "meta": (
                 '{"structured_content": {"answer": "Visible answer", '
-                '"sql": "SELECT 1", "suggestions": ["Next step"]}}'
+                '"thinking": "Internal plan", "sql": "SELECT 1", '
+                '"suggestions": ["Next step"]}}'
             ),
         }
     )
@@ -69,6 +70,7 @@ def test_build_conversation_message_item_uses_saved_structured_content() -> None
     assert message_item.content == "Visible answer"
     assert message_item.structured_content == StructuredAssistantContent(
         answer="Visible answer",
+        thinking="Internal plan",
         sql="SELECT 1",
         suggestions=["Next step"],
     )

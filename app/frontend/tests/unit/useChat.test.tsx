@@ -136,6 +136,46 @@ describe("useChat", () => {
     );
   });
 
+  it("reads saved thinking from structured assistant history", async () => {
+    fetchConversations.mockResolvedValue([conversation("chat-1", "Chat 1")]);
+    fetchConversationMessages.mockResolvedValueOnce([
+      {
+        id: "stored-assistant-1",
+        role: "assistant" as const,
+        content: "final answer",
+        conversation_id: "chat-1",
+        created_at: "2026-03-28T10:00:01Z",
+        meta: '{"stats":{"prompt_tokens":10,"completion_tokens":5}}',
+        structured_content: {
+          answer: "final answer",
+          thinking: "stored reasoning",
+          sql: "SELECT 1",
+          suggestions: ["Next step"],
+        },
+      },
+    ]);
+
+    const { result } = renderHook(() => useChat());
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await waitFor(() =>
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200),
+    );
+
+    expect(result.current.activeChat?.messages[0].content).toBe("final answer");
+    expect(result.current.activeChat?.messages[0].thinking).toBe(
+      "stored reasoning",
+    );
+    expect(result.current.activeChat?.messages[0].sql).toBe("SELECT 1");
+    expect(result.current.activeChat?.messages[0].suggestions).toEqual([
+      "Next step",
+    ]);
+    expect(result.current.activeChat?.messages[0].stats?.prompt_tokens).toBe(10);
+    expect(result.current.activeChat?.messages[0].stats?.completion_tokens).toBe(
+      5,
+    );
+  });
+
   it("adds an inbound bridge message to the chosen chat without reloading history", async () => {
     const { result } = renderHook(() => useChat());
 

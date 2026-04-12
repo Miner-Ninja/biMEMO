@@ -119,6 +119,7 @@ function mapMessage(message: StoredConversationMessage): Message {
     role: message.role,
     content: messageContent,
     images: extractMessageImages(message.content),
+    thinking: structuredContent?.thinking ?? undefined,
     sql: structuredContent?.sql ?? undefined,
     suggestions: structuredContent?.suggestions ?? undefined,
     stats: meta?.stats,

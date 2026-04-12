@@ -65,7 +65,7 @@ export interface Message {
   isVoice?: boolean;
   /** Base64 data URL of the recorded audio for playback */
   voiceDataUrl?: string;
-  /** LLM thinking content (not saved to history) */
+  /** LLM thinking content */
   thinking?: string;
   /** Current tool execution status */
   toolStatus?: ToolStatus;
