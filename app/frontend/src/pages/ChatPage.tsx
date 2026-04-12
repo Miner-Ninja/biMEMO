@@ -143,6 +143,32 @@ const DEFAULT_SERVER_PROCESSING_STAGE = "Processing...";
 const DISCORD_BRIDGE_PROVIDER = "discord";
 const PERSONA_DELIVERY_MODE = "persona_user_and_bot_assistant";
 const NEUTRAL_PERSONA_MODE = "neutral";
+const PSEUDO_STREAM_INTERVAL_MS = 40;
+const DEFAULT_PSEUDO_STREAM_TOKENS_PER_SECOND = 30;
+const AVERAGE_CHARACTERS_PER_TOKEN = 4;
+const MIN_PSEUDO_STREAM_CHUNK_SIZE = 1;
+
+type StructuredChatSections = {
+  thinking: string;
+  answer: string;
+  sql: string;
+  suggestions?: string[];
+};
+
+type PseudoStreamSectionInput = {
+  assistantMessageId: string;
+  runId: number;
+  stats: ExtendedUsage | undefined;
+  text: string;
+  buildUpdate: (visibleText: string) => Partial<Message>;
+};
+
+type StructuredAssistantPlaybackInput = {
+  assistantMessageId: string;
+  stats: ExtendedUsage | undefined;
+  sections: StructuredChatSections;
+  pendingConfirmations?: PendingConfirmation[];
+};
 
 function buildServerProcessingStage(
   stageLabel: string,
@@ -194,6 +220,51 @@ function buildAssistantMessageUpdate(
     ...base,
     thinking,
   };
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  // Wait for one short pseudo-stream interval.
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function pseudo_stream_tokens_per_second(
+  stats: ExtendedUsage | undefined,
+): number {
+  // Resolve the playback speed for one finished assistant response.
+  const generationMilliseconds = stats?.timing?.generation_ms ?? 0;
+  const completionTokens = stats?.completion_tokens ?? 0;
+  if (generationMilliseconds <= 0 || completionTokens <= 0) {
+    return DEFAULT_PSEUDO_STREAM_TOKENS_PER_SECOND;
+  }
+  return completionTokens / (generationMilliseconds / 1000);
+}
+
+function pseudo_stream_chunk_size(
+  stats: ExtendedUsage | undefined,
+): number {
+  // Calculate the visible chunk size for one pseudo-stream step.
+  const charactersPerSecond =
+    pseudo_stream_tokens_per_second(stats) * AVERAGE_CHARACTERS_PER_TOKEN;
+  const chunkSize = Math.round(
+    charactersPerSecond * (PSEUDO_STREAM_INTERVAL_MS / 1000),
+  );
+  return Math.max(MIN_PSEUDO_STREAM_CHUNK_SIZE, chunkSize);
+}
+
+function should_use_structured_pseudo_stream(
+  structuredContent: ChatResponsePayload["structured_content"] | undefined,
+  streamedContent: string,
+  streamedThinking: string,
+): structuredContent is NonNullable<ChatResponsePayload["structured_content"]> {
+  // Return whether one response should use local pseudo-stream playback.
+  return Boolean(
+    structuredContent &&
+      !streamedContent &&
+      !streamedThinking &&
+      (structuredContent.answer ||
+        structuredContent.thinking ||
+        structuredContent.sql),
+  );
 }
 
 function nextConversationTitle(
@@ -293,6 +364,7 @@ export function ChatPage() {
   const assistantMessageIdRef = useRef<string | null>(null);
   const streamedContentRef = useRef("");
   const streamedThinkingRef = useRef("");
+  const pseudoStreamRunIdRef = useRef(0);
   const activeAssistantStreamRef = useRef<ActiveAssistantStream>({
     assistantMessageId: null,
     httpCompleted: false,
@@ -340,6 +412,7 @@ export function ChatPage() {
   const { confirm, ConfirmDialog } = useConfirm();
 
   const beginAssistantStream = useCallback((assistantMessageId: string) => {
+    pseudoStreamRunIdRef.current += 1;
     assistantMessageIdRef.current = assistantMessageId;
     streamedContentRef.current = "";
     streamedThinkingRef.current = "";
@@ -351,6 +424,7 @@ export function ChatPage() {
   }, []);
 
   const clearAssistantStream = useCallback(() => {
+    pseudoStreamRunIdRef.current += 1;
     assistantMessageIdRef.current = null;
     streamedContentRef.current = "";
     streamedThinkingRef.current = "";
@@ -368,6 +442,96 @@ export function ChatPage() {
     }
     clearAssistantStream();
   }, [clearAssistantStream]);
+
+  const pseudoStreamSection = useCallback(
+    async ({
+      assistantMessageId,
+      runId,
+      stats,
+      text,
+      buildUpdate,
+    }: PseudoStreamSectionInput) => {
+      if (!text) {
+        return;
+      }
+      const chunkSize = pseudo_stream_chunk_size(stats);
+      let visibleText = "";
+      for (
+        let offset = 0;
+        offset < text.length;
+        offset += chunkSize
+      ) {
+        if (pseudoStreamRunIdRef.current !== runId) {
+          return;
+        }
+        visibleText += text.slice(offset, offset + chunkSize);
+        updateMessage(assistantMessageId, buildUpdate(visibleText));
+        if (offset + chunkSize < text.length) {
+          await sleep(PSEUDO_STREAM_INTERVAL_MS);
+        }
+      }
+    },
+    [updateMessage],
+  );
+
+  const playStructuredAssistantResponse = useCallback(
+    async ({
+      assistantMessageId,
+      stats,
+      sections,
+      pendingConfirmations,
+    }: StructuredAssistantPlaybackInput): Promise<string> => {
+      const runId = pseudoStreamRunIdRef.current;
+      updateMessage(assistantMessageId, {
+        stats,
+        pendingConfirmations,
+      });
+
+      await pseudoStreamSection({
+        assistantMessageId,
+        runId,
+        stats,
+        text: sections.thinking,
+        buildUpdate: (visibleThinking) => ({
+          thinking: visibleThinking,
+        }),
+      });
+      await pseudoStreamSection({
+        assistantMessageId,
+        runId,
+        stats,
+        text: sections.answer,
+        buildUpdate: (visibleAnswer) => ({
+          content: visibleAnswer,
+        }),
+      });
+      await pseudoStreamSection({
+        assistantMessageId,
+        runId,
+        stats,
+        text: sections.sql,
+        buildUpdate: (visibleSql) => ({
+          sql: visibleSql,
+        }),
+      });
+
+      if (pseudoStreamRunIdRef.current !== runId) {
+        return "";
+      }
+
+      updateMessage(assistantMessageId, {
+        content: sections.answer,
+        thinking: sections.thinking || undefined,
+        sql: sections.sql || undefined,
+        suggestions:
+          sections.suggestions && sections.suggestions.length > 0
+            ? sections.suggestions
+            : undefined,
+      });
+      return sections.answer;
+    },
+    [pseudoStreamSection, updateMessage],
+  );
 
   // Load available file names for @mention autocomplete
   const refreshAvailableFiles = useCallback(() => {
@@ -857,31 +1021,59 @@ export function ChatPage() {
       });
 
       const structuredContent = response.structured_content;
-      const finalText =
-        structuredContent?.answer || response.text || streamedContentRef.current;
       const pendingConfirmations = response.pending_confirmations?.map(
         (c) => ({ ...c, status: "pending" as const }),
       );
-      updateMessage(
-        assistantMessageId,
-        buildAssistantMessageUpdate(
-          {
-            content: finalText,
+      const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
+        structuredContent,
+        streamedContentRef.current,
+        streamedThinkingRef.current,
+      )
+        ? structuredContent
+        : null;
+      const finalText = structuredContentForPseudoStream
+        ? await playStructuredAssistantResponse({
+            assistantMessageId,
             stats: response.stats,
-            sql: structuredContent?.sql || undefined,
-            suggestions:
-              structuredContent?.suggestions &&
-              structuredContent.suggestions.length > 0
-                ? structuredContent.suggestions
-                : undefined,
+            sections: {
+              thinking: structuredContentForPseudoStream.thinking || "",
+              answer:
+                structuredContentForPseudoStream.answer ||
+                response.text ||
+                "",
+              sql: structuredContentForPseudoStream.sql || "",
+              suggestions: structuredContentForPseudoStream.suggestions,
+            },
             pendingConfirmations:
               pendingConfirmations && pendingConfirmations.length > 0
                 ? pendingConfirmations
                 : undefined,
-          },
-          streamedThinkingRef.current || structuredContent?.thinking || "",
-        ),
-      );
+          })
+        : structuredContent?.answer ||
+          response.text ||
+          streamedContentRef.current;
+      if (!structuredContentForPseudoStream) {
+        updateMessage(
+          assistantMessageId,
+          buildAssistantMessageUpdate(
+            {
+              content: finalText,
+              stats: response.stats,
+              sql: structuredContent?.sql || undefined,
+              suggestions:
+                structuredContent?.suggestions &&
+                structuredContent.suggestions.length > 0
+                  ? structuredContent.suggestions
+                  : undefined,
+              pendingConfirmations:
+                pendingConfirmations && pendingConfirmations.length > 0
+                  ? pendingConfirmations
+                  : undefined,
+            },
+            streamedThinkingRef.current || structuredContent?.thinking || "",
+          ),
+        );
+      }
       activeAssistantStreamRef.current.httpCompleted = true;
       finalizeAssistantStreamIfReady();
 
@@ -1066,24 +1258,48 @@ export function ChatPage() {
       }
 
       const structuredContent = response.structured_content;
-      const finalText =
-        structuredContent?.answer || response.text || streamedContentRef.current;
-      updateMessage(
-        assistantMessageId,
-        buildAssistantMessageUpdate(
-          {
-            content: finalText,
+      const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
+        structuredContent,
+        streamedContentRef.current,
+        streamedThinkingRef.current,
+      )
+        ? structuredContent
+        : null;
+      const finalText = structuredContentForPseudoStream
+        ? await playStructuredAssistantResponse({
+            assistantMessageId,
             stats: response.stats,
-            sql: structuredContent?.sql || undefined,
-            suggestions:
-              structuredContent?.suggestions &&
-              structuredContent.suggestions.length > 0
-                ? structuredContent.suggestions
-                : undefined,
-          },
-          streamedThinkingRef.current || structuredContent?.thinking || "",
-        ),
-      );
+            sections: {
+              thinking: structuredContentForPseudoStream.thinking || "",
+              answer:
+                structuredContentForPseudoStream.answer ||
+                response.text ||
+                "",
+              sql: structuredContentForPseudoStream.sql || "",
+              suggestions: structuredContentForPseudoStream.suggestions,
+            },
+          })
+        : structuredContent?.answer ||
+          response.text ||
+          streamedContentRef.current;
+      if (!structuredContentForPseudoStream) {
+        updateMessage(
+          assistantMessageId,
+          buildAssistantMessageUpdate(
+            {
+              content: finalText,
+              stats: response.stats,
+              sql: structuredContent?.sql || undefined,
+              suggestions:
+                structuredContent?.suggestions &&
+                structuredContent.suggestions.length > 0
+                  ? structuredContent.suggestions
+                  : undefined,
+            },
+            streamedThinkingRef.current || structuredContent?.thinking || "",
+          ),
+        );
+      }
       activeAssistantStreamRef.current.httpCompleted = true;
       finalizeAssistantStreamIfReady();
 
