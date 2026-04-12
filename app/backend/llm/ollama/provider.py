@@ -9,15 +9,13 @@ Ollama is unavailable.
 import json
 import logging
 import os
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
 from backend.llm.call_factory import LLM_CALL_TIMEOUT
 from backend.llm.capabilities import ContextDetectionError, ModelCapabilities
-from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import ComputeConfig, ComputeMode
 from backend.llm.ollama.capabilities import (
     OllamaCapabilityError,
@@ -30,6 +28,13 @@ from backend.llm.ollama.models import (
     ModelNotAvailableError,
     OllamaError,
 )
+from backend.llm.response_format import resolve_llm_response_format
+
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from backend.llm.capabilities_registry import CapabilitiesRegistry
 
 
 logger = logging.getLogger(__name__)
@@ -231,6 +236,10 @@ class OllamaProvider:
                 model=model,
                 max_context_tokens=env_override,
                 source=SOURCE_ENV_OVERRIDE,
+                llm_response_format=resolve_llm_response_format(
+                    provider_name=self.name,
+                    model_name=model,
+                ),
             )
         if self.num_ctx is not None and self.num_ctx > 0:
             return ModelCapabilities(
@@ -238,6 +247,10 @@ class OllamaProvider:
                 model=model,
                 max_context_tokens=self.num_ctx,
                 source=SOURCE_UI_OVERRIDE,
+                llm_response_format=resolve_llm_response_format(
+                    provider_name=self.name,
+                    model_name=model,
+                ),
             )
         client = self._get_client_for_model(model)
         try:
@@ -254,6 +267,10 @@ class OllamaProvider:
             model=model,
             max_context_tokens=detected.runtime_context_tokens,
             source=detected.source,
+            llm_response_format=resolve_llm_response_format(
+                provider_name=self.name,
+                model_name=model,
+            ),
         )
 
     async def check_health(self) -> bool:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 
 # --- Validation messages ---
@@ -22,12 +23,23 @@ ERROR_NON_POSITIVE_TOKENS = (
 ERROR_EMPTY_SOURCE = "source must be a non-empty string"
 ERROR_EMPTY_PROVIDER = "provider must be a non-empty string"
 ERROR_EMPTY_MODEL = "model must be a non-empty string"
+ERROR_INVALID_RESPONSE_FORMAT = (
+    "llm_response_format must be a LlmResponseFormat value, got {value!r}"
+)
 
 # --- Error message template for ContextDetectionError ---
 DETECTION_ERROR_TEMPLATE = (
     "Failed to detect context window for provider={provider!r} "
     "model={model!r}; attempted sources: {sources}"
 )
+
+
+class LlmResponseFormat(StrEnum):
+    """Supported transport formats for LLM responses."""
+
+    TEXT = "text"
+    JSON_OBJECT = "json_object"
+    JSON_SCHEMA = "json_schema"
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,8 @@ class ModelCapabilities:
             to serve for this model. Always strictly positive.
         source: Identifier of where the value came from. Examples:
             ``"env-override"``, ``"ui-override"``, ``"ollama:/api/ps"``.
+        llm_response_format: Preferred response transport mode for this
+            provider/model pair. Defaults to plain text.
         detected_at: Monotonic timestamp captured at construction, used for
             diagnostics. Defaults to ``time.monotonic()`` at instantiation.
     """
@@ -49,6 +63,7 @@ class ModelCapabilities:
     model: str
     max_context_tokens: int
     source: str
+    llm_response_format: LlmResponseFormat = LlmResponseFormat.TEXT
     detected_at: float = field(default_factory=time.monotonic)
 
     def __post_init__(self) -> None:
@@ -63,6 +78,12 @@ class ModelCapabilities:
             )
         if not self.source:
             raise ValueError(ERROR_EMPTY_SOURCE)
+        if not isinstance(self.llm_response_format, LlmResponseFormat):
+            raise ValueError(
+                ERROR_INVALID_RESPONSE_FORMAT.format(
+                    value=self.llm_response_format,
+                )
+            )
 
 
 class ContextDetectionError(Exception):

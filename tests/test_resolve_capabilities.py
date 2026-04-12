@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from backend.llm.capabilities import ContextDetectionError
+from backend.llm.capabilities import ContextDetectionError, LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import ComputeConfig, ComputeMode
 from backend.llm.ollama.client import OllamaClient
@@ -125,6 +125,7 @@ class TestProviderResolveEnvOverride:
         assert caps.source == SOURCE_ENV_OVERRIDE
         assert caps.provider == "ollama"
         assert caps.model == TARGET_MODEL
+        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
 
     async def test_env_zero_treated_as_unset(
         self, monkeypatch: pytest.MonkeyPatch
@@ -229,6 +230,7 @@ class TestProviderResolveUIOverride:
             await provider.close()
         assert caps.max_context_tokens == DETECT_VALUE
         assert caps.source == SOURCE_PS
+        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
 
     async def test_ui_negative_treated_as_unset(
         self, monkeypatch: pytest.MonkeyPatch
@@ -314,6 +316,7 @@ class TestOllamaClientResolveCapabilities:
             await client.close()
         assert caps.max_context_tokens == ENV_OVERRIDE_VALUE
         assert caps.source == SOURCE_ENV_OVERRIDE
+        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
 
     async def test_ui_override_wins_over_detect(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path

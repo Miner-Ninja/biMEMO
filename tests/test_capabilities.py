@@ -15,6 +15,7 @@ import pytest
 from backend.llm.capabilities import (
     DETECTION_ERROR_TEMPLATE,
     ContextDetectionError,
+    LlmResponseFormat,
     ModelCapabilities,
 )
 
@@ -48,6 +49,7 @@ class TestModelCapabilitiesConstruction:
         assert caps.model == VALID_MODEL
         assert caps.max_context_tokens == VALID_TOKENS
         assert caps.source == VALID_SOURCE
+        assert caps.llm_response_format is LlmResponseFormat.TEXT
         assert caps.detected_at > 0
 
     def test_detected_at_defaults_to_monotonic(self) -> None:
@@ -90,6 +92,11 @@ class TestModelCapabilitiesConstruction:
         """Empty source string is rejected."""
         with pytest.raises(ValueError, match="source"):
             _make_caps(source="")
+
+    def test_invalid_llm_response_format_raises(self) -> None:
+        """Non-enum response formats are rejected."""
+        with pytest.raises(ValueError, match="llm_response_format"):
+            _make_caps(llm_response_format="json_schema")
 
 
 class TestModelCapabilitiesImmutability:

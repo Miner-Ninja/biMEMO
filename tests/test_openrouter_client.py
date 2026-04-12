@@ -10,6 +10,7 @@ import json
 import httpx
 import pytest
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
+from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.openrouter.client import (
     OpenRouterClient,
     OpenRouterClientError,
@@ -17,7 +18,17 @@ from backend.llm.openrouter.client import (
 from backend.llm.reasoning import strip_reasoning_output
 
 
-def make_client(transport, model="qwen/qwen3-14b"):
+# --- Test fixtures ---
+DEFAULT_OPENROUTER_MODEL = "qwen/qwen3-14b"
+DEFAULT_CUSTOM_MODEL = "Qwen/Qwen3.5-9B"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai"
+DEFAULT_CUSTOM_BASE_URL = "http://vllm-primary:8000"
+OPENROUTER_ENV_OVERRIDE = "BIMEMO_OPENROUTER_NUM_CTX"
+OPENROUTER_ENV_OVERRIDE_VALUE = "32000"
+OPENROUTER_ENV_OVERRIDE_TOKENS = 32000
+
+
+def make_client(transport, model=DEFAULT_OPENROUTER_MODEL):
     """Create a client with mock transport."""
     client = OpenRouterClient(
         api_key="test-api-key",
@@ -25,24 +36,24 @@ def make_client(transport, model="qwen/qwen3-14b"):
     )
     client._client = httpx.AsyncClient(
         transport=transport,
-        base_url="https://openrouter.ai",
+        base_url=DEFAULT_OPENROUTER_BASE_URL,
         headers={"Authorization": "Bearer test-api-key"},
     )
     return client
 
 
-def make_custom_client(transport, model="Qwen/Qwen3.5-9B", num_ctx=None):
+def make_custom_client(transport, model=DEFAULT_CUSTOM_MODEL, num_ctx=None):
     """Create a custom-provider client with OpenAI-style /v1 paths."""
     client = OpenRouterClient(
         api_key="",
         model=model,
-        base_url="http://vllm-primary:8000",
+        base_url=DEFAULT_CUSTOM_BASE_URL,
         api_prefix="/v1",
         num_ctx=num_ctx,
     )
     client._client = httpx.AsyncClient(
         transport=transport,
-        base_url="http://vllm-primary:8000",
+        base_url=DEFAULT_CUSTOM_BASE_URL,
         headers={},
     )
     return client
@@ -55,7 +66,7 @@ class TestOpenRouterClientInit:
         """Verify Authorization header is set."""
         client = OpenRouterClient(
             api_key="my-key",
-            model="qwen/qwen3-14b",
+            model=DEFAULT_OPENROUTER_MODEL,
         )
         auth = client._client.headers["authorization"]
         assert auth == "Bearer my-key"
@@ -64,16 +75,16 @@ class TestOpenRouterClientInit:
         """Verify base URL points to OpenRouter."""
         client = OpenRouterClient(
             api_key="my-key",
-            model="qwen/qwen3-14b",
+            model=DEFAULT_OPENROUTER_MODEL,
         )
-        assert str(client._client.base_url) == "https://openrouter.ai"
+        assert str(client._client.base_url) == DEFAULT_OPENROUTER_BASE_URL
 
     def test_omits_auth_header_when_api_key_is_empty(self):
         """Verify empty API keys do not create an invalid Bearer header."""
         client = OpenRouterClient(
             api_key="",
-            model="Qwen/Qwen3.5-9B",
-            base_url="http://vllm-primary:8000",
+            model=DEFAULT_CUSTOM_MODEL,
+            base_url=DEFAULT_CUSTOM_BASE_URL,
             api_prefix="/v1",
         )
         assert "authorization" not in client._client.headers
@@ -100,7 +111,7 @@ class TestChat:
 
         async def handler(request):
             body = json.loads(request.content)
-            assert body["model"] == "qwen/qwen3-14b"
+            assert body["model"] == DEFAULT_OPENROUTER_MODEL
             assert body["stream"] is True
             return httpx.Response(200, text="\n".join(lines))
 
@@ -155,10 +166,7 @@ class TestChat:
         immediately without client-side buffering or ``<think>`` parsing.
         """
         lines = [
-            (
-                'data: {"choices":[{"delta":'
-                '{"reasoning_content":"internal plan"}}]}'
-            ),
+            ('data: {"choices":[{"delta":{"reasoning_content":"internal plan"}}]}'),
             'data: {"choices":[{"delta":{"content":"Visible"}}]}',
             "data: [DONE]",
         ]
@@ -411,6 +419,28 @@ class TestClose:
             model="qwen/qwen3-14b",
         )
         await client.close()
+
+
+class TestResolveCapabilities:
+    """Tests for OpenRouter capability resolution."""
+
+    @pytest.mark.asyncio
+    async def test_env_override_returns_text_response_format(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Keep OpenRouter on text mode until structured output is proven."""
+        monkeypatch.setenv(OPENROUTER_ENV_OVERRIDE, OPENROUTER_ENV_OVERRIDE_VALUE)
+        client = OpenRouterClient(
+            api_key="test-api-key",
+            model=DEFAULT_OPENROUTER_MODEL,
+        )
+        try:
+            caps = await client.resolve_capabilities(DEFAULT_OPENROUTER_MODEL)
+        finally:
+            await client.close()
+        assert caps.max_context_tokens == OPENROUTER_ENV_OVERRIDE_TOKENS
+        assert caps.llm_response_format is LlmResponseFormat.TEXT
 
 
 class TestMakeLlmCall:

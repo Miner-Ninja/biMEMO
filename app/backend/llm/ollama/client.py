@@ -29,6 +29,7 @@ from backend.llm.ollama.capabilities import (
 )
 from backend.llm.ollama.messages import convert_messages_for_ollama
 from backend.llm.reasoning import strip_reasoning_output
+from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.usage import LLMCallUsage
 
 
@@ -197,6 +198,10 @@ class OllamaClient:
                 model=model,
                 max_context_tokens=env_override,
                 source=SOURCE_ENV_OVERRIDE,
+                llm_response_format=resolve_llm_response_format(
+                    provider_name=self.name,
+                    model_name=model,
+                ),
             )
         if self.num_ctx is not None and self.num_ctx > 0:
             return ModelCapabilities(
@@ -204,6 +209,10 @@ class OllamaClient:
                 model=model,
                 max_context_tokens=self.num_ctx,
                 source=SOURCE_UI_OVERRIDE,
+                llm_response_format=resolve_llm_response_format(
+                    provider_name=self.name,
+                    model_name=model,
+                ),
             )
         try:
             detected = await detect_ollama_model_capabilities(self._client, model)
@@ -219,6 +228,10 @@ class OllamaClient:
             model=model,
             max_context_tokens=detected.runtime_context_tokens,
             source=detected.source,
+            llm_response_format=resolve_llm_response_format(
+                provider_name=self.name,
+                model_name=model,
+            ),
         )
 
     async def check_model(self) -> bool:
