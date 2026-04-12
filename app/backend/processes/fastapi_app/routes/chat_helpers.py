@@ -282,17 +282,19 @@ def parse_message_meta(
 
 def build_http_structured_content(
     structured_content: object,
+    *,
+    fallback_answer: str = "",
 ) -> HTTPStructuredAssistantContent | None:
     """Convert one structured assistant object into the HTTP response shape."""
     if structured_content is None:
         return None
     if isinstance(structured_content, dict):
-        answer_value = structured_content.get("answer", "")
+        answer_value = structured_content.get("answer", fallback_answer)
         thinking_value = structured_content.get("thinking")
         raw_sql = structured_content.get("sql")
         raw_suggestions = structured_content.get("suggestions", [])
     else:
-        answer_value = getattr(structured_content, "answer", "")
+        answer_value = getattr(structured_content, "answer", fallback_answer)
         thinking_value = getattr(structured_content, "thinking", None)
         raw_sql = getattr(structured_content, "sql", None)
         raw_suggestions = getattr(structured_content, "suggestions", [])
@@ -333,7 +335,10 @@ def build_persisted_structured_content(
     message_meta = parse_message_meta(raw_meta)
     stored_content = message_meta.get(MESSAGE_META_STRUCTURED_CONTENT_KEY)
     if isinstance(stored_content, dict):
-        return build_http_structured_content(stored_content)
+        return build_http_structured_content(
+            stored_content,
+            fallback_answer=content,
+        )
 
     normalized_content = normalize_legacy_response_text(content)
     return build_http_structured_content(normalized_content)
