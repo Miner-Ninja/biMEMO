@@ -248,7 +248,10 @@ def build_http_chat_response(
     ipc_response: IPCChatResponse,
 ) -> HTTPChatResponse:
     """Build the final HTTP chat response from one IPC response."""
-    structured_content = build_http_structured_content(ipc_response.structured_content)
+    structured_content = build_http_structured_content(
+        ipc_response.structured_content,
+        fallback_answer=ipc_response.text,
+    )
     return HTTPChatResponse(
         text=ipc_response.text,
         conversation_id=conversation_id,
@@ -287,7 +290,10 @@ def build_http_structured_content(
 ) -> HTTPStructuredAssistantContent | None:
     """Convert one structured assistant object into the HTTP response shape."""
     if structured_content is None:
-        return None
+        answer = fallback_answer.strip()
+        if not answer:
+            return None
+        return HTTPStructuredAssistantContent(answer=answer)
     if isinstance(structured_content, dict):
         answer_value = structured_content.get("answer", fallback_answer)
         thinking_value = structured_content.get("thinking")

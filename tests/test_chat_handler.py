@@ -1,10 +1,12 @@
 """Tests for structured assistant-response helpers."""
 
 from backend.agent.agent_loop_models import AgentResponse
+from backend.ipc.models import ChatResponse as IPCChatResponse
 from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import StructuredAssistantContent
 from backend.processes.fastapi_app.routes.chat_helpers import (
     build_conversation_message_item,
+    build_http_chat_response,
 )
 from backend.processes.orchestrator.chat_handler import _build_chat_response
 
@@ -158,3 +160,24 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
     assert chat_response.structured_content.answer == "Main answer."
     assert chat_response.structured_content.sql == "SELECT 1"
     assert chat_response.structured_content.suggestions == []
+
+
+def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
+    """Expose one structured answer block even for plain IPC chat responses."""
+    http_response = build_http_chat_response(
+        conversation_id="conversation-1",
+        ipc_response=IPCChatResponse(
+            request_id="request-1",
+            text="Plain answer",
+            input_filtered=False,
+            output_filtered=False,
+        ),
+    )
+
+    assert http_response.text == "Plain answer"
+    assert http_response.structured_content == StructuredAssistantContent(
+        answer="Plain answer",
+        thinking=None,
+        sql=None,
+        suggestions=[],
+    )

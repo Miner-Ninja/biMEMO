@@ -275,14 +275,13 @@ function should_use_structured_pseudo_stream(
 
 function visible_assistant_answer(
   structuredContent: ChatResponsePayload["structured_content"] | undefined,
-  responseText: string,
   streamedContent: string,
 ): string {
   // Resolve the final visible assistant answer from one response payload.
   if (structuredContent) {
     return structuredContent.answer;
   }
-  return responseText || streamedContent;
+  return streamedContent;
 }
 
 function nextConversationTitle(
@@ -1051,7 +1050,6 @@ export function ChatPage() {
         : null;
       const visibleAnswer = visible_assistant_answer(
         structuredContent,
-        response.text,
         streamedContentRef.current,
       );
       const finalText = structuredContentForPseudoStream
@@ -1283,7 +1281,6 @@ export function ChatPage() {
         : null;
       const visibleAnswer = visible_assistant_answer(
         structuredContent,
-        response.text,
         streamedContentRef.current,
       );
       const finalText = structuredContentForPseudoStream
