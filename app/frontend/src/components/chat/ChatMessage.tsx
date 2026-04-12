@@ -332,7 +332,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
           </div>
         ) : cleanContent ? (
           <div>
-            <div className="markdown-content prose prose-sm prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-td:text-foreground prose-a:text-primary max-w-none text-sm sm:text-base">
+            <div className="markdown-content prose prose-sm max-w-none text-foreground prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-td:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-li:text-foreground prose-marker:text-foreground prose-a:text-primary text-sm sm:text-base">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 disallowedElements={['script', 'iframe', 'object', 'embed', 'form', 'style', 'link']}
