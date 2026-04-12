@@ -93,12 +93,12 @@ __all__ = [
 
 def _require_structured_content(
     structured_content: StructuredAssistantContent | None,
-    visible_answer: str,
+    response_text: str,
 ) -> StructuredAssistantContent:
     """Return the structured answer or build one from visible text."""
     if structured_content is not None:
         return structured_content
-    return StructuredAssistantContent(answer=visible_answer)
+    return StructuredAssistantContent(answer=response_text)
 
 
 @dataclass
@@ -511,7 +511,7 @@ class AgentOrchestrator:
             )
         return FinalizedAssistantResponse(
             loop_result=loop.complete(raw_final_text),
-            visible_assistant_text=output_result.text,
+            response_text=output_result.text,
             output_filtered=bool(
                 output_result.credentials_found or output_result.blocked
             ),
@@ -556,7 +556,7 @@ class AgentOrchestrator:
             raw_assistant_text=raw_final_text,
             session_id=session_id,
             filtered_message=filtered_message,
-            visible_assistant_text=finalized_response.visible_assistant_text,
+            response_text=finalized_response.response_text,
             stats=finalized_response.stats,
             structured_content=finalized_response.structured_content,
             user_message_id=user_message_id,
@@ -565,7 +565,7 @@ class AgentOrchestrator:
         return AgentResponse(
             structured_content=_require_structured_content(
                 finalized_response.structured_content,
-                finalized_response.visible_assistant_text,
+                finalized_response.response_text,
             ),
             loop_result=finalized_response.loop_result,
             input_filtered=input_filtered,

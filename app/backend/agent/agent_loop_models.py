@@ -124,7 +124,7 @@ class FinalizedAssistantResponse:
     """Final assistant text after output filtering and usage aggregation."""
 
     loop_result: LoopResult
-    visible_assistant_text: str
+    response_text: str
     output_filtered: bool
     stats: ExtendedUsage | None
     structured_content: StructuredAssistantContent | None = None

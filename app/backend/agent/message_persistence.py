@@ -131,17 +131,17 @@ class MessagePersistence:
         conversation_id: str,
         session_id: str,
         filtered_message: str,
-        visible_assistant_text: str,
+        response_text: str,
         user_message_id: str | None,
         assistant_message_id: str | None,
     ) -> None:
         """Persist the compact dialog-step record used by memory compression."""
-        if self.save_record_fn is None or not visible_assistant_text:
+        if self.save_record_fn is None or not response_text:
             return
         try:
             record_input = build_dialog_step_record_input(
                 filtered_message,
-                visible_assistant_text,
+                response_text,
             )
             await self.persist_dialog_record(
                 conversation_id=conversation_id,
@@ -224,7 +224,7 @@ class MessagePersistence:
         session_id: str,
         filtered_message: str,
         raw_assistant_text: str,
-        visible_assistant_text: str,
+        response_text: str,
         stats: ExtendedUsage | None,
         structured_content: StructuredAssistantContent | None,
         user_message_id: str | None,
@@ -240,7 +240,7 @@ class MessagePersistence:
             conversation_id=conversation_id,
             session_id=session_id,
             filtered_message=filtered_message,
-            visible_assistant_text=visible_assistant_text,
+            response_text=response_text,
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
         )

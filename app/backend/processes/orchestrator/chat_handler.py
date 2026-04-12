@@ -195,10 +195,10 @@ def _copy_structured_content(
 
 
 def _build_plain_structured_content(
-    visible_assistant_text: str,
+    response_text: str,
 ) -> StructuredAssistantContent:
     """Build one minimal structured assistant reply from visible text only."""
-    return StructuredAssistantContent(answer=visible_assistant_text)
+    return StructuredAssistantContent(answer=response_text)
 
 
 def _build_missing_llm_response(
