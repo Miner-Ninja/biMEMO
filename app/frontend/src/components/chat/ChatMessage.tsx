@@ -23,7 +23,6 @@ import { ThinkingBlock } from './ThinkingBlock'
 import { TokenStats } from './TokenStats'
 import { VoicePlayer } from './VoicePlayer'
 import { detectChartType } from '@/lib/chart-utils'
-import { extractSqlFromContent, extractSuggestions } from '@/lib/markdown-parsing'
 import { buildMarkdownComponents } from '@/lib/markdownComponents'
 import type { Message, PendingConfirmation } from '@/types/chat'
 import ConfirmationCard from './ConfirmationCard'
@@ -55,21 +54,13 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
   const [editValue, setEditValue] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
-  // Extract SQL from content if not already set
-  const { sql, contentWithoutSql } = useMemo(() => {
-    if (message.sql) {
-      return { sql: message.sql, contentWithoutSql: message.content }
-    }
-    return extractSqlFromContent(message.content)
-  }, [message.content, message.sql])
-
   const isUser = message.role === 'user'
   const hasError = Boolean(message.error)
-  const hasSql = Boolean(sql)
+  const hasSql = Boolean(message.sql)
   const hasResults = Boolean(message.results && message.results.data.length > 0)
   const hasStats = Boolean(message.stats)
   const hasThinking = Boolean(message.thinking)
-  const hasChartBlock = contentWithoutSql.includes('```chart')
+  const hasChartBlock = message.content.includes('```chart')
   const hasImages = Boolean(message.images && message.images.length > 0)
 
   // Fallback chart detection from table results
@@ -81,15 +72,8 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
     )
   }, [hasChartBlock, hasResults, message.results])
 
-  const { cleanContent, suggestions } = useMemo(() => {
-    if (message.suggestions && message.suggestions.length > 0) {
-      return {
-        cleanContent: contentWithoutSql,
-        suggestions: message.suggestions,
-      }
-    }
-    return extractSuggestions(contentWithoutSql, isUser)
-  }, [contentWithoutSql, isUser, message.suggestions])
+  const cleanContent = message.content
+  const suggestions = message.suggestions ?? []
 
   const markdownComponents = useMemo(
     () => buildMarkdownComponents(onCommandClick),
@@ -97,9 +81,9 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
   )
 
   const handleCopyContent = async () => {
-    if (!contentWithoutSql) return
+    if (!cleanContent) return
     try {
-      await navigator.clipboard.writeText(contentWithoutSql)
+      await navigator.clipboard.writeText(cleanContent)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (error) {
@@ -147,10 +131,10 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
       )}
     >
       {/* Action buttons — top-right of the entire message row */}
-      {contentWithoutSql && !isEditing && (
+      {cleanContent && !isEditing && (
         <div className="absolute right-2.5 top-2.5 z-10 flex items-center gap-0.5 opacity-100 transition-opacity sm:right-4 sm:top-4 sm:opacity-0 sm:group-hover:opacity-100">
           {ttsAvailable && !isUser && (
-            <SpeakButton text={contentWithoutSql} />
+            <SpeakButton text={cleanContent} />
           )}
           <Button
             variant="ghost"
@@ -346,7 +330,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
               </Button>
             </div>
           </div>
-        ) : contentWithoutSql ? (
+        ) : cleanContent ? (
           <div>
             <div className="markdown-content prose prose-sm prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground prose-th:text-foreground prose-td:text-foreground prose-a:text-primary max-w-none text-sm sm:text-base">
               <ReactMarkdown
@@ -380,7 +364,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
         ) : null}
 
         {/* SQL Query (collapsible, hidden when showSql=false) */}
-        {hasSql && showSql && (
+        {hasSql && showSql && message.sql && (
           <Collapsible open={sqlOpen} onOpenChange={setSqlOpen}>
             <CollapsibleTrigger className="flex w-full items-center gap-2 rounded border border-border p-2 text-sm hover:bg-muted/50">
               <ChevronRight
@@ -389,7 +373,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
               <span>SQL Query</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-2">
-              <MarkdownCodeBlock code={sql!} language="sql" />
+              <MarkdownCodeBlock code={message.sql} language="sql" />
             </CollapsibleContent>
           </Collapsible>
         )}

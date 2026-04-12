@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.agent_loop_models import ToolCall
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolResult
 
@@ -132,15 +133,27 @@ EMPTY_FINAL_ANSWER_RECOVERY_PROMPT = (
     "Provide the final user-facing answer now in plain text. "
     "Do not call tools again. Do not return an empty reply."
 )
+MESSAGE_META_STATS_KEY = "stats"
+MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
 
 
 def build_assistant_message_meta(
     stats: object | None,
+    structured_content: StructuredAssistantContent | None,
 ) -> dict[str, object] | None:
     """Build persisted metadata for one saved assistant message."""
-    if stats is None:
+    message_meta: dict[str, object] = {}
+    if stats is not None:
+        message_meta[MESSAGE_META_STATS_KEY] = stats.model_dump(mode="json")
+    if structured_content is not None:
+        message_meta[MESSAGE_META_STRUCTURED_CONTENT_KEY] = {
+            "answer": structured_content.answer,
+            "sql": structured_content.sql,
+            "suggestions": structured_content.suggestions,
+        }
+    if not message_meta:
         return None
-    return {"stats": stats.model_dump(mode="json")}
+    return message_meta
 
 
 async def request_non_empty_final_answer(

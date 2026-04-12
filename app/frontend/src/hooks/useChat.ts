@@ -111,11 +111,16 @@ export function extractMessageImages(
 
 function mapMessage(message: StoredConversationMessage): Message {
   const meta = parseMessageMeta(message.meta);
+  const structuredContent = message.structured_content;
+  const messageContent =
+    structuredContent?.answer ?? extractMessageText(message.content);
   return {
     id: message.id,
     role: message.role,
-    content: extractMessageText(message.content),
+    content: messageContent,
     images: extractMessageImages(message.content),
+    sql: structuredContent?.sql ?? undefined,
+    suggestions: structuredContent?.suggestions ?? undefined,
     stats: meta?.stats,
     timestamp: new Date(message.created_at),
   };

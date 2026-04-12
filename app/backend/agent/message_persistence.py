@@ -21,6 +21,7 @@ from backend.processes.orchestrator.client import DBProxyError
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.models.chat_stats import ExtendedUsage
 
 
@@ -206,13 +207,14 @@ class MessagePersistence:
         conversation_id: str,
         final_text: str,
         stats: ExtendedUsage | None,
+        structured_content: StructuredAssistantContent | None,
     ) -> str | None:
         """Persist the raw final assistant text with usage metadata."""
         return await self.save_message(
             conversation_id,
             "assistant",
             final_text,
-            meta=build_assistant_message_meta(stats),
+            meta=build_assistant_message_meta(stats, structured_content),
         )
 
     async def persist_final_turn_messages(
@@ -224,6 +226,7 @@ class MessagePersistence:
         final_text: str,
         assistant_text: str,
         stats: ExtendedUsage | None,
+        structured_content: StructuredAssistantContent | None,
         user_message_id: str | None,
     ) -> str | None:
         """Persist the assistant message and the compact dialog-step record."""
@@ -231,6 +234,7 @@ class MessagePersistence:
             conversation_id=conversation_id,
             final_text=final_text,
             stats=stats,
+            structured_content=structured_content,
         )
         await self.save_dialog_record(
             conversation_id=conversation_id,

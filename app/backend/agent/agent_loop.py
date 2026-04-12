@@ -548,6 +548,7 @@ class AgentOrchestrator:
             filtered_message=filtered_message,
             assistant_text=finalized_response.output_text,
             stats=finalized_response.stats,
+            structured_content=finalized_response.structured_content,
             user_message_id=user_message_id,
         )
 

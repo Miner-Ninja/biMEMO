@@ -160,6 +160,7 @@ class ConversationMessageItem(StrictResponseModel):
     conversation_id: str
     created_at: str
     meta: str | None = None
+    structured_content: StructuredAssistantContent | None = None
 
 
 class ChatBridgeLinkItem(StrictResponseModel):

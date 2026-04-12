@@ -8,6 +8,7 @@ to keep route handler bodies small and focused.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import TYPE_CHECKING
@@ -19,6 +20,7 @@ from fastapi.responses import JSONResponse
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import ChatRequest as IPCChatRequest
 from backend.ipc.models import ChatResponse as IPCChatResponse
+from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import ChatResponse as HTTPChatResponse
 from backend.models.responses import ChatSettingsResponse, ConfirmationItem
 from backend.models.responses import (
@@ -54,6 +56,7 @@ DEFAULT_CONVERSATION_LIST_LIMIT = 50
 DEFAULT_CONVERSATION_MESSAGES_LIMIT = 200
 
 RECOVERABLE_BRIDGE_ERRORS = (RuntimeError, httpx.HTTPError)
+MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
 
 
 def build_auto_bridge_title(message: str) -> str:
@@ -271,6 +274,93 @@ def build_http_chat_response(
     )
 
 
+def parse_message_meta(
+    raw_meta: str | None,
+) -> dict[str, object]:
+    """Parse one stored message metadata JSON string."""
+    if not raw_meta:
+        return {}
+    try:
+        parsed_meta = json.loads(raw_meta)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed_meta, dict):
+        return {}
+    return parsed_meta
+
+
+def build_persisted_structured_content(
+    *,
+    role: str,
+    content: str | list[dict[str, object]],
+    raw_meta: str | None,
+) -> HTTPStructuredAssistantContent | None:
+    """Build structured content for one stored conversation message."""
+    if role != "assistant" or not isinstance(content, str):
+        return None
+
+    message_meta = parse_message_meta(raw_meta)
+    stored_content = message_meta.get(MESSAGE_META_STRUCTURED_CONTENT_KEY)
+    if isinstance(stored_content, dict):
+        answer = str(stored_content.get("answer", "")).strip()
+        raw_sql = stored_content.get("sql")
+        sql = (
+            str(raw_sql).strip()
+            if isinstance(raw_sql, str) and raw_sql.strip()
+            else None
+        )
+        raw_suggestions = stored_content.get("suggestions", [])
+        suggestions = (
+            [
+                str(suggestion).strip()
+                for suggestion in raw_suggestions
+                if str(suggestion).strip()
+            ]
+            if isinstance(raw_suggestions, list)
+            else []
+        )
+        return HTTPStructuredAssistantContent(
+            answer=answer,
+            sql=sql,
+            suggestions=suggestions,
+        )
+
+    normalized_content = normalize_legacy_response_text(content)
+    return HTTPStructuredAssistantContent(
+        answer=normalized_content.answer,
+        sql=normalized_content.sql,
+        suggestions=normalized_content.suggestions,
+    )
+
+
+def build_conversation_message_item(
+    message: dict[str, object],
+) -> HTTPConversationMessageItem:
+    """Convert one stored message row into the HTTP message shape."""
+    content = message["content"]
+    role = str(message["role"])
+    raw_meta = str(message["meta"]) if message.get("meta") is not None else None
+    structured_content = build_persisted_structured_content(
+        role=role,
+        content=content,
+        raw_meta=raw_meta,
+    )
+    message_content = (
+        structured_content.answer
+        if structured_content is not None and isinstance(content, str)
+        else content
+    )
+    return HTTPConversationMessageItem(
+        id=str(message["id"]),
+        role=role,
+        content=message_content,
+        conversation_id=str(message["conversation_id"]),
+        created_at=str(message["created_at"]),
+        meta=raw_meta,
+        structured_content=structured_content,
+    )
+
+
 async def send_ipc_control_request(
     *,
     send_fn: Callable[[object], Awaitable[object]],
@@ -396,7 +486,9 @@ async def list_conversation_message_items(
         messages,
         key=lambda message: str(message.get("created_at", "")),
     )
-    return [HTTPConversationMessageItem(**message) for message in ordered_messages]
+    return [
+        build_conversation_message_item(message) for message in ordered_messages
+    ]
 
 
 async def update_conversation_item(

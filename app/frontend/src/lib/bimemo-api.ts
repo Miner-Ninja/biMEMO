@@ -232,6 +232,12 @@ export interface StoredConversationMessage {
   conversation_id: string;
   created_at: string;
   meta: string | null;
+  structured_content?: {
+    answer: string;
+    thinking?: string | null;
+    sql?: string | null;
+    suggestions?: string[];
+  } | null;
 }
 
 export interface ConversationCreateResponse {
