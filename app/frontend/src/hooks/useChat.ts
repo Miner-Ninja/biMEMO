@@ -42,6 +42,20 @@ type StoredMessageMeta = {
   stats?: ExtendedUsage;
 };
 
+export type AssistantStructuredContent = {
+  answer: string;
+  thinking?: string | null;
+  sql?: string | null;
+  suggestions?: string[];
+};
+
+type AssistantMessageFieldsInput = {
+  fallbackContent: string;
+  structuredContent?: AssistantStructuredContent | null;
+  stats?: ExtendedUsage;
+  images?: string[];
+};
+
 function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
   if (!rawMeta) {
     return null;
@@ -109,20 +123,35 @@ export function extractMessageImages(
   return images.length > 0 ? images : undefined;
 }
 
-function mapMessage(message: StoredConversationMessage): Message {
-  const meta = parseMessageMeta(message.meta);
-  const structuredContent = message.structured_content;
-  const messageContent =
-    structuredContent?.answer ?? extractMessageText(message.content);
+export function buildAssistantMessageFields(
+  input: AssistantMessageFieldsInput,
+): Pick<
+  Message,
+  "content" | "images" | "thinking" | "sql" | "suggestions" | "stats"
+> {
+  const { fallbackContent, structuredContent, stats, images } = input;
   return {
-    id: message.id,
-    role: message.role,
-    content: messageContent,
-    images: extractMessageImages(message.content),
+    content: structuredContent?.answer ?? fallbackContent,
+    images,
     thinking: structuredContent?.thinking ?? undefined,
     sql: structuredContent?.sql ?? undefined,
     suggestions: structuredContent?.suggestions ?? undefined,
-    stats: meta?.stats,
+    stats,
+  };
+}
+
+function mapMessage(message: StoredConversationMessage): Message {
+  const meta = parseMessageMeta(message.meta);
+  const structuredContent = message.structured_content;
+  return {
+    id: message.id,
+    role: message.role,
+    ...buildAssistantMessageFields({
+      fallbackContent: extractMessageText(message.content),
+      structuredContent,
+      stats: meta?.stats,
+      images: extractMessageImages(message.content),
+    }),
     timestamp: new Date(message.created_at),
   };
 }

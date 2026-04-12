@@ -7,7 +7,13 @@ import { ChatBridgeDetailsModal } from "@/components/chat/ChatBridgeDetailsModal
 import { ChatInput, type ChatInputHandle } from "@/components/chat/ChatInput";
 import { ToastContainer, useToasts } from "@/components/ui/Toast";
 import { ReauthModal } from "@/components/ReauthModal";
-import { DEFAULT_CHAT_TITLE, extractMessageImages, extractMessageText, useChat } from "@/hooks/useChat";
+import {
+  buildAssistantMessageFields,
+  DEFAULT_CHAT_TITLE,
+  extractMessageImages,
+  extractMessageText,
+  useChat,
+} from "@/hooks/useChat";
 import { useProcessingStages } from "@/hooks/useProcessingStages";
 import { ProcessingStages } from "@/components/chat/ProcessingStages";
 import { useSSE, type ConnectionStatus, type SSEEvent } from "@/hooks/useSSE";
@@ -1065,18 +1071,16 @@ export function ChatPage() {
           })
         : visibleAnswer;
       if (!structuredContentForPseudoStream) {
+        const assistantMessageFields = buildAssistantMessageFields({
+          fallbackContent: finalText,
+          structuredContent,
+          stats: response.stats,
+        });
         updateMessage(
           assistantMessageId,
           buildAssistantMessageUpdate(
             {
-              content: finalText,
-              stats: response.stats,
-              sql: structuredContent?.sql || undefined,
-              suggestions:
-                structuredContent?.suggestions &&
-                structuredContent.suggestions.length > 0
-                  ? structuredContent.suggestions
-                  : undefined,
+              ...assistantMessageFields,
               pendingConfirmations:
                 pendingConfirmations && pendingConfirmations.length > 0
                   ? pendingConfirmations
@@ -1295,18 +1299,16 @@ export function ChatPage() {
           })
         : visibleAnswer;
       if (!structuredContentForPseudoStream) {
+        const assistantMessageFields = buildAssistantMessageFields({
+          fallbackContent: finalText,
+          structuredContent,
+          stats: response.stats,
+        });
         updateMessage(
           assistantMessageId,
           buildAssistantMessageUpdate(
             {
-              content: finalText,
-              stats: response.stats,
-              sql: structuredContent?.sql || undefined,
-              suggestions:
-                structuredContent?.suggestions &&
-                structuredContent.suggestions.length > 0
-                  ? structuredContent.suggestions
-                  : undefined,
+              ...assistantMessageFields,
             },
             streamedThinkingRef.current || structuredContent?.thinking || "",
           ),
