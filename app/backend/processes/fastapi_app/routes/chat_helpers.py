@@ -248,10 +248,7 @@ def build_http_chat_response(
     ipc_response: IPCChatResponse,
 ) -> HTTPChatResponse:
     """Build the final HTTP chat response from one IPC response."""
-    structured_content = build_http_structured_content(
-        ipc_response.structured_content,
-        fallback_answer=ipc_response.text,
-    )
+    structured_content = build_http_structured_content(ipc_response.structured_content)
     return HTTPChatResponse(
         conversation_id=conversation_id,
         input_filtered=ipc_response.input_filtered,

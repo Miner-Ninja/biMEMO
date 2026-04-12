@@ -2,6 +2,9 @@
 
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import ChatResponse as IPCChatResponse
+from backend.ipc.models import (
+    StructuredAssistantContent as IPCStructuredAssistantContent,
+)
 from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import StructuredAssistantContent
 from backend.processes.fastapi_app.routes.chat_helpers import (
@@ -167,7 +170,7 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
         conversation_id="conversation-1",
         ipc_response=IPCChatResponse(
             request_id="request-1",
-            text="Plain answer",
+            structured_content=IPCStructuredAssistantContent(answer="Plain answer"),
             input_filtered=False,
             output_filtered=False,
         ),

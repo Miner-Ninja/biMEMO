@@ -114,7 +114,10 @@ class TestChatResponse:
 
     def test_valid_minimal(self):
         """Create a ChatResponse with only required fields."""
-        resp = ChatResponse(request_id="req-1", text="Hi there")
+        resp = ChatResponse(
+            request_id="req-1",
+            structured_content=StructuredAssistantContent(answer="Hi there"),
+        )
         assert resp.input_filtered is False
         assert resp.output_filtered is False
         assert resp.pending_confirmations is None
@@ -124,7 +127,7 @@ class TestChatResponse:
         """Create a ChatResponse with all fields."""
         resp = ChatResponse(
             request_id="req-1",
-            text="Hi",
+            structured_content=StructuredAssistantContent(answer="Hi"),
             input_filtered=True,
             output_filtered=False,
             pending_confirmations=[{"action_id": "a1", "tool": "email_send"}],
@@ -134,7 +137,10 @@ class TestChatResponse:
 
     def test_json_roundtrip(self):
         """Serialize to JSON and deserialize back."""
-        resp = ChatResponse(request_id="req-1", text="Hi")
+        resp = ChatResponse(
+            request_id="req-1",
+            structured_content=StructuredAssistantContent(answer="Hi"),
+        )
         restored = ChatResponse.model_validate_json(resp.model_dump_json())
         assert restored == resp
 
@@ -142,7 +148,6 @@ class TestChatResponse:
         """Serialize structured assistant content inside ChatResponse."""
         resp = ChatResponse(
             request_id="req-1",
-            text="Hi",
             structured_content=StructuredAssistantContent(
                 answer="Hi",
                 sql="SELECT 1",

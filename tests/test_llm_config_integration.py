@@ -29,6 +29,9 @@ from backend.chat_bridge import (
 from backend.ipc.models import (
     ChatResponse as IPCChatResponse,
 )
+from backend.ipc.models import (
+    StructuredAssistantContent,
+)
 from backend.middleware.csrf import CsrfMiddleware
 from backend.middleware.jwt_auth import JwtAuthMiddleware
 from backend.middleware.rate_limit import RateLimitMiddleware
@@ -3007,7 +3010,7 @@ class TestFileReplacement:
             sent_requests.append(request)
             return IPCChatResponse(
                 request_id=request.request_id,
-                text="hello back",
+                structured_content=StructuredAssistantContent(answer="hello back"),
                 input_filtered=False,
                 output_filtered=False,
                 pending_confirmations=[],
@@ -3074,7 +3077,7 @@ class TestFileReplacement:
             operation_order.append(f"send_chat:{request.conversation_id}")
             return IPCChatResponse(
                 request_id=request.request_id,
-                text="ok",
+                structured_content=StructuredAssistantContent(answer="ok"),
                 pending_confirmations=[],
                 input_filtered=False,
                 output_filtered=False,

@@ -142,7 +142,7 @@ class ChatResponse(IPCModel):
 
     Attributes:
         request_id: Matching request identifier.
-        text: Assistant response text.
+        structured_content: Assistant response split into visible answer and extras.
         input_filtered: Whether input content filtering was triggered.
         output_filtered: Whether output content filtering was triggered.
         pending_confirmations: List of actions awaiting user confirmation.
@@ -151,7 +151,7 @@ class ChatResponse(IPCModel):
     """
 
     request_id: str
-    text: str
+    structured_content: StructuredAssistantContent
     input_filtered: bool = False
     output_filtered: bool = False
     pending_confirmations: list[dict[str, Any]] | None = None
@@ -159,7 +159,6 @@ class ChatResponse(IPCModel):
     retrieved_messages: list[dict[str, str]] | None = None
     transcription: str | None = None
     stats: ExtendedUsage | None = None
-    structured_content: StructuredAssistantContent | None = None
 
 
 class StopResponse(IPCModel):

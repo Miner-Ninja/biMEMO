@@ -23,6 +23,7 @@ from backend.ipc.models import (
     ReloadLLMResponse,
     StreamEvent,
     StreamEventType,
+    StructuredAssistantContent,
 )
 from backend.ipc.models import (
     ConfirmRequest as IPCConfirmRequest,
@@ -43,7 +44,6 @@ from backend.processes.fastapi_app import (
     SigningClient,
 )
 from backend.processes.orchestrator import OrchestratorIPCServer
-from pydantic import BaseModel
 
 
 class FakeOrchestratorIPC:
@@ -51,25 +51,25 @@ class FakeOrchestratorIPC:
 
     def __init__(self) -> None:
         """Initialize empty send and receive queues."""
-        self._sent: list[BaseModel] = []
-        self._receive_queue: asyncio.Queue[BaseModel] = asyncio.Queue()
+        self._sent: list[object] = []
+        self._receive_queue: asyncio.Queue[object] = asyncio.Queue()
         self._closed = False
 
-    def queue_receive(self, message: BaseModel) -> None:
+    def queue_receive(self, message: object) -> None:
         """Queue a message to be returned by ``receive``."""
         self._receive_queue.put_nowait(message)
 
-    async def send(self, message: BaseModel) -> None:
+    async def send(self, message: object) -> None:
         """Record a sent IPC message."""
         self._sent.append(message)
 
-    async def receive(self) -> BaseModel:
+    async def receive(self) -> object:
         """Return the next queued message."""
         if self._closed:
             raise IPCChannelError("Connection closed")
         return await self._receive_queue.get()
 
-    async def send_and_receive(self, message: BaseModel) -> BaseModel:
+    async def send_and_receive(self, message: object) -> object:
         """Send a message and return the next queued response."""
         await self.send(message)
         return await self.receive()
@@ -84,7 +84,7 @@ class FakeOrchestratorIPC:
         return not self._closed
 
     @property
-    def sent_messages(self) -> list[BaseModel]:
+    def sent_messages(self) -> list[object]:
         """Return all sent IPC messages."""
         return self._sent
 
@@ -101,7 +101,7 @@ class FakeDBProxyIPC:
         """Queue a ``DBResult`` for the next request."""
         self._responses.append(result)
 
-    async def send_and_receive(self, message: BaseModel) -> BaseModel:
+    async def send_and_receive(self, message: object) -> object:
         """Record the request and return the next queued response."""
         self._sent.append(message)
         if not self._responses:
@@ -124,7 +124,12 @@ class TestOrchestratorClient:
         client = OrchestratorClient(fake_ipc)
         await client.start()
 
-        fake_ipc.queue_receive(IPCChatResponse(request_id="r1", text="Hello!"))
+        fake_ipc.queue_receive(
+            IPCChatResponse(
+                request_id="r1",
+                structured_content=StructuredAssistantContent(answer="Hello!"),
+            )
+        )
 
         request = IPCChatRequest(
             request_id="r1",
@@ -136,7 +141,7 @@ class TestOrchestratorClient:
         result = await client.send_chat(request, session_id="s1")
 
         assert isinstance(result, IPCChatResponse)
-        assert result.text == "Hello!"
+        assert result.structured_content.answer == "Hello!"
         assert result.request_id == "r1"
         await client.stop()
 
@@ -222,10 +227,15 @@ class TestOrchestratorClient:
                 data="Hello",
             )
         )
-        fake_ipc.queue_receive(IPCChatResponse(request_id="r1", text="Hello!"))
+        fake_ipc.queue_receive(
+            IPCChatResponse(
+                request_id="r1",
+                structured_content=StructuredAssistantContent(answer="Hello!"),
+            )
+        )
 
         result = await client.send_chat(request, session_id="s1")
-        assert result.text == "Hello!"
+        assert result.structured_content.answer == "Hello!"
 
         event = await asyncio.wait_for(queue.get(), timeout=1.0)
         assert isinstance(event, StreamEvent)
@@ -247,7 +257,12 @@ class TestOrchestratorClient:
             """Assert the processing flag while the request is in flight."""
             await asyncio.sleep(0.05)
             assert client.is_processing
-            fake_ipc.queue_receive(IPCChatResponse(request_id="r1", text="ok"))
+            fake_ipc.queue_receive(
+                IPCChatResponse(
+                    request_id="r1",
+                    structured_content=StructuredAssistantContent(answer="ok"),
+                )
+            )
 
         response_task = asyncio.create_task(delayed_response())
         request = IPCChatRequest(

@@ -1,11 +1,10 @@
 """IPC server for the Orchestrator ↔ FastAPI channel."""
 
+from __future__ import annotations
+
 import inspect
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
-
-from pydantic import BaseModel
 
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
 from backend.ipc.ipc_channel import IPCSocketServer
@@ -21,11 +20,15 @@ from backend.ipc.models import (
     StopRequest,
     StopResponse,
     StreamEvent,
+    StructuredAssistantContent,
 )
 
 
 if TYPE_CHECKING:
     import asyncio
+    from collections.abc import Callable
+
+    from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +240,7 @@ class OrchestratorIPCServer:
             await self._save_error_response(request, error_text)
             return ChatResponse(
                 request_id=request.request_id,
-                text=error_text,
+                structured_content=StructuredAssistantContent(answer=error_text),
             )
 
     async def _save_error_response(

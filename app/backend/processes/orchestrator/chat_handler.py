@@ -171,40 +171,51 @@ def _build_chat_response(
     transcription: str | None,
 ) -> ChatResponse:
     """Convert one gateway response into the IPC chat response shape."""
-    structured_content = response.structured_content or normalize_legacy_response_text(
+    normalized_content = response.structured_content or normalize_legacy_response_text(
         response.text
     )
-    visible_answer = structured_content.answer
     return ChatResponse(
         request_id=request_id,
-        text=visible_answer,
+        structured_content=_copy_structured_content(normalized_content),
         input_filtered=response.input_filtered,
         output_filtered=response.output_filtered,
         retrieved_memories=response.retrieved_memories or None,
         retrieved_messages=response.retrieved_messages or None,
         transcription=transcription,
         stats=response.stats,
-        structured_content=StructuredAssistantContent(
-            answer=structured_content.answer,
-            thinking=structured_content.thinking,
-            sql=structured_content.sql,
-            suggestions=structured_content.suggestions,
-        ),
     )
+
+
+def _copy_structured_content(
+    structured_content: StructuredAssistantContent,
+) -> StructuredAssistantContent:
+    """Copy one structured assistant reply into the IPC model."""
+    return StructuredAssistantContent(
+        answer=structured_content.answer,
+        thinking=structured_content.thinking,
+        sql=structured_content.sql,
+        suggestions=structured_content.suggestions,
+    )
+
+
+def _build_plain_structured_content(answer: str) -> StructuredAssistantContent:
+    """Build one minimal structured assistant reply from visible text only."""
+    return StructuredAssistantContent(answer=answer)
 
 
 def _build_missing_llm_response(
     request_id: str,
 ) -> ChatResponse:
     """Build the standard response for a request without a configured LLM."""
+    visible_answer = (
+        "No LLM provider configured. "
+        "Please go to Admin → LLM Configuration and save "
+        "your provider settings, "
+        "then restart the application."
+    )
     return ChatResponse(
         request_id=request_id,
-        text=(
-            "No LLM provider configured. "
-            "Please go to Admin → LLM Configuration and save "
-            "your provider settings, "
-            "then restart the application."
-        ),
+        structured_content=_build_plain_structured_content(visible_answer),
         input_filtered=False,
         output_filtered=False,
     )
@@ -214,9 +225,13 @@ def _build_voice_transcription_failure_response(
     request_id: str,
 ) -> ChatResponse:
     """Build the standard response for a failed voice transcription."""
+    visible_answer = (
+        "Voice transcription failed. "
+        "Please try again or send a text message."
+    )
     return ChatResponse(
         request_id=request_id,
-        text=("Voice transcription failed. Please try again or send a text message."),
+        structured_content=_build_plain_structured_content(visible_answer),
         input_filtered=False,
         output_filtered=False,
     )

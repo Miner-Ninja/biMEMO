@@ -22,6 +22,7 @@ from backend.ipc.models import (
     ReloadLLMResponse,
     StopRequest,
     StopResponse,
+    StructuredAssistantContent,
 )
 from backend.processes.orchestrator import (
     DBProxyClient,
@@ -38,7 +39,6 @@ from backend.processes.orchestrator.dialog_recorder_setup import (
     _select_dialog_recorder_scheduling_mode,
     build_s_zone_compression_llm_call,
 )
-from pydantic import BaseModel
 
 
 # --- Test constants ---
@@ -57,7 +57,7 @@ class FakeIPCClient:
         """Queue the next ``DBResult`` returned by ``send_and_receive``."""
         self._responses.append(result)
 
-    async def send_and_receive(self, message: BaseModel) -> BaseModel:
+    async def send_and_receive(self, message: object) -> object:
         """Simulate an IPC round trip using the queued response list."""
         self._sent.append(message)
         if not self._responses:
@@ -177,7 +177,10 @@ class TestOrchestratorBridgeInbound:
 
         async def orchestrator_fn(request: ChatRequest) -> ChatResponse:
             """Return a minimal successful chat response."""
-            return ChatResponse(request_id=request.request_id, text="ok")
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="ok"),
+            )
 
         async def bridge_inbound_fn(request: BridgeInboundSyncRequest) -> str:
             """Simulate one missing bridge link lookup."""
@@ -251,7 +254,10 @@ class TestDialogRecorderCompressionCall:
 
         async def orchestrator_fn(request: ChatRequest) -> ChatResponse:
             """Return a minimal successful chat response."""
-            return ChatResponse(request_id=request.request_id, text="ok")
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="ok"),
+            )
 
         async def reload_llm_fn() -> ReloadLLMResponse:
             """Return a successful reload result."""
@@ -288,7 +294,10 @@ class TestDialogRecorderCompressionCall:
 
         async def orchestrator_fn(request: ChatRequest) -> ChatResponse:
             """Return a minimal successful chat response."""
-            return ChatResponse(request_id=request.request_id, text="ok")
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="ok"),
+            )
 
         async def bridge_inbound_fn(request: BridgeInboundSyncRequest) -> str:
             """Simulate one unexpected internal bridge failure."""
@@ -463,7 +472,7 @@ class TestBridgeInboundUrl:
     async def test_timeout_raises(self, fake_ipc: FakeIPCClient) -> None:
         """Raises ``DBProxyError`` when the IPC layer times out."""
 
-        async def slow_send(message: BaseModel) -> BaseModel:
+        async def slow_send(message: object) -> object:
             """Simulate a DB proxy call that exceeds the timeout."""
             await asyncio.sleep(10)
             return message
@@ -602,7 +611,10 @@ class TestOrchestratorIPCServer:
 
         async def orchestrator_fn(request: ChatRequest) -> ChatResponse:
             """Return a trivial chat response for the supplied request."""
-            return ChatResponse(request_id=request.request_id, text="Hello!")
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="Hello!"),
+            )
 
         server = OrchestratorIPCServer(
             socket_path="/tmp/test.sock",
@@ -620,7 +632,7 @@ class TestOrchestratorIPCServer:
         response = await server._handle_message("ChatRequest", request)
 
         assert isinstance(response, ChatResponse)
-        assert response.text == "Hello!"
+        assert response.structured_content.answer == "Hello!"
         assert response.request_id == "r1"
 
     @pytest.mark.asyncio
@@ -647,7 +659,7 @@ class TestOrchestratorIPCServer:
         response = await server._handle_message("ChatRequest", request)
 
         assert isinstance(response, ChatResponse)
-        assert "Internal error" in response.text
+        assert "Internal error" in response.structured_content.answer
 
     @pytest.mark.asyncio
     async def test_handle_chat_error_saves_fallback_assistant_message(self) -> None:
@@ -684,7 +696,7 @@ class TestOrchestratorIPCServer:
         response = await server._handle_message("ChatRequest", request)
 
         assert isinstance(response, ChatResponse)
-        assert response.text == "Internal error: boom"
+        assert response.structured_content.answer == "Internal error: boom"
         assert saved_messages == [("c1", "assistant", "Internal error: boom")]
 
     @pytest.mark.asyncio
@@ -724,7 +736,7 @@ class TestOrchestratorIPCServer:
         response = await server._handle_message("ChatRequest", request)
 
         assert isinstance(response, ChatResponse)
-        assert response.text == "Internal error: broken"
+        assert response.structured_content.answer == "Internal error: broken"
         assert saved_messages == [
             ("session-123", "assistant", "Internal error: broken"),
         ]
@@ -735,7 +747,10 @@ class TestOrchestratorIPCServer:
 
         async def noop(request: ChatRequest) -> ChatResponse:
             """Return a trivial response for unrelated chat requests."""
-            return ChatResponse(request_id=request.request_id, text="ok")
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="ok"),
+            )
 
         server = OrchestratorIPCServer(
             socket_path="/tmp/test.sock",

@@ -24,6 +24,7 @@ from backend.ipc.models import (
     DBOperation,
     DBResult,
     StreamEvent,
+    StructuredAssistantContent,
 )
 
 
@@ -106,11 +107,13 @@ class TestEndToEndFlow:
         """ChatResponse contains all expected fields."""
         response = ChatResponse(
             request_id="test-123",
-            text="Hello! How can I help?",
+            structured_content=StructuredAssistantContent(
+                answer="Hello! How can I help?"
+            ),
             input_filtered=False,
             output_filtered=False,
         )
-        assert response.text == "Hello! How can I help?"
+        assert response.structured_content.answer == "Hello! How can I help?"
         assert not response.input_filtered
 
 
