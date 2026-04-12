@@ -375,7 +375,7 @@ class TestAgentOrchestrator:
             structured_content=None,
         )
 
-        assert finalized_response.output_text == "[REDACTED]"
+        assert finalized_response.visible_assistant_text == "[REDACTED]"
         assert finalized_response.output_filtered is True
 
     def test_file_write_tool_requires_explicit_file_intent(self):
