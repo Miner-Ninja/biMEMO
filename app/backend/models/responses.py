@@ -4,11 +4,14 @@ Defines response schemas for serialization. Models ensure only
 declared fields are included in JSON output.
 """
 
-from typing import TypedDict
+from importlib import import_module
+from typing import TYPE_CHECKING, TypedDict
 
 from pydantic import BaseModel, ConfigDict
 
-from .chat_stats import ExtendedUsage
+
+if TYPE_CHECKING:
+    from .chat_stats import ExtendedUsage
 
 
 class StrictResponseModel(BaseModel):
@@ -42,6 +45,15 @@ class ConfirmationItem(StrictResponseModel):
     parameters: dict[str, object]
 
 
+class StructuredAssistantContent(StrictResponseModel):
+    """Structured assistant content extracted from one final response."""
+
+    answer: str
+    thinking: str | None = None
+    sql: str | None = None
+    suggestions: list[str] = []
+
+
 class ChatResponse(StrictResponseModel):
     """Chat endpoint response.
 
@@ -63,6 +75,7 @@ class ChatResponse(StrictResponseModel):
     retrieved_messages: list[RetrievedDebugItem] | None = None
     transcription: str | None = None
     stats: ExtendedUsage | None = None
+    structured_content: StructuredAssistantContent | None = None
 
 
 class StopResponse(StrictResponseModel):
@@ -219,3 +232,10 @@ class ChatBridgeMessageLinkItem(StrictResponseModel):
     external_message_id: str
     direction: str
     created_at: str
+
+
+ChatResponse.model_rebuild(
+    _types_namespace={
+        "ExtendedUsage": import_module("backend.models.chat_stats").ExtendedUsage
+    }
+)

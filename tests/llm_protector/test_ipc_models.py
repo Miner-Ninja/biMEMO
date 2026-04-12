@@ -17,6 +17,7 @@ from backend.ipc.models import (
     StopResponse,
     StreamEvent,
     StreamEventType,
+    StructuredAssistantContent,
 )
 from pydantic import ValidationError
 
@@ -136,6 +137,22 @@ class TestChatResponse:
         resp = ChatResponse(request_id="req-1", text="Hi")
         restored = ChatResponse.model_validate_json(resp.model_dump_json())
         assert restored == resp
+
+    def test_structured_content_roundtrip(self):
+        """Serialize structured assistant content inside ChatResponse."""
+        resp = ChatResponse(
+            request_id="req-1",
+            text="Hi",
+            structured_content=StructuredAssistantContent(
+                answer="Hi",
+                sql="SELECT 1",
+                suggestions=["Next step"],
+            ),
+        )
+        restored = ChatResponse.model_validate_json(resp.model_dump_json())
+        assert restored.structured_content is not None
+        assert restored.structured_content.answer == "Hi"
+        assert restored.structured_content.sql == "SELECT 1"
 
 
 class TestStopResponse:

@@ -71,6 +71,8 @@ export interface Message {
   toolStatus?: ToolStatus;
   /** Generated SQL query (assistant messages only) */
   sql?: string;
+  /** Follow-up suggestions shown after the final answer */
+  suggestions?: string[];
   /** Query execution results (assistant messages only) */
   results?: QueryResult;
   /** Error message if query failed (assistant messages only) */

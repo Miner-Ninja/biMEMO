@@ -8,21 +8,28 @@ the IPC layer with the gateway orchestrator for individual chat exchanges.
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
+import re
+from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ChatRequest,
     ChatResponse,
     StreamEvent,
     StreamEventType,
+    StructuredAssistantContent,
 )
 
-from .client import DBProxyClient
-from .ipc_server import OrchestratorIPCServer
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from backend.agent.agent_loop_models import AgentResponse
+
+    from .client import DBProxyClient
+    from .ipc_server import OrchestratorIPCServer
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +42,87 @@ RECOVERABLE_TRANSCRIPTION_ERRORS = (
 )
 RECOVERABLE_AUDIT_ERRORS = (RuntimeError, IPCChannelError, TypeError, ValueError)
 DEFAULT_CONVERSATION_PROCESSING_STAGE = "Processing..."
+MAX_STRUCTURED_SUGGESTIONS = 3
+LATIN_SCRIPT_PATTERN = re.compile(r"[A-Za-z]")
+CYRILLIC_SCRIPT_PATTERN = re.compile(r"[\u0400-\u04FF]")
+SCRIPT_DOMINANCE_THRESHOLD = 0.8
+SQL_BLOCK_PATTERN = re.compile(r"```sql\s*([\s\S]*?)```", re.IGNORECASE)
+SUGGESTIONS_BLOCK_PATTERN = re.compile(
+    r"```suggestions\s*\n([\s\S]*?)```",
+    re.IGNORECASE,
+)
+
+
+def _detect_script_profile(text: str) -> str:
+    """Return the dominant visible script for one text fragment."""
+    latin_count = len(LATIN_SCRIPT_PATTERN.findall(text))
+    cyrillic_count = len(CYRILLIC_SCRIPT_PATTERN.findall(text))
+    if latin_count == 0 and cyrillic_count == 0:
+        return "neutral"
+    if latin_count > 0 and cyrillic_count == 0:
+        return "latin"
+    if cyrillic_count > 0 and latin_count == 0:
+        return "cyrillic"
+    dominant_count = max(latin_count, cyrillic_count)
+    total_count = latin_count + cyrillic_count
+    if dominant_count / total_count >= SCRIPT_DOMINANCE_THRESHOLD:
+        return "latin" if latin_count > cyrillic_count else "cyrillic"
+    return "mixed"
+
+
+def _suggestions_match_content_language(
+    answer: str,
+    suggestions: list[str],
+) -> bool:
+    """Check whether extracted suggestions match the answer language."""
+    answer_profile = _detect_script_profile(answer)
+    if answer_profile in {"neutral", "mixed"}:
+        return True
+    suggestions_profile = _detect_script_profile(" ".join(suggestions))
+    if suggestions_profile in {"neutral", "mixed"}:
+        return True
+    return answer_profile == suggestions_profile
+
+
+def _split_sql_block(text: str) -> tuple[str, str | None]:
+    """Split one SQL fenced block out of the final assistant text."""
+    sql_match = SQL_BLOCK_PATTERN.search(text)
+    if sql_match is None:
+        return text, None
+    sql = sql_match.group(1).strip()
+    answer = SQL_BLOCK_PATTERN.sub("", text).strip()
+    return answer, sql or None
+
+
+def _split_suggestions_block(text: str) -> tuple[str, list[str]]:
+    """Split one suggestions fenced block out of the final assistant text."""
+    suggestions_found: list[str] = []
+
+    def _collect_block(match: re.Match[str]) -> str:
+        block_lines = [
+            line.strip() for line in match.group(1).splitlines() if line.strip()
+        ]
+        suggestions_found.extend(block_lines)
+        return ""
+
+    answer = SUGGESTIONS_BLOCK_PATTERN.sub(_collect_block, text).strip()
+    if not suggestions_found:
+        return answer, []
+    trimmed_suggestions = suggestions_found[:MAX_STRUCTURED_SUGGESTIONS]
+    if not _suggestions_match_content_language(answer, trimmed_suggestions):
+        return answer, []
+    return answer, trimmed_suggestions
+
+
+def _build_structured_content(text: str) -> StructuredAssistantContent:
+    """Normalize one final assistant text into typed response sections."""
+    answer_without_sql, sql = _split_sql_block(text)
+    answer, suggestions = _split_suggestions_block(answer_without_sql)
+    return StructuredAssistantContent(
+        answer=answer,
+        sql=sql,
+        suggestions=suggestions,
+    )
 
 
 class VoiceTranscriptionError(RuntimeError):
@@ -173,6 +261,7 @@ def _build_chat_response(
         retrieved_messages=response.retrieved_messages or None,
         transcription=transcription,
         stats=response.stats,
+        structured_content=_build_structured_content(response.text),
     )
 
 

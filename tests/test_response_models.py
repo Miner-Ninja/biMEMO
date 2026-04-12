@@ -9,6 +9,7 @@ from backend.models.responses import (
     ConfirmationItem,
     IntegrationListItem,
     StopResponse,
+    StructuredAssistantContent,
     SummaryItem,
 )
 
@@ -35,6 +36,7 @@ class TestChatResponse:
             "retrieved_messages": None,
             "transcription": None,
             "stats": None,
+            "structured_content": None,
         }
 
     def test_with_confirmations(self):
@@ -53,6 +55,27 @@ class TestChatResponse:
         data = resp.model_dump()
         assert len(data["pending_confirmations"]) == 1
         assert data["pending_confirmations"][0]["tool_name"] == "http_fetch"
+
+    def test_with_structured_content(self):
+        """Verify structured assistant content is serialized."""
+        resp = ChatResponse(
+            text="Answer",
+            input_filtered=False,
+            output_filtered=False,
+            pending_confirmations=[],
+            structured_content=StructuredAssistantContent(
+                answer="Answer",
+                sql="SELECT 1",
+                suggestions=["Next step"],
+            ),
+        )
+        data = resp.model_dump()
+        assert data["structured_content"] == {
+            "answer": "Answer",
+            "thinking": None,
+            "sql": "SELECT 1",
+            "suggestions": ["Next step"],
+        }
 
 
 class TestStopResponse:

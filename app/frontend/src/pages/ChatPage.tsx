@@ -47,6 +47,12 @@ type ChatResponsePayload = {
   retrieved_memories?: { summary: string; date: string }[];
   transcription?: string;
   stats?: ExtendedUsage;
+  structured_content?: {
+    answer: string;
+    thinking?: string | null;
+    sql?: string | null;
+    suggestions?: string[];
+  };
   pending_confirmations?: {
     action_id: string;
     tool_name: string;
@@ -850,7 +856,9 @@ export function ChatPage() {
         body: JSON.stringify(body),
       });
 
-      const finalText = response.text || streamedContentRef.current;
+      const structuredContent = response.structured_content;
+      const finalText =
+        structuredContent?.answer || response.text || streamedContentRef.current;
       const pendingConfirmations = response.pending_confirmations?.map(
         (c) => ({ ...c, status: "pending" as const }),
       );
@@ -860,6 +868,12 @@ export function ChatPage() {
           {
             content: finalText,
             stats: response.stats,
+            sql: structuredContent?.sql || undefined,
+            suggestions:
+              structuredContent?.suggestions &&
+              structuredContent.suggestions.length > 0
+                ? structuredContent.suggestions
+                : undefined,
             pendingConfirmations:
               pendingConfirmations && pendingConfirmations.length > 0
                 ? pendingConfirmations
@@ -1051,13 +1065,21 @@ export function ChatPage() {
         });
       }
 
-      const finalText = response.text || streamedContentRef.current;
+      const structuredContent = response.structured_content;
+      const finalText =
+        structuredContent?.answer || response.text || streamedContentRef.current;
       updateMessage(
         assistantMessageId,
         buildAssistantMessageUpdate(
           {
             content: finalText,
             stats: response.stats,
+            sql: structuredContent?.sql || undefined,
+            suggestions:
+              structuredContent?.suggestions &&
+              structuredContent.suggestions.length > 0
+                ? structuredContent.suggestions
+                : undefined,
           },
           streamedThinkingRef.current,
         ),

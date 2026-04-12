@@ -8,11 +8,14 @@ models from protocol.py with chat, streaming, and database operation types.
 """
 
 from enum import StrEnum
-from typing import Any
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
-from backend.models.chat_stats import ExtendedUsage
+
+if TYPE_CHECKING:
+    from backend.models.chat_stats import ExtendedUsage
 
 
 class IPCModel(BaseModel):
@@ -125,6 +128,15 @@ class StreamEventType(StrEnum):
     SCHEDULED_TASK_RESULT = "scheduled_task_result"
 
 
+class StructuredAssistantContent(IPCModel):
+    """Structured assistant content extracted from one final response."""
+
+    answer: str
+    thinking: str | None = None
+    sql: str | None = None
+    suggestions: list[str] = []
+
+
 class ChatResponse(IPCModel):
     """Final response from orchestrator after completing the agentic loop.
 
@@ -147,6 +159,7 @@ class ChatResponse(IPCModel):
     retrieved_messages: list[dict[str, str]] | None = None
     transcription: str | None = None
     stats: ExtendedUsage | None = None
+    structured_content: StructuredAssistantContent | None = None
 
 
 class StopResponse(IPCModel):
@@ -324,3 +337,10 @@ def extract_text_content(content: str | list) -> str:
             if visible_text:
                 text_parts.append(visible_text)
     return " ".join(text_parts) if text_parts else ""
+
+
+ChatResponse.model_rebuild(
+    _types_namespace={
+        "ExtendedUsage": import_module("backend.models.chat_stats").ExtendedUsage
+    }
+)

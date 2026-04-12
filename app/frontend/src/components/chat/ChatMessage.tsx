@@ -81,10 +81,15 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
     )
   }, [hasChartBlock, hasResults, message.results])
 
-  const { cleanContent, suggestions } = useMemo(
-    () => extractSuggestions(contentWithoutSql, isUser),
-    [contentWithoutSql, isUser],
-  )
+  const { cleanContent, suggestions } = useMemo(() => {
+    if (message.suggestions && message.suggestions.length > 0) {
+      return {
+        cleanContent: contentWithoutSql,
+        suggestions: message.suggestions,
+      }
+    }
+    return extractSuggestions(contentWithoutSql, isUser)
+  }, [contentWithoutSql, isUser, message.suggestions])
 
   const markdownComponents = useMemo(
     () => buildMarkdownComponents(onCommandClick),

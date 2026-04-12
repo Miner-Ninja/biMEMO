@@ -28,6 +28,9 @@ from backend.models.responses import ConversationItem as HTTPConversationItem
 from backend.models.responses import (
     ConversationMessageItem as HTTPConversationMessageItem,
 )
+from backend.models.responses import (
+    StructuredAssistantContent as HTTPStructuredAssistantContent,
+)
 
 from .chat_file_helpers import prepare_chat_input_context
 from .chat_models import PreparedChatRequest
@@ -242,6 +245,16 @@ def build_http_chat_response(
     ipc_response: IPCChatResponse,
 ) -> HTTPChatResponse:
     """Build the final HTTP chat response from one IPC response."""
+    structured_content = (
+        HTTPStructuredAssistantContent(
+            answer=ipc_response.structured_content.answer,
+            thinking=ipc_response.structured_content.thinking,
+            sql=ipc_response.structured_content.sql,
+            suggestions=ipc_response.structured_content.suggestions,
+        )
+        if ipc_response.structured_content is not None
+        else None
+    )
     return HTTPChatResponse(
         text=ipc_response.text,
         conversation_id=conversation_id,
@@ -254,6 +267,7 @@ def build_http_chat_response(
         retrieved_messages=ipc_response.retrieved_messages,
         transcription=ipc_response.transcription,
         stats=ipc_response.stats,
+        structured_content=structured_content,
     )
 
 
