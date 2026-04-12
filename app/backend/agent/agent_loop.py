@@ -38,6 +38,7 @@ from backend.agent.message_persistence import MessagePersistence
 from backend.agent.prompt_builder import PromptBuilder
 from backend.agent.tool_executor import ToolExecutor
 from backend.ipc.models import build_multimodal_content
+from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import aggregate_call_usages
 from backend.memory.classification.resolver import (
     LongTermMemoryResolver,
@@ -57,7 +58,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.concurrency import AgentConcurrency
-    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
@@ -89,6 +89,16 @@ __all__ = [
     "FORCED_WEB_SEARCH_CLASSIFIER_PROMPT",
     "AgentOrchestrator",
 ]
+
+
+def _require_structured_content(
+    structured_content: StructuredAssistantContent | None,
+    visible_answer: str,
+) -> StructuredAssistantContent:
+    """Return the structured answer or build one from visible text."""
+    if structured_content is not None:
+        return structured_content
+    return StructuredAssistantContent(answer=visible_answer)
 
 
 @dataclass
@@ -553,14 +563,16 @@ class AgentOrchestrator:
         )
 
         return AgentResponse(
-            text=finalized_response.output_text,
+            structured_content=_require_structured_content(
+                finalized_response.structured_content,
+                finalized_response.output_text,
+            ),
             loop_result=finalized_response.loop_result,
             input_filtered=input_filtered,
             output_filtered=finalized_response.output_filtered,
             retrieved_memories=retrieved_memories,
             retrieved_messages=retrieved_messages,
             stats=finalized_response.stats,
-            structured_content=finalized_response.structured_content,
         )
 
     async def _build_prepared_turn_response(
@@ -675,7 +687,9 @@ class AgentOrchestrator:
         self.broker.rate_limiter = ToolRateLimiter(injection_flag=injection_flag)
         if input_result.blocked:
             return AgentResponse(
-                text="[Blocked: potential security threat detected]",
+                structured_content=StructuredAssistantContent(
+                    answer="[Blocked: potential security threat detected]"
+                ),
                 loop_result=loop.complete(""),
                 input_filtered=True,
                 output_filtered=False,

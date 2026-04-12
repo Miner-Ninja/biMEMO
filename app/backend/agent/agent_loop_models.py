@@ -41,7 +41,7 @@ class AgentResponse:
     """Response from the gateway orchestrator.
 
     Attributes:
-        text: Final text response.
+        structured_content: Final visible answer and optional extra sections.
         loop_result: Agentic loop result.
         input_filtered: True if input had issues.
         output_filtered: True if output was redacted.
@@ -49,14 +49,13 @@ class AgentResponse:
         retrieved_messages: Debug metadata for FTS-matched messages.
     """
 
-    text: str
+    structured_content: StructuredAssistantContent
     loop_result: LoopResult
     input_filtered: bool = False
     output_filtered: bool = False
     retrieved_memories: list[dict[str, str]] = field(default_factory=list)
     retrieved_messages: list[dict[str, str]] | None = None
     stats: ExtendedUsage | None = None
-    structured_content: StructuredAssistantContent | None = None
 
 
 @dataclass(frozen=True)

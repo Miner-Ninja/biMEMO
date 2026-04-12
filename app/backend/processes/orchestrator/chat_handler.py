@@ -20,7 +20,6 @@ from backend.ipc.models import (
     StreamEventType,
     StructuredAssistantContent,
 )
-from backend.llm.structured_response import normalize_legacy_response_text
 
 
 if TYPE_CHECKING:
@@ -171,12 +170,9 @@ def _build_chat_response(
     transcription: str | None,
 ) -> ChatResponse:
     """Convert one gateway response into the IPC chat response shape."""
-    normalized_content = response.structured_content or normalize_legacy_response_text(
-        response.text
-    )
     return ChatResponse(
         request_id=request_id,
-        structured_content=_copy_structured_content(normalized_content),
+        structured_content=_copy_structured_content(response.structured_content),
         input_filtered=response.input_filtered,
         output_filtered=response.output_filtered,
         retrieved_memories=response.retrieved_memories or None,

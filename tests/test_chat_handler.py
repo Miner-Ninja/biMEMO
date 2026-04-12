@@ -144,14 +144,16 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
     chat_response = _build_chat_response(
         request_id="request-1",
         response=AgentResponse(
-            text="\n".join(
-                [
-                    "Main answer.",
-                    "",
-                    "```sql",
-                    "SELECT 1",
-                    "```",
-                ]
+            structured_content=normalize_legacy_response_text(
+                "\n".join(
+                    [
+                        "Main answer.",
+                        "",
+                        "```sql",
+                        "SELECT 1",
+                        "```",
+                    ]
+                )
             ),
             loop_result=object(),
         ),

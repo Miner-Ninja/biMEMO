@@ -5,8 +5,10 @@ and routes them through the orchestrator chat path. Builds bridge services,
 message metadata, and capture-save wrappers for tracking persisted message IDs.
 """
 
+from __future__ import annotations
+
 import logging
-from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from backend.chat_bridge import (
     BridgeProvider,
@@ -17,17 +19,21 @@ from backend.chat_bridge import (
 from backend.chat_bridge.providers import (
     build_configured_providers,
 )
-from backend.config import Settings
-from backend.ipc.models import (
-    BridgeInboundSyncRequest,
-)
 
 from .chat_handler import (
     DEFAULT_CONVERSATION_PROCESSING_STAGE,
     _run_orchestrator_message,
     _run_with_processing_state,
 )
-from .client import DBProxyClient
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from backend.config import Settings
+    from backend.ipc.models import BridgeInboundSyncRequest
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)
@@ -133,7 +139,7 @@ async def _run_bridge_message_through_orchestrator(
         images=message.images or None,
         meta=message_meta,
     )
-    return response.text
+    return response.structured_content.answer
 
 
 async def _process_bridge_inbound_message(

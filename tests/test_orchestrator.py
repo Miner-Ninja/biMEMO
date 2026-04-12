@@ -446,7 +446,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "BTC is trading at 100" in resp.text
+        assert "BTC is trading at 100" in resp.structured_content.answer
         assert llm_call_count == 2
         assert (
             seen_classifier_messages[0]["content"]
@@ -504,7 +504,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "BTC is trading at 100" in resp.text
+        assert "BTC is trading at 100" in resp.structured_content.answer
         assert llm_call_count == 2
 
     async def test_regular_question_skips_forced_web_search_classifier(self):
@@ -528,7 +528,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "Bitcoin" in resp.text
+        assert "Bitcoin" in resp.structured_content.answer
         assert llm_call_count == 1
         broker.execute.assert_not_called()
 
@@ -546,7 +546,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
         assert isinstance(resp, AgentResponse)
-        assert "Hello" in resp.text
+        assert "Hello" in resp.structured_content.answer
 
     async def test_tool_execution(self):
         """Verify tool calls are executed."""
@@ -581,7 +581,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert "Done reading file" in resp.text
+        assert "Done reading file" in resp.structured_content.answer
         broker.execute.assert_called_once()
 
     async def test_explicit_online_search_runs_web_search_before_first_llm_answer(self):
@@ -613,7 +613,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "BTC is trading at 100" in resp.text
+        assert "BTC is trading at 100" in resp.structured_content.answer
         broker.execute.assert_awaited_once_with(
             "web_search",
             {"query": "Тогда узнай в интернете какой курс биткойна"},
@@ -662,7 +662,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert resp.text == "Recovered final answer."
+        assert resp.structured_content.answer == "Recovered final answer."
         assert broker.execute.call_count == 1
         assert call_count == 3
 
@@ -960,9 +960,9 @@ class TestAgentOrchestrator:
             session_id="s1",
             conversation_id="test-conv",
         )
-        assert "Long-term preference:" in resp.text
-        assert "Detailed, step-by-step answers" in resp.text
-        assert "Temporary short-term context:" in resp.text
+        assert "Long-term preference:" in resp.structured_content.answer
+        assert "Detailed, step-by-step answers" in resp.structured_content.answer
+        assert "Temporary short-term context:" in resp.structured_content.answer
 
     async def test_writes_memory_route_diagnostic_after_routing(self):
         """Structured route snapshots should be persisted after classification."""
@@ -1066,7 +1066,7 @@ class TestAgentOrchestrator:
         )
 
         assert call_count == 1
-        assert "Long-term preference:" in resp.text
+        assert "Long-term preference:" in resp.structured_content.answer
 
     async def test_fallback_route_keeps_normal_path_when_confidence_stays_low(self):
         """Low-confidence fallback output should not override the signal route."""
@@ -1095,7 +1095,7 @@ class TestAgentOrchestrator:
         )
 
         assert call_count == 2
-        assert resp.text == "Normal memory answer"
+        assert resp.structured_content.answer == "Normal memory answer"
 
     async def test_unsupported_language_long_term_question_can_use_fallback(self):
         """Unsupported-language long-term prompts should still reach the resolver."""
@@ -1153,7 +1153,7 @@ class TestAgentOrchestrator:
         )
 
         assert call_count == 1
-        assert "Preferencia a largo plazo:" in resp.text
+        assert "Preferencia a largo plazo:" in resp.structured_content.answer
 
     async def test_unsupported_language_assistant_recall_can_use_fallback(self):
         """Unsupported-language recall should still reach the normal memory path."""
@@ -1183,7 +1183,7 @@ class TestAgentOrchestrator:
         )
 
         assert call_count == 2
-        assert resp.text == "Normal memory answer"
+        assert resp.structured_content.answer == "Normal memory answer"
 
     async def test_supported_language_non_memory_question_skips_semantic_fallback(self):
         """Ordinary supported-language questions should not pay a fallback pass."""
@@ -1204,7 +1204,7 @@ class TestAgentOrchestrator:
         )
 
         assert call_count == 1
-        assert resp.text == "Normal answer"
+        assert resp.structured_content.answer == "Normal answer"
 
     async def test_save_fn_called_with_user_and_assistant(self):
         """Verify save_fn called with user message before and assistant after."""
@@ -1354,7 +1354,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert resp.text == "ok"
+        assert resp.structured_content.answer == "ok"
 
     async def test_input_credential_flagged(self):
         """Verify input with credentials is flagged."""
@@ -1547,7 +1547,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert "Done" in resp.text
+        assert "Done" in resp.structured_content.answer
 
     async def test_parallel_execution_concurrent(self):
         """Verify multiple tool calls run concurrently."""
@@ -1634,7 +1634,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert "Done" in resp.text
+        assert "Done" in resp.structured_content.answer
         broker.execute.assert_called_once()
 
     async def test_parallel_one_fails_others_succeed(
@@ -1687,7 +1687,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-        assert "All done" in resp.text
+        assert "All done" in resp.structured_content.answer
         assert broker.execute.call_count == 2
 
     async def test_parallel_mixed_yellow_notifications(
@@ -1782,7 +1782,7 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "detailed answers" in resp.text
+        assert "detailed answers" in resp.structured_content.answer
         broker.execute.assert_any_call(
             "memory_recall",
             {"query": "помнишь что я просил?"},
