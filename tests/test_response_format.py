@@ -16,6 +16,7 @@ OLLAMA_PRIMARY_MODEL = "qwen3:8b"
 OLLAMA_TEST_MODEL = "qwen3.5:9b"
 OPENROUTER_PROVIDER = "openrouter"
 OPENROUTER_MODEL = "gpt-4o"
+OPENROUTER_STRUCTURED_MODEL = "openai/gpt-4o"
 
 
 def test_exact_override_wins_over_provider_default() -> None:
@@ -52,3 +53,21 @@ def test_text_used_when_provider_has_no_configured_default() -> None:
         model_name=OPENROUTER_MODEL,
     )
     assert resolved is LlmResponseFormat.TEXT
+
+
+def test_exact_override_can_enable_structured_openrouter_mode() -> None:
+    """Allow one exact OpenRouter model to opt into JSON schema output."""
+    exact_key = (OPENROUTER_PROVIDER, OPENROUTER_STRUCTURED_MODEL)
+    original_override = EXACT_RESPONSE_FORMAT_OVERRIDES.get(exact_key)
+    EXACT_RESPONSE_FORMAT_OVERRIDES[exact_key] = LlmResponseFormat.JSON_SCHEMA
+    try:
+        resolved = resolve_llm_response_format(
+            provider_name=OPENROUTER_PROVIDER,
+            model_name=OPENROUTER_STRUCTURED_MODEL,
+        )
+    finally:
+        if original_override is None:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[exact_key]
+        else:
+            EXACT_RESPONSE_FORMAT_OVERRIDES[exact_key] = original_override
+    assert resolved is LlmResponseFormat.JSON_SCHEMA

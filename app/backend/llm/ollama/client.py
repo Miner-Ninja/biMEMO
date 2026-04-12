@@ -35,8 +35,8 @@ from backend.llm.ollama.messages import convert_messages_for_ollama
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.structured_response import (
-    OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION,
-    OLLAMA_STRUCTURED_RESPONSE_SCHEMA,
+    STRUCTURED_RESPONSE_INSTRUCTION,
+    STRUCTURED_RESPONSE_SCHEMA,
     StructuredAssistantContent,
     parse_structured_response_json,
 )
@@ -343,7 +343,7 @@ class OllamaClient:
     ) -> list[dict]:
         """Append the structured-response instruction to one chat request."""
         return [
-            {"role": "system", "content": OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION},
+            {"role": "system", "content": STRUCTURED_RESPONSE_INSTRUCTION},
             *messages,
         ]
 
@@ -371,7 +371,7 @@ class OllamaClient:
             "options": self._build_options(capabilities),
         }
         if self._uses_structured_response(capabilities):
-            payload["format"] = OLLAMA_STRUCTURED_RESPONSE_SCHEMA
+            payload["format"] = STRUCTURED_RESPONSE_SCHEMA
         if tools:
             payload["tools"] = tools
         return payload

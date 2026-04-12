@@ -23,6 +23,12 @@ from backend.llm.capabilities import (
 )
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
+from backend.llm.structured_response import (
+    OPENAI_STRUCTURED_RESPONSE_FORMAT,
+    STRUCTURED_RESPONSE_INSTRUCTION,
+    StructuredAssistantContent,
+    parse_structured_response_json,
+)
 from backend.llm.usage import LLMCallUsage
 
 
@@ -39,6 +45,8 @@ SYSTEM_ROLE = "system"
 SYSTEM_SEPARATOR = "\n\n"
 ZERO_DURATION_MS = 0.0
 DONE_STREAM_MARKER = "[DONE]"
+EMPTY_ASSISTANT_CONTENT = ""
+OPENROUTER_TOOL_CHOICE_AUTO = "auto"
 
 # --- Capability override sources for OpenRouter ---
 ENV_VAR_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
@@ -108,17 +116,21 @@ def _chat_payload(
     model: str,
     messages: list[dict],
     tools: list[dict] | None,
+    llm_response_format: LlmResponseFormat,
 ) -> dict:
     """Build one OpenRouter chat-completions request body."""
     payload: dict = {
         "model": model,
         "messages": messages,
-        "stream": True,
-        "stream_options": {"include_usage": True},
+        "stream": llm_response_format is LlmResponseFormat.TEXT,
     }
+    if llm_response_format is LlmResponseFormat.TEXT:
+        payload["stream_options"] = {"include_usage": True}
+    if llm_response_format is LlmResponseFormat.JSON_SCHEMA:
+        payload["response_format"] = OPENAI_STRUCTURED_RESPONSE_FORMAT
     if tools:
         payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = OPENROUTER_TOOL_CHOICE_AUTO
     return payload
 
 
@@ -132,6 +144,29 @@ def _chat_response_format(
         provider_name=provider_name,
         model_name=model_name,
     )
+
+
+def _uses_structured_response(llm_response_format: LlmResponseFormat) -> bool:
+    """Return whether one OpenRouter request should use JSON schema output."""
+    return llm_response_format is LlmResponseFormat.JSON_SCHEMA
+
+
+def _request_messages(
+    *,
+    messages: list[dict],
+    api_prefix: str,
+    llm_response_format: LlmResponseFormat,
+) -> list[dict]:
+    """Build the final request message list for one chat call."""
+    request_messages = messages
+    if _uses_structured_response(llm_response_format):
+        request_messages = [
+            {"role": SYSTEM_ROLE, "content": STRUCTURED_RESPONSE_INSTRUCTION},
+            *request_messages,
+        ]
+    if api_prefix == CUSTOM_API_PREFIX:
+        return normalize_system_messages(request_messages)
+    return request_messages
 
 
 def _usage_from_chunk(
@@ -151,6 +186,30 @@ def _usage_from_chunk(
         completion_tokens=completion_tokens,
         total_ms=ZERO_DURATION_MS,
         model=chunk.get("model", default_model),
+        context_total=num_ctx,
+        context_used=(
+            prompt_tokens + completion_tokens if num_ctx is not None else None
+        ),
+    )
+
+
+def _usage_from_response_body(
+    response_body: dict[str, object],
+    *,
+    default_model: str,
+    num_ctx: int | None,
+) -> LLMCallUsage | None:
+    """Build usage data from one non-streaming OpenAI-style response body."""
+    raw_usage = response_body.get("usage")
+    if not isinstance(raw_usage, dict):
+        return None
+    prompt_tokens = int(raw_usage.get("prompt_tokens", 0) or 0)
+    completion_tokens = int(raw_usage.get("completion_tokens", 0) or 0)
+    return LLMCallUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_ms=ZERO_DURATION_MS,
+        model=str(response_body.get("model", default_model)),
         context_total=num_ctx,
         context_used=(
             prompt_tokens + completion_tokens if num_ctx is not None else None
@@ -270,17 +329,27 @@ class OpenRouterClient:
         Raises:
             OpenRouterClientError: If chat request fails.
         """
-        request_messages = messages
-        if self.api_prefix == CUSTOM_API_PREFIX:
-            request_messages = normalize_system_messages(messages)
+        llm_response_format = _chat_response_format(
+            provider_name=self.name,
+            model_name=self.model,
+        )
+        request_messages = _request_messages(
+            messages=messages,
+            api_prefix=self.api_prefix,
+            llm_response_format=llm_response_format,
+        )
 
         payload = _chat_payload(
             model=self.model,
             messages=request_messages,
             tools=tools,
+            llm_response_format=llm_response_format,
         )
         if tool_choice is not None and tools:
             payload["tool_choice"] = tool_choice
+
+        if _uses_structured_response(llm_response_format):
+            return await self._structured_chat(payload, llm_response_format)
 
         full_text: list[str] = []
         # Accumulate streamed tool_calls: index → {id, name, arguments_parts}
@@ -433,8 +502,158 @@ class OpenRouterClient:
             tool_calls=tool_calls,
             raw_message=raw_message,
             usage=final_usage,
-            llm_response_format=_chat_response_format(
-                provider_name=self.name,
-                model_name=self.model,
+            llm_response_format=llm_response_format,
+        )
+
+    def _structured_content_from_message(
+        self,
+        message: dict[str, object],
+    ) -> StructuredAssistantContent | None:
+        """Build one structured assistant response from a non-streaming reply."""
+        tool_calls = self._tool_calls_from_message(message)
+        if tool_calls:
+            return None
+        thinking = self._thinking_from_message(message)
+        return parse_structured_response_json(
+            str(message.get("content", EMPTY_ASSISTANT_CONTENT)),
+            thinking=thinking,
+        )
+
+    def _thinking_from_message(
+        self,
+        message: dict[str, object],
+    ) -> str | None:
+        """Return the separate reasoning text when the provider sent it."""
+        for key in ("reasoning_content", "reasoning", "thinking"):
+            raw_value = message.get(key)
+            if isinstance(raw_value, str) and raw_value.strip():
+                return raw_value
+        return None
+
+    def _tool_calls_from_message(
+        self,
+        message: dict[str, object],
+    ) -> list[LLMToolCall]:
+        """Convert one non-streaming OpenAI-style tool call list."""
+        raw_tool_calls = message.get("tool_calls")
+        if not isinstance(raw_tool_calls, list):
+            return []
+        tool_calls: list[LLMToolCall] = []
+        for tool_call_index, raw_tool_call in enumerate(raw_tool_calls):
+            if not isinstance(raw_tool_call, dict):
+                continue
+            function = raw_tool_call.get("function", {})
+            if not isinstance(function, dict):
+                continue
+            raw_arguments = function.get("arguments", "")
+            arguments = self._parsed_tool_arguments(raw_arguments)
+            tool_calls.append(
+                LLMToolCall(
+                    id=str(
+                        raw_tool_call.get("id", f"openrouter-call-{tool_call_index}")
+                    ),
+                    name=str(function.get("name", "")),
+                    arguments=arguments,
+                )
+            )
+        return tool_calls
+
+    def _parsed_tool_arguments(
+        self,
+        raw_arguments: object,
+    ) -> dict:
+        """Parse one OpenAI-style tool-call argument payload into a dict."""
+        if isinstance(raw_arguments, dict):
+            return raw_arguments
+        if not isinstance(raw_arguments, str) or not raw_arguments.strip():
+            return {}
+        try:
+            parsed_arguments = json.loads(raw_arguments)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Failed to parse OpenRouter tool call arguments: %s",
+                raw_arguments,
+            )
+            return {}
+        if isinstance(parsed_arguments, dict):
+            return parsed_arguments
+        return {}
+
+    def _raw_message_from_response(
+        self,
+        *,
+        text: str,
+        tool_calls: list[LLMToolCall],
+    ) -> dict[str, object]:
+        """Build one assistant message payload for downstream storage."""
+        raw_message: dict[str, object] = {
+            "role": "assistant",
+            "content": text or None,
+        }
+        if tool_calls:
+            raw_message["tool_calls"] = [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": json.dumps(tool_call.arguments),
+                    },
+                }
+                for tool_call in tool_calls
+            ]
+        return raw_message
+
+    async def _structured_chat(
+        self,
+        payload: dict[str, object],
+        llm_response_format: LlmResponseFormat,
+    ) -> LLMResponse:
+        """Request one non-streaming structured OpenRouter response."""
+        try:
+            response = await self._client.post(
+                f"{self.api_prefix}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                await error.response.aread()
+                body = error.response.text[:500]
+            except Exception:
+                body = "could not read response body"
+            logger.error("OpenRouter %s: %s", error.response.status_code, body)
+            raise OpenRouterClientError(
+                f"Chat request failed: {error.response.status_code} - {body}"
+            ) from error
+        except httpx.HTTPError as error:
+            raise OpenRouterClientError(f"Chat request failed: {error}") from error
+
+        response_body = response.json()
+        choices = response_body.get("choices", [])
+        if not isinstance(choices, list) or not choices:
+            raise OpenRouterClientError("Structured chat response is missing choices")
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise OpenRouterClientError("Structured chat response has invalid choices")
+        message = first_choice.get("message", {})
+        if not isinstance(message, dict):
+            raise OpenRouterClientError("Structured chat response is missing a message")
+        tool_calls = self._tool_calls_from_message(message)
+        structured_content = self._structured_content_from_message(message)
+        text = structured_content.answer if structured_content is not None else ""
+        return LLMResponse(
+            text=text,
+            tool_calls=tool_calls,
+            raw_message=self._raw_message_from_response(
+                text=text,
+                tool_calls=tool_calls,
             ),
+            usage=_usage_from_response_body(
+                response_body,
+                default_model=self.model,
+                num_ctx=self.num_ctx,
+            ),
+            llm_response_format=llm_response_format,
+            structured_content=structured_content,
         )

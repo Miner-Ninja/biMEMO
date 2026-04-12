@@ -16,6 +16,7 @@ from backend.llm.openrouter.client import (
     OpenRouterClientError,
 )
 from backend.llm.reasoning import strip_reasoning_output
+from backend.llm.response_format import EXACT_RESPONSE_FORMAT_OVERRIDES
 
 
 # --- Test fixtures ---
@@ -26,6 +27,13 @@ DEFAULT_CUSTOM_BASE_URL = "http://vllm-primary:8000"
 OPENROUTER_ENV_OVERRIDE = "BIMEMO_OPENROUTER_NUM_CTX"
 OPENROUTER_ENV_OVERRIDE_VALUE = "32000"
 OPENROUTER_ENV_OVERRIDE_TOKENS = 32000
+STRUCTURED_OPENROUTER_MODEL = "openai/gpt-4o"
+STRUCTURED_OPENROUTER_OVERRIDE_KEY = ("openrouter", STRUCTURED_OPENROUTER_MODEL)
+STRUCTURED_ANSWER_TEXT = "Structured answer"
+STRUCTURED_SQL_TEXT = "select 1"
+STRUCTURED_SUGGESTION_TEXT = "Follow up"
+STRUCTURED_PROMPT_TOKENS = 21
+STRUCTURED_COMPLETION_TOKENS = 9
 
 
 def make_client(transport, model=DEFAULT_OPENROUTER_MODEL):
@@ -407,6 +415,113 @@ class TestChat:
         assert result.usage.context_total == 32768
         assert result.usage.context_used == 375
         await client.close()
+
+    @pytest.mark.asyncio
+    async def test_structured_response_uses_non_streaming_json_schema(self):
+        """Verify one exact override enables the structured JSON path."""
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            assert "stream_options" not in body
+            assert body["response_format"]["type"] == "json_schema"
+            assert body["messages"][0]["role"] == "system"
+            assert "JSON object" in body["messages"][0]["content"]
+            response_body = {
+                "model": STRUCTURED_OPENROUTER_MODEL,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "answer": STRUCTURED_ANSWER_TEXT,
+                                    "sql": STRUCTURED_SQL_TEXT,
+                                    "suggestions": [STRUCTURED_SUGGESTION_TEXT],
+                                }
+                            ),
+                            "reasoning": "Internal plan",
+                        }
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": STRUCTURED_PROMPT_TOKENS,
+                    "completion_tokens": STRUCTURED_COMPLETION_TOKENS,
+                },
+            }
+            return httpx.Response(200, json=response_body)
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat([{"role": "user", "content": "Hi"}])
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert result.text == STRUCTURED_ANSWER_TEXT
+        assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert result.structured_content is not None
+        assert result.structured_content.answer == STRUCTURED_ANSWER_TEXT
+        assert result.structured_content.sql == STRUCTURED_SQL_TEXT
+        assert result.structured_content.suggestions == [STRUCTURED_SUGGESTION_TEXT]
+        assert result.structured_content.thinking == "Internal plan"
+        assert result.usage is not None
+        assert result.usage.prompt_tokens == STRUCTURED_PROMPT_TOKENS
+        assert result.usage.completion_tokens == STRUCTURED_COMPLETION_TOKENS
+
+    @pytest.mark.asyncio
+    async def test_custom_provider_merges_instruction_into_one_system_message(self):
+        """Keep one leading system message for custom structured providers."""
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            assert len(body["messages"]) == 2
+            assert body["messages"][0]["role"] == "system"
+            assert body["messages"][1] == {"role": "user", "content": "Hi"}
+            assert "System A" in body["messages"][0]["content"]
+            assert "System B" in body["messages"][0]["content"]
+            assert "JSON object" in body["messages"][0]["content"]
+            response_body = {
+                "model": STRUCTURED_OPENROUTER_MODEL,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "answer": STRUCTURED_ANSWER_TEXT,
+                                    "sql": None,
+                                    "suggestions": [],
+                                }
+                            ),
+                        }
+                    }
+                ],
+            }
+            return httpx.Response(200, json=response_body)
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_custom_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat(
+                [
+                    {"role": "system", "content": "System A"},
+                    {"role": "user", "content": "Hi"},
+                    {"role": "system", "content": "System B"},
+                ]
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert result.text == STRUCTURED_ANSWER_TEXT
 
 
 class TestClose:

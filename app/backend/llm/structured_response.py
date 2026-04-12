@@ -18,8 +18,9 @@ SUGGESTIONS_BLOCK_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# --- Ollama structured response contract ---
-OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION = (
+# --- Structured response contract ---
+STRUCTURED_RESPONSE_SCHEMA_NAME = "assistant_response"
+STRUCTURED_RESPONSE_INSTRUCTION = (
     "When you return a final answer, return only one JSON object that matches "
     'the requested schema. Put the visible user-facing answer into "answer". '
     'Put one SQL query into "sql" or null when no SQL is needed. Put up to '
@@ -27,7 +28,7 @@ OLLAMA_STRUCTURED_RESPONSE_INSTRUCTION = (
     "wrap the JSON in markdown. When you need a tool, call the tool and leave "
     "the final answer empty until the tool results are available."
 )
-OLLAMA_STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
+STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
@@ -39,6 +40,14 @@ OLLAMA_STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
     },
     "required": ["answer", "sql", "suggestions"],
     "additionalProperties": False,
+}
+OPENAI_STRUCTURED_RESPONSE_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": STRUCTURED_RESPONSE_SCHEMA_NAME,
+        "strict": True,
+        "schema": STRUCTURED_RESPONSE_SCHEMA,
+    },
 }
 
 
