@@ -282,25 +282,32 @@ def parse_message_meta(
 def build_http_structured_content(
     structured_content: object,
     *,
-    fallback_answer: str = "",
+    fallback_visible_assistant_text: str = "",
 ) -> HTTPStructuredAssistantContent | None:
     """Convert one structured assistant object into the HTTP response shape."""
     if structured_content is None:
-        answer = fallback_answer.strip()
-        if not answer:
+        visible_assistant_text = fallback_visible_assistant_text.strip()
+        if not visible_assistant_text:
             return None
-        return HTTPStructuredAssistantContent(answer=answer)
+        return HTTPStructuredAssistantContent(answer=visible_assistant_text)
     if isinstance(structured_content, dict):
-        answer_value = structured_content.get("answer", fallback_answer)
+        visible_answer_value = structured_content.get(
+            "answer",
+            fallback_visible_assistant_text,
+        )
         thinking_value = structured_content.get("thinking")
         raw_sql = structured_content.get("sql")
         raw_suggestions = structured_content.get("suggestions", [])
     else:
-        answer_value = getattr(structured_content, "answer", fallback_answer)
+        visible_answer_value = getattr(
+            structured_content,
+            "answer",
+            fallback_visible_assistant_text,
+        )
         thinking_value = getattr(structured_content, "thinking", None)
         raw_sql = getattr(structured_content, "sql", None)
         raw_suggestions = getattr(structured_content, "suggestions", [])
-    answer = str(answer_value).strip()
+    visible_assistant_text = str(visible_answer_value).strip()
     thinking = (
         str(thinking_value).strip()
         if isinstance(thinking_value, str) and thinking_value.strip()
@@ -317,7 +324,7 @@ def build_http_structured_content(
         else []
     )
     return HTTPStructuredAssistantContent(
-        answer=answer,
+        answer=visible_assistant_text,
         thinking=thinking,
         sql=sql,
         suggestions=suggestions,
@@ -339,7 +346,7 @@ def build_persisted_structured_content(
     if isinstance(stored_content, dict):
         return build_http_structured_content(
             stored_content,
-            fallback_answer=content,
+            fallback_visible_assistant_text=content,
         )
 
     normalized_content = normalize_legacy_response_text(content)
