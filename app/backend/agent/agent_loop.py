@@ -553,10 +553,10 @@ class AgentOrchestrator:
 
         await self.persistence.persist_final_turn_messages(
             conversation_id=conversation_id,
-            final_text=raw_final_text,
+            raw_assistant_text=raw_final_text,
             session_id=session_id,
             filtered_message=filtered_message,
-            assistant_text=finalized_response.output_text,
+            visible_assistant_text=finalized_response.output_text,
             stats=finalized_response.stats,
             structured_content=finalized_response.structured_content,
             user_message_id=user_message_id,

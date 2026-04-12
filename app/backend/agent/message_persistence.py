@@ -131,17 +131,17 @@ class MessagePersistence:
         conversation_id: str,
         session_id: str,
         filtered_message: str,
-        assistant_text: str,
+        visible_assistant_text: str,
         user_message_id: str | None,
         assistant_message_id: str | None,
     ) -> None:
         """Persist the compact dialog-step record used by memory compression."""
-        if self.save_record_fn is None or not assistant_text:
+        if self.save_record_fn is None or not visible_assistant_text:
             return
         try:
             record_input = build_dialog_step_record_input(
                 filtered_message,
-                assistant_text,
+                visible_assistant_text,
             )
             await self.persist_dialog_record(
                 conversation_id=conversation_id,
@@ -205,7 +205,7 @@ class MessagePersistence:
         self,
         *,
         conversation_id: str,
-        final_text: str,
+        raw_assistant_text: str,
         stats: ExtendedUsage | None,
         structured_content: StructuredAssistantContent | None,
     ) -> str | None:
@@ -213,7 +213,7 @@ class MessagePersistence:
         return await self.save_message(
             conversation_id,
             "assistant",
-            final_text,
+            raw_assistant_text,
             meta=build_assistant_message_meta(stats, structured_content),
         )
 
@@ -223,8 +223,8 @@ class MessagePersistence:
         conversation_id: str,
         session_id: str,
         filtered_message: str,
-        final_text: str,
-        assistant_text: str,
+        raw_assistant_text: str,
+        visible_assistant_text: str,
         stats: ExtendedUsage | None,
         structured_content: StructuredAssistantContent | None,
         user_message_id: str | None,
@@ -232,7 +232,7 @@ class MessagePersistence:
         """Persist the assistant message and the compact dialog-step record."""
         assistant_message_id = await self.save_final_assistant_message(
             conversation_id=conversation_id,
-            final_text=final_text,
+            raw_assistant_text=raw_assistant_text,
             stats=stats,
             structured_content=structured_content,
         )
@@ -240,7 +240,7 @@ class MessagePersistence:
             conversation_id=conversation_id,
             session_id=session_id,
             filtered_message=filtered_message,
-            assistant_text=assistant_text,
+            visible_assistant_text=visible_assistant_text,
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
         )
