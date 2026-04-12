@@ -21,6 +21,7 @@ from backend.agent.agent_loop_helpers import (
     message_allows_file_write_tool,
     message_may_need_forced_web_search_classifier,
     message_requires_forced_web_search,
+    request_non_empty_final_answer,
     split_by_zone,
 )
 from backend.agent.agent_loop_models import (
@@ -30,7 +31,10 @@ from backend.agent.agent_loop_models import (
 from backend.agent.concurrency import (
     AgentConcurrency,
 )
+from backend.agent.llm_caller import LLMCaller
+from backend.agent.loop import LoopState
 from backend.llm.call_factory import LLMResponse, LLMToolCall
+from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import ContextEntry, ContextResult
 from backend.memory.evidence_chain import EvidenceBundle
@@ -237,6 +241,97 @@ class TestBuildToolResultMessages:
         assert msgs[1]["tool_call_id"] == "call_b"
 
 
+class TestFinalAnswerRecovery:
+    """Tests for one extra final-answer request after tool execution."""
+
+    @pytest.mark.asyncio
+    async def test_request_non_empty_final_answer_keeps_structured_sections(self):
+        """Keep the ready sections when the recovery call already returned them."""
+        llm_call = AsyncMock(
+            return_value=LLMResponse(
+                text="Visible answer",
+                raw_message={"role": "assistant", "content": "Visible answer"},
+                structured_content=StructuredAssistantContent(
+                    answer="Visible answer",
+                    suggestions=["Next step"],
+                ),
+            )
+        )
+        usages: list[LLMCallUsage] = []
+
+        recovered = await request_non_empty_final_answer(
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "Hi"}],
+            call_usages=usages,
+        )
+
+        assert recovered == StructuredAssistantContent(
+            answer="Visible answer",
+            suggestions=["Next step"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_keeps_recovered_suggestions_after_tools(self):
+        """Keep suggestions when one final recovery call is needed."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    final_text="",
+                    structured_content=None,
+                    executed_immediate_tools=True,
+                    should_continue=True,
+                ),
+                MagicMock(
+                    final_text="",
+                    structured_content=None,
+                    executed_immediate_tools=False,
+                    should_continue=False,
+                ),
+            ]
+        )
+        llm_call = AsyncMock(
+            side_effect=[
+                _tool_response([("call-1", "web_search", {"query": "eth"})]),
+                _text_response(""),
+                LLMResponse(
+                    text="Visible answer",
+                    raw_message={"role": "assistant", "content": "Visible answer"},
+                    structured_content=StructuredAssistantContent(
+                        answer="Visible answer",
+                        suggestions=["Next step"],
+                    ),
+                ),
+            ]
+        )
+        call_usages: list[LLMCallUsage] = []
+
+        loop.check_limits.side_effect = [LoopState.RUNNING, LoopState.RUNNING]
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "Hi"}],
+            openai_tools=[],
+            call_usages=call_usages,
+            channel="chat",
+            tool_executor=tool_executor,
+        )
+
+        assert result.final_text == "Visible answer"
+        assert result.structured_content == StructuredAssistantContent(
+            answer="Visible answer",
+            suggestions=["Next step"],
+        )
+
+
 def _make_orchestrator(
     broker: object | None = None,
     context: list | None = None,
@@ -277,6 +372,7 @@ class TestAgentOrchestrator:
             loop=loop,
             call_usages=[],
             request_started_at=time.perf_counter(),
+            structured_content=None,
         )
 
         assert finalized_response.output_text == "[REDACTED]"

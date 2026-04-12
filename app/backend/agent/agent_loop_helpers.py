@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING
 
+from backend.llm.structured_response import normalize_legacy_response_text
 from backend.trust.zones import TrustZone, get_zone
 
 
@@ -161,8 +162,8 @@ async def request_non_empty_final_answer(
     llm_call: Callable,
     messages: list[dict],
     call_usages: list[LLMCallUsage],
-) -> str:
-    """Ask the model once more for a plain final answer after tool use."""
+) -> StructuredAssistantContent | None:
+    """Ask the model once more for one final assistant answer after tool use."""
     recovery_messages = [
         *messages,
         {"role": "system", "content": EMPTY_FINAL_ANSWER_RECOVERY_PROMPT},
@@ -182,7 +183,11 @@ async def request_non_empty_final_answer(
         recovery_response = await llm_call(recovery_messages)
     if recovery_response.usage is not None:
         call_usages.append(recovery_response.usage)
-    return recovery_response.text.strip()
+    if recovery_response.structured_content is not None:
+        return recovery_response.structured_content
+    if not recovery_response.text.strip():
+        return None
+    return normalize_legacy_response_text(recovery_response.text)
 
 
 def build_dialog_step_record_input(

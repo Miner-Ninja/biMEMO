@@ -352,13 +352,14 @@ class LLMCaller:
             loop.advance()
 
         if not final_text.strip() and executed_immediate_tools:
-            recovered_final_text = await request_non_empty_final_answer(
+            recovered_response = await request_non_empty_final_answer(
                 llm_call=llm_call,
                 messages=messages,
                 call_usages=call_usages,
             )
-            if recovered_final_text:
-                final_text = recovered_final_text
+            if recovered_response is not None and recovered_response.answer.strip():
+                final_text = recovered_response.answer
+                structured_content = recovered_response
 
         if final_text.strip():
             return ModelLoopResult(
