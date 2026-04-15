@@ -10,6 +10,7 @@ regexes = [
   '''ghp_abcdefghijklmnopqrstuvwxyz0123456789''',
   '''sk-1234567890abcdefghij''',
   '''sk-1234567890abcdefghijklmn''',
+  '''sk-1234567890''',
   '''sk-abc12345678901234567''',
   '''sk-abc123secretkey1234567890abcdef''',
   '''sk-abcdefghijklmnopqrstuv''',
