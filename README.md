@@ -28,7 +28,19 @@ cd bimemo
 cp .env.example .env
 ```
 
-### 2. Configure .env
+### 2. Generate Local TLS Certificate
+
+biMEMO uses HTTPS even for local development. Generate a local self-signed
+certificate before starting Docker Compose:
+
+```bash
+./scripts/generate_dev_tls.sh
+```
+
+The generated `docker/caddy/certs/cert.pem` and `docker/caddy/certs/key.pem`
+files stay local and must not be committed.
+
+### 3. Configure .env
 
 Choose your LLM provider:
 
@@ -47,20 +59,20 @@ BIMEMO_OPENROUTER_API_KEY=your-api-key-here
 BIMEMO_OPENROUTER_MODEL=qwen/qwen3-14b
 ```
 
-### 3. Start
+### 4. Start
 
 ```bash
-cd docker
 docker-compose -f docker/docker-compose.dev.yml up -d
 ```
 
-### 4. Access
+### 5. Access
 
 - **Web UI**: http://localhost:5273
+- **Backend via Caddy**: https://localhost
 - **Telegram**: Start a chat with your bot (configure `BIMEMO_TELEGRAM_BOT_TOKEN` via Admin panel)
 - **Discord**: Start a chat with your bot (configure Discord token via Admin panel)
 
-### 5. First Setup
+### 6. First Setup
 
 1. Open Web UI
 2. Set master key (used for database encryption)

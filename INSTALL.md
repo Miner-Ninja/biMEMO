@@ -47,7 +47,26 @@ BIMEMO_DATABASE_PATH=/data/db/bimemo.db
 BIMEMO_LLM_PROVIDER=ollama  # or openrouter
 ```
 
-### 3. Master Key (Database Encryption)
+### 3. Generate Local TLS Certificate
+
+biMEMO uses HTTPS even for local development. The repository does not include
+TLS private keys, so generate a local self-signed certificate after cloning:
+
+```bash
+./scripts/generate_dev_tls.sh
+```
+
+This creates:
+
+```text
+docker/caddy/certs/cert.pem
+docker/caddy/certs/key.pem
+```
+
+These files are ignored by git and must stay local. If you need a fresh local
+certificate, delete both files and run the script again.
+
+### 4. Master Key (Database Encryption)
 
 A 32-byte master key is required to encrypt the SQLCipher database.
 On first start, the entrypoint **auto-generates** the key at `/data/keyfile/master.key` inside the container (stored in the `keyfile-data` Docker volume).
@@ -65,13 +84,13 @@ docker-compose -f docker/docker-compose.dev.yml run --rm bimemo \
 > docker-compose -f docker/docker-compose.dev.yml cp bimemo:/data/keyfile/master.key ./master.key.backup
 > ```
 
-### 4. Start Services
+### 5. Start Services
 
 ```bash
 docker-compose -f docker/docker-compose.dev.yml up -d
 ```
 
-### 5. Verify
+### 6. Verify
 
 ```bash
 docker-compose -f docker/docker-compose.dev.yml ps
@@ -155,10 +174,11 @@ BIMEMO_SEARXNG_URL=http://searxng:8888
 
 1. Start services: `docker-compose -f docker/docker-compose.dev.yml up -d`
 2. Open http://localhost:5273
-3. You'll see the setup page
-4. Get the setup token from logs: `docker-compose -f docker/docker-compose.dev.yml logs bimemo | grep "Setup token"`
-5. Enter setup token and create a master password (16+ characters)
-6. Database is created and encrypted automatically
+3. Open https://localhost if you need to test the backend through Caddy TLS
+4. You'll see the setup page
+5. Get the setup token from logs: `docker-compose -f docker/docker-compose.dev.yml logs bimemo | grep "Setup token"`
+6. Enter setup token and create a master password (16+ characters)
+7. Database is created and encrypted automatically
 
 ---
 
@@ -228,10 +248,16 @@ docker-compose -f docker/docker-compose.dev.yml up -d
 
 ### SSL certificate errors (dev)
 
-Use dev profile without TLS:
+Generate or refresh the local development certificate:
+
 ```bash
-docker-compose -f docker/docker-compose.dev.yml up -d
+rm -f docker/caddy/certs/cert.pem docker/caddy/certs/key.pem
+./scripts/generate_dev_tls.sh
+docker-compose -f docker/docker-compose.dev.yml restart caddy
 ```
+
+Browsers warn about self-signed local certificates. This is expected for local
+development unless you install your own trusted local certificate authority.
 
 ---
 

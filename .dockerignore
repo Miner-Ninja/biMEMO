@@ -12,3 +12,4 @@ htmlcov
 .idea
 .vscode
 node_modules
+docker/caddy/certs/*.pem

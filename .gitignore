@@ -43,7 +43,7 @@ app/frontend/.vite/
 node_modules/.vite/vitest/
 
 # --- TLS certificates ---
-caddy/certs/*.pem
+docker/caddy/certs/*.pem
 
 # --- OS ---
 .DS_Store
