@@ -1,0 +1,19 @@
+title = "biMEMO secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow fixed fake secrets used by security-filter tests."
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''ghp_abcdefghijklmnopqrstuvwxyz0123456789''',
+  '''sk-1234567890abcdefghij''',
+  '''sk-1234567890abcdefghijklmn''',
+  '''sk-abc12345678901234567''',
+  '''sk-abc123secretkey1234567890abcdef''',
+  '''sk-abcdefghijklmnopqrstuv''',
+]
+paths = [
+  '''app/frontend/package-lock\.json''',
+]

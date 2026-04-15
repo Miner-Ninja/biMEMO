@@ -158,6 +158,17 @@ docker-compose -f docker/docker-compose.dev.yml exec bimemo \
 - **Processes**: Separate processes for DB, signing, credentials — each with own IPC socket
 - **API**: JWT authentication (Ed25519) + CSRF + rate limiting
 
+### Secret Scanning
+
+Run Gitleaks before publishing changes:
+
+```bash
+gitleaks detect --source . --config .gitleaks.toml --redact --verbose
+```
+
+The GitHub Actions security workflow runs the same secret scan on pushes and
+pull requests.
+
 ## Tech Stack
 
 - **Backend**: Python 3.14.4, FastAPI, Pydantic
