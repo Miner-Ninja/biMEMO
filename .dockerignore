@@ -9,6 +9,7 @@ htmlcov
 *.pyc
 *.pyo
 .docker
+sandbox
 .idea
 .vscode
 node_modules

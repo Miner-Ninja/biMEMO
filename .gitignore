@@ -51,4 +51,5 @@ Thumbs.db
 
 # --- Local analysis / scratch ---
 tmp/
+sandbox/
 CLAUDE.md
