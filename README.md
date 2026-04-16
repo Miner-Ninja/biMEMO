@@ -181,6 +181,14 @@ gitleaks detect --source . --config .gitleaks.toml --redact --verbose
 The GitHub Actions security workflow runs the same secret scan on pushes and
 pull requests.
 
+## Project Docs
+
+- [INSTALL.md](INSTALL.md) for installation details
+- [USAGE.md](USAGE.md) for user-facing workflows
+- [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request rules
+- [SECURITY.md](SECURITY.md) for private security disclosure
+- [LICENSE](LICENSE) for the project license
+
 ## Tech Stack
 
 - **Backend**: Python 3.14.4, FastAPI, Pydantic
