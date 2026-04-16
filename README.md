@@ -1,6 +1,29 @@
 # biMEMO
 
-Self-hosted personal AI assistant with security-first architecture.
+Self-hosted personal AI assistant with encrypted storage, local-first runtime,
+and isolated tool execution.
+
+biMEMO is built for people who want their own assistant stack instead of a
+hosted black box. It combines a web chat, messenger integrations, encrypted
+memory, local or remote LLM providers, and strict execution boundaries inside a
+single self-hosted system.
+
+## Why biMEMO
+
+- **Private by design** — encrypted local storage and self-hosted deployment
+- **Provider-flexible** — run with local Ollama or a remote provider
+- **Operationally explicit** — multi-process architecture with clear trust
+  boundaries
+- **Useful beyond web chat** — Telegram, Discord, memory tools, and admin UI in
+  one stack
+
+## What You Get
+
+- personal assistant web UI,
+- encrypted memory and diagnostics,
+- local HTTPS for development,
+- Telegram and Discord integrations,
+- security scanning in CI before public release.
 
 ## Features
 
@@ -19,6 +42,9 @@ Self-hosted personal AI assistant with security-first architecture.
 - Docker + Docker Compose
 - 8GB+ RAM
 - GPU recommended (RTX 3070+) for local Ollama, or use OpenRouter API
+
+If you want the full installation guide instead of the short path below, see
+[INSTALL.md](INSTALL.md).
 
 ### 1. Clone and Configure
 
@@ -183,6 +209,7 @@ pull requests.
 
 ## Project Docs
 
+- [docs/README.md](docs/README.md) for the technical document index
 - [INSTALL.md](INSTALL.md) for installation details
 - [USAGE.md](USAGE.md) for user-facing workflows
 - [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request rules
