@@ -131,13 +131,10 @@ class OllamaClient:
             raise OllamaClientError(
                 "profile_config must be set before accessing provider"
             )
-        if self.compute_config is None:
-            raise OllamaClientError(
-                "compute_config must be set before accessing provider"
-            )
 
     def _build_provider(self) -> OllamaProvider:
         """Build one OllamaProvider instance from the current config."""
+        from backend.llm.compute_config import default_compute_config
         from backend.llm.ollama.provider import (
             OllamaProvider,
         )
@@ -148,7 +145,7 @@ class OllamaClient:
             dialog_recorder_base_url=self.dialog_recorder_base_url,
             primary_model=(self.profile_config.primary_model),
             dialog_recorder_model=(self.profile_config.dialog_recorder_model),
-            compute_config=self.compute_config,
+            compute_config=self.compute_config or default_compute_config(),
             num_ctx=self.num_ctx,
             capabilities_registry=self.capabilities_registry,
         )
@@ -164,8 +161,7 @@ class OllamaClient:
             Configured OllamaProvider instance.
 
         Raises:
-            OllamaClientError: If profile_config or
-                compute_config is not set.
+            OllamaClientError: If profile_config is not set.
         """
         if self._provider is not None:
             return self._provider

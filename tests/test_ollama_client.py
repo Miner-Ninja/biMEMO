@@ -1044,8 +1044,8 @@ class TestProviderProperty:
         ):
             _ = client.provider
 
-    def test_provider_raises_without_compute(self, tmp_path):
-        """Verify error when compute_config is None."""
+    def test_provider_uses_default_compute_when_missing(self, tmp_path):
+        """Verify missing compute_config falls back to GPU-only defaults."""
         token_file = tmp_path / "token"
         token_file.write_text("test-token\n")
         client = OllamaClient(
@@ -1055,8 +1055,6 @@ class TestProviderProperty:
             token_path=str(token_file),
             profile_config=self._make_profile(),
         )
-        with pytest.raises(
-            OllamaClientError,
-            match="compute_config must be set",
-        ):
-            _ = client.provider
+        provider = client.provider
+        assert provider.compute_config.mode == ComputeMode.GPU_ONLY
+        assert provider.compute_config.gpu_layers == 0

@@ -276,15 +276,11 @@ def _build_llm_client(
             num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         )
 
-    from backend.llm.compute_config import load_compute_config
+    from backend.llm.compute_config import default_compute_config
     from backend.llm.hardware import detect_hardware, select_profile
 
     hardware = detect_hardware()
     profile = select_profile(hardware)
-    compute_config_path = settings.compute_config_path
-    compute_config = (
-        load_compute_config(compute_config_path) if compute_config_path else None
-    )
     return ollama_client_cls(
         base_url=llm_config.get("base_url", "http://ollama:11434"),
         dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
@@ -292,6 +288,6 @@ def _build_llm_client(
         token_path="/run/ollama-token/token",  # noqa: S106
         num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         profile_config=profile,
-        compute_config=compute_config,
+        compute_config=default_compute_config(),
         capabilities_registry=capabilities_registry,
     )

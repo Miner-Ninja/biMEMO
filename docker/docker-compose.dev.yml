@@ -20,7 +20,6 @@ services:
       - ../.coveragerc:/app/.coveragerc
       - ../tests:/app/tests
       - ../scripts:/app/scripts
-      - ./config:/data/config:ro
     command: python -m backend.processes.supervisor
     environment:
       - BIMEMO_DEBUG=true

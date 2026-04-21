@@ -33,7 +33,6 @@ class Settings(BaseSettings):
         database_path: Path to the SQLCipher database file.
         diagnostics_database_path: Optional path to the encrypted diagnostics DB.
         diagnostics_retention_days: Number of days to keep route diagnostics.
-        compute_config_path: Path to the compute config JSON (optional, Ollama only).
         searxng_url: Base URL for the local SearXNG search instance.
         host: HTTP server bind address.
         port: HTTP server bind port.
@@ -47,7 +46,6 @@ class Settings(BaseSettings):
     database_path: str
     diagnostics_database_path: str = ""
     diagnostics_retention_days: int = 14
-    compute_config_path: str = ""
     searxng_url: str
     host: str
     port: int

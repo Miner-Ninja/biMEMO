@@ -19,7 +19,6 @@ class TestSettings:
         assert settings.key_source == "file"
         assert settings.key_file_path == "/tmp/test-master.key"
         assert settings.database_path == "/tmp/test-zeroclaw.db"
-        assert settings.compute_config_path == "/tmp/test-compute.json"
         assert settings.searxng_url == "http://localhost:8888/search"
         assert settings.host == "127.0.0.1"
         assert settings.port == 8000
