@@ -12,9 +12,10 @@ if [ ! -f "$KEY_PATH" ]; then
     echo "Master key generated. Back up $KEY_PATH — losing it means losing all data."
 fi
 
-# Generate Ollama Bearer token and write to shared tmpfs volume.
-# Caddy (read-only) and bimemo (read-write) share /run/ollama-token.
-# Skip if volume is not writable (e.g. OpenRouter provider, no Ollama).
-python -c "import secrets; print(secrets.token_hex(32))" > /run/ollama-token/token 2>/dev/null || true
+# Generate an Ollama Bearer token only when the optional shared token
+# directory exists. Dev and test containers can run without this mount.
+if [ -d /run/ollama-token ] && [ -w /run/ollama-token ]; then
+    python -c "import secrets; print(secrets.token_hex(32))" > /run/ollama-token/token
+fi
 
 exec "$@"
