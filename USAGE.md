@@ -102,7 +102,11 @@ Tools are categorized by risk:
 
 ### Changing Models
 
-In .env:
+The normal path is the Admin UI: open the Web UI, go to the admin area, and
+edit the active provider under LLM Configuration.
+
+For repeatable local setups, you can also seed provider settings through
+`.env` before startup:
 
 ```env
 # For Ollama
@@ -114,16 +118,12 @@ BIMEMO_OPENROUTER_MODEL=qwen/qwen3-14b
 BIMEMO_OPENROUTER_DIALOG_RECORDER_MODEL=qwen/qwen3-4b
 ```
 
-### Adding Allowed Directories
+### File Tool Scope
 
-Edit `app/backend/workers/fs_worker.py`:
-
-```python
-ALLOWED_DIRS = [
-    "/data/documents",  # Add your directories here
-    "/home/user/files",
-]
-```
+File tools are restricted to the application data directory derived from
+`BIMEMO_DATABASE_PATH`. In the default Docker setup that means `/data/db`.
+Do not point file tools at arbitrary host directories unless you intentionally
+change the worker wiring and understand the security impact.
 
 ### Rate Limits
 

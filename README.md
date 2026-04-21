@@ -86,14 +86,16 @@ docker-compose -f docker/docker-compose.dev.yml up -d
 
 - **Web UI**: http://localhost:5273
 - **Backend via Caddy**: https://localhost
-- **Telegram**: Start a chat with your bot (configure `BIMEMO_TELEGRAM_BOT_TOKEN` via Admin panel)
-- **Discord**: Start a chat with your bot (configure Discord token via Admin panel)
+- **Telegram**: Configure a Telegram integration in the Admin panel, then start a chat with your bot
+- **Discord**: Configure a Discord integration in the Admin panel, then start a chat with your bot
 
 ### 6. First Setup
 
-1. Open Web UI
-2. Set master key (used for database encryption)
-3. Start chatting!
+1. Open the Web UI
+2. Enter the setup token from the backend logs
+3. Create the first admin password
+4. Configure an LLM provider in the Admin UI
+5. Start chatting
 
 ## Architecture
 

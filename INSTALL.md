@@ -174,7 +174,7 @@ Bot tokens are configured via the Admin panel (stored encrypted in the database)
 For web search functionality, SearXNG is included in docker/docker-compose.dev.yml:
 
 ```env
-BIMEMO_SEARXNG_URL=http://searxng:8888
+BIMEMO_SEARXNG_URL=http://searxng:8080/search
 ```
 
 ---
@@ -283,5 +283,5 @@ development unless you install your own trusted local certificate authority.
 ## Next Steps
 
 - Read [USAGE.md](USAGE.md) for user guide
-- See [docs/SPECIFICATION.md](docs/SPECIFICATION.md) for technical specification
-- See [docs/DATA_FLOWS.md](docs/DATA_FLOWS.md) for data flow details
+- See [README.md](README.md) for the architecture overview
+- See [scripts/README.md](scripts/README.md) for diagnostic helper scripts
