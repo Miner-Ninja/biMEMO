@@ -205,6 +205,7 @@ pull requests.
 - [USAGE.md](USAGE.md) for user-facing workflows
 - [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request rules
 - [SECURITY.md](SECURITY.md) for private security disclosure
+- [scripts/README.md](scripts/README.md) for local diagnostic helper scripts
 - [LICENSE](LICENSE) for the project license
 
 ## Tech Stack
