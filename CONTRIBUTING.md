@@ -12,8 +12,8 @@ Thanks for considering a contribution to biMEMO.
 ## Local Setup
 
 ```bash
-git clone https://github.com/yourusername/bimemo.git
-cd bimemo
+git clone https://github.com/<owner>/biMEMO.git
+cd biMEMO
 cp .env.example .env
 ./scripts/generate_dev_tls.sh
 docker-compose -f docker/docker-compose.dev.yml up -d --build
