@@ -49,8 +49,8 @@ If you want the full installation guide instead of the short path below, see
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/yourusername/bimemo.git
-cd bimemo
+git clone https://github.com/<owner>/biMEMO.git
+cd biMEMO
 cp .env.example .env
 ```
 
@@ -68,22 +68,13 @@ files stay local and must not be committed.
 
 ### 3. Configure .env
 
-Choose your LLM provider:
+Review `.env` before starting the stack. The default development compose file
+starts the application, frontend, Caddy, SearXNG, and speech-to-text service.
 
-**Option A: Local Ollama (recommended with GPU)**
-```env
-BIMEMO_LLM_PROVIDER=ollama
-BIMEMO_OLLAMA_BASE_URL=http://ollama:11434
-BIMEMO_OLLAMA_MODEL=qwen3:14b
-BIMEMO_OLLAMA_DIALOG_RECORDER_MODEL=qwen3:4b
-```
-
-**Option B: OpenRouter (no GPU required)**
-```env
-BIMEMO_LLM_PROVIDER=openrouter
-BIMEMO_OPENROUTER_API_KEY=your-api-key-here
-BIMEMO_OPENROUTER_MODEL=qwen/qwen3-14b
-```
+LLM providers can be configured after first login in the Admin UI at
+`/admin/llm`. If you prefer environment-based setup, uncomment the matching
+`BIMEMO_LLM_PROVIDER` block in `.env`; these values are copied into the
+encrypted database on startup.
 
 ### 4. Start
 

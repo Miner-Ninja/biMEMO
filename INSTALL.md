@@ -23,8 +23,8 @@
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/bimemo.git
-cd bimemo
+git clone https://github.com/<owner>/biMEMO.git
+cd biMEMO
 ```
 
 ### 2. Configure Environment
@@ -34,7 +34,7 @@ cp .env.example .env
 nano .env
 ```
 
-Required variables:
+Required base variables:
 
 ```env
 # Core
@@ -43,9 +43,13 @@ BIMEMO_KEY_SOURCE=file
 BIMEMO_KEY_FILE_PATH=/data/keyfile/master.key
 BIMEMO_DATABASE_PATH=/data/db/bimemo.db
 
-# LLM Provider (choose one)
-BIMEMO_LLM_PROVIDER=ollama  # or openrouter
+# Optional LLM provider seed
+# BIMEMO_LLM_PROVIDER=openrouter
 ```
+
+LLM providers can also be configured after first login in the Admin UI at
+`/admin/llm`. Environment values are useful for repeatable local setups; Admin
+UI values are stored encrypted in the database.
 
 ### 3. Generate Local TLS Certificate
 
@@ -102,29 +106,34 @@ docker-compose -f docker/docker-compose.dev.yml ps
 
 ### Option A: Ollama (Local)
 
-1. Ollama runs as a Docker service automatically
+The default development compose file does not start Ollama for you. Run Ollama
+on the host or add your own Ollama service, then point biMEMO to that endpoint.
 
-2. Pull model (after starting services):
+Pull a model in your Ollama runtime:
 ```bash
-docker-compose -f docker/docker-compose.dev.yml exec ollama ollama pull qwen3:14b
+ollama pull qwen3:14b
 ```
 
-3. Configure in .env:
+Configure via Admin UI, or seed through `.env`:
 ```env
 BIMEMO_LLM_PROVIDER=ollama
-BIMEMO_OLLAMA_BASE_URL=http://ollama:11434
+BIMEMO_OLLAMA_BASE_URL=http://host.docker.internal:11434
 BIMEMO_OLLAMA_MODEL=qwen3:14b
 BIMEMO_OLLAMA_DIALOG_RECORDER_MODEL=qwen3:4b
 ```
+
+On Linux, `host.docker.internal` may require an extra Docker host mapping.
+If you add Ollama as a service in the compose file, use that service name
+instead.
 
 ### Option B: OpenRouter (Cloud)
 
 1. Get API key: https://openrouter.ai/keys
 
-2. Configure in .env:
+2. Configure via Admin UI, or seed through `.env`:
 ```env
 BIMEMO_LLM_PROVIDER=openrouter
-BIMEMO_OPENROUTER_API_KEY=sk-or-v1-xxxxx
+BIMEMO_OPENROUTER_API_KEY=<your-openrouter-api-key>
 BIMEMO_OPENROUTER_MODEL=qwen/qwen3-14b
 BIMEMO_OPENROUTER_DIALOG_RECORDER_MODEL=qwen/qwen3-4b
 ```
@@ -228,7 +237,7 @@ docker-compose -f docker/docker-compose.dev.yml ps
 
 # View logs
 docker-compose -f docker/docker-compose.dev.yml logs bimemo
-docker-compose -f docker/docker-compose.dev.yml logs ollama
+docker-compose -f docker/docker-compose.dev.yml logs caddy
 ```
 
 ### Out of memory

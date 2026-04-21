@@ -4,7 +4,7 @@
 
 ### Web Interface
 
-1. Open http://localhost:8010 (dev) or https://localhost (production)
+1. Open http://localhost:5273 for the development frontend
 2. Enter your master key
 3. Start chatting!
 
@@ -154,7 +154,7 @@ Default limits per minute:
 
 ```bash
 # If using Ollama, pull the model
-docker compose exec ollama ollama pull qwen3:14b
+ollama pull qwen3:14b
 
 # Or switch to OpenRouter in .env
 ```
