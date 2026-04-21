@@ -16,6 +16,9 @@ venv/
 .env
 
 # --- IDE / Editors ---
+.claude/
+.codex/
+.agents/
 .idea/
 .vscode/
 .obsidian/
@@ -52,4 +55,8 @@ Thumbs.db
 # --- Local analysis / scratch ---
 tmp/
 sandbox/
+openspec/
+CODE_REVIEW.md
+CODE_RULES.md
+AGENTS.md
 CLAUDE.md
