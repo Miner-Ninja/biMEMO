@@ -155,6 +155,8 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD", raising=False)
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD_FILE", raising=False)
         db_client = FakeDBClient()
 
         await _seed_initial_password(db_client)

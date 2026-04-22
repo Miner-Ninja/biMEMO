@@ -16,11 +16,11 @@ class TestSettings:
         """Verify settings are loaded from environment variables."""
         settings = Settings()  # type: ignore[call-arg]
         assert settings.debug is True
-        assert settings.key_source == "file"
-        assert settings.key_file_path == "/tmp/test-master.key"
-        assert settings.encrypted_key_file_path == ""
+        assert settings.key_source == "password"
+        assert settings.key_file_path == ""
+        assert settings.encrypted_key_file_path == "/tmp/test-master.key.enc"
         assert settings.unlock_password_file is None
-        assert settings.unlock_password is None
+        assert settings.unlock_password == "test-startup-password"
         assert settings.database_path == "/tmp/test-zeroclaw.db"
         assert settings.searxng_url == "http://localhost:8888/search"
         assert settings.host == "127.0.0.1"
@@ -42,8 +42,10 @@ class TestSettings:
 class TestKeySourceValidation:
     """Tests for key source configuration validation."""
 
-    def test_file_key_source_valid(self):
+    def test_file_key_source_valid(self, monkeypatch):
         """Verify file key source loads with key_file_path."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "file")
+        monkeypatch.setenv("BIMEMO_KEY_FILE_PATH", "/tmp/test-master.key")
         settings = Settings()  # type: ignore[call-arg]
         assert settings.key_source == "file"
         assert settings.key_file_path == "/tmp/test-master.key"
