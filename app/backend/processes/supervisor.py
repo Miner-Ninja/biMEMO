@@ -170,8 +170,14 @@ def supervisor_main() -> None:
     """
     from backend.config import get_settings
     from backend.logging_config import configure_logging
+    from backend.security.startup_state import determine_startup_state
 
-    configure_logging(get_settings().debug)
+    settings = get_settings()
+    configure_logging(settings.debug)
+    logger.info(
+        "biMEMO startup state: %s",
+        determine_startup_state(settings).value,
+    )
 
     supervisor = _build_supervisor()
 
