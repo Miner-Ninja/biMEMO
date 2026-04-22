@@ -195,11 +195,25 @@ def _initial_secret_source(startup_password: str | None = None) -> object | None
     return _startup_secret_source(startup_password)
 
 
+def _verify_existing_password_hash(
+    *,
+    stored_hash: str,
+    secret_source: object,
+) -> None:
+    """Verify that a startup password source matches the stored UI password."""
+    try:
+        _ph.verify(stored_hash, secret_source.password)
+    except VerifyMismatchError as e:
+        raise RuntimeError(
+            "Startup password source does not match the stored UI password"
+        ) from e
+
+
 async def _seed_initial_password(
     db_client: IPCSocketClient,
     startup_password: str | None = None,
 ) -> None:
-    """Seed the initial UI password from configured startup sources."""
+    """Seed or verify the initial UI password from configured startup sources."""
     check = await _db_send(db_client, "get_password_hash")
     if check.status != "success":
         logger.error(
@@ -207,11 +221,21 @@ async def _seed_initial_password(
             check.error_message,
         )
         return
+    secret_source = _initial_secret_source(startup_password)
     if check.data and check.data.get("exists"):
-        logger.debug("Password already exists in DB, skipping initial seed")
+        if secret_source is None:
+            logger.debug("Password already exists in DB, skipping initial seed")
+            return
+        stored_hash = check.data.get("password_hash")
+        if not isinstance(stored_hash, str):
+            raise RuntimeError("Stored UI password hash is missing")
+        _verify_existing_password_hash(
+            stored_hash=stored_hash,
+            secret_source=secret_source,
+        )
+        logger.debug("Startup password source matches stored UI password")
         return
 
-    secret_source = _initial_secret_source(startup_password)
     if secret_source is None:
         return
     if len(secret_source.password) < MIN_INITIAL_PASSWORD_LENGTH:

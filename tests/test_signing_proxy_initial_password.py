@@ -17,10 +17,15 @@ class FakeDBClient:
         stored_hash: Password hash written by the seeding function.
     """
 
-    def __init__(self, *, has_password: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        has_password: bool = False,
+        existing_hash: str = "",
+    ) -> None:
         """Initialize fake DB client state."""
         self.has_password = has_password
-        self.stored_hash: str | None = None
+        self.stored_hash: str | None = existing_hash or None
 
     async def send_and_receive(self, operation):
         """Return DBResult values for password hash operations."""
@@ -28,7 +33,10 @@ class FakeDBClient:
             return DBResult(
                 request_id=operation.request_id,
                 status="success",
-                data={"exists": self.has_password},
+                data={
+                    "exists": self.has_password,
+                    "password_hash": self.stored_hash,
+                },
             )
         if operation.operation == "store_password_hash":
             self.stored_hash = operation.parameters["password_hash"]
@@ -75,18 +83,51 @@ class TestSeedInitialPassword:
 
     @pytest.mark.asyncio
     async def test_existing_password_is_not_replaced(self, monkeypatch, tmp_path):
-        """Skip seeding when UI password hash already exists."""
+        """Verify existing UI password is not replaced when it matches startup."""
         monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
         monkeypatch.setenv(
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
         monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", VALID_STARTUP_SECRET)
-        db_client = FakeDBClient(has_password=True)
+        existing_hash = signing_main._ph.hash(VALID_STARTUP_SECRET)
+        db_client = FakeDBClient(
+            has_password=True,
+            existing_hash=existing_hash,
+        )
 
         await _seed_initial_password(db_client)
 
-        assert db_client.stored_hash is None
+        assert db_client.stored_hash == existing_hash
+
+    @pytest.mark.asyncio
+    async def test_existing_password_mismatch_raises(self, monkeypatch, tmp_path):
+        """Reject startup when startup password differs from stored UI password."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
+        monkeypatch.setenv(
+            "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
+            str(tmp_path / "master.key.enc"),
+        )
+        monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", VALID_STARTUP_SECRET)
+        db_client = FakeDBClient(
+            has_password=True,
+            existing_hash=signing_main._ph.hash("DifferentSecret1234!"),
+        )
+
+        with pytest.raises(RuntimeError, match="does not match"):
+            await _seed_initial_password(db_client)
+
+    @pytest.mark.asyncio
+    async def test_manual_startup_password_is_verified_against_existing_hash(self):
+        """Verify manual startup password must match stored UI password."""
+        db_client = FakeDBClient(
+            has_password=True,
+            existing_hash=signing_main._ph.hash(VALID_STARTUP_SECRET),
+        )
+
+        await _seed_initial_password(db_client, VALID_STARTUP_SECRET)
+
+        assert db_client.stored_hash is not None
 
     @pytest.mark.asyncio
     async def test_legacy_admin_password_wins(self, monkeypatch, tmp_path):
