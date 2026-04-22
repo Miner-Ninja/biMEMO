@@ -20,6 +20,8 @@ services:
       - ../.coveragerc:/app/.coveragerc
       - ../tests:/app/tests
       - ../scripts:/app/scripts
+    secrets:
+      - bimemo_unlock_password
     command: python -m backend.processes.supervisor
     environment:
       - BIMEMO_DEBUG=true
@@ -124,3 +126,7 @@ volumes:
   caddy-data:
   caddy-config:
   whisper-cache:
+
+secrets:
+  bimemo_unlock_password:
+    file: ../secrets/bimemo_unlock_password
