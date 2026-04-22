@@ -9,11 +9,17 @@ both the supervisor (topology) and tests can import them without
 pulling in the heavy orchestrator / DB proxy code.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import tempfile
-from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 # --- Socket paths (in /tmp for container runtime) ---
@@ -95,13 +101,44 @@ def _build_db_proxy_handler_factory(
 
 async def _load_master_key(settings: object) -> bytes:
     """Load the SQLCipher master key from the configured key source."""
-    from backend.security.keysource import get_key_source
+    from backend.security.keysource import KeySourceError, get_key_source
+    from backend.security.startup_password import load_startup_password
 
     key_source = get_key_source(
         settings.key_source,
-        file_path=settings.key_file_path,
+        **_key_source_kwargs(
+            settings=settings,
+            password_loader=load_startup_password,
+            key_source_error=KeySourceError,
+        ),
     )
     return await key_source.get_key()
+
+
+def _key_source_kwargs(
+    *,
+    settings: object,
+    password_loader: object,
+    key_source_error: type[Exception],
+) -> dict[str, str]:
+    """Build key-source-specific keyword arguments from settings."""
+    key_source = settings.key_source
+    if key_source == "file":
+        return {"file_path": settings.key_file_path}
+    if key_source == "password":
+        password_source = password_loader(
+            password_file=settings.unlock_password_file,
+            password_env=settings.unlock_password,
+        )
+        if password_source is None:
+            raise key_source_error(
+                "Startup password is required when key_source is 'password'"
+            )
+        return {
+            "encrypted_key_file_path": settings.encrypted_key_file_path,
+            "password": password_source.password,
+        }
+    raise key_source_error(f"Unsupported key_source: {key_source}")
 
 
 def _open_primary_db(settings: object, master_key: bytes, logger: object) -> object:
