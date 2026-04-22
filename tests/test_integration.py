@@ -122,7 +122,7 @@ class TestMessageToResponse:
             conversation_id="test-conv",
         )
         assert isinstance(resp, AgentResponse)
-        assert "file content" in resp.text
+        assert "file content" in resp.structured_content.answer
         assert call_count == 2
 
 
@@ -380,7 +380,7 @@ class TestRetrievedMemoriesPipeline:
         )
         assert isinstance(resp, AgentResponse)
         assert resp.retrieved_memories == memories
-        assert "pizza" in resp.text
+        assert "pizza" in resp.structured_content.answer
 
     async def test_orchestrator_plain_list_backward_compat(self):
         """Verify orchestrator works with plain list context (no ContextResult)."""

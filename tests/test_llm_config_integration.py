@@ -3654,6 +3654,7 @@ class TestMemoryTimeline:
                 "role": "user",
                 "meta": "",
                 "conversation_id": "conversation-1",
+                "structured_content": None,
             }
         ]
 
