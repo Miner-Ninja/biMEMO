@@ -8,7 +8,12 @@ import os
 import secrets
 
 import pytest
-from backend.security.keysource import FileKeySource, KeySourceError, get_key_source
+from backend.security.keysource import (
+    FileKeySource,
+    KeySourceError,
+    PasswordKeySource,
+    get_key_source,
+)
 
 
 VALID_KEY = secrets.token_bytes(32)
@@ -82,6 +87,17 @@ class TestGetKeySource:
         source = get_key_source("file", file_path=key_file)
         assert isinstance(source, FileKeySource)
         assert source.file_path == key_file
+
+    def test_password_source(self, tmp_path):
+        """Create a PasswordKeySource from factory with type='password'."""
+        encrypted_path = tmp_path / "master.key.enc"
+        source = get_key_source(
+            "password",
+            encrypted_key_file_path=str(encrypted_path),
+            password="StrongPassword1234!",
+        )
+        assert isinstance(source, PasswordKeySource)
+        assert source.encrypted_key_file_path == str(encrypted_path)
 
     def test_file_source_missing_path(self):
         """Raise error when file_path is not provided for file source."""

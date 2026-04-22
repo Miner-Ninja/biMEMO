@@ -6,6 +6,7 @@ The interface supports future backends (e.g., HashiCorp Vault).
 """
 
 from backend.security.keysource.file import FileKeySource
+from backend.security.keysource.password import PasswordKeySource
 from backend.security.keysource.protocol import (
     KeySource,
     KeySourceError,
@@ -17,5 +18,6 @@ __all__ = [
     "FileKeySource",
     "KeySource",
     "KeySourceError",
+    "PasswordKeySource",
     "get_key_source",
 ]

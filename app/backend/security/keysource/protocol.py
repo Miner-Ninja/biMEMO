@@ -15,7 +15,7 @@ from typing import Protocol, runtime_checkable
 logger = logging.getLogger(__name__)
 
 # --- Supported key source types ---
-SUPPORTED_KEY_SOURCES = ("file",)
+SUPPORTED_KEY_SOURCES = ("file", "password")
 EXPECTED_KEY_LENGTH = 32
 
 
@@ -64,7 +64,7 @@ def get_key_source(source_type: str, **kwargs: str) -> KeySource:
     """Create a KeySource instance based on the source type.
 
     Args:
-        source_type: Type of key source. Supported: "file".
+        source_type: Type of key source. Supported: "file", "password".
         **kwargs: Implementation-specific arguments passed to the constructor.
 
     Returns:
@@ -85,5 +85,21 @@ def get_key_source(source_type: str, **kwargs: str) -> KeySource:
         if not file_path:
             raise KeySourceError("file_path is required for file key source")
         return FileKeySource(file_path=file_path)
+
+    if source_type == "password":
+        from backend.security.keysource.password import PasswordKeySource
+
+        encrypted_key_file_path = kwargs.get("encrypted_key_file_path")
+        password = kwargs.get("password")
+        if not encrypted_key_file_path:
+            raise KeySourceError(
+                "encrypted_key_file_path is required for password key source"
+            )
+        if not password:
+            raise KeySourceError("password is required for password key source")
+        return PasswordKeySource(
+            encrypted_key_file_path=encrypted_key_file_path,
+            password=password,
+        )
 
     raise _unknown_key_source_error(source_type)
