@@ -11,7 +11,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
-SUPPORTED_KEY_SOURCES = ("file",)
+SUPPORTED_KEY_SOURCES = ("file", "password")
 
 
 def _supported_key_sources_text() -> str:
@@ -28,8 +28,11 @@ class Settings(BaseSettings):
 
     Attributes:
         debug: Enable debug mode (additional logging, never in production).
-        key_source: Key source type for SQLCipher encryption (e.g. 'file').
+        key_source: Key source type for SQLCipher encryption.
         key_file_path: Path to the 32-byte key file (required when key_source='file').
+        encrypted_key_file_path: Path to the encrypted master-key file.
+        unlock_password_file: Optional path to a startup password file.
+        unlock_password: Optional development-only startup password.
         database_path: Path to the SQLCipher database file.
         diagnostics_database_path: Optional path to the encrypted diagnostics DB.
         diagnostics_retention_days: Number of days to keep route diagnostics.
@@ -43,6 +46,9 @@ class Settings(BaseSettings):
     debug: bool
     key_source: str = ""
     key_file_path: str = ""
+    encrypted_key_file_path: str = ""
+    unlock_password_file: str | None = None
+    unlock_password: str | None = None
     database_path: str
     diagnostics_database_path: str = ""
     diagnostics_retention_days: int = 14
@@ -71,7 +77,7 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def _check_key_source_fields(self) -> "Settings":
+    def _check_key_source_fields(self) -> Settings:
         """Validate key-source-specific fields are set."""
         if self.key_source not in SUPPORTED_KEY_SOURCES:
             msg = (
@@ -81,6 +87,11 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.key_source == "file" and not self.key_file_path:
             msg = "key_file_path is required when key_source is 'file'"
+            raise ValueError(msg)
+        if self.key_source == "password" and not self.encrypted_key_file_path:
+            msg = (
+                "encrypted_key_file_path is required when key_source is 'password'"
+            )
             raise ValueError(msg)
         if self.diagnostics_retention_days < 1:
             msg = "diagnostics_retention_days must be at least 1"

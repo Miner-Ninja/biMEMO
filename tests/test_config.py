@@ -18,6 +18,9 @@ class TestSettings:
         assert settings.debug is True
         assert settings.key_source == "file"
         assert settings.key_file_path == "/tmp/test-master.key"
+        assert settings.encrypted_key_file_path == ""
+        assert settings.unlock_password_file is None
+        assert settings.unlock_password is None
         assert settings.database_path == "/tmp/test-zeroclaw.db"
         assert settings.searxng_url == "http://localhost:8888/search"
         assert settings.host == "127.0.0.1"
@@ -45,6 +48,26 @@ class TestKeySourceValidation:
         assert settings.key_source == "file"
         assert settings.key_file_path == "/tmp/test-master.key"
 
+    def test_password_key_source_valid(self, monkeypatch):
+        """Verify password key source loads with encrypted key path."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
+        monkeypatch.setenv(
+            "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
+            "/tmp/test-master.key.enc",
+        )
+        monkeypatch.setenv(
+            "BIMEMO_UNLOCK_PASSWORD_FILE",
+            "/run/secrets/bimemo_unlock_password",
+        )
+        monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", "dev-password")
+
+        settings = Settings()  # type: ignore[call-arg]
+
+        assert settings.key_source == "password"
+        assert settings.encrypted_key_file_path == "/tmp/test-master.key.enc"
+        assert settings.unlock_password_file == "/run/secrets/bimemo_unlock_password"
+        assert settings.unlock_password == "dev-password"
+
     def test_invalid_key_source_raises(self, monkeypatch):
         """Verify invalid key_source raises."""
         monkeypatch.setenv("BIMEMO_KEY_SOURCE", "invalid")
@@ -56,6 +79,13 @@ class TestKeySourceValidation:
         monkeypatch.setenv("BIMEMO_KEY_SOURCE", "file")
         monkeypatch.setenv("BIMEMO_KEY_FILE_PATH", "")
         with pytest.raises(ValidationError, match="key_file_path"):
+            Settings()  # type: ignore[call-arg]
+
+    def test_password_key_source_missing_path_raises(self, monkeypatch):
+        """Verify missing encrypted key path raises for password source."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
+        monkeypatch.setenv("BIMEMO_ENCRYPTED_KEY_FILE_PATH", "")
+        with pytest.raises(ValidationError, match="encrypted_key_file_path"):
             Settings()  # type: ignore[call-arg]
 
 
