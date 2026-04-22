@@ -117,13 +117,13 @@ password on the next start.
 ### 5. Start Services
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml up -d
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
 ### 6. Verify
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml ps
+docker-compose -f docker/docker-compose.yml ps
 ```
 
 ---
@@ -197,7 +197,7 @@ Bot tokens are configured via the Admin panel (stored encrypted in the database)
 
 ## Web Search Setup (Optional)
 
-For web search functionality, SearXNG is included in docker/docker-compose.dev.yml:
+For web search functionality, SearXNG is included in docker/docker-compose.yml:
 
 ```env
 BIMEMO_SEARXNG_URL=http://searxng:8080/search
@@ -207,7 +207,7 @@ BIMEMO_SEARXNG_URL=http://searxng:8080/search
 
 ## First Run Setup
 
-1. Start services: `docker-compose -f docker/docker-compose.dev.yml up -d`
+1. Start services: `docker-compose -f docker/docker-compose.yml up -d`
 2. Open http://localhost:5273
 3. Open https://localhost if you need to test the backend through Caddy TLS
 4. You'll see the setup page
@@ -219,7 +219,7 @@ BIMEMO_SEARXNG_URL=http://searxng:8080/search
 ## Development Setup
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml up -d --build
+docker-compose -f docker/docker-compose.yml up -d --build
 ```
 
 This starts biMEMO with:
@@ -230,7 +230,7 @@ This starts biMEMO with:
 
 Run tests:
 ```bash
-docker-compose -f docker/docker-compose.dev.yml exec bimemo \
+docker-compose -f docker/docker-compose.yml exec bimemo \
   python -m pytest tests/ -v
 ```
 
@@ -243,7 +243,7 @@ docker-compose -f docker/docker-compose.dev.yml exec bimemo \
 The encrypted key file is created on first successful password startup:
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml exec bimemo \
+docker-compose -f docker/docker-compose.yml exec bimemo \
   test -f /data/keyfile/master.key.enc
 ```
 
@@ -257,11 +257,11 @@ together, then run setup again with a new password.
 
 ```bash
 # Check all services
-docker-compose -f docker/docker-compose.dev.yml ps
+docker-compose -f docker/docker-compose.yml ps
 
 # View logs
-docker-compose -f docker/docker-compose.dev.yml logs bimemo
-docker-compose -f docker/docker-compose.dev.yml logs caddy
+docker-compose -f docker/docker-compose.yml logs bimemo
+docker-compose -f docker/docker-compose.yml logs caddy
 ```
 
 ### Out of memory
@@ -273,10 +273,10 @@ docker-compose -f docker/docker-compose.dev.yml logs caddy
 
 ```bash
 # Stop all services
-docker-compose -f docker/docker-compose.dev.yml down
+docker-compose -f docker/docker-compose.yml down
 
 # Restart
-docker-compose -f docker/docker-compose.dev.yml up -d
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
 ### SSL certificate errors (dev)
@@ -286,7 +286,7 @@ Generate or refresh the local development certificate:
 ```bash
 rm -f docker/caddy/certs/cert.pem docker/caddy/certs/key.pem
 ./scripts/generate_dev_tls.sh
-docker-compose -f docker/docker-compose.dev.yml restart caddy
+docker-compose -f docker/docker-compose.yml restart caddy
 ```
 
 Browsers warn about self-signed local certificates. This is expected for local

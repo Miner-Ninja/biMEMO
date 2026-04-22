@@ -81,7 +81,7 @@ encrypted database on startup.
 ### 4. Start
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml up -d
+docker-compose -f docker/docker-compose.yml up -d
 ```
 
 ### 5. Access
@@ -173,14 +173,14 @@ Bot integrations (Telegram, Discord) are configured via the Admin panel and stor
 
 ```bash
 # Build and start dev environment
-docker-compose -f docker/docker-compose.dev.yml up -d --build
+docker-compose -f docker/docker-compose.yml up -d --build
 
 # Run tests
-docker-compose -f docker/docker-compose.dev.yml exec bimemo \
+docker-compose -f docker/docker-compose.yml exec bimemo \
   python -m pytest tests/ -v
 
 # Lint
-docker-compose -f docker/docker-compose.dev.yml exec bimemo \
+docker-compose -f docker/docker-compose.yml exec bimemo \
   ruff check --fix . && ruff format .
 ```
 

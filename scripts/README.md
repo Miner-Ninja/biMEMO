@@ -5,7 +5,7 @@ This directory contains local development and diagnostic helpers.
 ## Public Setup
 
 - `generate_dev_tls.sh` creates the self-signed local HTTPS certificate used by
-  `docker/docker-compose.dev.yml`.
+  `docker/docker-compose.yml`.
 
 ## API Diagnostics
 

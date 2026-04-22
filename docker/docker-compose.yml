@@ -1,5 +1,5 @@
 # biMEMO development Docker Compose (manual unlock by default).
-# Usage: docker-compose -f docker/docker-compose.dev.yml up -d --build
+# Usage: docker-compose -f docker/docker-compose.yml up -d --build
 
 services:
   bimemo:

@@ -18,5 +18,5 @@ COPY . .
 # Expose Vite dev server port
 EXPOSE 5173
 
-# Default command (overridden in docker-compose.dev.yml)
+# Default command (overridden in docker-compose.yml)
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

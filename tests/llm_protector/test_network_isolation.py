@@ -1,6 +1,6 @@
 """Tests for Docker network isolation topology.
 
-Verifies that the active docker-compose.dev.yml keeps service networks
+Verifies that the active docker-compose.yml keeps service networks
 separated where direct communication should not happen.
 
 These tests parse the compose file statically — no Docker daemon required.
@@ -13,17 +13,17 @@ import pytest
 
 yaml = pytest.importorskip("yaml")
 
-COMPOSE_PATH = Path(__file__).resolve().parents[2] / "docker" / "docker-compose.dev.yml"
+COMPOSE_PATH = Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
 
 pytestmark = pytest.mark.skipif(
     not COMPOSE_PATH.exists(),
-    reason="docker-compose.dev.yml not available (running inside container)",
+    reason="docker-compose.yml not available (running inside container)",
 )
 
 
 @pytest.fixture(scope="module")
 def compose() -> dict[str, object]:
-    """Load the active docker-compose.dev.yml as a dict."""
+    """Load the active docker-compose.yml as a dict."""
     return yaml.safe_load(COMPOSE_PATH.read_text())
 
 

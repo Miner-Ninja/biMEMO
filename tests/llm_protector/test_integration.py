@@ -690,11 +690,11 @@ class TestDockerNetworkIsolationArchitecture:
         yaml = pytest.importorskip("yaml")
 
         compose_path = (
-            Path(__file__).resolve().parents[2] / "docker" / "docker-compose.dev.yml"
+            Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
         )
         if not compose_path.exists():
             pytest.skip(
-                "docker-compose.dev.yml not available (running inside container)"
+                "docker-compose.yml not available (running inside container)"
             )
         compose = yaml.safe_load(compose_path.read_text())
         networks = set(compose["networks"].keys())
@@ -709,11 +709,11 @@ class TestDockerNetworkIsolationArchitecture:
         yaml = pytest.importorskip("yaml")
 
         compose_path = (
-            Path(__file__).resolve().parents[2] / "docker" / "docker-compose.dev.yml"
+            Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
         )
         if not compose_path.exists():
             pytest.skip(
-                "docker-compose.dev.yml not available (running inside container)"
+                "docker-compose.yml not available (running inside container)"
             )
         compose = yaml.safe_load(compose_path.read_text())
         all_networks = set(compose["networks"].keys())

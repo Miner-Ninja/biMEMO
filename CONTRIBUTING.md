@@ -16,7 +16,7 @@ git clone https://github.com/<owner>/biMEMO.git
 cd biMEMO
 cp .env.example .env
 ./scripts/generate_dev_tls.sh
-docker-compose -f docker/docker-compose.dev.yml up -d --build
+docker-compose -f docker/docker-compose.yml up -d --build
 ```
 
 ## Development Rules
@@ -33,9 +33,9 @@ docker-compose -f docker/docker-compose.dev.yml up -d --build
 Run checks from the repository root.
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml exec bimemo ruff check --fix .
-docker-compose -f docker/docker-compose.dev.yml exec bimemo ruff format .
-docker-compose -f docker/docker-compose.dev.yml exec bimemo python -m pytest tests/ -v
+docker-compose -f docker/docker-compose.yml exec bimemo ruff check --fix .
+docker-compose -f docker/docker-compose.yml exec bimemo ruff format .
+docker-compose -f docker/docker-compose.yml exec bimemo python -m pytest tests/ -v
 docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
   detect --source . --config .gitleaks.toml --redact --verbose
 ```
