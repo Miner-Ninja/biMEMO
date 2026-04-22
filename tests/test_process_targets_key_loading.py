@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 
 import pytest
-from backend.processes.targets import _load_master_key
+from backend.processes.targets import _ensure_parent_directory, _load_master_key
 from backend.security.encrypted_key_file import encrypt_master_key
 from backend.security.keysource import KeySourceError
 
@@ -127,3 +127,15 @@ class TestLoadMasterKey:
                     encrypted_key_file_path=str(encrypted_path),
                 )
             )
+
+
+class TestConfiguredFileDirectories:
+    """Tests for configured file parent-directory creation."""
+
+    def test_ensure_parent_directory_creates_missing_database_parent(self, tmp_path):
+        """Create missing parent directories for configured database files."""
+        database_path = tmp_path / "missing" / "nested" / "bimemo.db"
+
+        _ensure_parent_directory(str(database_path))
+
+        assert database_path.parent.is_dir()

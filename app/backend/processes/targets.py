@@ -44,6 +44,11 @@ def _default_diagnostics_database_path(database_path: str) -> str:
     return str(database_file.with_name(f"{database_file.stem}_diagnostics.db"))
 
 
+def _ensure_parent_directory(file_path: str) -> None:
+    """Create the parent directory for one configured file path."""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
+
 def _db_proxy_servers(
     server_a: object,
     server_b: object,
@@ -158,6 +163,7 @@ def _open_primary_db(settings: object, master_key: bytes, logger: object) -> obj
     from backend.security.database import DatabaseManager
     from backend.security.schema import initialize_schema
 
+    _ensure_parent_directory(settings.database_path)
     db = DatabaseManager(settings.database_path)
     db.open(master_key)
     db.execute("SELECT 1")
@@ -187,6 +193,7 @@ def _open_diagnostics_db(settings: object, master_key: bytes) -> object:
         settings.diagnostics_database_path
         or _default_diagnostics_database_path(settings.database_path)
     )
+    _ensure_parent_directory(diagnostics_database_path)
     diagnostics_db = DatabaseManager(diagnostics_database_path)
     diagnostics_db.open(master_key)
     initialize_diagnostics_schema(diagnostics_db)
@@ -502,7 +509,7 @@ def _make_socket_probe(socket_path: str) -> Callable[[], Awaitable[bool]]:
             writer.close()
             await writer.wait_closed()
             return True
-        except (FileNotFoundError, ConnectionRefusedError, OSError):
+        except FileNotFoundError, ConnectionRefusedError, OSError:
             return False
 
     return _probe
