@@ -412,6 +412,9 @@ export function ChatPage() {
   const [bridgeProviders, setBridgeProviders] = useState<
     ChatBridgeProviderItem[]
   >([]);
+  const [bridgeProvidersAutoAttempted, setBridgeProvidersAutoAttempted] =
+    useState(false);
+  const [bridgeProvidersLoaded, setBridgeProvidersLoaded] = useState(false);
   const [bridgeProvidersLoading, setBridgeProvidersLoading] = useState(false);
   const [bridgeLinksByConversationId, setBridgeLinksByConversationId] =
     useState<Record<string, ChatBridgeLink>>({});
@@ -565,12 +568,13 @@ export function ChatPage() {
   }, [refreshAvailableFiles]);
 
   const loadBridgeProvidersIfNeeded = useCallback(async (showError = true) => {
-    if (bridgeProvidersLoading || bridgeProviders.length > 0) {
+    if (bridgeProvidersLoading || bridgeProvidersLoaded) {
       return;
     }
     setBridgeProvidersLoading(true);
     try {
       setBridgeProviders(await fetchChatBridgeProviders());
+      setBridgeProvidersLoaded(true);
     } catch {
       if (showError) {
         addToast({
@@ -581,17 +585,23 @@ export function ChatPage() {
     } finally {
       setBridgeProvidersLoading(false);
     }
-  }, [addToast, bridgeProviders.length, bridgeProvidersLoading]);
+  }, [addToast, bridgeProvidersLoaded, bridgeProvidersLoading]);
 
   useEffect(() => {
-    if (!isReady || bridgeProviders.length > 0) {
+    if (!isReady || bridgeProvidersLoaded || bridgeProvidersAutoAttempted) {
       return;
     }
     const timer = window.setTimeout(() => {
+      setBridgeProvidersAutoAttempted(true);
       void loadBridgeProvidersIfNeeded(false);
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [bridgeProviders.length, isReady, loadBridgeProvidersIfNeeded]);
+  }, [
+    bridgeProvidersAutoAttempted,
+    bridgeProvidersLoaded,
+    isReady,
+    loadBridgeProvidersIfNeeded,
+  ]);
 
   const availableFileNames = availableFiles.map((file) => file.filename);
   const activeFileNames = activeFiles
