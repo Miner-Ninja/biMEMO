@@ -1,12 +1,14 @@
 """Signing Proxy process main loop."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import signal
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -16,6 +18,10 @@ from backend.ipc.ipc_channel import IPCSocketClient, IPCSocketServer
 from backend.ipc.models import DBOperation, DBResult
 
 from .jwt import _decode_jwt, _encode_jwt, _issue_tokens
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +48,8 @@ SIGNING_OPERATIONS = frozenset(
 # --- Brute-force rate limiter ---
 MAX_LOGIN_ATTEMPTS = 5
 BACKOFF_SCHEDULE = (30, 60, 120, 300)  # seconds after 5th, 6th, 7th, 8th+ fail
+MIN_INITIAL_PASSWORD_LENGTH = 8
+ADMIN_ENV_SOURCE_LABEL = "admin-env"
 
 
 class LoginRateLimiter:
@@ -138,37 +146,83 @@ async def _load_signing_private_key(
     return Ed25519PrivateKey.from_private_bytes(key_bytes)
 
 
-async def _seed_admin_password_from_env(db_client: IPCSocketClient) -> None:
-    """Seed the initial admin password from the environment when applicable."""
-    env_password = os.environ.get("BIMEMO_ADMIN_PASSWORD")
-    if not env_password:
-        return
+def _legacy_admin_secret_source() -> object | None:
+    """Return the legacy admin secret source when configured."""
+    from backend.security.startup_password import StartupPasswordSource
+
+    admin_secret = os.environ.get("BIMEMO_ADMIN_PASSWORD")
+    if not admin_secret:
+        return None
+    return StartupPasswordSource(
+        password=admin_secret,
+        source=ADMIN_ENV_SOURCE_LABEL,
+    )
+
+
+def _startup_secret_source() -> object | None:
+    """Return the password-startup secret source when configured."""
+    from backend.config import get_settings
+    from backend.security.startup_password import (
+        StartupPasswordError,
+        load_startup_password,
+    )
+
+    settings = get_settings()
+    if settings.key_source != "password":
+        return None
+    try:
+        return load_startup_password(
+            password_file=settings.unlock_password_file,
+            password_env=settings.unlock_password,
+        )
+    except StartupPasswordError as e:
+        logger.error("Failed to load startup password for UI seed: %s", e)
+        return None
+
+
+def _initial_secret_source() -> object | None:
+    """Return the initial UI password source in priority order."""
+    legacy_source = _legacy_admin_secret_source()
+    if legacy_source is not None:
+        return legacy_source
+    return _startup_secret_source()
+
+
+async def _seed_initial_password(db_client: IPCSocketClient) -> None:
+    """Seed the initial UI password from configured startup sources."""
     check = await _db_send(db_client, "get_password_hash")
     if check.status != "success":
         logger.error(
-            "Failed to check password status, skipping env seed: %s",
+            "Failed to check password status, skipping initial seed: %s",
             check.error_message,
         )
         return
     if check.data and check.data.get("exists"):
-        logger.debug("Password already exists in DB, skipping env seed")
+        logger.debug("Password already exists in DB, skipping initial seed")
         return
-    if len(env_password) < 8:
+
+    secret_source = _initial_secret_source()
+    if secret_source is None:
+        return
+    if len(secret_source.password) < MIN_INITIAL_PASSWORD_LENGTH:
         logger.warning(
-            "BIMEMO_ADMIN_PASSWORD is shorter than 8 characters, skipping seed",
+            "Initial UI password from %s is shorter than %d characters, "
+            "skipping seed",
+            secret_source.source,
+            MIN_INITIAL_PASSWORD_LENGTH,
         )
         return
 
-    password_hash = _ph.hash(env_password)
+    password_hash = _ph.hash(secret_source.password)
     store = await _db_send(
         db_client,
         "store_password_hash",
         {"password_hash": password_hash},
     )
     if store.status == "success":
-        logger.info("Admin password seeded from BIMEMO_ADMIN_PASSWORD env var")
+        logger.info("Initial UI password seeded from %s", secret_source.source)
         return
-    logger.error("Failed to seed admin password: %s", store.error_message)
+    logger.error("Failed to seed initial UI password: %s", store.error_message)
 
 
 def _build_signing_handler(
@@ -445,7 +499,7 @@ def signing_proxy_main(
         )
         private_key = await _load_signing_private_key(db_client)
         logger.info("Signing Proxy: key derived, DB connection kept for auth ops")
-        await _seed_admin_password_from_env(db_client)
+        await _seed_initial_password(db_client)
         rate_limiter = LoginRateLimiter()
         signing_handler = _build_signing_handler(
             db_client,
