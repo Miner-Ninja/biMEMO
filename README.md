@@ -92,10 +92,9 @@ docker-compose -f docker/docker-compose.dev.yml up -d
 ### 6. First Setup
 
 1. Open the Web UI
-2. Enter the setup token from the backend logs
-3. Create the first admin password
-4. Configure an LLM provider in the Admin UI
-5. Start chatting
+2. Create the first application password
+3. Configure an LLM provider in the Admin UI
+4. Start chatting
 
 ## Architecture
 
@@ -160,8 +159,9 @@ All configuration via environment variables with prefix `BIMEMO_`:
 | `BIMEMO_HOST` | Bind address |
 | `BIMEMO_PORT` | Bind port |
 | `BIMEMO_LLM_PROVIDER` | `ollama` or `openrouter` |
-| `BIMEMO_KEY_SOURCE` | Key source type (currently `file`) |
-| `BIMEMO_KEY_FILE_PATH` | Path to encryption key file |
+| `BIMEMO_KEY_SOURCE` | Key source type (`password` for public installs) |
+| `BIMEMO_ENCRYPTED_KEY_FILE_PATH` | Path to encrypted master-key file |
+| `BIMEMO_UNLOCK_PASSWORD_FILE` | Optional autostart password secret file |
 | `BIMEMO_DATABASE_PATH` | Path to encrypted DB |
 
 Bot integrations (Telegram, Discord) are configured via the Admin panel and stored in the encrypted database.
@@ -184,7 +184,7 @@ docker-compose -f docker/docker-compose.dev.yml exec bimemo \
 ## Security
 
 - **Database**: Encrypted with SQLCipher (AES-256)
-- **Keys**: Master key protected by Argon2id + AES-256-GCM, stored via pluggable KeySource
+- **Keys**: Master key encrypted by the application password with Argon2id + AES-256-GCM
 - **Workers**: Isolated in-process workers with HMAC verification
 - **Processes**: Separate processes for DB, signing, credentials — each with own IPC socket
 - **API**: JWT authentication (Ed25519) + CSRF + rate limiting

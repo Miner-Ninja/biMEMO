@@ -39,8 +39,9 @@ Required base variables:
 ```env
 # Core
 BIMEMO_DEBUG=false
-BIMEMO_KEY_SOURCE=file
-BIMEMO_KEY_FILE_PATH=/data/keyfile/master.key
+BIMEMO_KEY_SOURCE=password
+BIMEMO_ENCRYPTED_KEY_FILE_PATH=/data/keyfile/master.key.enc
+BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password
 BIMEMO_DATABASE_PATH=/data/db/bimemo.db
 
 # Optional LLM provider seed
@@ -70,23 +71,40 @@ docker/caddy/certs/key.pem
 These files are ignored by git and must stay local. If you need a fresh local
 certificate, delete both files and run the script again.
 
-### 4. Master Key (Database Encryption)
+### 4. Startup Password and Database Encryption
 
-A 32-byte master key is required to encrypt the SQLCipher database.
-On first start, the entrypoint **auto-generates** the key at `/data/keyfile/master.key` inside the container (stored in the `keyfile-data` Docker volume).
+biMEMO uses one password for both database startup and Web UI login.
+The raw SQLCipher master key is not configured in public installs.
 
-To generate manually (e.g. for a pre-existing volume):
+For automatic server startup, create the local Docker secret file before the
+first start:
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml run --rm bimemo \
-  sh -c 'python -c "import os; open(\"/data/keyfile/master.key\", \"wb\").write(os.urandom(32))" && chmod 600 /data/keyfile/master.key'
+mkdir -p secrets
+printf '%s' 'replace-with-a-strong-password' > secrets/bimemo_unlock_password
+chmod 600 secrets/bimemo_unlock_password
 ```
 
-> **WARNING**: Back up this key. Losing it means losing all encrypted data.
-> The key lives in the `keyfile-data` Docker volume. To back up:
-> ```bash
-> docker-compose -f docker/docker-compose.dev.yml cp bimemo:/data/keyfile/master.key ./master.key.backup
-> ```
+The `secrets/` directory is ignored by git and must stay local. The secret file
+is plaintext: anyone who can read it can unlock the encrypted database.
+
+On first successful startup, biMEMO creates `/data/keyfile/master.key.enc` in
+the `keyfile-data` Docker volume. Back up this encrypted key file together with
+the encrypted database volume. Losing either one makes existing data unreadable.
+
+For manual-only startup, remove `BIMEMO_UNLOCK_PASSWORD_FILE` from `.env` and
+start the stack. The Web UI will ask for the same password before the full app
+starts. Manual mode stores no startup password on disk.
+
+To switch from manual startup to autostart, create
+`secrets/bimemo_unlock_password` with the same application password, restore
+`BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password` in `.env`,
+and restart the stack.
+
+To switch from autostart back to manual startup, remove
+`BIMEMO_UNLOCK_PASSWORD_FILE` from `.env`, keep the encrypted key file and
+database volumes unchanged, and restart the stack. The Web UI will ask for the
+same application password on the next start.
 
 ### 5. Start Services
 
@@ -185,9 +203,8 @@ BIMEMO_SEARXNG_URL=http://searxng:8080/search
 2. Open http://localhost:5273
 3. Open https://localhost if you need to test the backend through Caddy TLS
 4. You'll see the setup page
-5. Get the setup token from logs: `docker-compose -f docker/docker-compose.dev.yml logs bimemo | grep "Setup token"`
-6. Enter setup token and create a master password (16+ characters)
-7. Database is created and encrypted automatically
+5. Create the first application password when the setup screen appears
+6. The database is created and encrypted automatically
 
 ---
 
@@ -213,21 +230,20 @@ docker-compose -f docker/docker-compose.dev.yml exec bimemo \
 
 ## Troubleshooting
 
-### "Key file not found" or "Health check timeout for db-proxy"
+### "Encrypted key file not found" or "Health check timeout for db-proxy"
 
-The master key is auto-generated on first start. If the volume was reset or the key was lost:
+The encrypted key file is created on first successful password startup:
 
 ```bash
-docker-compose -f docker/docker-compose.dev.yml run --rm bimemo \
-  sh -c 'python -c "import os; open(\"/data/keyfile/master.key\", \"wb\").write(os.urandom(32))" && chmod 600 /data/keyfile/master.key'
-docker-compose -f docker/docker-compose.dev.yml restart bimemo
+docker-compose -f docker/docker-compose.dev.yml exec bimemo \
+  test -f /data/keyfile/master.key.enc
 ```
 
-> Note: A new key means old encrypted data is unreadable. Delete the database if starting fresh:
-> ```bash
-> docker-compose -f docker/docker-compose.dev.yml exec bimemo rm -f /data/db/bimemo.db
-> docker-compose -f docker/docker-compose.dev.yml restart bimemo
-> ```
+If the encrypted key file or database volume was lost, restore both from the
+same backup set. A new encrypted key file cannot open an old database.
+
+If you are intentionally starting fresh, remove the database and key volumes
+together, then run setup again with a new password.
 
 ### "Connection refused" errors
 
@@ -272,11 +288,11 @@ development unless you install your own trusted local certificate authority.
 
 ## Security Notes
 
-1. **Master key** — Keep safe! Without it, data is lost forever
-2. **API keys** — Never commit to git
-3. **Firewall** — Only expose ports you need
-4. **Updates** — Keep dependencies updated
-5. **Backups** — Regularly backup encrypted database via Admin panel
+1. **Startup password** — Manual mode stores no startup password on disk
+2. **Autostart secret** — The Docker secret file is plaintext; keep it private
+3. **API keys** — Never commit to git
+4. **Firewall** — Only expose ports you need
+5. **Backups** — Back up the encrypted database and encrypted key file together
 
 ---
 

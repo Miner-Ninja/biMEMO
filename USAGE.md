@@ -5,7 +5,7 @@
 ### Web Interface
 
 1. Open http://localhost:5273 for the development frontend
-2. Enter your master key
+2. Enter your application password when setup or unlock is required
 3. Start chatting!
 
 ### Telegram Bot
