@@ -1,9 +1,10 @@
-"""File-based key source that reads a raw key from disk.
+"""Internal file-based key source that reads a raw key from disk.
 
 Reads exactly 32 bytes from a specified file path. Validates file
 permissions (chmod 600) and file size before returning the key.
-Used as the default key source for SQLCipher encryption when no
-external secrets manager is configured.
+Public Docker installs use the password key source. This source remains only
+for low-level internal tests and controlled repair work where an operator
+already has a raw 32-byte SQLCipher key.
 """
 
 import logging
