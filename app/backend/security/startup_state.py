@@ -23,7 +23,9 @@ class StartupState(StrEnum):
 
 
 def _has_startup_password_source(settings: object) -> bool:
-    """Return whether settings configure any startup password source."""
+    """Return whether settings enable and configure automatic unlock."""
+    if not getattr(settings, "automatic_unlock", False):
+        return False
     return bool(
         settings.unlock_password_file is not None
         or settings.unlock_password is not None

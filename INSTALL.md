@@ -41,7 +41,7 @@ Required base variables:
 BIMEMO_DEBUG=false
 BIMEMO_KEY_SOURCE=password
 BIMEMO_ENCRYPTED_KEY_FILE_PATH=/data/keyfile/master.key.enc
-BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password
+BIMEMO_AUTOMATIC_UNLOCK=false
 BIMEMO_DATABASE_PATH=/data/db/bimemo.db
 
 # Optional LLM provider seed
@@ -71,13 +71,17 @@ docker/caddy/certs/key.pem
 These files are ignored by git and must stay local. If you need a fresh local
 certificate, delete both files and run the script again.
 
-### 4. Startup Password and Database Encryption
+### 4. Application Password and Database Encryption
 
 biMEMO uses one password for both database startup and Web UI login.
 The raw SQLCipher master key is not configured in public installs.
 
-For automatic server startup, create the local Docker secret file before the
-first start:
+The default mode is manual unlock: a person enters the application password in
+the browser when setup or unlock is required. No startup password is stored on
+disk for this mode.
+
+For automatic unlock, Docker provides the same application password from a
+local secret file. Create the file before the first start:
 
 ```bash
 mkdir -p secrets
@@ -88,23 +92,25 @@ chmod 600 secrets/bimemo_unlock_password
 The `secrets/` directory is ignored by git and must stay local. The secret file
 is plaintext: anyone who can read it can unlock the encrypted database.
 
+Then start with the automatic unlock override:
+
+```bash
+docker-compose -f docker/docker-compose.dev.yml \
+  -f docker/docker-compose.automatic-unlock.yml up -d
+```
+
 On first successful startup, biMEMO creates `/data/keyfile/master.key.enc` in
 the `keyfile-data` Docker volume. Back up this encrypted key file together with
 the encrypted database volume. Losing either one makes existing data unreadable.
 
-For manual-only startup, remove `BIMEMO_UNLOCK_PASSWORD_FILE` from `.env` and
-start the stack. The Web UI will ask for the same password before the full app
-starts. Manual mode stores no startup password on disk.
+To switch from manual unlock to automatic unlock, create
+`secrets/bimemo_unlock_password` with the same application password and restart
+with `docker/docker-compose.automatic-unlock.yml`.
 
-To switch from manual startup to autostart, create
-`secrets/bimemo_unlock_password` with the same application password, restore
-`BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password` in `.env`,
-and restart the stack.
-
-To switch from autostart back to manual startup, remove
-`BIMEMO_UNLOCK_PASSWORD_FILE` from `.env`, keep the encrypted key file and
-database volumes unchanged, and restart the stack. The Web UI will ask for the
-same application password on the next start.
+To switch from automatic unlock back to manual unlock, stop the stack and start
+again without `docker/docker-compose.automatic-unlock.yml`. Keep the encrypted
+key file and database volumes unchanged. The Web UI will ask for the same
+application password on the next start.
 
 ### 5. Start Services
 
@@ -288,8 +294,8 @@ development unless you install your own trusted local certificate authority.
 
 ## Security Notes
 
-1. **Startup password** — Manual mode stores no startup password on disk
-2. **Autostart secret** — The Docker secret file is plaintext; keep it private
+1. **Manual unlock** — Manual mode stores no application password on disk
+2. **Automatic unlock** — The Docker secret file is plaintext; keep it private
 3. **API keys** — Never commit to git
 4. **Firewall** — Only expose ports you need
 5. **Backups** — Back up the encrypted database and encrypted key file together

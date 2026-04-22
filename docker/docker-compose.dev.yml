@@ -1,4 +1,4 @@
-# biMEMO development Docker Compose (standalone).
+# biMEMO development Docker Compose (manual unlock by default).
 # Usage: docker-compose -f docker/docker-compose.dev.yml up -d --build
 
 services:
@@ -20,8 +20,6 @@ services:
       - ../.coveragerc:/app/.coveragerc
       - ../tests:/app/tests
       - ../scripts:/app/scripts
-    secrets:
-      - bimemo_unlock_password
     command: python -m backend.processes.supervisor
     environment:
       - BIMEMO_DEBUG=true
@@ -126,7 +124,3 @@ volumes:
   caddy-data:
   caddy-config:
   whisper-cache:
-
-secrets:
-  bimemo_unlock_password:
-    file: ../secrets/bimemo_unlock_password

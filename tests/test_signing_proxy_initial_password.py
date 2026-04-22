@@ -73,6 +73,7 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
         monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD_FILE", str(secret_file))
         db_client = FakeDBClient()
 
@@ -89,6 +90,7 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
         monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", VALID_STARTUP_SECRET)
         existing_hash = signing_main._ph.hash(VALID_STARTUP_SECRET)
         db_client = FakeDBClient(
@@ -108,6 +110,7 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
         monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", VALID_STARTUP_SECRET)
         db_client = FakeDBClient(
             has_password=True,
@@ -139,6 +142,7 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
         monkeypatch.setenv("BIMEMO_UNLOCK_PASSWORD", VALID_STARTUP_SECRET)
         db_client = FakeDBClient()
 
@@ -155,6 +159,7 @@ class TestSeedInitialPassword:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             str(tmp_path / "master.key.enc"),
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "false")
         monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD", raising=False)
         monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD_FILE", raising=False)
         db_client = FakeDBClient()

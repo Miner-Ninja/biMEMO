@@ -31,8 +31,9 @@ class Settings(BaseSettings):
         key_source: Key source type for SQLCipher encryption.
         key_file_path: Path to the 32-byte key file (required when key_source='file').
         encrypted_key_file_path: Path to the encrypted master-key file.
-        unlock_password_file: Optional path to a startup password file.
-        unlock_password: Optional development-only startup password.
+        automatic_unlock: Enable automatic unlock from a configured password source.
+        unlock_password_file: Optional path to an automatic unlock password file.
+        unlock_password: Optional development-only automatic unlock password.
         database_path: Path to the SQLCipher database file.
         diagnostics_database_path: Optional path to the encrypted diagnostics DB.
         diagnostics_retention_days: Number of days to keep route diagnostics.
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
     key_source: str = ""
     key_file_path: str = ""
     encrypted_key_file_path: str = ""
+    automatic_unlock: bool = False
     unlock_password_file: str | None = None
     unlock_password: str | None = None
     database_path: str
@@ -89,9 +91,14 @@ class Settings(BaseSettings):
             msg = "key_file_path is required when key_source is 'file'"
             raise ValueError(msg)
         if self.key_source == "password" and not self.encrypted_key_file_path:
-            msg = (
-                "encrypted_key_file_path is required when key_source is 'password'"
-            )
+            msg = "encrypted_key_file_path is required when key_source is 'password'"
+            raise ValueError(msg)
+        if (
+            self.key_source == "password"
+            and self.automatic_unlock
+            and not (self.unlock_password_file or self.unlock_password)
+        ):
+            msg = "automatic_unlock requires unlock_password_file or unlock_password"
             raise ValueError(msg)
         if self.diagnostics_retention_days < 1:
             msg = "diagnostics_retention_days must be at least 1"

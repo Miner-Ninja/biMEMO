@@ -19,6 +19,7 @@ class TestSettings:
         assert settings.key_source == "password"
         assert settings.key_file_path == ""
         assert settings.encrypted_key_file_path == "/tmp/test-master.key.enc"
+        assert settings.automatic_unlock is True
         assert settings.unlock_password_file is None
         assert settings.unlock_password == "test-startup-password"
         assert settings.database_path == "/tmp/test-zeroclaw.db"
@@ -57,6 +58,7 @@ class TestKeySourceValidation:
             "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
             "/tmp/test-master.key.enc",
         )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
         monkeypatch.setenv(
             "BIMEMO_UNLOCK_PASSWORD_FILE",
             "/run/secrets/bimemo_unlock_password",
@@ -67,8 +69,41 @@ class TestKeySourceValidation:
 
         assert settings.key_source == "password"
         assert settings.encrypted_key_file_path == "/tmp/test-master.key.enc"
+        assert settings.automatic_unlock is True
         assert settings.unlock_password_file == "/run/secrets/bimemo_unlock_password"
         assert settings.unlock_password == "dev-password"
+
+    def test_password_key_source_manual_unlock_valid(self, monkeypatch):
+        """Verify password key source supports manual unlock without a source."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
+        monkeypatch.setenv(
+            "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
+            "/tmp/test-master.key.enc",
+        )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "false")
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD", raising=False)
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD_FILE", raising=False)
+
+        settings = Settings()  # type: ignore[call-arg]
+
+        assert settings.key_source == "password"
+        assert settings.automatic_unlock is False
+        assert settings.unlock_password_file is None
+        assert settings.unlock_password is None
+
+    def test_automatic_unlock_missing_source_raises(self, monkeypatch):
+        """Verify automatic unlock requires an explicit password source."""
+        monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
+        monkeypatch.setenv(
+            "BIMEMO_ENCRYPTED_KEY_FILE_PATH",
+            "/tmp/test-master.key.enc",
+        )
+        monkeypatch.setenv("BIMEMO_AUTOMATIC_UNLOCK", "true")
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD", raising=False)
+        monkeypatch.delenv("BIMEMO_UNLOCK_PASSWORD_FILE", raising=False)
+
+        with pytest.raises(ValidationError, match="automatic_unlock"):
+            Settings()  # type: ignore[call-arg]
 
     def test_invalid_key_source_raises(self, monkeypatch):
         """Verify invalid key_source raises."""

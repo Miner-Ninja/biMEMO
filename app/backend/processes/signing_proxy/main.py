@@ -177,6 +177,8 @@ def _startup_secret_source(startup_password: str | None = None) -> object | None
     settings = get_settings()
     if settings.key_source != "password":
         return None
+    if not settings.automatic_unlock:
+        return None
     try:
         return load_startup_password(
             password_file=settings.unlock_password_file,

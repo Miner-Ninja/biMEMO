@@ -138,6 +138,11 @@ def _key_source_kwargs(
     if key_source == "password":
         password = startup_password
         if password is None:
+            if not getattr(settings, "automatic_unlock", False):
+                raise key_source_error(
+                    "Manual unlock password is required when automatic unlock "
+                    "is disabled"
+                )
             password_source = password_loader(
                 password_file=settings.unlock_password_file,
                 password_env=settings.unlock_password,

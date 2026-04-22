@@ -1,0 +1,16 @@
+# biMEMO automatic unlock override.
+# Usage:
+# docker-compose -f docker/docker-compose.dev.yml \
+#   -f docker/docker-compose.automatic-unlock.yml up -d --build
+
+services:
+  bimemo:
+    environment:
+      - BIMEMO_AUTOMATIC_UNLOCK=true
+      - BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password
+    secrets:
+      - bimemo_unlock_password
+
+secrets:
+  bimemo_unlock_password:
+    file: ../secrets/bimemo_unlock_password

@@ -21,6 +21,7 @@ def _set_test_env(monkeypatch):
         "BIMEMO_DEBUG": "true",
         "BIMEMO_KEY_SOURCE": "password",
         "BIMEMO_ENCRYPTED_KEY_FILE_PATH": "/tmp/test-master.key.enc",
+        "BIMEMO_AUTOMATIC_UNLOCK": "true",
         "BIMEMO_UNLOCK_PASSWORD": "test-startup-password",
         "BIMEMO_DATABASE_PATH": "/tmp/test-zeroclaw.db",
         "BIMEMO_SEARXNG_URL": "http://localhost:8888/search",

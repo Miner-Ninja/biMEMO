@@ -8,6 +8,10 @@
 2. Enter your application password when setup or unlock is required
 3. Start chatting!
 
+biMEMO has one application password. Manual unlock means a person enters that
+password in the browser. Automatic unlock means Docker provides the same
+password from a local secret file at startup.
+
 ### Telegram Bot
 
 1. Configure Telegram integration via Admin panel (see [INSTALL.md](INSTALL.md))

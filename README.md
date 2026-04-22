@@ -70,6 +70,8 @@ files stay local and must not be committed.
 
 Review `.env` before starting the stack. The default development compose file
 starts the application, frontend, Caddy, SearXNG, and speech-to-text service.
+It uses manual unlock by default: you enter the application password in the
+browser when setup or unlock is required.
 
 LLM providers can be configured after first login in the Admin UI at
 `/admin/llm`. If you prefer environment-based setup, uncomment the matching
@@ -161,7 +163,8 @@ All configuration via environment variables with prefix `BIMEMO_`:
 | `BIMEMO_LLM_PROVIDER` | `ollama` or `openrouter` |
 | `BIMEMO_KEY_SOURCE` | Key source type (`password` for public installs) |
 | `BIMEMO_ENCRYPTED_KEY_FILE_PATH` | Path to encrypted master-key file |
-| `BIMEMO_UNLOCK_PASSWORD_FILE` | Optional autostart password secret file |
+| `BIMEMO_AUTOMATIC_UNLOCK` | `false` for manual unlock, `true` for automatic unlock |
+| `BIMEMO_UNLOCK_PASSWORD_FILE` | Automatic unlock password secret file |
 | `BIMEMO_DATABASE_PATH` | Path to encrypted DB |
 
 Bot integrations (Telegram, Discord) are configured via the Admin panel and stored in the encrypted database.

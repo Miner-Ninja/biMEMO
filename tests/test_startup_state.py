@@ -12,12 +12,14 @@ class FakeSettings:
     Attributes:
         key_source: Configured key-source mode.
         encrypted_key_file_path: Path to the encrypted master-key file.
-        unlock_password_file: Optional startup secret file path.
-        unlock_password: Optional development-only startup password.
+        automatic_unlock: Whether automatic unlock is enabled.
+        unlock_password_file: Optional automatic unlock secret file path.
+        unlock_password: Optional development-only automatic unlock password.
     """
 
     key_source: str
     encrypted_key_file_path: str = ""
+    automatic_unlock: bool = False
     unlock_password_file: str | None = None
     unlock_password: str | None = None
 
@@ -52,21 +54,34 @@ class TestDetermineStartupState:
         assert determine_startup_state(settings) == StartupState.LOCKED
 
     def test_password_file_source_maps_to_auto_unlock(self, tmp_path) -> None:
-        """Verify configured password file maps to auto-unlock."""
+        """Verify enabled password file maps to auto-unlock."""
         settings = FakeSettings(
             key_source="password",
             encrypted_key_file_path=str(tmp_path / "master.key.enc"),
+            automatic_unlock=True,
             unlock_password_file="/run/secrets/bimemo_unlock_password",
         )
 
         assert determine_startup_state(settings) == StartupState.AUTO_UNLOCK
 
     def test_password_env_source_maps_to_auto_unlock(self, tmp_path) -> None:
-        """Verify configured development password maps to auto-unlock."""
+        """Verify enabled development password maps to auto-unlock."""
         settings = FakeSettings(
             key_source="password",
             encrypted_key_file_path=str(tmp_path / "master.key.enc"),
+            automatic_unlock=True,
             unlock_password="development-password",
         )
 
         assert determine_startup_state(settings) == StartupState.AUTO_UNLOCK
+
+    def test_disabled_automatic_unlock_ignores_password_source(self, tmp_path) -> None:
+        """Verify password sources are ignored when automatic unlock is disabled."""
+        settings = FakeSettings(
+            key_source="password",
+            encrypted_key_file_path=str(tmp_path / "master.key.enc"),
+            automatic_unlock=False,
+            unlock_password_file="/run/secrets/bimemo_unlock_password",
+        )
+
+        assert determine_startup_state(settings) == StartupState.SETUP

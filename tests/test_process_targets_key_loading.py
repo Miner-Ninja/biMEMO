@@ -23,13 +23,15 @@ class KeyLoadingSettings:
         key_source: Selected key source type.
         key_file_path: Path to a raw key file.
         encrypted_key_file_path: Path to an encrypted key file.
-        unlock_password_file: Optional startup secret file path.
-        unlock_password: Optional development-only startup secret.
+        automatic_unlock: Whether automatic unlock is enabled.
+        unlock_password_file: Optional automatic unlock secret file path.
+        unlock_password: Optional development-only automatic unlock secret.
     """
 
     key_source: str
     key_file_path: str = ""
     encrypted_key_file_path: str = ""
+    automatic_unlock: bool = False
     unlock_password_file: str | None = None
     unlock_password: str | None = None
 
@@ -86,6 +88,7 @@ class TestLoadMasterKey:
             KeyLoadingSettings(
                 key_source="password",
                 encrypted_key_file_path=str(encrypted_path),
+                automatic_unlock=True,
                 unlock_password_file=str(secret_path),
                 unlock_password="wrong-dev-secret",
             )
@@ -107,6 +110,7 @@ class TestLoadMasterKey:
             KeyLoadingSettings(
                 key_source="password",
                 encrypted_key_file_path=str(encrypted_path),
+                automatic_unlock=True,
                 unlock_password=VALID_STARTUP_SECRET,
             )
         )
@@ -120,7 +124,7 @@ class TestLoadMasterKey:
         """Reject password mode when no startup password source is configured."""
         encrypted_path = tmp_path / "master.key.enc"
 
-        with pytest.raises(KeySourceError, match="Startup password is required"):
+        with pytest.raises(KeySourceError, match="Manual unlock password"):
             await _load_master_key(
                 KeyLoadingSettings(
                     key_source="password",
