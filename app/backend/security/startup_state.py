@@ -11,12 +11,14 @@ class StartupState(StrEnum):
         SETUP: No encrypted key file exists and no startup password is configured.
         LOCKED: Encrypted key file exists but no startup password is configured.
         AUTO_UNLOCK: A startup password source is configured.
+        AUTO_UNLOCK_FAILED: Configured automatic unlock failed and needs manual unlock.
         READY: Legacy non-password startup can continue directly to normal services.
     """
 
     SETUP = "setup"
     LOCKED = "locked"
     AUTO_UNLOCK = "auto_unlock"
+    AUTO_UNLOCK_FAILED = "auto_unlock_failed"
     READY = "ready"
 
 

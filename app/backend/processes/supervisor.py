@@ -19,6 +19,7 @@ import signal
 from backend.ipc.supervisor import (
     ProcessSpec,
     ProcessSupervisor,
+    SupervisorError,
 )
 from backend.processes.targets import (
     CREDENTIAL_PROXY_SOCKET,
@@ -53,8 +54,11 @@ IPC_SECRET_NAMES = (
 # ============================================================
 
 
-def build_topology() -> list[ProcessSpec]:
+def build_topology(startup_password: str | None = None) -> list[ProcessSpec]:
     """Define the biMEMO process topology.
+
+    Args:
+        startup_password: Optional manual startup password kept in process memory.
 
     Returns:
         List of ProcessSpec in dependency order:
@@ -73,6 +77,7 @@ def build_topology() -> list[ProcessSpec]:
                 secrets["db-proxy-b"],
                 DB_PROXY_SOCKET_C,
                 secrets["db-proxy-c"],
+                startup_password,
             ),
             health_check=_make_socket_probe(DB_PROXY_SOCKET_A),
         ),
@@ -84,6 +89,7 @@ def build_topology() -> list[ProcessSpec]:
                 secrets["signing-proxy"],
                 DB_PROXY_SOCKET_B,
                 secrets["db-proxy-b"],
+                startup_password,
             ),
             depends_on=["db-proxy"],
             health_check=_make_socket_probe(SIGNING_PROXY_SOCKET),
@@ -144,10 +150,10 @@ def _generate_secrets() -> dict[str, bytes]:
     return {name: secrets.token_bytes(32) for name in IPC_SECRET_NAMES}
 
 
-def _build_supervisor() -> ProcessSupervisor:
+def _build_supervisor(startup_password: str | None = None) -> ProcessSupervisor:
     """Create one supervisor and register the full process topology."""
     supervisor = ProcessSupervisor()
-    for spec in build_topology():
+    for spec in build_topology(startup_password):
         supervisor.add_process(spec)
     supervisor.set_secrets(_generate_secrets())
     return supervisor
@@ -162,6 +168,51 @@ def _register_shutdown_signals(
     loop.add_signal_handler(signal.SIGINT, shutdown.set)
 
 
+async def _startup_password_from_gate(
+    settings: object,
+    startup_state: object,
+) -> str | None:
+    """Run the startup gate for states that need manual password input."""
+    from backend.processes.startup_gate import run_startup_gate
+    from backend.security.startup_state import StartupState
+
+    if startup_state in {
+        StartupState.SETUP,
+        StartupState.LOCKED,
+        StartupState.AUTO_UNLOCK_FAILED,
+    }:
+        return await run_startup_gate(settings, startup_state)
+    return None
+
+
+async def _start_supervisor_with_password_retry(
+    *,
+    settings: object,
+    startup_state: object,
+) -> ProcessSupervisor:
+    """Start the supervisor, using the startup gate after missing or bad passwords."""
+    from backend.security.startup_state import StartupState
+
+    manual_password = await _startup_password_from_gate(settings, startup_state)
+
+    while True:
+        supervisor = _build_supervisor(manual_password)
+        try:
+            await supervisor.start()
+            return supervisor
+        except SupervisorError:
+            await supervisor.shutdown()
+            if startup_state not in {
+                StartupState.AUTO_UNLOCK,
+                StartupState.LOCKED,
+                StartupState.AUTO_UNLOCK_FAILED,
+            }:
+                raise
+            logger.warning("Password startup failed; waiting for manual unlock")
+            startup_state = StartupState.AUTO_UNLOCK_FAILED
+            manual_password = await _startup_password_from_gate(settings, startup_state)
+
+
 def supervisor_main() -> None:
     """Run the biMEMO process supervisor.
 
@@ -174,19 +225,18 @@ def supervisor_main() -> None:
 
     settings = get_settings()
     configure_logging(settings.debug)
-    logger.info(
-        "biMEMO startup state: %s",
-        determine_startup_state(settings).value,
-    )
-
-    supervisor = _build_supervisor()
 
     async def run() -> None:
         """Start supervisor and wait for shutdown."""
         shutdown = asyncio.Event()
         _register_shutdown_signals(shutdown)
 
-        await supervisor.start()
+        startup_state = determine_startup_state(settings)
+        logger.info("biMEMO startup state: %s", startup_state.value)
+        supervisor = await _start_supervisor_with_password_retry(
+            settings=settings,
+            startup_state=startup_state,
+        )
         logger.info("biMEMO supervisor running (pid=%d)", os.getpid())
 
         await shutdown.wait()

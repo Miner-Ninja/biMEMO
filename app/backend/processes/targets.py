@@ -99,7 +99,10 @@ def _build_db_proxy_handler_factory(
 # ============================================================
 
 
-async def _load_master_key(settings: object) -> bytes:
+async def _load_master_key(
+    settings: object,
+    startup_password: str | None = None,
+) -> bytes:
     """Load the SQLCipher master key from the configured key source."""
     from backend.security.keysource import KeySourceError, get_key_source
     from backend.security.startup_password import load_startup_password
@@ -108,6 +111,7 @@ async def _load_master_key(settings: object) -> bytes:
         settings.key_source,
         **_key_source_kwargs(
             settings=settings,
+            startup_password=startup_password,
             password_loader=load_startup_password,
             key_source_error=KeySourceError,
         ),
@@ -118,6 +122,7 @@ async def _load_master_key(settings: object) -> bytes:
 def _key_source_kwargs(
     *,
     settings: object,
+    startup_password: str | None = None,
     password_loader: object,
     key_source_error: type[Exception],
 ) -> dict[str, str]:
@@ -126,17 +131,20 @@ def _key_source_kwargs(
     if key_source == "file":
         return {"file_path": settings.key_file_path}
     if key_source == "password":
-        password_source = password_loader(
-            password_file=settings.unlock_password_file,
-            password_env=settings.unlock_password,
-        )
-        if password_source is None:
-            raise key_source_error(
-                "Startup password is required when key_source is 'password'"
+        password = startup_password
+        if password is None:
+            password_source = password_loader(
+                password_file=settings.unlock_password_file,
+                password_env=settings.unlock_password,
             )
+            if password_source is None:
+                raise key_source_error(
+                    "Startup password is required when key_source is 'password'"
+                )
+            password = password_source.password
         return {
             "encrypted_key_file_path": settings.encrypted_key_file_path,
-            "password": password_source.password,
+            "password": password,
         }
     raise key_source_error(f"Unsupported key_source: {key_source}")
 
@@ -258,6 +266,7 @@ def _db_proxy_target(
     secret_b: bytes,
     socket_c_path: str,
     secret_c: bytes,
+    startup_password: str | None = None,
 ) -> None:
     """Entry point for the DB Proxy process.
 
@@ -271,6 +280,7 @@ def _db_proxy_target(
         secret_b: HMAC secret for Socket B.
         socket_c_path: Unix socket path for Credential Proxy channel.
         secret_c: HMAC secret for Socket C.
+        startup_password: Optional manual startup password kept in process memory.
     """
     import logging
     import signal
@@ -292,7 +302,7 @@ def _db_proxy_target(
 
     type_map = {"DBOperation": DBOperation}
     loop = asyncio.new_event_loop()
-    master_key = loop.run_until_complete(_load_master_key(settings))
+    master_key = loop.run_until_complete(_load_master_key(settings, startup_password))
     db = _open_primary_db(settings, master_key, logger)
     diagnostics_db = _open_diagnostics_db(settings, master_key)
     registry = build_registry(
@@ -413,6 +423,7 @@ def _signing_proxy_target(
     signing_secret: bytes,
     db_socket_b_path: str,
     db_secret_b: bytes,
+    startup_password: str | None = None,
 ) -> None:
     """Entry point for the Signing Proxy process.
 
@@ -421,6 +432,7 @@ def _signing_proxy_target(
         signing_secret: HMAC secret for the Signing Socket.
         db_socket_b_path: Unix socket path to DB Proxy Socket B.
         db_secret_b: HMAC secret for Socket B.
+        startup_password: Optional manual startup password kept in process memory.
     """
     from backend.processes.signing_proxy import signing_proxy_main
 
@@ -430,6 +442,7 @@ def _signing_proxy_target(
         signing_secret=signing_secret,
         db_socket_b_path=db_socket_b_path,
         db_secret_b=db_secret_b,
+        startup_password=startup_password,
     )
 
 

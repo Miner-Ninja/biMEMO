@@ -129,6 +129,23 @@ class TestProcessTopology:
         assert args[0] == SIGNING_PROXY_SOCKET
         assert args[2] == DB_PROXY_SOCKET_B
 
+    def test_manual_password_goes_to_key_holding_processes_only(self) -> None:
+        """Manual startup password is passed only where unlock and UI seed need it."""
+        specs = build_topology("manual-startup-password")
+        by_name = {process_spec.name: process_spec for process_spec in specs}
+
+        db_args = by_name["db-proxy"].args_factory(FAKE_SECRETS)
+        signing_args = by_name["signing-proxy"].args_factory(FAKE_SECRETS)
+        credential_args = by_name["credential-proxy"].args_factory(FAKE_SECRETS)
+        orchestrator_args = by_name["orchestrator"].args_factory(FAKE_SECRETS)
+        fastapi_args = by_name["fastapi"].args_factory(FAKE_SECRETS)
+
+        assert db_args[-1] == "manual-startup-password"
+        assert signing_args[-1] == "manual-startup-password"
+        assert "manual-startup-password" not in credential_args
+        assert "manual-startup-password" not in orchestrator_args
+        assert "manual-startup-password" not in fastapi_args
+
 
 class TestSocketProbe:
     """Tests for _make_socket_probe health check factory."""

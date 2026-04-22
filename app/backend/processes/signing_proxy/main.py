@@ -159,13 +159,20 @@ def _legacy_admin_secret_source() -> object | None:
     )
 
 
-def _startup_secret_source() -> object | None:
+def _startup_secret_source(startup_password: str | None = None) -> object | None:
     """Return the password-startup secret source when configured."""
     from backend.config import get_settings
     from backend.security.startup_password import (
         StartupPasswordError,
+        StartupPasswordSource,
         load_startup_password,
     )
+
+    if startup_password is not None:
+        return StartupPasswordSource(
+            password=startup_password,
+            source="startup-gate",
+        )
 
     settings = get_settings()
     if settings.key_source != "password":
@@ -180,15 +187,18 @@ def _startup_secret_source() -> object | None:
         return None
 
 
-def _initial_secret_source() -> object | None:
+def _initial_secret_source(startup_password: str | None = None) -> object | None:
     """Return the initial UI password source in priority order."""
     legacy_source = _legacy_admin_secret_source()
     if legacy_source is not None:
         return legacy_source
-    return _startup_secret_source()
+    return _startup_secret_source(startup_password)
 
 
-async def _seed_initial_password(db_client: IPCSocketClient) -> None:
+async def _seed_initial_password(
+    db_client: IPCSocketClient,
+    startup_password: str | None = None,
+) -> None:
     """Seed the initial UI password from configured startup sources."""
     check = await _db_send(db_client, "get_password_hash")
     if check.status != "success":
@@ -201,13 +211,12 @@ async def _seed_initial_password(db_client: IPCSocketClient) -> None:
         logger.debug("Password already exists in DB, skipping initial seed")
         return
 
-    secret_source = _initial_secret_source()
+    secret_source = _initial_secret_source(startup_password)
     if secret_source is None:
         return
     if len(secret_source.password) < MIN_INITIAL_PASSWORD_LENGTH:
         logger.warning(
-            "Initial UI password from %s is shorter than %d characters, "
-            "skipping seed",
+            "Initial UI password from %s is shorter than %d characters, skipping seed",
             secret_source.source,
             MIN_INITIAL_PASSWORD_LENGTH,
         )
@@ -478,6 +487,7 @@ def signing_proxy_main(
     signing_secret: bytes,
     db_socket_b_path: str,
     db_secret_b: bytes,
+    startup_password: str | None = None,
 ) -> None:
     """Entry point for the Signing Proxy process.
 
@@ -486,6 +496,7 @@ def signing_proxy_main(
         signing_secret: HMAC secret for the Signing Socket.
         db_socket_b_path: Unix socket path to DB Proxy Socket B.
         db_secret_b: HMAC secret for Socket B.
+        startup_password: Optional manual startup password kept in process memory.
     """
     type_map = {"DBOperation": DBOperation}
     db_type_map = {"DBResult": DBResult}
@@ -499,7 +510,7 @@ def signing_proxy_main(
         )
         private_key = await _load_signing_private_key(db_client)
         logger.info("Signing Proxy: key derived, DB connection kept for auth ops")
-        await _seed_initial_password(db_client)
+        await _seed_initial_password(db_client, startup_password)
         rate_limiter = LoginRateLimiter()
         signing_handler = _build_signing_handler(
             db_client,
