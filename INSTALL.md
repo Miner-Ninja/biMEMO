@@ -92,11 +92,11 @@ chmod 600 secrets/bimemo_unlock_password
 The `secrets/` directory is ignored by git and must stay local. The secret file
 is plaintext: anyone who can read it can unlock the encrypted database.
 
-Then start with the automatic unlock override:
+Then enable automatic unlock in `.env`:
 
-```bash
-docker-compose -f docker/docker-compose.dev.yml \
-  -f docker/docker-compose.automatic-unlock.yml up -d
+```env
+BIMEMO_AUTOMATIC_UNLOCK=true
+BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password
 ```
 
 On first successful startup, biMEMO creates `/data/keyfile/master.key.enc` in
@@ -104,13 +104,15 @@ the `keyfile-data` Docker volume. Back up this encrypted key file together with
 the encrypted database volume. Losing either one makes existing data unreadable.
 
 To switch from manual unlock to automatic unlock, create
-`secrets/bimemo_unlock_password` with the same application password and restart
-with `docker/docker-compose.automatic-unlock.yml`.
+`secrets/bimemo_unlock_password` with the same application password, set
+`BIMEMO_AUTOMATIC_UNLOCK=true`, set
+`BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/bimemo_unlock_password`, and restart
+the stack.
 
 To switch from automatic unlock back to manual unlock, stop the stack and start
-again without `docker/docker-compose.automatic-unlock.yml`. Keep the encrypted
-key file and database volumes unchanged. The Web UI will ask for the same
-application password on the next start.
+again with `BIMEMO_AUTOMATIC_UNLOCK=false`. Keep the encrypted key file and
+database volumes unchanged. The Web UI will ask for the same application
+password on the next start.
 
 ### 5. Start Services
 
