@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { authLogin } from '@/lib/bimemo-api'
+import { authLogin, waitForApplicationReady } from '@/lib/bimemo-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ErrorAlert } from '@/components/ui/error-alert'
@@ -11,6 +11,7 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [retryAfter, setRetryAfter] = useState(0)
+  const [startupMessage, setStartupMessage] = useState('')
 
   useEffect(() => {
     if (retryAfter <= 0) return
@@ -30,9 +31,15 @@ export function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setStartupMessage('')
 
     try {
-      await authLogin(password)
+      const result = await authLogin(password)
+      if (result.status === 'starting') {
+        setStartupMessage('Unlock accepted. Starting encrypted services.')
+        await waitForApplicationReady()
+        await authLogin(password)
+      }
       setAuthenticated(true)
     } catch (err: any) {
       if (err.status === 429) {
@@ -54,6 +61,11 @@ export function LoginPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold">biMEMO</h1>
           <p className="mt-2 text-sm text-muted-foreground">Enter your password to continue</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Manual unlock keeps the startup password out of local files. If you
+            later enable automatic startup, the Docker secret file contains this
+            same password in plaintext.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -72,6 +84,9 @@ export function LoginPage() {
           </div>
 
           <ErrorAlert error={error} />
+          {startupMessage && (
+            <p className="text-sm text-muted-foreground">{startupMessage}</p>
+          )}
 
           <Button
             type="submit"

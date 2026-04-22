@@ -5,6 +5,8 @@
 
 let csrfToken: string | null = null;
 const CSRF_FAILURE_DETAIL = "CSRF validation failed";
+const STARTUP_READY_POLL_MS = 1000;
+const STARTUP_READY_TIMEOUT_MS = 60000;
 
 /** Encode user-controlled path segments before interpolating them into URLs. */
 export function encodePathSegment(value: string): string {
@@ -51,6 +53,13 @@ export function clearCsrfToken(): void {
 export interface AuthStatus {
   needs_setup: boolean;
   authenticated: boolean;
+  startup_state?: string;
+  ready?: boolean;
+  detail?: string;
+}
+
+export interface AuthActionResult {
+  status?: string;
 }
 
 /** Check auth status: needs_setup and authenticated flags. */
@@ -62,7 +71,7 @@ export async function authStatus(): Promise<AuthStatus> {
 }
 
 /** Create password on first launch. */
-export async function authSetup(password: string): Promise<void> {
+export async function authSetup(password: string): Promise<AuthActionResult> {
   const response = await fetch("/auth/setup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -75,10 +84,11 @@ export async function authSetup(password: string): Promise<void> {
       .catch(() => ({ detail: response.statusText }));
     throw new ApiError(response.status, body.detail || response.statusText);
   }
+  return response.json().catch(() => ({}));
 }
 
 /** Login with password. */
-export async function authLogin(password: string): Promise<void> {
+export async function authLogin(password: string): Promise<AuthActionResult> {
   const response = await fetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -96,6 +106,29 @@ export async function authLogin(password: string): Promise<void> {
     apiError.retryAfter = response.headers.get("Retry-After");
     throw apiError;
   }
+  return response.json().catch(() => ({}));
+}
+
+/** Wait until the full application replaces the startup gate. */
+export async function waitForApplicationReady(): Promise<void> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < STARTUP_READY_TIMEOUT_MS) {
+    const response = await fetch("/health", { credentials: "include" }).catch(
+      () => null,
+    );
+    if (response?.ok) {
+      const body = await response.json().catch(() => ({}));
+      if (body.ready !== false && body.status === "ok") {
+        return;
+      }
+    }
+    await new Promise((resolve) =>
+      window.setTimeout(resolve, STARTUP_READY_POLL_MS),
+    );
+  }
+
+  throw new Error("Application did not finish starting in time");
 }
 
 // ============================================================

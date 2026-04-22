@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { authSetup } from '@/lib/bimemo-api'
+import { authLogin, authSetup, waitForApplicationReady } from '@/lib/bimemo-api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ErrorAlert } from '@/components/ui/error-alert'
@@ -11,6 +11,7 @@ export function SetupPage() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [startupMessage, setStartupMessage] = useState('')
 
   const passwordTooShort = password.length > 0 && password.length < 8
   const passwordsMatch = password === confirm
@@ -22,9 +23,15 @@ export function SetupPage() {
 
     setLoading(true)
     setError('')
+    setStartupMessage('')
 
     try {
-      await authSetup(password)
+      const result = await authSetup(password)
+      if (result.status === 'starting') {
+        setStartupMessage('Starting encrypted services. This can take a few seconds.')
+        await waitForApplicationReady()
+        await authLogin(password)
+      }
       setAuthenticated(true)
     } catch (err: any) {
       if (err.status === 409) {
@@ -43,6 +50,11 @@ export function SetupPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold">biMEMO</h1>
           <p className="mt-2 text-sm text-muted-foreground">Create a password to get started</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            This same password unlocks the encrypted database and signs you in.
+            To enable automatic server startup later, store this password in the
+            local Docker secret file; that file is plaintext and must stay private.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -85,6 +97,9 @@ export function SetupPage() {
           </div>
 
           <ErrorAlert error={error} />
+          {startupMessage && (
+            <p className="text-sm text-muted-foreground">{startupMessage}</p>
+          )}
 
           <Button
             type="submit"
