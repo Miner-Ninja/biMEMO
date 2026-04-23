@@ -207,9 +207,8 @@ def _build_missing_llm_response(
     """Build the standard response for a request without a configured LLM."""
     visible_answer = (
         "No LLM provider configured. "
-        "Please go to Admin → LLM Configuration and save "
-        "your provider settings, "
-        "then restart the application."
+        "Please go to Admin → LLM Configuration → add "
+        "and activate your provider settings."
     )
     return ChatResponse(
         request_id=request_id,
