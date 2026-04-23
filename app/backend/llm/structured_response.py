@@ -67,6 +67,60 @@ OPENAI_STRUCTURED_RESPONSE_FORMAT: dict[str, object] = {
     },
 }
 
+# --- Skill-extraction response contract ---
+SKILL_EXTRACTION_SCHEMA_NAME = "skill_extraction"
+SKILL_EXTRACTION_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "trigger": {"type": "string"},
+        "procedure": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string"},
+                    "query": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+                "required": ["tool", "query", "note"],
+                "additionalProperties": False,
+            },
+        },
+        "errors": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "fix": {"type": "string"},
+                },
+                "required": ["name", "fix"],
+                "additionalProperties": False,
+            },
+        },
+        "verification": {"type": "string"},
+    },
+    "required": [
+        "title",
+        "description",
+        "trigger",
+        "procedure",
+        "errors",
+        "verification",
+    ],
+    "additionalProperties": False,
+}
+OPENAI_SKILL_EXTRACTION_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": SKILL_EXTRACTION_SCHEMA_NAME,
+        "strict": True,
+        "schema": SKILL_EXTRACTION_SCHEMA,
+    },
+}
+
 
 @dataclass(frozen=True)
 class StructuredAssistantContent:
