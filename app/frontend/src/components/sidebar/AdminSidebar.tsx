@@ -8,7 +8,6 @@ import { ChatSearch } from './ChatSearch'
 import {
   getSidebarActionButtonClassName,
   getSidebarItemClassName,
-  SidebarFooterPanel,
   SidebarPanel,
   SidebarSectionLabel,
   SidebarShell,
@@ -83,7 +82,7 @@ export function AdminSidebar() {
         </SidebarPanel>
       }
       footer={
-        <SidebarFooterPanel>
+        <div className="flex flex-col gap-2">
           <Link
             to="/"
             className={getSidebarActionButtonClassName()}
@@ -92,7 +91,7 @@ export function AdminSidebar() {
             Back to Chat
           </Link>
           <UserMenu onLogout={logout} />
-        </SidebarFooterPanel>
+        </div>
       }
     />
   )

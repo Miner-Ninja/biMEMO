@@ -7,11 +7,7 @@ import { FileList } from './FileList'
 import { UserMenu } from './UserMenu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Chat } from '@/types/chat'
-import {
-  SidebarFooterPanel,
-  SidebarPanel,
-  SidebarShell,
-} from './sidebar-chrome'
+import { SidebarPanel, SidebarShell } from './sidebar-chrome'
 
 interface SidebarProps {
   chats: Chat[]
@@ -93,7 +89,7 @@ export function Sidebar({
         </SidebarPanel>
       }
       content={
-        <SidebarPanel className="h-full min-h-0 overflow-hidden">
+        <div className="h-full min-h-0 overflow-hidden">
           {activeTab === 'chats' ? (
             <ChatList
               chats={chats}
@@ -113,10 +109,10 @@ export function Sidebar({
               searchQuery={searchQuery}
             />
           )}
-        </SidebarPanel>
+        </div>
       }
       footer={
-        <SidebarFooterPanel>
+        <div className="flex flex-col gap-2">
           <NewChatButton onClick={onNewChat} />
           <UserMenu
             userName={username || 'User'}
@@ -124,7 +120,7 @@ export function Sidebar({
             voiceMode={voiceMode}
             onToggleVoiceMode={onToggleVoiceMode}
           />
-        </SidebarFooterPanel>
+        </div>
       }
     />
   )

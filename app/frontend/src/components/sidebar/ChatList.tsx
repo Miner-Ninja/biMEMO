@@ -65,7 +65,7 @@ export function ChatList({
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-4 p-2">
+      <div className="flex flex-col gap-4 py-2">
         {GROUP_ORDER.map((groupName) => {
           const groupChats = groups.get(groupName)
           if (!groupChats || groupChats.length === 0) return null

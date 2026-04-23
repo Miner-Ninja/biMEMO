@@ -73,13 +73,6 @@ export function SidebarSectionLabel({ children, className }: SidebarSectionLabel
 }
 
 /**
- * Render the shared footer surface used by both sidebars.
- */
-export function SidebarFooterPanel({ children, className }: SidebarPanelProps) {
-  return <SidebarPanel className={cn("flex flex-col gap-2 p-2", className)}>{children}</SidebarPanel>
-}
-
-/**
  * Render the shared chrome used by both app and admin sidebars.
  */
 export function SidebarShell({
@@ -92,7 +85,7 @@ export function SidebarShell({
 }: SidebarShellProps) {
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="shrink-0 px-3 pt-3">
+      <div className="shrink-0 px-2 pt-3">
         <SidebarPanel className="px-3 py-3.5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-primary/10 text-sidebar-primary">
@@ -106,11 +99,11 @@ export function SidebarShell({
         </SidebarPanel>
       </div>
 
-      {toolbar ? <div className="shrink-0 px-3 pt-3">{toolbar}</div> : null}
+      {toolbar ? <div className="shrink-0 px-2 pt-3">{toolbar}</div> : null}
 
-      <div className="min-h-0 flex-1 px-3 py-3">{content}</div>
+      <div className="min-h-0 flex-1 px-2 py-3">{content}</div>
 
-      {footer ? <div className="shrink-0 px-3 pb-3">{footer}</div> : null}
+      {footer ? <div className="shrink-0 px-2 pb-3">{footer}</div> : null}
     </div>
   )
 }
