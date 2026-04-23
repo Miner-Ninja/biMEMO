@@ -1,18 +1,24 @@
 """LLM configuration routes."""
 
+from typing import TYPE_CHECKING
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.channels.jwt_auth import TokenClaims
 from backend.llm.ollama.capabilities import (
     OllamaCapabilityError,
     detect_ollama_model_capabilities,
 )
 from backend.llm.openrouter.client import _build_auth_headers
 
-from ..clients import CredentialClient
 from ..deps import _get_credential_client, _require_auth
+
+
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import TokenClaims
+
+    from ..clients import CredentialClient
 
 
 llm_router = APIRouter(prefix="/admin/llm")
@@ -95,6 +101,41 @@ def _require_config_operation_result(result: dict[str, object]) -> dict[str, obj
     if result.get("error") == "not_found":
         raise HTTPException(status_code=404, detail="Configuration not found")
     return result
+
+
+async def _reload_llm_runtime(request: Request) -> dict[str, object]:
+    """Ask orchestrator to reload LLM runtime from saved configuration."""
+    orch_client = getattr(request.app.state, "orchestrator_client", None)
+    if orch_client is None or not orch_client.is_connected:
+        return {"success": False, "error": "orchestrator not connected"}
+
+    import uuid
+
+    try:
+        reload_result = await orch_client.send_reload_llm(request_id=str(uuid.uuid4()))
+    except Exception as error:
+        return {"success": False, "error": str(error)[:200]}
+    return {
+        "success": reload_result.success,
+        "active_provider": reload_result.active_provider,
+        "model": reload_result.model,
+        "error": reload_result.error,
+    }
+
+
+def _reload_detail(
+    *,
+    applied_detail: str,
+    restart_detail: str,
+    failed_detail: str,
+    reload_result: dict[str, object],
+) -> str:
+    """Return user-facing operation detail from one reload result."""
+    if reload_result.get("success"):
+        return applied_detail
+    if reload_result.get("error") == "orchestrator not connected":
+        return restart_detail
+    return failed_detail
 
 
 async def _probe_llm_provider(
@@ -341,19 +382,38 @@ async def update_llm_config(
     _require_config_operation_result(
         await cred.update_llm_config(config_id, credentials)
     )
-    return {"detail": "Configuration updated"}
+    reload_result = await _reload_llm_runtime(request)
+    return {
+        "detail": _reload_detail(
+            applied_detail="Configuration updated and applied.",
+            restart_detail="Configuration updated. Restart to apply.",
+            failed_detail="Configuration updated. Reload failed.",
+            reload_result=reload_result,
+        ),
+        "reload": reload_result,
+    }
 
 
 @llm_router.delete("/configs/{config_id}")
 async def delete_llm_config(
     config_id: str,
+    request: Request,
     claims: TokenClaims = Depends(_require_auth),  # noqa: B008
     cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
 ) -> dict:
     """Delete an LLM configuration and its credentials."""
     del claims
     _require_config_operation_result(await cred.delete_llm_config(config_id))
-    return {"detail": "Configuration deleted"}
+    reload_result = await _reload_llm_runtime(request)
+    return {
+        "detail": _reload_detail(
+            applied_detail="Configuration deleted and runtime reloaded.",
+            restart_detail="Configuration deleted. Restart to apply.",
+            failed_detail="Configuration deleted. Reload failed.",
+            reload_result=reload_result,
+        ),
+        "reload": reload_result,
+    }
 
 
 @llm_router.post("/configs/{config_id}/activate")
@@ -366,34 +426,15 @@ async def activate_llm_config(
     """Set an LLM configuration as active and reload the runtime when possible."""
     del claims
     _require_config_operation_result(await cred.activate_llm_config(config_id))
-    orch_client = getattr(request.app.state, "orchestrator_client", None)
-    if orch_client is None or not orch_client.is_connected:
-        return {
-            "detail": "Configuration activated. Restart to apply.",
-            "reload": {"success": False, "error": "orchestrator not connected"},
-        }
-
-    import uuid
-
-    try:
-        reload_result = await orch_client.send_reload_llm(request_id=str(uuid.uuid4()))
-    except Exception as error:
-        return {
-            "detail": "Configuration activated. Reload failed.",
-            "reload": {"success": False, "error": str(error)[:200]},
-        }
+    reload_result = await _reload_llm_runtime(request)
     return {
-        "detail": (
-            "Configuration applied."
-            if reload_result.success
-            else "Configuration activated. Reload failed."
+        "detail": _reload_detail(
+            applied_detail="Configuration applied.",
+            restart_detail="Configuration activated. Restart to apply.",
+            failed_detail="Configuration activated. Reload failed.",
+            reload_result=reload_result,
         ),
-        "reload": {
-            "success": reload_result.success,
-            "active_provider": reload_result.active_provider,
-            "model": reload_result.model,
-            "error": reload_result.error,
-        },
+        "reload": reload_result,
     }
 
 

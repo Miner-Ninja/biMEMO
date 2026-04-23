@@ -1510,7 +1510,7 @@ class TestLLMConfigCRUD:
         assert resp.status_code == 422
 
     def test_update_config(self) -> None:
-        """Update a config's model and verify change persists."""
+        """Update a config's model, reload runtime, and verify persistence."""
         client, csrf, cred = self._setup()
         headers = {"X-CSRF-Token": csrf}
 
@@ -1527,6 +1527,12 @@ class TestLLMConfigCRUD:
             headers=headers,
         )
         assert update_resp.status_code == 200
+        assert update_resp.json()["detail"] == "Configuration updated and applied."
+        assert update_resp.json()["reload"]["success"] is True
+        assert (
+            client.app.state.orchestrator_client.send_reload_llm.await_count
+            == 1
+        )
 
         # Verify via in-memory store
         assert cred._configs[config_id]["credentials"]["model"] == "new-model"
@@ -1542,7 +1548,7 @@ class TestLLMConfigCRUD:
         assert resp.status_code == 404
 
     def test_delete_config(self) -> None:
-        """Delete a config and verify it disappears from list."""
+        """Delete a config, reload runtime, and verify it disappears from list."""
         client, csrf, _credential_client = self._setup()
         headers = {"X-CSRF-Token": csrf}
 
@@ -1562,6 +1568,15 @@ class TestLLMConfigCRUD:
             headers=headers,
         )
         assert delete_resp.status_code == 200
+        assert (
+            delete_resp.json()["detail"]
+            == "Configuration deleted and runtime reloaded."
+        )
+        assert delete_resp.json()["reload"]["success"] is True
+        assert (
+            client.app.state.orchestrator_client.send_reload_llm.await_count
+            == 1
+        )
 
         list_resp = client.get("/admin/llm/configs")
         assert len(list_resp.json()["configs"]) == 0
@@ -1576,7 +1591,7 @@ class TestLLMConfigCRUD:
         assert resp.status_code == 404
 
     def test_activate_config(self) -> None:
-        """Activate a config and verify it becomes active."""
+        """Activate a config, reload runtime, and verify it becomes active."""
         client, csrf, _credential_client = self._setup()
         headers = {"X-CSRF-Token": csrf}
 
@@ -1594,6 +1609,10 @@ class TestLLMConfigCRUD:
         assert activate_resp.status_code == 200
         assert activate_resp.json()["detail"] == "Configuration applied."
         assert activate_resp.json()["reload"]["success"] is True
+        assert (
+            client.app.state.orchestrator_client.send_reload_llm.await_count
+            == 1
+        )
 
         list_resp = client.get("/admin/llm/configs")
         configs = list_resp.json()["configs"]
