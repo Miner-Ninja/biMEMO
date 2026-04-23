@@ -8,7 +8,7 @@ from .chat import chat_router
 from .chat_bridge import chat_bridge_router
 from .files import files_router
 from .health import health_router
-from .llm import llm_router
+from .llm_providers import llm_router
 from .scheduled_tasks import scheduled_tasks_router, tools_catalog_router
 from .tts import tts_router
 
