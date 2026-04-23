@@ -352,7 +352,7 @@ export const ChatMessage = memo(function ChatMessage({ message, assistantName, o
                     key={i}
                     type="button"
                     variant="outline"
-                    className="h-auto justify-start whitespace-normal rounded-xl border-primary/30 bg-primary/10 px-3.5 py-2.5 text-left text-[13px] leading-5 text-primary hover:bg-primary/15 sm:rounded-full sm:px-3 sm:py-1 sm:text-sm"
+                    className="h-auto justify-start whitespace-normal rounded-xl border-primary/60 bg-primary/30 px-3.5 py-2.5 text-left text-[13px] leading-5 text-primary-foreground hover:bg-primary/40 dark:border-primary/30 dark:bg-primary/10 dark:text-primary dark:hover:bg-primary/15 sm:rounded-full sm:px-3 sm:py-1 sm:text-sm"
                     onClick={() => onCommandClick(s)}
                   >
                     {s}
