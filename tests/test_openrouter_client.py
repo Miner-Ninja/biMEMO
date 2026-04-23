@@ -603,3 +603,178 @@ class TestMakeLlmCall:
     def test_timeout_constant(self):
         """Verify LLM call timeout is 5 minutes."""
         assert LLM_CALL_TIMEOUT == 300.0
+
+
+# --- Per-call LLMCallOptions overrides ---
+
+
+class TestOpenRouterClientOptions:
+    """Tests for per-call LLMCallOptions overrides on OpenRouter chat."""
+
+    @pytest.mark.asyncio
+    async def test_text_override_skips_response_format_field(self):
+        """Verify TEXT override omits response_format from the payload."""
+        from backend.llm.call_options import LLMCallOptions
+
+        received: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received["body"] = body
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=(
+                    b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+                    b"data: [DONE]\n\n"
+                ),
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            await client.chat(
+                [{"role": "user", "content": "hi"}],
+                options=LLMCallOptions(response_format=LlmResponseFormat.TEXT),
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert "response_format" not in received["body"]
+        assert not any(
+            msg.get("role") == "system"
+            and "requested schema" in (msg.get("content", ""))
+            for msg in received["body"]["messages"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_schema_override_replaces_default_response_format(self):
+        """Verify a custom schema replaces the default response_format block."""
+        from backend.llm.call_options import LLMCallOptions
+        from backend.llm.structured_response import SKILL_EXTRACTION_SCHEMA
+
+        received: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received["body"] = body
+            response_body = {
+                "model": STRUCTURED_OPENROUTER_MODEL,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "{}",
+                        }
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                },
+            }
+            return httpx.Response(200, json=response_body)
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            await client.chat(
+                [{"role": "user", "content": "hi"}],
+                options=LLMCallOptions(
+                    response_format=LlmResponseFormat.JSON_SCHEMA,
+                    response_schema=SKILL_EXTRACTION_SCHEMA,
+                ),
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        response_format = received["body"]["response_format"]
+        assert response_format["type"] == "json_schema"
+        assert response_format["json_schema"]["schema"] == SKILL_EXTRACTION_SCHEMA
+        assert response_format["json_schema"]["strict"] is True
+
+    @pytest.mark.asyncio
+    async def test_schema_override_returns_raw_text(self):
+        """Verify custom-schema responses land on text, not structured_content."""
+        from backend.llm.call_options import LLMCallOptions
+        from backend.llm.structured_response import SKILL_EXTRACTION_SCHEMA
+
+        raw_json = (
+            '{"title":"x","description":"d","trigger":"t","procedure":[],'
+            '"errors":[],"verification":"v"}'
+        )
+
+        async def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "model": STRUCTURED_OPENROUTER_MODEL,
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": raw_json,
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "hi"}],
+                options=LLMCallOptions(
+                    response_format=LlmResponseFormat.JSON_SCHEMA,
+                    response_schema=SKILL_EXTRACTION_SCHEMA,
+                ),
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert result.structured_content is None
+        assert result.text == raw_json
+
+    @pytest.mark.asyncio
+    async def test_options_tools_wins_over_tools_kwarg(self):
+        """Verify options.tools wins over the tools keyword argument."""
+        from backend.llm.call_options import LLMCallOptions
+
+        received: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received["tools"] = body.get("tools")
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=(
+                    b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+                    b"data: [DONE]\n\n"
+                ),
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport)
+        try:
+            kwarg_tool = {"type": "function", "function": {"name": "via_kwarg"}}
+            option_tool = {"type": "function", "function": {"name": "via_option"}}
+            await client.chat(
+                [{"role": "user", "content": "hi"}],
+                tools=[kwarg_tool],
+                options=LLMCallOptions(tools=[option_tool]),
+            )
+        finally:
+            await client.close()
+        assert received["tools"] == [option_tool]

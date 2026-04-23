@@ -1,7 +1,13 @@
 """LLM call factory shared by all provider clients.
 
-Wraps a client's .chat() method with timeout protection and
-optional SSE queue forwarding.
+Wraps a client's .chat() method with timeout protection, optional SSE
+queue forwarding, and per-call overrides via ``LLMCallOptions``.
+
+The ``LLMCallOptions`` value type is the single documented per-call
+override entry point. Legacy keyword arguments (``tools_override``,
+``tool_choice``, ``sse_queue_override``) remain accepted for backward
+compatibility; when both are passed ``options`` wins and a warning is
+logged.
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import LlmResponseFormat
 
 
@@ -70,6 +77,7 @@ class LLMClient(Protocol):
         *,
         sse_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
+        options: LLMCallOptions | None = None,
     ) -> LLMResponse:
         """Send messages and return structured response."""
         ...
@@ -82,37 +90,61 @@ def _selected_value[T](override: T | None, default: T | None) -> T | None:
     return default
 
 
-def _call_options(
+def _resolve_options(
     *,
+    options: LLMCallOptions | None,
     sse_queue_override: asyncio.Queue | None,
-    default_sse_queue: asyncio.Queue | None,
     tools_override: list[dict] | None,
+    tool_choice: object | None,
+    default_sse_queue: asyncio.Queue | None,
     default_tools: list[dict] | None,
-) -> dict[str, object]:
-    """Return the effective per-call queue and tool options."""
-    return {
-        "sse_queue": _selected_value(sse_queue_override, default_sse_queue),
-        "tools": _selected_value(tools_override, default_tools),
-    }
+) -> LLMCallOptions:
+    """Resolve per-call options, honouring legacy kwargs when needed.
+
+    When ``options`` is provided it wins over legacy kwargs and a warning
+    is logged if both are set. When ``options`` is ``None`` a synthesised
+    value is built from the legacy kwargs so downstream code sees a
+    single consistent type.
+    """
+    legacy_set = (
+        sse_queue_override is not None
+        or tools_override is not None
+        or tool_choice is not None
+    )
+    if options is not None:
+        if legacy_set:
+            logger.warning(
+                "LLM call received both options=... and legacy kwargs; "
+                "options wins and legacy kwargs are ignored",
+            )
+        return options
+    return LLMCallOptions(
+        tools=_selected_value(tools_override, default_tools),
+        tool_choice=tool_choice,
+        sse_queue=_selected_value(sse_queue_override, default_sse_queue),
+    )
 
 
 async def _call_with_timeout(
     client: LLMClient,
     *,
     messages: list[dict],
-    sse_queue: asyncio.Queue | None,
-    tools: list[dict] | None,
-    tool_choice: object | None = None,
+    options: LLMCallOptions,
+    default_sse_queue: asyncio.Queue | None,
+    default_tools: list[dict] | None,
 ) -> LLMResponse:
     """Call the client once with the shared LLM timeout."""
-    kwargs: dict[str, object] = {
-        "sse_queue": sse_queue,
-        "tools": tools,
-    }
-    if tool_choice is not None:
-        kwargs["tool_choice"] = tool_choice
+    effective_sse_queue = _selected_value(options.sse_queue, default_sse_queue)
+    effective_tools = _selected_value(options.tools, default_tools)
+    chat_options = LLMCallOptions(
+        response_format=options.response_format,
+        response_schema=options.response_schema,
+        tools=effective_tools,
+        tool_choice=options.tool_choice,
+        sse_queue=effective_sse_queue,
+    )
     return await asyncio.wait_for(
-        client.chat(messages, **kwargs),
+        client.chat(messages, options=chat_options),
         timeout=LLM_CALL_TIMEOUT,
     )
 
@@ -125,18 +157,19 @@ def make_llm_call(
     """Create an async LLM call function for the orchestrator.
 
     Args:
-        client: LLM client with a .chat(messages, sse_queue=, tools=) method.
-        sse_queue: Optional SSE queue for token forwarding.
-        tools: Optional OpenAI-format tool schemas for native function calling.
+        client: LLM client with a .chat(messages, options=) method.
+        sse_queue: Optional caller-scoped default SSE queue.
+        tools: Optional caller-scoped default OpenAI-format tool schemas.
 
     Returns:
-        Async callable accepting messages and returning LLMResponse.
+        Async callable accepting messages and optional LLMCallOptions.
     """
 
     async def llm_call(
         messages: list[dict],
         sse_queue_override: asyncio.Queue | None = None,
         *,
+        options: LLMCallOptions | None = None,
         tools_override: list[dict] | None = None,
         tool_choice: object | None = None,
     ) -> LLMResponse:
@@ -144,25 +177,29 @@ def make_llm_call(
 
         Args:
             messages: Conversation messages.
-            sse_queue_override: Optional per-call SSE queue.
-            tools_override: Optional per-call tool schema override.
-            tool_choice: Optional forced tool selection override.
+            sse_queue_override: Legacy per-call SSE queue override.
+            options: Per-call overrides bundle. When provided this wins
+                over any legacy kwargs (with a warning log).
+            tools_override: Legacy per-call tool schema override.
+            tool_choice: Legacy forced tool selection override.
 
         Returns:
             LLMResponse with text and/or tool calls.
         """
-        options = _call_options(
+        effective = _resolve_options(
+            options=options,
             sse_queue_override=sse_queue_override,
-            default_sse_queue=sse_queue,
             tools_override=tools_override,
+            tool_choice=tool_choice,
+            default_sse_queue=sse_queue,
             default_tools=tools,
         )
         return await _call_with_timeout(
             client,
             messages=messages,
-            sse_queue=options["sse_queue"],
-            tools=options["tools"],
-            tool_choice=tool_choice,
+            options=effective,
+            default_sse_queue=sse_queue,
+            default_tools=tools,
         )
 
     return llm_call

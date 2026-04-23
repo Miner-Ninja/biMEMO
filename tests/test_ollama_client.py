@@ -1058,3 +1058,211 @@ class TestProviderProperty:
         provider = client.provider
         assert provider.compute_config.mode == ComputeMode.GPU_ONLY
         assert provider.compute_config.gpu_layers == 0
+
+
+# --- Per-call LLMCallOptions overrides ---
+
+
+class TestOllamaClientOptions:
+    """Tests for per-call LLMCallOptions overrides on Ollama chat."""
+
+    @pytest.mark.asyncio
+    async def test_text_override_skips_structured_instruction(self, tmp_path):
+        """Verify TEXT override removes the structured system instruction."""
+        from backend.llm.call_options import LLMCallOptions
+
+        received: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received["messages"] = body.get("messages")
+            received["has_format"] = "format" in body
+            return httpx.Response(
+                200,
+                json=_streaming_ollama_chunk_body(
+                    {"message": {"content": "plain text", "role": "assistant"}}
+                ),
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            options=LLMCallOptions(response_format=LlmResponseFormat.TEXT),
+        )
+        sent_messages = received["messages"] or []
+        assert not any(
+            msg.get("role") == "system"
+            and "requested schema" in (msg.get("content", ""))
+            for msg in sent_messages
+        )
+        assert received["has_format"] is False
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_schema_override_replaces_default_format(self, tmp_path):
+        """Verify a custom schema replaces STRUCTURED_RESPONSE_SCHEMA."""
+        from backend.llm.call_options import LLMCallOptions
+        from backend.llm.structured_response import (
+            SKILL_EXTRACTION_SCHEMA,
+            STRUCTURED_RESPONSE_SCHEMA,
+        )
+
+        received_format: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received_format["format"] = body.get("format")
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {"role": "assistant", "content": '{"title": "x"}'},
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 0,
+                    "eval_duration": 0,
+                    "total_duration": 0,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            options=LLMCallOptions(
+                response_format=LlmResponseFormat.JSON_SCHEMA,
+                response_schema=SKILL_EXTRACTION_SCHEMA,
+            ),
+        )
+        assert received_format["format"] == SKILL_EXTRACTION_SCHEMA
+        assert received_format["format"] is not STRUCTURED_RESPONSE_SCHEMA
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_schema_override_skips_structured_parsing(self, tmp_path):
+        """Verify custom-schema responses go to text, not structured_content."""
+        from backend.llm.call_options import LLMCallOptions
+        from backend.llm.structured_response import SKILL_EXTRACTION_SCHEMA
+
+        raw_json = (
+            '{"title":"crypto","description":"d","trigger":"t",'
+            '"procedure":[],"errors":[],"verification":"v"}'
+        )
+
+        async def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {"role": "assistant", "content": raw_json},
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 0,
+                    "eval_duration": 0,
+                    "total_duration": 0,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        result = await client.chat(
+            [{"role": "user", "content": "hi"}],
+            options=LLMCallOptions(
+                response_format=LlmResponseFormat.JSON_SCHEMA,
+                response_schema=SKILL_EXTRACTION_SCHEMA,
+            ),
+        )
+        assert result.structured_content is None
+        assert result.text == raw_json
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_options_tools_wins_over_tools_kwarg(self, tmp_path):
+        """Verify options.tools wins over the tools keyword argument."""
+        from backend.llm.call_options import LLMCallOptions
+
+        received_tools: dict = {}
+
+        async def handler(request):
+            body = json.loads(request.content)
+            received_tools["tools"] = body.get("tools")
+            return httpx.Response(
+                200,
+                json=_streaming_ollama_chunk_body(
+                    {"message": {"content": "", "role": "assistant"}}
+                ),
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.TEXT,
+        )
+        kwarg_tool = {"type": "function", "function": {"name": "via_kwarg"}}
+        option_tool = {"type": "function", "function": {"name": "via_options"}}
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            tools=[kwarg_tool],
+            options=LLMCallOptions(tools=[option_tool]),
+        )
+        assert received_tools["tools"] == [option_tool]
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_options_do_not_mutate_capabilities_cache(self, tmp_path):
+        """Verify a per-call format override does not leak into the cache."""
+        from backend.llm.call_options import LLMCallOptions
+
+        async def handler(request):
+            return httpx.Response(
+                200,
+                json=_streaming_ollama_chunk_body(
+                    {"message": {"content": "ok", "role": "assistant"}}
+                ),
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        client.capabilities_registry = registry
+        await client.chat(
+            [{"role": "user", "content": "hi"}],
+            options=LLMCallOptions(response_format=LlmResponseFormat.TEXT),
+        )
+        cached = registry._cache[("ollama", "qwen3:8b")]
+        assert cached.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        await client.close()
+
+
+def _streaming_ollama_chunk_body(final_chunk: dict) -> dict:
+    """Return a minimal streaming chunk body merged with a final message."""
+    base = {
+        "model": "qwen3:8b",
+        "prompt_eval_count": 1,
+        "eval_count": 1,
+        "prompt_eval_duration": 0,
+        "eval_duration": 0,
+        "total_duration": 0,
+        "done": True,
+    }
+    base.update(final_chunk)
+    return base

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -22,6 +22,7 @@ from backend.llm.call_factory import (
     LLMResponse,
     LLMToolCall,
 )
+from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
     ContextDetectionError,
     LlmResponseFormat,
@@ -349,11 +350,15 @@ class OllamaClient:
         tools: list[dict] | None,
         *,
         capabilities: ModelCapabilities,
+        schema_override: dict | None = None,
     ) -> dict[str, object]:
         """Build the Ollama chat request payload.
 
         Capabilities are required: it is syntactically impossible to
-        construct a payload without a known context window.
+        construct a payload without a known context window. When
+        ``schema_override`` is provided and the effective format is
+        ``JSON_SCHEMA``, that schema replaces ``STRUCTURED_RESPONSE_SCHEMA``
+        in the HTTP payload for this call only.
         """
         request_messages = (
             self._structured_response_messages(messages)
@@ -367,7 +372,7 @@ class OllamaClient:
             "options": self._build_options(capabilities),
         }
         if self._uses_structured_response(capabilities):
-            payload["format"] = STRUCTURED_RESPONSE_SCHEMA
+            payload["format"] = schema_override or STRUCTURED_RESPONSE_SCHEMA
         if tools:
             payload["tools"] = tools
         return payload
@@ -577,6 +582,7 @@ class OllamaClient:
         *,
         sse_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
+        options: LLMCallOptions | None = None,
     ) -> LLMResponse:
         """Stream chat completion and return structured response.
 
@@ -586,10 +592,13 @@ class OllamaClient:
 
         Args:
             messages: List of message dicts with role/content.
-            sse_queue: Optional queue for real-time token
-                forwarding to the Web UI via SSE.
-            tools: Optional OpenAI-format tool schemas. Passed
-                through to Ollama for native tool calling.
+            sse_queue: Optional queue for real-time token forwarding to
+                the Web UI via SSE. Ignored when ``options.sse_queue`` is
+                set.
+            tools: Optional OpenAI-format tool schemas. Ignored when
+                ``options.tools`` is set.
+            options: Per-call override bundle. Any field set overrides the
+                corresponding default for this call only.
 
         Returns:
             LLMResponse wrapping the complete text.
@@ -598,12 +607,24 @@ class OllamaClient:
             OllamaClientError: If chat request fails or capabilities
                 cannot be resolved.
         """
+        effective = options or LLMCallOptions()
+        effective_sse_queue = (
+            effective.sse_queue if effective.sse_queue is not None else sse_queue
+        )
+        effective_tools = effective.tools if effective.tools is not None else tools
         capabilities = await self._resolve_for_chat()
+        if effective.response_format is not None:
+            capabilities = replace(
+                capabilities,
+                llm_response_format=effective.response_format,
+            )
         payload = self._build_chat_payload(
             messages,
-            tools,
+            effective_tools,
             capabilities=capabilities,
+            schema_override=effective.response_schema,
         )
+        skip_structured_parsing = effective.response_schema is not None
         try:
             if self._uses_structured_response(capabilities):
                 (
@@ -612,16 +633,20 @@ class OllamaClient:
                     tool_calls,
                     final_usage,
                 ) = await self._request_structured_chat(payload, capabilities)
-                structured_content = self._structured_content_from_ollama(
-                    text=raw_text,
-                    thinking=raw_thinking,
-                    tool_calls=tool_calls,
-                )
-                text = structured_content.answer if structured_content else ""
+                if skip_structured_parsing:
+                    structured_content = None
+                    text = raw_text
+                else:
+                    structured_content = self._structured_content_from_ollama(
+                        text=raw_text,
+                        thinking=raw_thinking,
+                        tool_calls=tool_calls,
+                    )
+                    text = structured_content.answer if structured_content else ""
             else:
                 full_text, tool_calls, final_usage = await self._stream_chat_chunks(
                     payload,
-                    sse_queue,
+                    effective_sse_queue,
                     capabilities,
                 )
                 text = self._final_visible_text(full_text)

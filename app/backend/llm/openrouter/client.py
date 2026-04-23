@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, ClassVar
 import httpx
 
 from backend.llm.call_factory import LLMResponse, LLMToolCall
+from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
     ContextDetectionError,
     LlmResponseFormat,
@@ -117,8 +118,14 @@ def _chat_payload(
     messages: list[dict],
     tools: list[dict] | None,
     llm_response_format: LlmResponseFormat,
+    schema_override: dict | None = None,
 ) -> dict:
-    """Build one OpenRouter chat-completions request body."""
+    """Build one OpenRouter chat-completions request body.
+
+    When ``schema_override`` is provided and the effective format is
+    ``JSON_SCHEMA``, the override schema replaces the default
+    ``OPENAI_STRUCTURED_RESPONSE_FORMAT`` for this call only.
+    """
     payload: dict = {
         "model": model,
         "messages": messages,
@@ -127,11 +134,29 @@ def _chat_payload(
     if llm_response_format is LlmResponseFormat.TEXT:
         payload["stream_options"] = {"include_usage": True}
     if llm_response_format is LlmResponseFormat.JSON_SCHEMA:
-        payload["response_format"] = OPENAI_STRUCTURED_RESPONSE_FORMAT
+        payload["response_format"] = _response_format_for(schema_override)
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = OPENROUTER_TOOL_CHOICE_AUTO
     return payload
+
+
+def _response_format_for(schema_override: dict | None) -> dict[str, object]:
+    """Return the OpenAI ``response_format`` object for this call.
+
+    When ``schema_override`` is set, wrap it in a strict ``json_schema``
+    response_format; otherwise use the default structured-response form.
+    """
+    if schema_override is None:
+        return OPENAI_STRUCTURED_RESPONSE_FORMAT
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "custom_response",
+            "strict": True,
+            "schema": schema_override,
+        },
+    }
 
 
 def _chat_response_format(
@@ -309,6 +334,7 @@ class OpenRouterClient:
         sse_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
         tool_choice: object | None = None,
+        options: LLMCallOptions | None = None,
     ) -> LLMResponse:
         """Stream chat completion and return structured response.
 
@@ -318,10 +344,15 @@ class OpenRouterClient:
 
         Args:
             messages: List of message dicts with role/content.
-            sse_queue: Optional queue for real-time token
-                forwarding to the Web UI via SSE.
-            tools: Optional OpenAI-format tool schemas.
-            tool_choice: Optional forced tool selection override.
+            sse_queue: Optional queue for real-time token forwarding to
+                the Web UI via SSE. Ignored when ``options.sse_queue`` is
+                set.
+            tools: Optional OpenAI-format tool schemas. Ignored when
+                ``options.tools`` is set.
+            tool_choice: Optional forced tool selection override. Ignored
+                when ``options.tool_choice`` is set.
+            options: Per-call override bundle. Any field set overrides the
+                corresponding default for this call only.
 
         Returns:
             LLMResponse with text and/or tool calls.
@@ -329,7 +360,15 @@ class OpenRouterClient:
         Raises:
             OpenRouterClientError: If chat request fails.
         """
-        llm_response_format = _chat_response_format(
+        effective = options or LLMCallOptions()
+        effective_sse_queue = (
+            effective.sse_queue if effective.sse_queue is not None else sse_queue
+        )
+        effective_tools = effective.tools if effective.tools is not None else tools
+        effective_tool_choice = (
+            effective.tool_choice if effective.tool_choice is not None else tool_choice
+        )
+        llm_response_format = effective.response_format or _chat_response_format(
             provider_name=self.name,
             model_name=self.model,
         )
@@ -342,14 +381,21 @@ class OpenRouterClient:
         payload = _chat_payload(
             model=self.model,
             messages=request_messages,
-            tools=tools,
+            tools=effective_tools,
             llm_response_format=llm_response_format,
+            schema_override=effective.response_schema,
         )
-        if tool_choice is not None and tools:
-            payload["tool_choice"] = tool_choice
+        if effective_tool_choice is not None and effective_tools:
+            payload["tool_choice"] = effective_tool_choice
+
+        skip_structured_parsing = effective.response_schema is not None
 
         if _uses_structured_response(llm_response_format):
-            return await self._structured_chat(payload, llm_response_format)
+            return await self._structured_chat(
+                payload,
+                llm_response_format,
+                skip_parsing=skip_structured_parsing,
+            )
 
         full_text: list[str] = []
         # Accumulate streamed tool_calls: index → {id, name, arguments_parts}
@@ -396,8 +442,8 @@ class OpenRouterClient:
                     content = delta.get("content", "")
                     if content:
                         full_text.append(content)
-                        if sse_queue is not None:
-                            await sse_queue.put(
+                        if effective_sse_queue is not None:
+                            await effective_sse_queue.put(
                                 {
                                     "type": "token",
                                     "content": content,
@@ -407,8 +453,8 @@ class OpenRouterClient:
                     # Forward reasoning content (thinking) when the upstream
                     # provider emits it as a separate channel.
                     reasoning_content = delta.get("reasoning_content", "")
-                    if reasoning_content and sse_queue is not None:
-                        await sse_queue.put(
+                    if reasoning_content and effective_sse_queue is not None:
+                        await effective_sse_queue.put(
                             {
                                 "type": "thinking",
                                 "content": reasoning_content,
@@ -608,8 +654,16 @@ class OpenRouterClient:
         self,
         payload: dict[str, object],
         llm_response_format: LlmResponseFormat,
+        *,
+        skip_parsing: bool = False,
     ) -> LLMResponse:
-        """Request one non-streaming structured OpenRouter response."""
+        """Request one non-streaming structured OpenRouter response.
+
+        When ``skip_parsing`` is ``True``, the default structured-response
+        parsing is bypassed and the raw model text is returned on
+        ``LLMResponse.text`` with ``structured_content`` left as ``None``.
+        The caller owns parsing its custom schema.
+        """
         try:
             response = await self._client.post(
                 f"{self.api_prefix}/chat/completions",
@@ -640,8 +694,12 @@ class OpenRouterClient:
         if not isinstance(message, dict):
             raise OpenRouterClientError("Structured chat response is missing a message")
         tool_calls = self._tool_calls_from_message(message)
-        structured_content = self._structured_content_from_message(message)
-        text = structured_content.answer if structured_content is not None else ""
+        if skip_parsing:
+            structured_content = None
+            text = str(message.get("content", EMPTY_ASSISTANT_CONTENT))
+        else:
+            structured_content = self._structured_content_from_message(message)
+            text = structured_content.answer if structured_content is not None else ""
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,
