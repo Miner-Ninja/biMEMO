@@ -38,7 +38,12 @@ from backend.agent.message_persistence import MessagePersistence
 from backend.agent.prompt_builder import PromptBuilder
 from backend.agent.tool_executor import ToolExecutor
 from backend.ipc.models import build_multimodal_content
-from backend.llm.structured_response import StructuredAssistantContent
+from backend.llm.call_options import LLMCallOptions
+from backend.llm.capabilities import LlmResponseFormat
+from backend.llm.structured_response import (
+    SKILL_EXTRACTION_SCHEMA,
+    StructuredAssistantContent,
+)
 from backend.llm.usage import aggregate_call_usages
 from backend.memory.classification.resolver import (
     LongTermMemoryResolver,
@@ -386,34 +391,30 @@ class AgentOrchestrator:
                 },
             ]
 
-            # Call LLM for skill generation
-            llm_response = await llm_call(skill_prompt)
-            raw_text = (
-                getattr(llm_response, "content", "")
-                or getattr(llm_response, "text", "")
-                or ""
+            # Call LLM with the skill-extraction schema so the provider
+            # enforces the six required fields. Tools are disabled for this
+            # call — small models should not be able to side-step the schema
+            # by invoking a tool.
+            llm_response = await llm_call(
+                skill_prompt,
+                options=LLMCallOptions(
+                    response_format=LlmResponseFormat.JSON_SCHEMA,
+                    response_schema=SKILL_EXTRACTION_SCHEMA,
+                    tools=[],
+                ),
             )
-
-            # Fallback: if LLM returned a tool_call instead of text,
-            # extract from tool call arguments
-            if not raw_text and hasattr(llm_response, "tool_calls"):
-                for tc in llm_response.tool_calls or []:
-                    args = getattr(tc, "arguments", {}) or {}
-                    if "content" in args:
-                        raw_text = json.dumps(args)
-                        break
+            raw_text = getattr(llm_response, "text", "") or ""
 
             if not raw_text or len(raw_text) < 20:
                 logger.warning(
                     "Skill generation returned empty response. "
-                    "Response type=%s, content=%r, text=%r",
+                    "Response type=%s, text=%r",
                     type(llm_response).__name__,
-                    getattr(llm_response, "content", None),
-                    getattr(llm_response, "text", None),
+                    raw_text,
                 )
                 return
 
-            # Parse structured JSON response from LLM
+            # Parse schema-conformant JSON response from LLM
             skill_title = message[:80]
             skill_description = f"Procedure: {' → '.join(tools_used)}"
             skill_trigger = ""
@@ -422,25 +423,25 @@ class AgentOrchestrator:
             skill_verification = ""
 
             try:
-                start = raw_text.find("{")
-                end = raw_text.rfind("}") + 1
-                if start >= 0 and end > start:
-                    parsed = json.loads(raw_text[start:end])
-                    skill_title = parsed.get("title", skill_title)
-                    skill_description = parsed.get("description", skill_description)
-                    skill_trigger = parsed.get("trigger", "")
-                    proc = parsed.get("procedure", [])
-                    skill_procedure = (
-                        json.dumps(proc) if isinstance(proc, list) else str(proc)
-                    )
-                    errs = parsed.get("errors", [])
-                    skill_errors = (
-                        json.dumps(errs) if isinstance(errs, list) else str(errs)
-                    )
-                    skill_verification = parsed.get("verification", "")
-            except json.JSONDecodeError, ValueError:
-                # Fallback: put entire response into trigger
-                logger.debug("Skill LLM response is not JSON, using as trigger text")
+                parsed = json.loads(raw_text)
+                skill_title = parsed.get("title", skill_title)
+                skill_description = parsed.get("description", skill_description)
+                skill_trigger = parsed.get("trigger", "")
+                proc = parsed.get("procedure", [])
+                skill_procedure = (
+                    json.dumps(proc) if isinstance(proc, list) else str(proc)
+                )
+                errs = parsed.get("errors", [])
+                skill_errors = json.dumps(errs) if isinstance(errs, list) else str(errs)
+                skill_verification = parsed.get("verification", "")
+            except json.JSONDecodeError:
+                # Defensive fallback: a non-conforming provider may return
+                # free-form text despite the strict schema. Preserve the
+                # response as trigger_text rather than losing the skill.
+                logger.warning(
+                    "Skill LLM response is not JSON despite schema — "
+                    "storing raw text as trigger",
+                )
                 skill_trigger = raw_text
 
             result = self.create_skill_fn(
