@@ -155,3 +155,23 @@ def make_update_conversation_processing_state_handler(
         return _conversation_payload(_conversation_row(db, p.conversation_id))
 
     return handle
+
+
+def make_reset_stuck_processing_states_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for reset_stuck_processing_states operation."""
+
+    async def handle(_params: dict[str, Any] | None) -> dict[str, Any]:
+        """Reset every active processing row to idle on orchestrator startup."""
+        cursor = db.execute(
+            "UPDATE conversations "
+            "SET processing_status = 'idle', processing_stage = '', "
+            "processing_started_at = NULL, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+            "WHERE processing_status = 'active'"
+        )
+        db.commit()
+        return {"reset_count": cursor.rowcount}
+
+    return handle

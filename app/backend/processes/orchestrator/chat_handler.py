@@ -59,12 +59,19 @@ async def _forward_request_events_to_ipc(
         event_type_value = event_data.get("type")
         if event_type_value == "token":
             event_type = StreamEventType.TOKEN
+            payload = event_data
         elif event_type_value == "thinking":
             event_type = StreamEventType.THINKING
+            payload = event_data
         elif event_type_value == "tool_status":
             event_type = StreamEventType.TOOL_STATUS
+            payload = event_data
+        elif event_type_value == "conversation_updated":
+            event_type = StreamEventType.CONVERSATION_UPDATED
+            payload = event_data.get("data", {})
         elif event_type_value == "done":
             event_type = StreamEventType.DONE
+            payload = event_data
         else:
             logger.debug(
                 "Skipping unsupported SSE event type %r",
@@ -75,7 +82,7 @@ async def _forward_request_events_to_ipc(
             StreamEvent(
                 request_id=request_id,
                 event_type=event_type,
-                data=event_data,
+                data=payload,
             )
         )
         if event_type is StreamEventType.DONE:
@@ -223,8 +230,7 @@ def _build_voice_transcription_failure_response(
 ) -> ChatResponse:
     """Build the standard response for a failed voice transcription."""
     visible_answer = (
-        "Voice transcription failed. "
-        "Please try again or send a text message."
+        "Voice transcription failed. Please try again or send a text message."
     )
     return ChatResponse(
         request_id=request_id,
@@ -241,26 +247,61 @@ def _resolve_request_processing_stage(request: ChatRequest) -> str:
     return DEFAULT_CONVERSATION_PROCESSING_STAGE
 
 
+async def _push_conversation_updated_event(
+    *,
+    orch: object,
+    conversation_id: str,
+    processing_status: str,
+    processing_stage: str,
+    processing_started_at: str | None,
+) -> None:
+    """Push a conversation_updated event onto the bound request SSE queue."""
+    sse_queue = getattr(orch, "sse_queue", None)
+    if sse_queue is None:
+        return
+    await sse_queue.put(
+        {
+            "type": "conversation_updated",
+            "data": {
+                "conversation_id": conversation_id,
+                "processing_status": processing_status,
+                "processing_stage": processing_stage,
+                "processing_started_at": processing_started_at,
+            },
+        }
+    )
+
+
 async def _mark_conversation_processing_active(
     *,
     db_client: DBProxyClient,
+    orch: object,
     conversation_id: str,
     processing_stage: str,
 ) -> None:
     """Mark one conversation as actively processing."""
     from .process_helpers import current_processing_timestamp
 
+    started_at = current_processing_timestamp()
     await db_client.update_conversation_processing_state(
         conversation_id,
         "active",
         processing_stage=processing_stage,
-        processing_started_at=current_processing_timestamp(),
+        processing_started_at=started_at,
+    )
+    await _push_conversation_updated_event(
+        orch=orch,
+        conversation_id=conversation_id,
+        processing_status="active",
+        processing_stage=processing_stage,
+        processing_started_at=started_at,
     )
 
 
 async def _mark_conversation_processing_idle(
     *,
     db_client: DBProxyClient,
+    orch: object,
     conversation_id: str,
 ) -> None:
     """Clear the processing state for one conversation."""
@@ -270,11 +311,19 @@ async def _mark_conversation_processing_idle(
         processing_stage="",
         processing_started_at=None,
     )
+    await _push_conversation_updated_event(
+        orch=orch,
+        conversation_id=conversation_id,
+        processing_status="idle",
+        processing_stage="",
+        processing_started_at=None,
+    )
 
 
 async def _run_with_processing_state[T](
     *,
     db_client: DBProxyClient,
+    orch: object,
     conversation_id: str,
     processing_stage: str,
     runner: Callable[[], Awaitable[T]],
@@ -282,6 +331,7 @@ async def _run_with_processing_state[T](
     """Run one coroutine while the conversation is marked as processing."""
     await _mark_conversation_processing_active(
         db_client=db_client,
+        orch=orch,
         conversation_id=conversation_id,
         processing_stage=processing_stage,
     )
@@ -290,6 +340,7 @@ async def _run_with_processing_state[T](
     finally:
         await _mark_conversation_processing_idle(
             db_client=db_client,
+            orch=orch,
             conversation_id=conversation_id,
         )
 
@@ -353,6 +404,7 @@ async def _run_chat_request(
     try:
         return await _run_with_processing_state(
             db_client=db_client,
+            orch=orch,
             conversation_id=request.conversation_id,
             processing_stage=_resolve_request_processing_stage(request),
             runner=lambda: _run_chat_request_with_prepared_message(

@@ -874,6 +874,10 @@ class DBProxyClient:
             processing_started_at,
         )
 
+    async def reset_stuck_processing_states(self) -> int:
+        """Reset all stuck processing rows at orchestrator startup."""
+        return await conv_ops.reset_stuck_processing_states(self)
+
     # --- User profile operations ---
 
     async def get_user_profile(self) -> dict[str, str]:

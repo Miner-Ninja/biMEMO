@@ -109,7 +109,7 @@ async def _start_runtime_event_forwarder(
     *,
     memory_event_bus: object,
     ipc_server: OrchestratorIPCServer,
- ) -> asyncio.Task:
+) -> asyncio.Task:
     """Start forwarding in-process memory events into IPC."""
     return asyncio.create_task(
         _forward_memory_events_to_ipc(
@@ -346,9 +346,7 @@ async def _reload_llm_subsystem(
             success=True,
             active_provider=active_service_type,
             model=(
-                str(llm_config.get("model", ""))
-                if llm_config is not None
-                else None
+                str(llm_config.get("model", "")) if llm_config is not None else None
             ),
         )
 
@@ -460,7 +458,7 @@ async def _prepare_runtime_core_services(
     db_client: DBProxyClient,
     settings: Settings,
     capabilities_registry: CapabilitiesRegistry,
-    ) -> tuple:
+) -> tuple:
     """Build the core broker, workers, orchestrator, and LLM pieces."""
     from backend.agent.concurrency import AgentConcurrency
 
@@ -570,6 +568,14 @@ async def _start_runtime_process(
         db_proxy_socket_a,
         db_proxy_secret_a,
     )
+    stuck_reset_count = await db_client.reset_stuck_processing_states()
+    if stuck_reset_count > 0:
+        logger.info(
+            "Cleared %d stuck processing states on startup",
+            stuck_reset_count,
+        )
+    else:
+        logger.debug("No stuck processing states to clear on startup")
     services = await _prepare_runtime_services(
         db_client=db_client,
         settings=settings,
