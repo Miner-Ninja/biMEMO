@@ -51,6 +51,7 @@ from .handlers.conversation import (
     make_create_conversation_handler,
     make_delete_conversation_handler,
     make_list_conversations_handler,
+    make_reset_stuck_processing_states_handler,
     make_update_conversation_processing_state_handler,
     make_update_conversation_title_handler,
 )
@@ -302,6 +303,7 @@ __all__ = [
     "make_load_recent_messages_handler",
     "make_mark_tainted_handler",
     "make_record_rate_limit_call_handler",
+    "make_reset_stuck_processing_states_handler",
     "make_save_conversation_summary_handler",
     "make_save_file_context_handler",
     "make_save_file_context_usage_handler",

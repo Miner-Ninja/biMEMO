@@ -48,6 +48,7 @@ from .handlers.conversation import (
     make_create_conversation_handler,
     make_delete_conversation_handler,
     make_list_conversations_handler,
+    make_reset_stuck_processing_states_handler,
     make_update_conversation_processing_state_handler,
     make_update_conversation_title_handler,
 )
@@ -166,6 +167,7 @@ SOCKET_A_OPERATIONS = {
     "delete_conversation",
     "update_conversation_title",
     "update_conversation_processing_state",
+    "reset_stuck_processing_states",
     "get_integration_config",
     "record_rate_limit_call",
     "get_recent_rate_limit_calls",
@@ -430,6 +432,10 @@ def _register_conversation_and_bridge_operations(
     registry.register(
         "update_conversation_processing_state",
         make_update_conversation_processing_state_handler(db),
+    )
+    registry.register(
+        "reset_stuck_processing_states",
+        make_reset_stuck_processing_states_handler(db),
     )
     registry.register(
         "create_chat_bridge_link",

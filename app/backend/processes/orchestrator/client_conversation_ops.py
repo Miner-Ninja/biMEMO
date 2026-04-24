@@ -297,3 +297,16 @@ async def update_conversation_processing_state(
             "processing_started_at": processing_started_at,
         },
     )
+
+
+async def reset_stuck_processing_states(client: DBProxyClient) -> int:
+    """Reset all active processing rows to idle at orchestrator startup.
+
+    Args:
+        client: DB Proxy client instance.
+
+    Returns:
+        Number of rows that were cleared from active to idle.
+    """
+    result = await client.send_operation("reset_stuck_processing_states")
+    return int(result.get("reset_count", 0))

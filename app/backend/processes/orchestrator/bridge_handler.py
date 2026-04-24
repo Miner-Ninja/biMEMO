@@ -174,6 +174,7 @@ async def _process_bridge_inbound_message(
         )
         response_text = await _run_with_processing_state(
             db_client=db_client,
+            orch=orch,
             conversation_id=conversation_id,
             processing_stage=DEFAULT_CONVERSATION_PROCESSING_STAGE,
             runner=lambda: _run_bridge_message_through_orchestrator(

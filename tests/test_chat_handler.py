@@ -1,7 +1,13 @@
 """Tests for structured assistant-response helpers."""
 
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import ChatResponse as IPCChatResponse
+from backend.ipc.models import StreamEvent, StreamEventType
 from backend.ipc.models import (
     StructuredAssistantContent as IPCStructuredAssistantContent,
 )
@@ -11,7 +17,13 @@ from backend.processes.fastapi_app.routes.chat_helpers import (
     build_conversation_message_item,
     build_http_chat_response,
 )
-from backend.processes.orchestrator.chat_handler import _build_chat_response
+from backend.processes.orchestrator.chat_handler import (
+    _build_chat_response,
+    _forward_request_events_to_ipc,
+    _mark_conversation_processing_active,
+    _mark_conversation_processing_idle,
+    _push_conversation_updated_event,
+)
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
@@ -184,3 +196,188 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
         sql=None,
         suggestions=[],
     )
+
+
+class _FakeIPCServer:
+    """Minimal IPC server stand-in that records pushed events."""
+
+    def __init__(self) -> None:
+        self.events: list[StreamEvent] = []
+
+    async def push_event(self, event: StreamEvent) -> None:
+        """Record one event for later assertions."""
+        self.events.append(event)
+
+
+def test_push_conversation_updated_event_with_bound_queue() -> None:
+    """The helper pushes a formatted dict onto the bound SSE queue."""
+    queue: asyncio.Queue = asyncio.Queue()
+    orch = SimpleNamespace(sse_queue=queue)
+
+    asyncio.run(
+        _push_conversation_updated_event(
+            orch=orch,
+            conversation_id="conv-1",
+            processing_status="active",
+            processing_stage="Processing...",
+            processing_started_at="2026-04-24T20:00:00.000",
+        )
+    )
+
+    assert queue.qsize() == 1
+    event = queue.get_nowait()
+    assert event == {
+        "type": "conversation_updated",
+        "data": {
+            "conversation_id": "conv-1",
+            "processing_status": "active",
+            "processing_stage": "Processing...",
+            "processing_started_at": "2026-04-24T20:00:00.000",
+        },
+    }
+
+
+def test_push_conversation_updated_event_no_queue_is_noop() -> None:
+    """Helper returns silently when orch has no bound SSE queue."""
+    orch = SimpleNamespace(sse_queue=None)
+
+    asyncio.run(
+        _push_conversation_updated_event(
+            orch=orch,
+            conversation_id="conv-1",
+            processing_status="idle",
+            processing_stage="",
+            processing_started_at=None,
+        )
+    )
+
+
+def test_mark_conversation_processing_idle_emits_sse_event() -> None:
+    """Marking idle writes to DB and pushes a conversation_updated event."""
+    queue: asyncio.Queue = asyncio.Queue()
+    orch = SimpleNamespace(sse_queue=queue)
+    db_client = SimpleNamespace(
+        update_conversation_processing_state=AsyncMock(return_value=None)
+    )
+
+    asyncio.run(
+        _mark_conversation_processing_idle(
+            db_client=db_client,
+            orch=orch,
+            conversation_id="conv-42",
+        )
+    )
+
+    db_client.update_conversation_processing_state.assert_awaited_once_with(
+        "conv-42",
+        "idle",
+        processing_stage="",
+        processing_started_at=None,
+    )
+    assert queue.qsize() == 1
+    event = queue.get_nowait()
+    assert event["type"] == "conversation_updated"
+    assert event["data"] == {
+        "conversation_id": "conv-42",
+        "processing_status": "idle",
+        "processing_stage": "",
+        "processing_started_at": None,
+    }
+
+
+def test_mark_conversation_processing_active_emits_sse_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Marking active writes to DB and pushes a conversation_updated event."""
+    monkeypatch.setattr(
+        "backend.processes.orchestrator.process_helpers.current_processing_timestamp",
+        lambda: "2026-04-25T10:00:00.000",
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    orch = SimpleNamespace(sse_queue=queue)
+    db_client = SimpleNamespace(
+        update_conversation_processing_state=AsyncMock(return_value=None)
+    )
+
+    asyncio.run(
+        _mark_conversation_processing_active(
+            db_client=db_client,
+            orch=orch,
+            conversation_id="conv-7",
+            processing_stage="Processing...",
+        )
+    )
+
+    db_client.update_conversation_processing_state.assert_awaited_once_with(
+        "conv-7",
+        "active",
+        processing_stage="Processing...",
+        processing_started_at="2026-04-25T10:00:00.000",
+    )
+    assert queue.qsize() == 1
+    event = queue.get_nowait()
+    assert event["data"] == {
+        "conversation_id": "conv-7",
+        "processing_status": "active",
+        "processing_stage": "Processing...",
+        "processing_started_at": "2026-04-25T10:00:00.000",
+    }
+
+
+def test_forwarder_maps_conversation_updated_to_stream_event_type() -> None:
+    """The forwarder turns a conversation_updated dict into an SSE frame."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(
+        {
+            "type": "conversation_updated",
+            "data": {
+                "conversation_id": "conv-9",
+                "processing_status": "idle",
+                "processing_stage": "",
+                "processing_started_at": None,
+            },
+        }
+    )
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-1",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.CONVERSATION_UPDATED,
+        StreamEventType.DONE,
+    ]
+    conversation_event = ipc_server.events[0]
+    assert conversation_event.request_id == "req-1"
+    assert conversation_event.data == {
+        "conversation_id": "conv-9",
+        "processing_status": "idle",
+        "processing_stage": "",
+        "processing_started_at": None,
+    }
+
+
+def test_forwarder_skips_unknown_event_types() -> None:
+    """Unknown event types do not abort the forwarder loop."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait({"type": "totally_bogus", "data": {}})
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-2",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.DONE,
+    ]
