@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 import { User, LogOut, Settings, Shield, AudioLines } from 'lucide-react'
@@ -31,6 +31,7 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
   const isAdmin = location.pathname.startsWith('/admin')
   const [open, setOpen] = useState(false)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
+  const pendingMousePosRef = useRef<{ x: number; y: number } | null>(null)
   const initials = userName
     .split(' ')
     .map((n) => n[0])
@@ -51,9 +52,42 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
     }
   }, [mousePos])
 
+  const MOUSE_POS_CLEAR_DELAY_MS = 200
+  const REOPEN_DELAY_MS = 120
+
   const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen)
-    if (!nextOpen) setMousePos(null)
+    if (nextOpen) {
+      // Opening via trigger click or keyboard. Apply the pointer position
+      // captured at the most recent mousedown, if any. Keyboard activations
+      // leave the pending ref at null so the popup anchors to the trigger
+      // by default.
+      setOpen(true)
+      if (pendingMousePosRef.current) {
+        setMousePos(pendingMousePosRef.current)
+        pendingMousePosRef.current = null
+      }
+      return
+    }
+
+    // Closing. If a new pointer click is pending (user clicked the trigger
+    // again at a different location), animate close and reopen at the new
+    // location. Otherwise just close.
+    if (pendingMousePosRef.current) {
+      const nextPos = pendingMousePosRef.current
+      pendingMousePosRef.current = null
+      setOpen(false)
+      setTimeout(() => {
+        setMousePos(nextPos)
+        setOpen(true)
+      }, REOPEN_DELAY_MS)
+      return
+    }
+
+    setOpen(false)
+    // Defer clearing until the close animation (duration-100) finishes,
+    // so the popup animates out at the click point instead of jumping
+    // to the trigger anchor mid-animation.
+    setTimeout(() => setMousePos(null), MOUSE_POS_CLEAR_DELAY_MS)
   }
 
   const handleSelect = (action: () => void) => {
@@ -69,8 +103,7 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
             variant="outline"
             className={getSidebarActionButtonClassName()}
             onMouseDown={(e) => {
-              if (open) return
-              setMousePos({ x: e.clientX, y: e.clientY })
+              pendingMousePosRef.current = { x: e.clientX, y: e.clientY }
             }}
           />
         }
@@ -93,7 +126,7 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
           className="isolate z-50"
         >
           <PopoverPrimitive.Popup
-            className="z-50 flex w-48 flex-col rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-hidden"
+            className="z-50 flex w-48 origin-(--transform-origin) flex-col rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
             data-slot="user-menu-popup"
           >
             <div className={`${ITEM_CLASS} pointer-events-none opacity-50`}>
