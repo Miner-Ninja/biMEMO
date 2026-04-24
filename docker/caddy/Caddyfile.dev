@@ -7,16 +7,54 @@
 	redir https://{host}{uri} permanent
 }
 
+# Dev mode: split API traffic to the backend and everything else to
+# the Vite dev-server so live source edits reach the browser through
+# the same TLS host, and HMR works end-to-end.
+#
+# When adding a new backend route that the SPA needs to reach, add
+# its prefix to the @api matcher below — otherwise it will fall into
+# the default handler and Vite will return a 404.
 :443 {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 
-	reverse_proxy bimemo:8000
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	@api {
+		path /auth /auth/*
+		path /csrf-token
+		path /refresh
+		path /health
+		path /chat /chat/*
+		path /stream
+		path /stop
+		path /confirm
+		path /admin /admin/*
+		path /files /files/*
+		path /bridge /bridge/*
+	}
+
+	handle @api {
+		reverse_proxy bimemo:8000 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:5173 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 }
 
+# Internal: OpenRouter API proxy (unchanged dev behaviour)
 :8080 {
 	respond /health 200
 
-	# OpenRouter API proxy
 	@api path /api/*
 	route @api {
 		reverse_proxy https://openrouter.ai {
