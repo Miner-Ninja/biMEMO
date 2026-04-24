@@ -1,16 +1,8 @@
+import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 import { User, LogOut, Settings, Shield, AudioLines } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { getSidebarActionButtonClassName } from './sidebar-chrome'
@@ -22,13 +14,23 @@ interface UserMenuProps {
   onToggleVoiceMode?: () => void
 }
 
+const ITEM_CLASS =
+  'relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground disabled:pointer-events-none disabled:opacity-50'
+
+const ITEM_DESTRUCTIVE_CLASS =
+  'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive'
+
+const SEPARATOR_CLASS = 'my-1 h-px bg-border'
+
 /**
- * User menu with avatar and dropdown actions
+ * User menu with avatar, decorative settings gear, and cursor-anchored popover.
  */
 export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoiceMode }: UserMenuProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const isAdmin = location.pathname.startsWith('/admin')
+  const [open, setOpen] = useState(false)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
   const initials = userName
     .split(' ')
     .map((n) => n[0])
@@ -36,62 +38,107 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
     .toUpperCase()
     .slice(0, 2)
 
+  const anchor = useMemo(() => {
+    if (!mousePos) return undefined
+    return {
+      getBoundingClientRect: () =>
+        DOMRect.fromRect({
+          x: mousePos.x,
+          y: mousePos.y,
+          width: 0,
+          height: 0,
+        }),
+    }
+  }, [mousePos])
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) setMousePos(null)
+  }
+
+  const handleSelect = (action: () => void) => {
+    action()
+    handleOpenChange(false)
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          className={getSidebarActionButtonClassName()}
+    <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+      <PopoverPrimitive.Trigger
+        render={
+          <Button
+            variant="outline"
+            className={getSidebarActionButtonClassName()}
+            onMouseDown={(e) => {
+              if (open) return
+              setMousePos({ x: e.clientX, y: e.clientY })
+            }}
+          />
+        }
+      >
+        <Avatar className="size-8">
+          <AvatarImage src="/avatars/user" alt="User avatar" className="object-cover" />
+          <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <span className="flex-1 truncate text-left text-sm">{userName}</span>
+        <Settings className="size-4 shrink-0 text-sidebar-foreground/60" aria-hidden />
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Positioner
+          anchor={anchor}
+          align="start"
+          side="top"
+          sideOffset={4}
+          className="isolate z-50"
         >
-          <Avatar className="h-8 w-8">
-            <AvatarImage src="/avatars/user" alt="User avatar" className="object-cover" />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <span className="truncate text-sm">{userName}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem disabled>
-          <User className="mr-2 h-4 w-4" />
-          {userName}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate(isAdmin ? '/' : '/admin')}>
-          <Shield className="mr-2 h-4 w-4" />
-          {isAdmin ? 'Back to Chat' : 'App Settings'}
-        </DropdownMenuItem>
-        {onToggleVoiceMode && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuItem
-                onSelect={(e) => {
+          <PopoverPrimitive.Popup
+            className="z-50 flex w-48 flex-col rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-hidden"
+            data-slot="user-menu-popup"
+          >
+            <div className={`${ITEM_CLASS} pointer-events-none opacity-50`}>
+              <User className="size-4" />
+              {userName}
+            </div>
+            <div className={SEPARATOR_CLASS} aria-hidden />
+            <button
+              type="button"
+              className={ITEM_CLASS}
+              onClick={() => handleSelect(() => navigate(isAdmin ? '/' : '/admin'))}
+            >
+              <Shield className="size-4" />
+              {isAdmin ? 'Back to Chat' : 'App Settings'}
+            </button>
+            {onToggleVoiceMode && (
+              <button
+                type="button"
+                className={ITEM_CLASS}
+                onClick={(e) => {
                   e.preventDefault()
                   onToggleVoiceMode()
                 }}
               >
-                <AudioLines className="mr-2 h-4 w-4" />
+                <AudioLines className="size-4" />
                 <span className="flex-1">Voice Mode</span>
                 <Switch
                   checked={Boolean(voiceMode)}
                   className="pointer-events-none ml-auto scale-75"
                   aria-label="Voice mode"
                 />
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onClick={onLogout}>
-          <LogOut className="mr-2 h-4 w-4" />
-          Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+              </button>
+            )}
+            <div className={SEPARATOR_CLASS} aria-hidden />
+            <button
+              type="button"
+              className={`${ITEM_CLASS} ${ITEM_DESTRUCTIVE_CLASS}`}
+              onClick={() => handleSelect(() => onLogout?.())}
+            >
+              <LogOut className="size-4" />
+              Sign out
+            </button>
+          </PopoverPrimitive.Popup>
+        </PopoverPrimitive.Positioner>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }
