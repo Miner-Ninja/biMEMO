@@ -778,3 +778,174 @@ class TestOpenRouterClientOptions:
         finally:
             await client.close()
         assert received["tools"] == [option_tool]
+
+
+# --- Empty-response retry behaviour ---
+
+
+class TestOpenRouterClientEmptyRetry:
+    """Verify one-retry-on-empty + warning fallback for OpenRouter."""
+
+    @pytest.mark.asyncio
+    async def test_empty_first_response_triggers_retry_that_succeeds(self):
+        """Verify an empty first structured response retries and returns the retry."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                content = ""
+            else:
+                content = json.dumps(
+                    {
+                        "answer": "Recovered",
+                        "sql": None,
+                        "suggestions": [],
+                    }
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "model": STRUCTURED_OPENROUTER_MODEL,
+                    "choices": [{"message": {"role": "assistant", "content": content}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat([{"role": "user", "content": "Hi"}])
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert call_count == 2
+        assert result.text == "Recovered"
+
+    @pytest.mark.asyncio
+    async def test_double_empty_response_surfaces_warning(self):
+        """Verify a second empty structured response yields the warning."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": STRUCTURED_OPENROUTER_MODEL,
+                    "choices": [{"message": {"role": "assistant", "content": ""}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 0},
+                },
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat([{"role": "user", "content": "Hi"}])
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert call_count == 2
+        from backend.llm.openrouter.client import EMPTY_LLM_RESPONSE_WARNING
+
+        assert result.text == EMPTY_LLM_RESPONSE_WARNING
+        assert result.structured_content is not None
+        assert result.structured_content.answer == EMPTY_LLM_RESPONSE_WARNING
+        assert result.tool_calls == []
+
+    @pytest.mark.asyncio
+    async def test_empty_streaming_response_triggers_retry(self):
+        """Verify empty streamed text also retries once before warning."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                body = "data: [DONE]\n\n"
+            else:
+                body = (
+                    'data: {"choices":[{"delta":{"content":"ok after retry"}}]}\n\n'
+                    "data: [DONE]\n\n"
+                )
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=body.encode(),
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport)
+        try:
+            result = await client.chat([{"role": "user", "content": "Hi"}])
+        finally:
+            await client.close()
+        assert call_count == 2
+        assert result.text == "ok after retry"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_response_does_not_trigger_retry(self):
+        """Verify tool_calls with empty text skip retry (tool deferral)."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": STRUCTURED_OPENROUTER_MODEL,
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "web_search",
+                                            "arguments": '{"query":"hi"}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "Hi"}],
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "description": "Search",
+                            "parameters": {"type": "object"},
+                        },
+                    }
+                ],
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+        assert call_count == 1
+        assert result.tool_calls[0].name == "web_search"

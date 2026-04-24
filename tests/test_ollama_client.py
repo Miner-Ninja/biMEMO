@@ -1266,3 +1266,195 @@ def _streaming_ollama_chunk_body(final_chunk: dict) -> dict:
     }
     base.update(final_chunk)
     return base
+
+
+# --- Empty-response retry behaviour ---
+
+
+class TestOllamaClientEmptyRetry:
+    """Verify one-retry-on-empty + warning fallback in structured mode."""
+
+    @pytest.mark.asyncio
+    async def test_empty_first_response_triggers_retry_that_succeeds(self, tmp_path):
+        """Verify an empty first response retries once and returns the retry."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                message = {"role": "assistant", "content": ""}
+            else:
+                message = {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "answer": "Recovered answer",
+                            "sql": None,
+                            "suggestions": [],
+                        }
+                    ),
+                }
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": message,
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        result = await client.chat([{"role": "user", "content": "Hi"}])
+        assert call_count == 2
+        assert result.text == "Recovered answer"
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "Recovered answer"
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_double_empty_response_surfaces_warning(self, tmp_path):
+        """Verify a second empty response produces the user-facing warning."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {"role": "assistant", "content": ""},
+                    "prompt_eval_count": 1,
+                    "eval_count": 0,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 0,
+                    "total_duration": 10,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        result = await client.chat([{"role": "user", "content": "Hi"}])
+        assert call_count == 2
+        from backend.llm.ollama.client import EMPTY_LLM_RESPONSE_WARNING
+
+        assert result.text == EMPTY_LLM_RESPONSE_WARNING
+        assert result.structured_content is not None
+        assert result.structured_content.answer == EMPTY_LLM_RESPONSE_WARNING
+        assert result.tool_calls == []
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_tool_call_response_does_not_trigger_retry(self, tmp_path):
+        """Verify empty text + tool_calls is not retried (tool deferral)."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "web_search",
+                                    "arguments": {"query": "hi"},
+                                }
+                            }
+                        ],
+                    },
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        result = await client.chat(
+            [{"role": "user", "content": "Hi"}],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+        assert call_count == 1
+        assert result.tool_calls[0].name == "web_search"
+        assert result.structured_content is None
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_non_empty_first_response_does_not_trigger_retry(self, tmp_path):
+        """Verify retry is not attempted when the first response has content."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {
+                                "answer": "First answer",
+                                "sql": None,
+                                "suggestions": [],
+                            }
+                        ),
+                    },
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        result = await client.chat([{"role": "user", "content": "Hi"}])
+        assert call_count == 1
+        assert result.text == "First answer"
+        await client.close()

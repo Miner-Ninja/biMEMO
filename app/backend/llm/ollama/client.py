@@ -59,6 +59,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+EMPTY_LLM_RESPONSE_WARNING = (
+    "LLM returned an empty response. Check your connection to LLM and try again."
+)
+
 
 class OllamaClientError(Exception):
     """Raised when Ollama client operations fail."""
@@ -576,6 +580,48 @@ class OllamaClient:
         """Resolve capabilities for the configured model via the registry."""
         return await self.capabilities_registry.get_or_detect(self, self.model)
 
+    async def _execute_chat_once(
+        self,
+        payload: dict[str, object],
+        capabilities: ModelCapabilities,
+        sse_queue: asyncio.Queue | None,
+        *,
+        skip_structured_parsing: bool,
+    ) -> tuple[
+        str,
+        list[LLMToolCall],
+        LLMCallUsage | None,
+        StructuredAssistantContent | None,
+    ]:
+        """Run one Ollama chat round and return its text + tool calls + usage.
+
+        Raises ``httpx.HTTPError`` on transport failure; the caller wraps
+        it in ``OllamaClientError``.
+        """
+        if self._uses_structured_response(capabilities):
+            (
+                raw_text,
+                raw_thinking,
+                tool_calls,
+                final_usage,
+            ) = await self._request_structured_chat(payload, capabilities)
+            if skip_structured_parsing:
+                return raw_text, tool_calls, final_usage, None
+            structured_content = self._structured_content_from_ollama(
+                text=raw_text,
+                thinking=raw_thinking,
+                tool_calls=tool_calls,
+            )
+            text = structured_content.answer if structured_content else ""
+            return text, tool_calls, final_usage, structured_content
+        full_text, tool_calls, final_usage = await self._stream_chat_chunks(
+            payload,
+            sse_queue,
+            capabilities,
+        )
+        text = self._final_visible_text(full_text)
+        return text, tool_calls, final_usage, None
+
     async def chat(
         self,
         messages: list[dict],
@@ -626,31 +672,47 @@ class OllamaClient:
         )
         skip_structured_parsing = effective.response_schema is not None
         try:
-            if self._uses_structured_response(capabilities):
+            (
+                text,
+                tool_calls,
+                final_usage,
+                structured_content,
+            ) = await self._execute_chat_once(
+                payload,
+                capabilities,
+                effective_sse_queue,
+                skip_structured_parsing=skip_structured_parsing,
+            )
+            if not text.strip() and not tool_calls:
+                logger.warning(
+                    "Ollama returned empty response with no tool calls; retrying once",
+                )
                 (
-                    raw_text,
-                    raw_thinking,
+                    text,
                     tool_calls,
                     final_usage,
-                ) = await self._request_structured_chat(payload, capabilities)
-                if skip_structured_parsing:
-                    structured_content = None
-                    text = raw_text
-                else:
-                    structured_content = self._structured_content_from_ollama(
-                        text=raw_text,
-                        thinking=raw_thinking,
-                        tool_calls=tool_calls,
-                    )
-                    text = structured_content.answer if structured_content else ""
-            else:
-                full_text, tool_calls, final_usage = await self._stream_chat_chunks(
+                    structured_content,
+                ) = await self._execute_chat_once(
                     payload,
-                    effective_sse_queue,
                     capabilities,
+                    effective_sse_queue,
+                    skip_structured_parsing=skip_structured_parsing,
                 )
-                text = self._final_visible_text(full_text)
-                structured_content = None
+                if not text.strip() and not tool_calls:
+                    logger.warning(
+                        "Ollama returned empty response on retry; "
+                        "surfacing warning to user",
+                    )
+                    text = EMPTY_LLM_RESPONSE_WARNING
+                    if (
+                        self._uses_structured_response(capabilities)
+                        and not skip_structured_parsing
+                    ):
+                        structured_content = StructuredAssistantContent(
+                            answer=EMPTY_LLM_RESPONSE_WARNING,
+                        )
+                    else:
+                        structured_content = None
         except httpx.HTTPError as e:
             raise OllamaClientError(f"Chat request failed: {e}") from e
         raw_message = self._raw_assistant_message(text, tool_calls)

@@ -48,6 +48,9 @@ ZERO_DURATION_MS = 0.0
 DONE_STREAM_MARKER = "[DONE]"
 EMPTY_ASSISTANT_CONTENT = ""
 OPENROUTER_TOOL_CHOICE_AUTO = "auto"
+EMPTY_LLM_RESPONSE_WARNING = (
+    "LLM returned an empty response. Check your connection to LLM and try again."
+)
 
 # --- Capability override sources for OpenRouter ---
 ENV_VAR_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
@@ -242,6 +245,41 @@ def _usage_from_response_body(
     )
 
 
+def _is_empty_response(response: LLMResponse) -> bool:
+    """Return whether one chat response has blank text and no tool calls."""
+    return not response.text.strip() and not response.tool_calls
+
+
+def _empty_warning_response(
+    source: LLMResponse,
+    llm_response_format: LlmResponseFormat,
+) -> LLMResponse:
+    """Build a final response carrying the empty-retry warning message.
+
+    Preserves ``usage`` from the original response so token accounting
+    still reflects the provider's work. ``structured_content`` is set
+    only when the effective format is ``JSON_SCHEMA`` so chat UIs that
+    render structured replies still see the warning as an assistant
+    answer.
+    """
+    structured_content = (
+        StructuredAssistantContent(answer=EMPTY_LLM_RESPONSE_WARNING)
+        if _uses_structured_response(llm_response_format)
+        else None
+    )
+    return LLMResponse(
+        text=EMPTY_LLM_RESPONSE_WARNING,
+        tool_calls=[],
+        raw_message={
+            "role": "assistant",
+            "content": EMPTY_LLM_RESPONSE_WARNING,
+        },
+        usage=source.usage,
+        llm_response_format=llm_response_format,
+        structured_content=structured_content,
+    )
+
+
 @dataclass
 class OpenRouterClient:
     """OpenRouter LLM client via OpenAI-compatible API.
@@ -390,13 +428,58 @@ class OpenRouterClient:
 
         skip_structured_parsing = effective.response_schema is not None
 
+        response = await self._execute_chat_once(
+            payload,
+            llm_response_format,
+            effective_sse_queue,
+            skip_structured_parsing=skip_structured_parsing,
+        )
+        if _is_empty_response(response):
+            logger.warning(
+                "OpenRouter returned empty response with no tool calls; retrying once",
+            )
+            response = await self._execute_chat_once(
+                payload,
+                llm_response_format,
+                effective_sse_queue,
+                skip_structured_parsing=skip_structured_parsing,
+            )
+            if _is_empty_response(response):
+                logger.warning(
+                    "OpenRouter returned empty response on retry; "
+                    "surfacing warning to user",
+                )
+                return _empty_warning_response(response, llm_response_format)
+        return response
+
+    async def _execute_chat_once(
+        self,
+        payload: dict[str, object],
+        llm_response_format: LlmResponseFormat,
+        sse_queue: asyncio.Queue | None,
+        *,
+        skip_structured_parsing: bool,
+    ) -> LLMResponse:
+        """Run one OpenRouter chat round and return the raw response."""
         if _uses_structured_response(llm_response_format):
             return await self._structured_chat(
                 payload,
                 llm_response_format,
                 skip_parsing=skip_structured_parsing,
             )
+        return await self._streaming_chat(
+            payload,
+            sse_queue,
+            llm_response_format,
+        )
 
+    async def _streaming_chat(
+        self,
+        payload: dict[str, object],
+        sse_queue: asyncio.Queue | None,
+        llm_response_format: LlmResponseFormat,
+    ) -> LLMResponse:
+        """Run one OpenRouter streaming chat round and return LLMResponse."""
         full_text: list[str] = []
         # Accumulate streamed tool_calls: index → {id, name, arguments_parts}
         tool_call_acc: dict[int, dict] = {}
@@ -442,8 +525,8 @@ class OpenRouterClient:
                     content = delta.get("content", "")
                     if content:
                         full_text.append(content)
-                        if effective_sse_queue is not None:
-                            await effective_sse_queue.put(
+                        if sse_queue is not None:
+                            await sse_queue.put(
                                 {
                                     "type": "token",
                                     "content": content,
@@ -453,8 +536,8 @@ class OpenRouterClient:
                     # Forward reasoning content (thinking) when the upstream
                     # provider emits it as a separate channel.
                     reasoning_content = delta.get("reasoning_content", "")
-                    if reasoning_content and effective_sse_queue is not None:
-                        await effective_sse_queue.put(
+                    if reasoning_content and sse_queue is not None:
+                        await sse_queue.put(
                             {
                                 "type": "thinking",
                                 "content": reasoning_content,

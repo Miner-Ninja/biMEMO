@@ -219,7 +219,18 @@ def parse_structured_response_json(
     *,
     thinking: str | None = None,
 ) -> StructuredAssistantContent:
-    """Parse one JSON response body into typed structured assistant content."""
+    """Parse one JSON response body into typed structured assistant content.
+
+    Empty or whitespace-only input yields an empty
+    ``StructuredAssistantContent`` rather than raising, so providers that
+    return a blank body cannot crash the client. The client-level retry
+    logic is the primary defence; this guard is the safety net.
+    """
+    if not text or not text.strip():
+        return StructuredAssistantContent(
+            answer="",
+            thinking=thinking.strip() if thinking else None,
+        )
     raw_data = json.loads(text)
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
