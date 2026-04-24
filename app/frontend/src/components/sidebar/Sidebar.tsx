@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Shield, MessageSquare, FileText } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Shield, MessageSquare, FileText, Settings } from 'lucide-react'
 import { NewChatButton } from './NewChatButton'
 import { ChatList } from './ChatList'
 import { ChatSearch } from './ChatSearch'
@@ -60,6 +61,16 @@ export function Sidebar({
       icon={Shield}
       title="biMEMO"
       subtitle="Workspace"
+      headerAction={
+        <Link
+          to="/admin"
+          aria-label="App Settings"
+          title="App Settings"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground/72 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
+      }
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
           <Tabs value={activeTab} onValueChange={(value) => switchTab(value as 'chats' | 'files')}>

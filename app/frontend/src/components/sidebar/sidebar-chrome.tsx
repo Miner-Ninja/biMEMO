@@ -9,6 +9,7 @@ interface SidebarShellProps {
   toolbar?: ReactNode
   content: ReactNode
   footer?: ReactNode
+  headerAction?: ReactNode
 }
 
 interface SidebarPanelProps {
@@ -82,19 +83,25 @@ export function SidebarShell({
   toolbar,
   content,
   footer,
+  headerAction,
 }: SidebarShellProps) {
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="shrink-0 px-2 pt-3">
         <SidebarPanel className="px-3 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-primary/10 text-sidebar-primary">
-              <Icon className="h-5 w-5" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-primary/10 text-sidebar-primary">
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-sidebar-foreground">{title}</div>
+                <div className="mt-0.5 text-xs text-sidebar-foreground/55">{subtitle}</div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-sidebar-foreground">{title}</div>
-              <div className="mt-0.5 text-xs text-sidebar-foreground/55">{subtitle}</div>
-            </div>
+            {headerAction ? (
+              <div className="shrink-0">{headerAction}</div>
+            ) : null}
           </div>
         </SidebarPanel>
       </div>
