@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
+from backend.config import get_settings
 from backend.llm.capabilities import LlmResponseFormat
 
 
-# --- Provider identifiers ---
-PROVIDER_OLLAMA = "ollama"
-
 # --- Exact provider/model overrides ---
 EXACT_RESPONSE_FORMAT_OVERRIDES: dict[tuple[str, str], LlmResponseFormat] = {}
-
-# --- Provider defaults used when no exact override exists ---
-PROVIDER_DEFAULT_RESPONSE_FORMATS: dict[str, LlmResponseFormat] = {
-    PROVIDER_OLLAMA: LlmResponseFormat.JSON_SCHEMA,
-}
 
 
 def resolve_llm_response_format(
@@ -29,14 +22,12 @@ def resolve_llm_response_format(
         model_name: Provider-specific model identifier.
 
     Returns:
-        The preferred LLM response format. Falls back to plain text when no
-        exact override or provider default is configured.
+        The preferred LLM response format. An exact ``(provider, model)``
+        override wins when present; otherwise the global setting driven
+        by ``BIMEMO_LLM_RESPONSE_FORMAT`` is used.
     """
     exact_key = (provider_name, model_name)
     exact_override = EXACT_RESPONSE_FORMAT_OVERRIDES.get(exact_key)
     if exact_override is not None:
         return exact_override
-    provider_default = PROVIDER_DEFAULT_RESPONSE_FORMATS.get(provider_name)
-    if provider_default is not None:
-        return provider_default
-    return LlmResponseFormat.TEXT
+    return LlmResponseFormat(get_settings().llm_response_format)

@@ -12,11 +12,17 @@ from pydantic_settings import BaseSettings
 
 
 SUPPORTED_KEY_SOURCES = ("file", "password")
+SUPPORTED_LLM_RESPONSE_FORMATS = ("text", "json_schema")
 
 
 def _supported_key_sources_text() -> str:
     """Return the configured key source list for error messages."""
     return ", ".join(SUPPORTED_KEY_SOURCES)
+
+
+def _supported_llm_response_formats_text() -> str:
+    """Return the configured LLM response format list for error messages."""
+    return ", ".join(SUPPORTED_LLM_RESPONSE_FORMATS)
 
 
 class Settings(BaseSettings):
@@ -40,6 +46,7 @@ class Settings(BaseSettings):
         searxng_url: Base URL for the local SearXNG search instance.
         host: HTTP server bind address.
         port: HTTP server bind port.
+        llm_response_format: LLM transport format (text or json_schema).
     """
 
     model_config = {"env_prefix": "BIMEMO_"}
@@ -57,6 +64,7 @@ class Settings(BaseSettings):
     searxng_url: str
     host: str
     port: int
+    llm_response_format: str
     whisper_endpoint: str = ""
     whisper_language: str = ""
     whisper_model: str = ""
@@ -102,6 +110,12 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.diagnostics_retention_days < 1:
             msg = "diagnostics_retention_days must be at least 1"
+            raise ValueError(msg)
+        if self.llm_response_format not in SUPPORTED_LLM_RESPONSE_FORMATS:
+            msg = (
+                f"Invalid llm_response_format: '{self.llm_response_format}'. "
+                f"Must be one of: {_supported_llm_response_formats_text()}"
+            )
             raise ValueError(msg)
         return self
 

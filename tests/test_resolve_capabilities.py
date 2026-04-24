@@ -125,7 +125,7 @@ class TestProviderResolveEnvOverride:
         assert caps.source == SOURCE_ENV_OVERRIDE
         assert caps.provider == "ollama"
         assert caps.model == TARGET_MODEL
-        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert caps.llm_response_format is LlmResponseFormat.TEXT
 
     async def test_env_zero_treated_as_unset(
         self, monkeypatch: pytest.MonkeyPatch
@@ -230,7 +230,7 @@ class TestProviderResolveUIOverride:
             await provider.close()
         assert caps.max_context_tokens == DETECT_VALUE
         assert caps.source == SOURCE_PS
-        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert caps.llm_response_format is LlmResponseFormat.TEXT
 
     async def test_ui_negative_treated_as_unset(
         self, monkeypatch: pytest.MonkeyPatch
@@ -316,7 +316,7 @@ class TestOllamaClientResolveCapabilities:
             await client.close()
         assert caps.max_context_tokens == ENV_OVERRIDE_VALUE
         assert caps.source == SOURCE_ENV_OVERRIDE
-        assert caps.llm_response_format is LlmResponseFormat.JSON_SCHEMA
+        assert caps.llm_response_format is LlmResponseFormat.TEXT
 
     async def test_ui_override_wins_over_detect(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path
