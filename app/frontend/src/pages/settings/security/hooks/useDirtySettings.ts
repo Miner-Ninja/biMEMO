@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import type { SecurityProfile, SecuritySettingValue } from "@/api/security"
 
 export interface DirtyChange {
@@ -21,17 +21,18 @@ export function useDirtySettings(
   const [draft, setDraft] = useState<Record<string, SecuritySettingValue>>(
     () => baselineSettings(baseline),
   )
-  const [baselineId, setBaselineId] = useState<string | null>(
-    baseline?.id ?? null,
-  )
 
-  // Reset the draft during render whenever the baseline profile id
-  // changes — pending edits belong to a specific profile and must
-  // not leak across an activation.
-  if (baseline?.id !== baselineId) {
-    setBaselineId(baseline?.id ?? null)
+  // The local draft must follow the baseline profile id: when
+  // the user activates a different profile, pending edits belong
+  // to the previous profile and must be dropped. Effects are the
+  // simplest, deterministic place to synchronise this — the
+  // during-render-setState alternative recommended by React docs
+  // looped against the parent's hook chain on this surface.
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- baseline-id sync */
+  useEffect(() => {
     setDraft(baselineSettings(baseline))
-  }
+  }, [baseline?.id])
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const setValue = useCallback(
     (key: string, value: SecuritySettingValue) => {
