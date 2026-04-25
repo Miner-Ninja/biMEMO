@@ -44,6 +44,15 @@ from .handlers.chat_settings import (
     make_list_chat_settings_handler,
     make_upsert_chat_settings_handler,
 )
+from .handlers.security_profiles import (
+    make_create_security_profile_handler,
+    make_delete_security_profile_handler,
+    make_get_active_security_profile_handler,
+    make_get_security_profile_handler,
+    make_list_security_profiles_handler,
+    make_set_active_security_profile_handler,
+    make_update_security_profile_handler,
+)
 from .handlers.conversation import (
     make_create_conversation_handler,
     make_delete_conversation_handler,
@@ -260,6 +269,13 @@ SOCKET_B_ONLY_OPERATIONS = {
     "skill_usage_log_list",
     "list_chat_settings",
     "upsert_chat_settings",
+    "list_security_profiles",
+    "get_security_profile",
+    "create_security_profile",
+    "update_security_profile",
+    "delete_security_profile",
+    "get_active_security_profile",
+    "set_active_security_profile",
 }
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
@@ -495,6 +511,41 @@ def _register_conversation_and_bridge_operations(
     )
 
 
+def _register_security_profile_operations(
+    registry: OperationRegistry,
+    db: DatabaseManager,
+) -> None:
+    """Register security-profile CRUD and active-selection operations."""
+    registry.register(
+        "list_security_profiles",
+        make_list_security_profiles_handler(db),
+    )
+    registry.register(
+        "get_security_profile",
+        make_get_security_profile_handler(db),
+    )
+    registry.register(
+        "create_security_profile",
+        make_create_security_profile_handler(db),
+    )
+    registry.register(
+        "update_security_profile",
+        make_update_security_profile_handler(db),
+    )
+    registry.register(
+        "delete_security_profile",
+        make_delete_security_profile_handler(db),
+    )
+    registry.register(
+        "get_active_security_profile",
+        make_get_active_security_profile_handler(db),
+    )
+    registry.register(
+        "set_active_security_profile",
+        make_set_active_security_profile_handler(db),
+    )
+
+
 def _register_integration_operations(
     registry: OperationRegistry,
     db: DatabaseManager,
@@ -635,6 +686,7 @@ def build_registry(
     _register_memory_debug_operations(registry, db)
     _register_memory_operations(registry, db)
     _register_conversation_and_bridge_operations(registry, db)
+    _register_security_profile_operations(registry, db)
     _register_integration_operations(registry, db)
     _register_misc_db_operations(registry, db)
     _register_auth_and_schema_operations(registry, db, master_key)

@@ -807,3 +807,57 @@ class UpsertChatSettingsParams(ConversationIdParams):
     """Parameters for upsert_chat_settings operation."""
 
     entries: list[ChatSettingEntry]
+
+
+# --- Security profiles ---
+
+
+class ListSecurityProfilesParams(ForbidExtraParams):
+    """Parameters for list_security_profiles / get_active operation (none)."""
+
+
+class GetSecurityProfileParams(ForbidExtraParams):
+    """Parameters for get_security_profile."""
+
+    id: str = Field(min_length=1, max_length=128)
+
+
+class CreateSecurityProfileParams(ForbidExtraParams):
+    """Parameters for create_security_profile.
+
+    base_profile_id: optional source profile (built-in or custom) to
+        clone settings from. When omitted, the new profile starts
+        from the personal preset.
+    settings_overrides: optional partial dict of editable settings
+        to apply on top of the base.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=500)
+    base_profile_id: str | None = Field(default=None, max_length=128)
+    settings_overrides: dict[str, Any] | None = None
+
+
+class UpdateSecurityProfileParams(ForbidExtraParams):
+    """Parameters for update_security_profile.
+
+    Built-in profiles reject all mutations. settings, when provided,
+    is merged on top of the existing settings dict.
+    """
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=500)
+    settings: dict[str, Any] | None = None
+
+
+class DeleteSecurityProfileParams(ForbidExtraParams):
+    """Parameters for delete_security_profile."""
+
+    id: str = Field(min_length=1, max_length=128)
+
+
+class SetActiveSecurityProfileParams(ForbidExtraParams):
+    """Parameters for set_active_security_profile."""
+
+    id: str = Field(min_length=1, max_length=128)
