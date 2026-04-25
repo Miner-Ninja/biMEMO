@@ -1,10 +1,35 @@
 """Shared test fixtures for biMEMO test suite.
 
-Provides common fixtures including test settings and
-environment variable management for isolated test execution.
+Provides common fixtures including test settings, environment
+variable management, and a personal-profile ProfileResolver
+stub that defense modules read from when tests do not wire up
+their own resolver.
 """
 
 import pytest
+
+from backend.security.profiles.builtins import PERSONAL_SETTINGS
+from backend.security.profiles.models import SecurityProfile
+from backend.security.profiles.resolver import ProfileResolver, set_resolver
+
+
+class _StubProfileStorage:
+    """Minimal storage stub that always returns the personal profile."""
+
+    async def get_active(self) -> tuple[str, SecurityProfile]:
+        """Return the canonical personal profile id and settings."""
+        return (
+            "personal",
+            SecurityProfile(
+                id="personal",
+                name="personal",
+                description="",
+                is_builtin=True,
+                settings=dict(PERSONAL_SETTINGS),
+                created_at="",
+                updated_at="",
+            ),
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -32,3 +57,32 @@ def _set_test_env(monkeypatch):
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
+
+
+@pytest.fixture(autouse=True)
+def _personal_profile_resolver():
+    """Wire a personal-profile resolver into every test by default.
+
+    Defense modules (content_filter, validation, rate_limits, agent
+    loop, trust zones, ...) read tunables via
+    ``ProfileResolver.get_resolver()``. Without this fixture every
+    test would have to construct one. Tests that need a different
+    profile call ``set_resolver(custom_resolver)`` explicitly.
+    """
+    import asyncio
+
+    from backend.security.content_filter import reset_filter_cache
+
+    resolver = ProfileResolver(_StubProfileStorage())
+    # Run load() in a fresh loop so we do not disturb any
+    # pytest-asyncio event loop the test itself may set up.
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(resolver.load())
+    finally:
+        loop.close()
+    set_resolver(resolver)
+    reset_filter_cache()
+    yield
+    set_resolver(None)
+    reset_filter_cache()

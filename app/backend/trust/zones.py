@@ -1,14 +1,18 @@
 """Trust zone configuration for tools.
 
-Provides static GREEN/YELLOW/RED zone classification with
-automatic RED for outbound operations. Includes intent detection
-to bypass confirmation when the user explicitly requested an action.
+Classifies each tool into GREEN/YELLOW/RED based on the active
+security profile's `trust.red_zone_tools` and
+`trust.yellow_zone_tools` lists. Outbound tools are tracked
+separately as a fixed capability set so callers can detect
+network-bound operations regardless of zone.
 """
 
 import logging
 import re
 from enum import StrEnum
 from typing import Any
+
+from backend.security.profiles.resolver import get_resolver
 
 
 logger = logging.getLogger(__name__)
@@ -27,30 +31,32 @@ class TrustZone(StrEnum):
     RED = "red"
 
 
-# Default zone mappings - can be overridden
-_DEFAULT_ZONES: dict[str, TrustZone] = {
-    "file_read": TrustZone.GREEN,
-    "file_search": TrustZone.GREEN,
-    "memory_recall": TrustZone.GREEN,
-    "system_status": TrustZone.GREEN,
-    "skill_create": TrustZone.GREEN,
-    "skill_search": TrustZone.GREEN,
-    "skill_load": TrustZone.GREEN,
-    "file_write": TrustZone.YELLOW,
-    "schedule_task": TrustZone.YELLOW,
-    "web_search": TrustZone.YELLOW,
-    "http_fetch": TrustZone.RED,
-    "email_send": TrustZone.RED,
-}
-
+# --- Tools whose effect is observable outside the host ---
 _OUTBOUND_TOOLS: frozenset[str] = frozenset({"http_fetch", "email_send"})
+
+# --- Catalog keys read from ProfileResolver ---
+_KEY_RED_ZONE_TOOLS = "trust.red_zone_tools"
+_KEY_YELLOW_ZONE_TOOLS = "trust.yellow_zone_tools"
+
+
+def _profile_zone_mapping() -> dict[str, TrustZone]:
+    """Build the active tool-to-zone mapping from the profile."""
+    resolver = get_resolver()
+    mapping: dict[str, TrustZone] = {}
+    for tool in resolver.get_list_str(_KEY_YELLOW_ZONE_TOOLS):
+        mapping[tool] = TrustZone.YELLOW
+    for tool in resolver.get_list_str(_KEY_RED_ZONE_TOOLS):
+        mapping[tool] = TrustZone.RED
+    return mapping
 
 
 def _zone_mapping(
     custom_zones: dict[str, TrustZone] | None = None,
 ) -> dict[str, TrustZone]:
     """Return the active tool-to-zone mapping."""
-    return custom_zones or _DEFAULT_ZONES
+    if custom_zones is not None:
+        return custom_zones
+    return _profile_zone_mapping()
 
 
 def _split_target(
@@ -71,22 +77,48 @@ def get_zone(
     tool_name: str,
     custom_zones: dict[str, TrustZone] | None = None,
 ) -> TrustZone:
-    """Get the trust zone for a tool.
-
-    Outbound tools are always RED regardless of configuration.
+    """Get the trust zone for a tool from the active profile.
 
     Args:
         tool_name: Name of the tool.
-        custom_zones: Optional custom zone mappings.
+        custom_zones: Optional override mapping (used by tests).
 
     Returns:
-        Trust zone classification.
+        Trust zone classification. Tools not present in either
+        the YELLOW or RED list default to GREEN. Unknown tools
+        always default to RED for safety; the override mapping
+        retains this guarantee for test inputs.
     """
+    if custom_zones is not None:
+        return custom_zones.get(tool_name, TrustZone.RED)
+
+    zones = _profile_zone_mapping()
+    if tool_name in zones:
+        return zones[tool_name]
     if tool_name in _OUTBOUND_TOOLS:
         return TrustZone.RED
+    # Known greens: fall through to GREEN; unknown defaults to RED.
+    if _is_known_green_tool(tool_name):
+        return TrustZone.GREEN
+    return TrustZone.RED
 
-    zones = _zone_mapping(custom_zones)
-    return zones.get(tool_name, TrustZone.RED)
+
+_KNOWN_GREEN_TOOLS: frozenset[str] = frozenset(
+    {
+        "file_read",
+        "file_search",
+        "memory_recall",
+        "system_status",
+        "skill_create",
+        "skill_search",
+        "skill_load",
+    },
+)
+
+
+def _is_known_green_tool(tool_name: str) -> bool:
+    """Return whether one tool name is in the canonical GREEN set."""
+    return tool_name in _KNOWN_GREEN_TOOLS
 
 
 def is_outbound(tool_name: str) -> bool:
@@ -98,9 +130,27 @@ def list_tools_by_zone(
     zone: TrustZone,
     custom_zones: dict[str, TrustZone] | None = None,
 ) -> list[str]:
-    """List all tools in a given trust zone."""
+    """List all known tools in a given trust zone.
+
+    The result merges the active profile's red/yellow lists with
+    the canonical GREEN tool set so callers can enumerate every
+    well-known tool (not only those explicitly mapped).
+
+    Args:
+        zone: Target zone.
+        custom_zones: Optional override mapping (used by tests).
+
+    Returns:
+        Tool names whose zone matches ``zone`` under the active
+        configuration.
+    """
     zones = _zone_mapping(custom_zones)
-    return [name for name, z in zones.items() if z == zone]
+    explicit = [name for name, z in zones.items() if z == zone]
+    if zone is TrustZone.GREEN:
+        explicit.extend(
+            tool for tool in _KNOWN_GREEN_TOOLS if zones.get(tool) is None
+        )
+    return explicit
 
 
 def split_by_zone(
