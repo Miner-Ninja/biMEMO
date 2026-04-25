@@ -27,6 +27,7 @@ def _set_test_env(monkeypatch):
         "BIMEMO_SEARXNG_URL": "http://localhost:8888/search",
         "BIMEMO_HOST": "127.0.0.1",
         "BIMEMO_PORT": "8000",
+        "BIMEMO_LLM_RESPONSE_FORMAT": "text",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)

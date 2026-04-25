@@ -26,6 +26,7 @@ class TestSettings:
         assert settings.searxng_url == "http://localhost:8888/search"
         assert settings.host == "127.0.0.1"
         assert settings.port == 8000
+        assert settings.llm_response_format == "text"
 
     def test_settings_missing_required_raises(self, monkeypatch):
         """Verify missing required env var causes ValidationError."""
@@ -123,6 +124,34 @@ class TestKeySourceValidation:
         monkeypatch.setenv("BIMEMO_KEY_SOURCE", "password")
         monkeypatch.setenv("BIMEMO_ENCRYPTED_KEY_FILE_PATH", "")
         with pytest.raises(ValidationError, match="encrypted_key_file_path"):
+            Settings()  # type: ignore[call-arg]
+
+
+class TestLlmResponseFormatValidation:
+    """Tests for the BIMEMO_LLM_RESPONSE_FORMAT setting validation."""
+
+    def test_text_value_accepted(self, monkeypatch):
+        """Verify text is a valid response format."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_FORMAT", "text")
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.llm_response_format == "text"
+
+    def test_json_schema_value_accepted(self, monkeypatch):
+        """Verify json_schema is a valid response format."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_FORMAT", "json_schema")
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.llm_response_format == "json_schema"
+
+    def test_invalid_value_raises(self, monkeypatch):
+        """Verify an unknown value raises with the accepted choices."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_FORMAT", "auto")
+        with pytest.raises(ValidationError, match="llm_response_format"):
+            Settings()  # type: ignore[call-arg]
+
+    def test_missing_value_raises(self, monkeypatch):
+        """Verify missing env var raises ValidationError."""
+        monkeypatch.delenv("BIMEMO_LLM_RESPONSE_FORMAT")
+        with pytest.raises(ValidationError):
             Settings()  # type: ignore[call-arg]
 
 
