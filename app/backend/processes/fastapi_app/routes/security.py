@@ -21,7 +21,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.channels.jwt_auth import TokenClaims
+from backend.channels.jwt_auth import (
+    TokenClaims,  # noqa: TC001 -- used by FastAPI Depends() at runtime
+)
 from backend.models.security import (
     ActivateProfileResponse,
     ActiveProfileResponse,
@@ -77,7 +79,10 @@ def _setting_to_payload(setting: SettingDef) -> SettingPayload:
     """Project one catalog SettingDef into the wire shape."""
     constraints = setting.constraints
     options = (
-        [EnumOptionPayload(value=opt.value, label=opt.label) for opt in constraints.options]
+        [
+            EnumOptionPayload(value=opt.value, label=opt.label)
+            for opt in constraints.options
+        ]
         if constraints.options is not None
         else None
     )
@@ -137,7 +142,11 @@ def _validate_or_400(settings: dict[str, Any] | None) -> None:
     except InvalidSettingValueError as exc:
         raise HTTPException(
             status_code=400,
-            detail={"error": "invalid setting value", "key": exc.key, "message": str(exc)},
+            detail={
+                "error": "invalid setting value",
+                "key": exc.key,
+                "message": str(exc),
+            },
         ) from exc
 
 

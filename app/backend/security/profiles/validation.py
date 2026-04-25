@@ -34,6 +34,7 @@ class UnknownSettingError(ValueError):
     """Raised when a payload key is not in the catalog."""
 
     def __init__(self, key: str) -> None:
+        """Build the error with the unknown key attached."""
         super().__init__(f"Unknown setting key: {key}")
         self.key = key
 
@@ -42,6 +43,7 @@ class InvalidSettingValueError(ValueError):
     """Raised when a value violates its SettingDef constraints."""
 
     def __init__(self, key: str, message: str) -> None:
+        """Build the error with the offending key and explanation."""
         super().__init__(f"{key}: {message}")
         self.key = key
 
@@ -67,7 +69,7 @@ def validate_settings_payload(settings: dict[str, Any]) -> None:
         validate_value(key, value)
 
 
-def validate_value(key: str, value: Any) -> None:
+def validate_value(key: str, value: Any) -> None:  # noqa: ANN401 -- value comes from JSON, type checked against catalog
     """Validate one value against the catalog entry for ``key``.
 
     Args:
@@ -134,10 +136,7 @@ def validate_value(key: str, value: Any) -> None:
             raise InvalidSettingValueError(
                 key, f"expected string, got {type(value).__name__}"
             )
-        if (
-            constraints.max_length is not None
-            and len(value) > constraints.max_length
-        ):
+        if constraints.max_length is not None and len(value) > constraints.max_length:
             raise InvalidSettingValueError(
                 key,
                 f"text length {len(value)} above max {constraints.max_length}",

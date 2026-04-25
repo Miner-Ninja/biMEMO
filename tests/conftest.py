@@ -7,7 +7,6 @@ their own resolver.
 """
 
 import pytest
-
 from backend.security.profiles.builtins import PERSONAL_SETTINGS
 from backend.security.profiles.models import SecurityProfile
 from backend.security.profiles.resolver import ProfileResolver, set_resolver

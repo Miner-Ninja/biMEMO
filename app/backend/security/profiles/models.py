@@ -148,6 +148,7 @@ class LockedSettingError(Exception):
     """Raised when a payload tries to mutate a locked setting key."""
 
     def __init__(self, key: str) -> None:
+        """Build the error with the offending setting key attached."""
         super().__init__(f"Setting is locked and cannot be modified: {key}")
         self.key = key
 
@@ -156,6 +157,7 @@ class ProfileNotFoundError(Exception):
     """Raised when a profile id does not exist in storage."""
 
     def __init__(self, profile_id: str) -> None:
+        """Build the error with the missing profile id attached."""
         super().__init__(f"Profile not found: {profile_id}")
         self.profile_id = profile_id
 

@@ -21,10 +21,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from backend.security.profiles.catalog import get_setting_def
-from backend.security.profiles.models import SettingValue
 
 
 if TYPE_CHECKING:
+    from backend.security.profiles.models import SettingValue
     from backend.security.profiles.storage import ProfileStorage
 
 
@@ -95,7 +95,7 @@ class ProfileResolver:
             len(self._settings),
         )
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:  # noqa: ANN401 -- catalog values are intentionally mixed-type
         """Return the active value for one setting key.
 
         Resolution order:
@@ -163,7 +163,9 @@ class ProfileResolver:
     def get_list_str(self, key: str) -> list[str]:
         """Return a list[str] setting; raises on shape mismatch."""
         value = self.get(key)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) for item in value
+        ):
             raise TypeError(f"Setting {key!r} is not list[str]")
         return list(value)
 

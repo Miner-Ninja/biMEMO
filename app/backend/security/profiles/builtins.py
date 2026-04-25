@@ -17,9 +17,7 @@ from backend.security.profiles.models import BuiltinName, SettingValue
 def _preset_from_attr(default_attr: str) -> dict[str, SettingValue]:
     """Build one preset dict from the named default attribute on SettingDef."""
     return {
-        entry.key: getattr(entry, default_attr)
-        for entry in CATALOG
-        if not entry.locked
+        entry.key: getattr(entry, default_attr) for entry in CATALOG if not entry.locked
     }
 
 
@@ -46,7 +44,10 @@ _BUILTIN_DESCRIPTIONS: dict[str, tuple[str, str]] = {
     ),
     BuiltinName.DEVELOPER.value: (
         "Программист",
-        "Свобода для кода: ослаблены input/output-фильтры, разрешены локальные сети, расширены лимиты.",
+        (
+            "Свобода для кода: ослаблены input/output-фильтры, "
+            "разрешены локальные сети, расширены лимиты."
+        ),
     ),
 }
 

@@ -16,15 +16,18 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from backend.security.database import DatabaseManager
 from backend.security.profiles.builtins import PERSONAL_SETTINGS
 from backend.security.profiles.models import (
     BuiltinProtectedError,
     ProfileNotFoundError,
 )
 from backend.security.profiles.validation import validate_settings_payload
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -61,7 +64,7 @@ def _profile_from_row(row: tuple) -> dict[str, Any]:
 def _select_profile(db: DatabaseManager, profile_id: str) -> dict[str, Any]:
     """Load one profile by id or raise ProfileNotFoundError."""
     cursor = db.execute(
-        f"SELECT {_PROFILE_COLUMNS} FROM security_profiles WHERE id = ?",
+        f"SELECT {_PROFILE_COLUMNS} FROM security_profiles WHERE id = ?",  # noqa: S608 -- _PROFILE_COLUMNS is a module constant, not user input
         (profile_id,),
     )
     row = cursor.fetchone()
@@ -93,7 +96,7 @@ def make_list_security_profiles_handler(
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         validate_params(params, ListSecurityProfilesParams)
         cursor = db.execute(
-            f"SELECT {_PROFILE_COLUMNS} FROM security_profiles "
+            f"SELECT {_PROFILE_COLUMNS} FROM security_profiles "  # noqa: S608 -- module constant, not user input
             "ORDER BY is_builtin DESC, created_at ASC"
         )
         profiles = [_profile_from_row(row) for row in cursor.fetchall()]
@@ -165,9 +168,7 @@ def make_update_security_profile_handler(
         p = validate_params(params, UpdateSecurityProfileParams)
 
         if _is_builtin(db, p.id):
-            raise BuiltinProtectedError(
-                f"Built-in profile {p.id} is read-only"
-            )
+            raise BuiltinProtectedError(f"Built-in profile {p.id} is read-only")
 
         existing = _select_profile(db, p.id)
         new_name = p.name if p.name is not None else existing["name"]
@@ -209,9 +210,7 @@ def make_delete_security_profile_handler(
         p = validate_params(params, DeleteSecurityProfileParams)
 
         if _is_builtin(db, p.id):
-            raise BuiltinProtectedError(
-                f"Built-in profile {p.id} cannot be deleted"
-            )
+            raise BuiltinProtectedError(f"Built-in profile {p.id} cannot be deleted")
 
         active_row = db.execute(
             "SELECT value FROM app_settings WHERE key = 'active_profile_id'"

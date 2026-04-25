@@ -40,6 +40,7 @@ class ProfileStorage:
     """
 
     def __init__(self, client: AdminDBClient) -> None:
+        """Bind the wrapper to one AdminDBClient instance."""
         self._client = client
 
     async def list_profiles(self) -> list[SecurityProfile]:

@@ -11,6 +11,7 @@ Russian labels and descriptions are stored inline; the frontend
 renders them as-is. EN copy is added later through a parallel
 file without touching this catalog.
 """
+# ruff: noqa: RUF001 -- Russian user-facing copy is intentional and governed by AGENTS.md
 
 from __future__ import annotations
 
@@ -58,10 +59,16 @@ CATEGORY_ORDER: tuple[str, ...] = (
 # Response-schema enum options for llm.response_schema.
 # ---------------------------------------------------------------------------
 _RESPONSE_SCHEMA_OPTIONS = (
-    EnumOption(value="personal", label="Личный помощник (answer / sql / suggestions)"),
+    EnumOption(
+        value="personal",
+        label="Личный помощник (answer / sql / suggestions)",
+    ),
     EnumOption(
         value="programmer",
-        label="Программист (answer / files_modified / commands / diagnostics / next_steps)",
+        label=(
+            "Программист (answer / files_modified / commands / "
+            "diagnostics / next_steps)"
+        ),
     ),
     EnumOption(value="freeform", label="Свободный (только answer)"),
 )
@@ -206,7 +213,9 @@ INPUT_FILTER_SETTINGS: tuple[SettingDef, ...] = (
         ),
         type=SettingType.SLIDER_INT,
         risk_level=RiskLevel.LOW,
-        constraints=SettingConstraints(min=10_000, max=5_000_000, step=10_000, unit="байт"),
+        constraints=SettingConstraints(
+            min=10_000, max=5_000_000, step=10_000, unit="байт"
+        ),
         default_paranoid=100_000,
         default_personal=100_000,
         default_developer=1_000_000,
@@ -1057,7 +1066,9 @@ AGENT_LIMITS_SETTINGS: tuple[SettingDef, ...] = (
         key="agent_limits.tools.web_search_per_loop",
         category=CAT_AGENT_LIMITS,
         label="web_search за один цикл",
-        description="Сколько раз агент может выполнять поиск в интернете за одно задание.",
+        description=(
+            "Сколько раз агент может выполнять поиск в интернете за одно задание."
+        ),
         type=SettingType.SLIDER_INT,
         risk_level=RiskLevel.LOW,
         constraints=SettingConstraints(min=1, max=100, step=1, unit="вызовов"),
@@ -1112,7 +1123,9 @@ AGENT_LIMITS_SETTINGS: tuple[SettingDef, ...] = (
         key="agent_limits.tools.memory_recall_per_loop",
         category=CAT_AGENT_LIMITS,
         label="memory_recall за один цикл",
-        description="Сколько раз агент может обращаться к долгосрочной памяти за одно задание.",
+        description=(
+            "Сколько раз агент может обращаться к долгосрочной памяти за одно задание."
+        ),
         type=SettingType.SLIDER_INT,
         risk_level=RiskLevel.LOW,
         constraints=SettingConstraints(min=1, max=100, step=1, unit="вызовов"),
