@@ -192,8 +192,8 @@ function SliderControl({
         min={min ?? 0}
         max={max ?? 100}
         step={step ?? (isInt ? 1 : 0.1)}
-        onValueChange={(next: number[]) => {
-          const raw = next[0] ?? 0
+        onValueChange={(next) => {
+          const raw = Array.isArray(next) ? (next[0] ?? 0) : next
           onChange(isInt ? Math.round(raw) : raw)
         }}
         className="w-32"
@@ -246,7 +246,12 @@ function EnumControl({
     )
   }
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (typeof next === "string") onChange(next)
+      }}
+    >
       <SelectTrigger id={inputId} className="min-w-[180px]">
         <SelectValue />
       </SelectTrigger>

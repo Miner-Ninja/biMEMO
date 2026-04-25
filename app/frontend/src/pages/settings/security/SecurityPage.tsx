@@ -219,7 +219,7 @@ export function SecurityPage() {
       {catalogResult.loading ? (
         <CatalogSkeleton />
       ) : catalogResult.catalog ? (
-        <Accordion type="multiple" defaultValue={Object.keys(CATEGORY_META)}>
+        <Accordion multiple defaultValue={Object.keys(CATEGORY_META)}>
           {orderedCategories.map((category) => {
             const items = settingsByCategory[category] ?? []
             if (items.length === 0) return null

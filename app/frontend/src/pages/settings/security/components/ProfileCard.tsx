@@ -20,7 +20,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -113,15 +112,13 @@ export function ProfileCard({
           </CardDescription>
         ) : null}
       </CardHeader>
-      <CardContent className="pt-0 pb-2">
+      <CardContent className="flex flex-col gap-2 pt-0 pb-3">
         {isActive ? (
-          <Badge variant="default">
+          <Badge variant="default" className="w-fit">
             {PAGE_COPY.active}
             {changedCount > 0 ? ` · ${PAGE_COPY.changedBadge} ${changedCount}` : ""}
           </Badge>
         ) : null}
-      </CardContent>
-      <CardFooter>
         <Button
           variant={isActive ? "secondary" : "outline"}
           size="sm"
@@ -131,7 +128,7 @@ export function ProfileCard({
         >
           {isActive ? PAGE_COPY.active : PAGE_COPY.activate}
         </Button>
-      </CardFooter>
+      </CardContent>
     </Card>
   )
 }
