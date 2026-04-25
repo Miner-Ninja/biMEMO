@@ -140,6 +140,53 @@ class TestProfileResolver:
         with pytest.raises(TypeError):
             resolver.get_bool("agent_limits.iterations.max")
 
+    async def test_get_float_returns_float_for_numeric_setting(
+        self,
+        resolver: ProfileResolver,
+    ) -> None:
+        """get_float returns the float-typed network DNS timeout."""
+        value = resolver.get_float("network.dns_timeout_seconds")
+        assert isinstance(value, float)
+        assert value == 5.0
+
+    async def test_get_float_rejects_non_numeric(
+        self,
+        resolver: ProfileResolver,
+    ) -> None:
+        """get_float raises TypeError when the value is not numeric."""
+        with pytest.raises(TypeError):
+            resolver.get_float("input_filter.block_code_execution")
+
+    async def test_get_str_returns_string_setting(
+        self,
+        resolver: ProfileResolver,
+    ) -> None:
+        """get_str returns string-typed values like the system-prompt addons."""
+        value = resolver.get_str("llm.system_prompt_addons")
+        assert isinstance(value, str)
+
+    async def test_get_str_rejects_non_string(
+        self,
+        resolver: ProfileResolver,
+    ) -> None:
+        """get_str raises TypeError when the value is not a string."""
+        with pytest.raises(TypeError):
+            resolver.get_str("agent_limits.iterations.max")
+
+    async def test_get_list_str_rejects_mixed_items(
+        self,
+        resolver: ProfileResolver,
+        storage: _StubStorage,
+    ) -> None:
+        """get_list_str raises when the cached value is not list[str]."""
+        # Inject a mixed-type list to exercise the validation branch.
+        broken_settings = dict(PERSONAL_SETTINGS)
+        broken_settings["filesystem.uploads.allowed_extensions"] = [".py", 42]
+        storage.update("personal", broken_settings)
+        await resolver.reload()
+        with pytest.raises(TypeError):
+            resolver.get_list_str("filesystem.uploads.allowed_extensions")
+
 
 class TestModuleSingleton:
     """Cover get_resolver / set_resolver process-wide registration."""

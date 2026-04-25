@@ -114,7 +114,9 @@ def validate_value(key: str, value: Any) -> None:  # noqa: ANN401 -- value comes
         return
 
     if setting_type is SettingType.ENUM:
-        if constraints.options is None:
+        if (
+            constraints.options is None
+        ):  # pragma: no cover -- catalog never ships enums without options
             return
         allowed = {opt.value for opt in constraints.options}
         if value not in allowed:
