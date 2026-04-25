@@ -155,6 +155,34 @@ class TestLlmResponseFormatValidation:
             Settings()  # type: ignore[call-arg]
 
 
+class TestLlmResponseStreamValidation:
+    """Tests for the BIMEMO_LLM_RESPONSE_STREAM setting validation."""
+
+    def test_true_value_accepted(self, monkeypatch):
+        """Verify true is a valid stream flag."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "true")
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.llm_response_stream is True
+
+    def test_false_value_accepted(self, monkeypatch):
+        """Verify false is a valid stream flag."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "false")
+        settings = Settings()  # type: ignore[call-arg]
+        assert settings.llm_response_stream is False
+
+    def test_invalid_value_raises(self, monkeypatch):
+        """Verify an unparseable boolean raises ValidationError."""
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "maybe")
+        with pytest.raises(ValidationError):
+            Settings()  # type: ignore[call-arg]
+
+    def test_missing_value_raises(self, monkeypatch):
+        """Verify missing env var raises ValidationError."""
+        monkeypatch.delenv("BIMEMO_LLM_RESPONSE_STREAM")
+        with pytest.raises(ValidationError):
+            Settings()  # type: ignore[call-arg]
+
+
 class TestGetSettings:
     """Tests for the get_settings singleton function."""
 

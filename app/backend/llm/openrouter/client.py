@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 
+from backend.config import get_settings
 from backend.llm.call_factory import LLMResponse, LLMToolCall
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
@@ -30,6 +31,7 @@ from backend.llm.structured_response import (
     StructuredAssistantContent,
     parse_structured_response_json,
 )
+from backend.llm.structured_stream import AnswerFieldStreamExtractor
 from backend.llm.usage import LLMCallUsage
 
 
@@ -121,20 +123,24 @@ def _chat_payload(
     messages: list[dict],
     tools: list[dict] | None,
     llm_response_format: LlmResponseFormat,
+    stream: bool,
     schema_override: dict | None = None,
 ) -> dict:
     """Build one OpenRouter chat-completions request body.
 
     When ``schema_override`` is provided and the effective format is
     ``JSON_SCHEMA``, the override schema replaces the default
-    ``OPENAI_STRUCTURED_RESPONSE_FORMAT`` for this call only.
+    ``OPENAI_STRUCTURED_RESPONSE_FORMAT`` for this call only. The
+    ``stream`` flag is set on the request verbatim — the caller decides
+    whether the JSON_SCHEMA path should stream incremental chunks or
+    block for the full body.
     """
     payload: dict = {
         "model": model,
         "messages": messages,
-        "stream": llm_response_format is LlmResponseFormat.TEXT,
+        "stream": stream,
     }
-    if llm_response_format is LlmResponseFormat.TEXT:
+    if stream:
         payload["stream_options"] = {"include_usage": True}
     if llm_response_format is LlmResponseFormat.JSON_SCHEMA:
         payload["response_format"] = _response_format_for(schema_override)
@@ -142,6 +148,17 @@ def _chat_payload(
         payload["tools"] = tools
         payload["tool_choice"] = OPENROUTER_TOOL_CHOICE_AUTO
     return payload
+
+
+def _should_stream(llm_response_format: LlmResponseFormat) -> bool:
+    """Return whether one OpenRouter chat request should stream.
+
+    TEXT mode always streams. JSON_SCHEMA mode streams only when the
+    operator opted in via ``BIMEMO_LLM_RESPONSE_STREAM=true``.
+    """
+    if llm_response_format is not LlmResponseFormat.JSON_SCHEMA:
+        return True
+    return get_settings().llm_response_stream
 
 
 def _response_format_for(schema_override: dict | None) -> dict[str, object]:
@@ -421,6 +438,7 @@ class OpenRouterClient:
             messages=request_messages,
             tools=effective_tools,
             llm_response_format=llm_response_format,
+            stream=_should_stream(llm_response_format),
             schema_override=effective.response_schema,
         )
         if effective_tool_choice is not None and effective_tools:
@@ -462,6 +480,14 @@ class OpenRouterClient:
     ) -> LLMResponse:
         """Run one OpenRouter chat round and return the raw response."""
         if _uses_structured_response(llm_response_format):
+            if _should_stream(llm_response_format):
+                return await self._streaming_chat(
+                    payload,
+                    sse_queue,
+                    llm_response_format,
+                    structured=True,
+                    skip_structured_parsing=skip_structured_parsing,
+                )
             return await self._structured_chat(
                 payload,
                 llm_response_format,
@@ -478,9 +504,25 @@ class OpenRouterClient:
         payload: dict[str, object],
         sse_queue: asyncio.Queue | None,
         llm_response_format: LlmResponseFormat,
+        *,
+        structured: bool = False,
+        skip_structured_parsing: bool = False,
     ) -> LLMResponse:
-        """Run one OpenRouter streaming chat round and return LLMResponse."""
+        """Run one OpenRouter streaming chat round and return LLMResponse.
+
+        When ``structured`` is true the provider is streaming incremental
+        JSON text that matches the JSON-schema response format. In that
+        case content deltas are fed to an
+        :class:`AnswerFieldStreamExtractor` and only the decoded answer
+        characters are forwarded as ``token`` SSE events. After the
+        stream closes the full raw JSON text is parsed into a
+        :class:`StructuredAssistantContent` so the returned
+        :class:`LLMResponse` carries the same shape it would in the
+        non-streaming structured path.
+        """
         full_text: list[str] = []
+        extractor = AnswerFieldStreamExtractor() if structured else None
+        thinking_parts: list[str] = []
         # Accumulate streamed tool_calls: index → {id, name, arguments_parts}
         tool_call_acc: dict[int, dict] = {}
         final_usage: LLMCallUsage | None = None
@@ -524,25 +566,37 @@ class OpenRouterClient:
                     # parser, so we trust each field as already classified.
                     content = delta.get("content", "")
                     if content:
-                        full_text.append(content)
-                        if sse_queue is not None:
-                            await sse_queue.put(
-                                {
-                                    "type": "token",
-                                    "content": content,
-                                }
-                            )
+                        if extractor is not None:
+                            answer_delta = extractor.feed(content)
+                            if answer_delta and sse_queue is not None:
+                                await sse_queue.put(
+                                    {
+                                        "type": "token",
+                                        "content": answer_delta,
+                                    }
+                                )
+                        else:
+                            full_text.append(content)
+                            if sse_queue is not None:
+                                await sse_queue.put(
+                                    {
+                                        "type": "token",
+                                        "content": content,
+                                    }
+                                )
 
                     # Forward reasoning content (thinking) when the upstream
                     # provider emits it as a separate channel.
                     reasoning_content = delta.get("reasoning_content", "")
-                    if reasoning_content and sse_queue is not None:
-                        await sse_queue.put(
-                            {
-                                "type": "thinking",
-                                "content": reasoning_content,
-                            }
-                        )
+                    if reasoning_content:
+                        thinking_parts.append(reasoning_content)
+                        if sse_queue is not None:
+                            await sse_queue.put(
+                                {
+                                    "type": "thinking",
+                                    "content": reasoning_content,
+                                }
+                            )
 
                     # Accumulate tool_calls deltas
                     for tool_call_delta in delta.get("tool_calls", []):
@@ -599,13 +653,24 @@ class OpenRouterClient:
                 )
             )
 
-        text = "".join(full_text)
-        if self.api_prefix == CUSTOM_API_PREFIX:
-            # Defensive cleanup: in the rare case where the upstream provider
-            # leaks a raw ``<think>...</think>`` block into the visible channel
-            # (no server-side reasoning parser configured), strip it from the
-            # text saved to conversation history.
-            text = strip_reasoning_output(text)
+        structured_content: StructuredAssistantContent | None = None
+        if extractor is not None:
+            text = extractor.full_text
+            if not skip_structured_parsing and not tool_calls:
+                joined_thinking = "".join(thinking_parts) or None
+                structured_content = parse_structured_response_json(
+                    text,
+                    thinking=joined_thinking,
+                )
+        else:
+            text = "".join(full_text)
+            if self.api_prefix == CUSTOM_API_PREFIX:
+                # Defensive cleanup: in the rare case where the upstream
+                # provider leaks a raw ``<think>...</think>`` block into the
+                # visible channel (no server-side reasoning parser
+                # configured), strip it from the text saved to conversation
+                # history.
+                text = strip_reasoning_output(text)
 
         # Build raw_message for conversation history
         raw_message: dict = {"role": "assistant"}
@@ -626,6 +691,15 @@ class OpenRouterClient:
                 for tool_call in tool_calls
             ]
 
+        if structured_content is not None:
+            return LLMResponse(
+                text=structured_content.answer,
+                tool_calls=tool_calls,
+                raw_message=raw_message,
+                usage=final_usage,
+                llm_response_format=llm_response_format,
+                structured_content=structured_content,
+            )
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,
