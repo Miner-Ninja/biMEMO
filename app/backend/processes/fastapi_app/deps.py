@@ -1,6 +1,9 @@
 """Dependency injection helpers for FastAPI routes."""
 
+from __future__ import annotations
+
 import secrets
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, Request
 
@@ -15,6 +18,11 @@ from .clients import (
     OrchestratorClient,
     SigningClient,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.profiles.resolver import ProfileResolver
+    from backend.security.profiles.storage import ProfileStorage
 
 
 # CSRF token store (module-level, per-process)
@@ -78,6 +86,16 @@ def _get_orchestrator_client(request: Request) -> OrchestratorClient:
 def _get_admin_client(request: Request) -> AdminDBClient:
     """Return the DB Proxy Socket B client."""
     return _app_state_value(request, "admin_client")
+
+
+def _get_profile_storage(request: Request) -> "ProfileStorage":
+    """Return the typed security-profile storage wrapper."""
+    return _app_state_value(request, "profile_storage")  # type: ignore[return-value]
+
+
+def _get_profile_resolver(request: Request) -> "ProfileResolver":
+    """Return the active-profile resolver bound to this FastAPI app."""
+    return _app_state_value(request, "profile_resolver")  # type: ignore[return-value]
 
 
 def _get_credential_client(request: Request) -> CredentialClient:

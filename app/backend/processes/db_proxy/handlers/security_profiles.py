@@ -19,16 +19,11 @@ import uuid
 from typing import Any
 
 from backend.security.database import DatabaseManager
-from backend.security.profiles.catalog import (
-    get_editable_keys,
-    get_locked_keys,
-    get_setting_def,
-)
 from backend.security.profiles.models import (
     BuiltinProtectedError,
-    LockedSettingError,
     ProfileNotFoundError,
 )
+from backend.security.profiles.validation import validate_settings_payload
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -86,52 +81,6 @@ def _is_builtin(db: DatabaseManager, profile_id: str) -> bool:
     return bool(row[0])
 
 
-def _validate_settings_payload(settings: dict[str, Any]) -> None:
-    """Reject payloads that touch locked keys or unknown keys."""
-    locked = get_locked_keys()
-    editable = get_editable_keys()
-    for key in settings:
-        if key in locked:
-            raise LockedSettingError(key)
-        if key not in editable:
-            # Unknown key — probably a typo or stale client.
-            raise ValueError(f"Unknown setting key: {key}")
-        _validate_value_against_def(key, settings[key])
-
-
-def _validate_value_against_def(key: str, value: Any) -> None:
-    """Cheap shape check against the catalog (range / enum / type)."""
-    setting = get_setting_def(key)
-    if setting is None:
-        raise ValueError(f"Unknown setting key: {key}")
-    constraints = setting.constraints
-    if setting.type.value == "toggle" and not isinstance(value, bool):
-        raise ValueError(f"{key}: expected bool, got {type(value).__name__}")
-    if setting.type.value in ("slider_int", "slider_float"):
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise ValueError(f"{key}: expected number, got {type(value).__name__}")
-        if constraints.min is not None and value < constraints.min:
-            raise ValueError(f"{key}: value {value} below min {constraints.min}")
-        if constraints.max is not None and value > constraints.max:
-            raise ValueError(f"{key}: value {value} above max {constraints.max}")
-    if setting.type.value == "enum":
-        if constraints.options is None:
-            return
-        allowed = {opt.value for opt in constraints.options}
-        if value not in allowed:
-            raise ValueError(f"{key}: value {value!r} not in allowed options {sorted(allowed)}")
-    if setting.type.value == "list_string":
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError(f"{key}: expected list[str]")
-    if setting.type.value == "text":
-        if not isinstance(value, str):
-            raise ValueError(f"{key}: expected string")
-        if constraints.max_length is not None and len(value) > constraints.max_length:
-            raise ValueError(
-                f"{key}: text length {len(value)} above max {constraints.max_length}"
-            )
-
-
 # ---------------------------------------------------------------------------
 # Handler factories
 # ---------------------------------------------------------------------------
@@ -187,7 +136,7 @@ def make_create_security_profile_handler(
             settings = dict(PERSONAL_SETTINGS)
 
         if p.settings_overrides:
-            _validate_settings_payload(p.settings_overrides)
+            validate_settings_payload(p.settings_overrides)
             settings.update(p.settings_overrides)
 
         profile_id = str(uuid.uuid4())
@@ -228,7 +177,7 @@ def make_update_security_profile_handler(
         )
 
         if p.settings is not None:
-            _validate_settings_payload(p.settings)
+            validate_settings_payload(p.settings)
             merged_settings: dict[str, Any] = dict(existing["settings"])
             merged_settings.update(p.settings)
         else:

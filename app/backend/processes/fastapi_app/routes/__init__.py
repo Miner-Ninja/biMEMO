@@ -10,6 +10,7 @@ from .files import files_router
 from .health import health_router
 from .llm_providers import llm_router
 from .scheduled_tasks import scheduled_tasks_router, tools_catalog_router
+from .security import security_router
 from .tts import tts_router
 
 
@@ -24,6 +25,7 @@ __all__ = [
     "llm_router",
     "memory_router",
     "scheduled_tasks_router",
+    "security_router",
     "tools_catalog_router",
     "tts_router",
 ]
