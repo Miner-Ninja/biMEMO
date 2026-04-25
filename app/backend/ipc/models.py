@@ -159,6 +159,7 @@ class ChatResponse(IPCModel):
     retrieved_messages: list[dict[str, str]] | None = None
     transcription: str | None = None
     stats: ExtendedUsage | None = None
+    stream_enabled: bool = False
 
 
 class StopResponse(IPCModel):

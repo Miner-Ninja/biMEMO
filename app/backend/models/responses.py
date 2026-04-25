@@ -74,6 +74,7 @@ class ChatResponse(StrictResponseModel):
     transcription: str | None = None
     stats: ExtendedUsage | None = None
     structured_content: StructuredAssistantContent | None = None
+    stream_enabled: bool = False
 
 
 class StopResponse(StrictResponseModel):

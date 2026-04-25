@@ -178,6 +178,31 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
     assert chat_response.structured_content.suggestions == []
 
 
+@pytest.mark.parametrize("stream_enabled_value", ["true", "false"])
+def test_build_chat_response_propagates_stream_enabled_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    stream_enabled_value: str,
+) -> None:
+    """Mirror BIMEMO_LLM_RESPONSE_STREAM onto the IPC ChatResponse."""
+    from backend.config import reset_settings
+
+    monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", stream_enabled_value)
+    reset_settings()
+    try:
+        chat_response = _build_chat_response(
+            request_id="request-stream",
+            response=AgentResponse(
+                structured_content=normalize_legacy_response_text("Hi."),
+                loop_result=object(),
+            ),
+            transcription=None,
+        )
+    finally:
+        reset_settings()
+
+    assert chat_response.stream_enabled is (stream_enabled_value == "true")
+
+
 def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
     """Expose one structured answer block even for plain IPC chat responses."""
     http_response = build_http_chat_response(
@@ -187,6 +212,7 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
             structured_content=IPCStructuredAssistantContent(answer="Plain answer"),
             input_filtered=False,
             output_filtered=False,
+            stream_enabled=True,
         ),
     )
 
@@ -196,6 +222,7 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
         sql=None,
         suggestions=[],
     )
+    assert http_response.stream_enabled is True
 
 
 class _FakeIPCServer:

@@ -41,6 +41,7 @@ import type {
   IndexedFile,
 } from "@/lib/bimemo-api";
 import { generateId } from "@/lib/utils";
+import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
 import { loadCommandHistory, saveCommandHistory } from "@/lib/storage";
 import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
 import { TOOL_LABELS } from "@/types/chat";
@@ -63,6 +64,7 @@ type ChatResponsePayload = {
     tool_name: string;
     parameters: Record<string, unknown>;
   }[];
+  stream_enabled?: boolean;
 };
 
 type TokenEventPayload = {
@@ -260,15 +262,13 @@ function should_use_structured_pseudo_stream(
   structuredContent: ChatResponsePayload["structured_content"] | undefined,
   streamedContent: string,
   streamedThinking: string,
+  streamEnabled: boolean | undefined,
 ): structuredContent is NonNullable<ChatResponsePayload["structured_content"]> {
-  // Return whether one response should use local pseudo-stream playback.
-  return Boolean(
-    structuredContent &&
-      !streamedContent &&
-      !streamedThinking &&
-      (structuredContent.answer ||
-        structuredContent.thinking ||
-        structuredContent.sql),
+  return shouldUseStructuredPseudoStream(
+    structuredContent ?? null,
+    streamedContent,
+    streamedThinking,
+    streamEnabled,
   );
 }
 
@@ -1054,6 +1054,7 @@ export function ChatPage() {
         structuredContent,
         streamedContentRef.current,
         streamedThinkingRef.current,
+        response.stream_enabled,
       )
         ? structuredContent
         : null;
@@ -1285,6 +1286,7 @@ export function ChatPage() {
         structuredContent,
         streamedContentRef.current,
         streamedThinkingRef.current,
+        response.stream_enabled,
       )
         ? structuredContent
         : null;

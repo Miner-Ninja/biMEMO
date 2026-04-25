@@ -41,6 +41,7 @@ class TestChatResponse:
                 "sql": None,
                 "suggestions": [],
             },
+            "stream_enabled": False,
         }
 
     def test_with_confirmations(self):
