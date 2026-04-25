@@ -23,6 +23,15 @@ from backend.memory.evidence_recall import (
     is_evidence_recall_question,
 )
 from backend.processes.orchestrator.client import DBProxyError
+from backend.security.profiles.resolver import get_resolver
+
+
+_KEY_SYSTEM_PROMPT_ADDONS = "llm.system_prompt_addons"
+
+
+def _profile_system_prompt_addons() -> str:
+    """Return the profile-driven system prompt addon text or empty."""
+    return get_resolver().get_str(_KEY_SYSTEM_PROMPT_ADDONS).strip()
 
 
 if TYPE_CHECKING:
@@ -165,6 +174,12 @@ class PromptBuilder:
                 + self.active_skill_context
                 + "\n</matched_skills>"
             )
+
+        # Append profile-driven addons last so they cannot be hidden
+        # behind earlier content.
+        addons = _profile_system_prompt_addons()
+        if addons:
+            prompt += "\n\n" + addons
 
         return prompt
 
