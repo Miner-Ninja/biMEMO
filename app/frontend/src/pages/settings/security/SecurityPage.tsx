@@ -119,14 +119,22 @@ export function SecurityPage() {
   }
 
   const handleCreateSubmit = async (name: string, description: string) => {
+    const carriesActiveDraft =
+      dirty.isDirty && cloneSource?.id === activeResult.activeId
     const created = await profilesResult.create({
       name,
       description,
       base_profile_id: cloneSource?.id ?? null,
-      settings: dirty.isDirty && cloneSource?.id === activeResult.activeId
-        ? dirty.draft
-        : null,
+      settings: carriesActiveDraft ? dirty.draft : null,
     })
+    if (carriesActiveDraft) {
+      // The user saved their pending edits as a fresh profile —
+      // activating it discards the now-stale diff against the
+      // previous baseline and makes the new profile usable in
+      // one continuous flow.
+      await profilesResult.activate(created.id)
+      await activeResult.refetch()
+    }
     toast.success(`Создан профиль «${created.name}»`)
   }
 
