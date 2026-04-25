@@ -949,3 +949,117 @@ class TestOpenRouterClientEmptyRetry:
             await client.close()
         assert call_count == 1
         assert result.tool_calls[0].name == "web_search"
+
+
+class TestOpenRouterStructuredStreaming:
+    """Tests for OpenRouter JSON_SCHEMA + streaming path."""
+
+    @pytest.mark.asyncio
+    async def test_streaming_json_schema_emits_answer_deltas(self, monkeypatch):
+        """Feed partial JSON SSE chunks; verify decoded answer reaches queue."""
+        from backend.config import reset_settings
+
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "true")
+        reset_settings()
+
+        sse_chunks = [
+            '{"choices":[{"delta":{"content":"{\\"answer\\":\\"hel"}}]}',
+            '{"choices":[{"delta":{"content":"lo\\"}"}}]}',
+            '{"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":4}}',
+        ]
+        sse_body = (
+            "\n".join(f"data: {chunk}" for chunk in sse_chunks) + "\n\ndata: [DONE]\n"
+        )
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is True
+            assert body["response_format"]["type"] == "json_schema"
+            return httpx.Response(
+                200,
+                text=sse_body,
+                headers={"content-type": "text/event-stream"},
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        sse_queue: asyncio.Queue = asyncio.Queue()
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "Hi"}],
+                sse_queue=sse_queue,
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+            reset_settings()
+
+        token_events: list[str] = []
+        while not sse_queue.empty():
+            event = sse_queue.get_nowait()
+            if event["type"] == "token":
+                token_events.append(event["content"])
+        assert "".join(token_events) == "hello"
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "hello"
+        assert result.text == "hello"
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_json_schema_preserves_blocking_path(
+        self,
+        monkeypatch,
+    ):
+        """Confirm stream=false still calls the single-POST structured path."""
+        from backend.config import reset_settings
+
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "false")
+        reset_settings()
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "model": STRUCTURED_OPENROUTER_MODEL,
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": json.dumps(
+                                    {
+                                        "answer": "blocking answer",
+                                        "sql": None,
+                                        "suggestions": [],
+                                    }
+                                ),
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+                },
+            )
+
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+            LlmResponseFormat.JSON_SCHEMA
+        )
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
+        sse_queue: asyncio.Queue = asyncio.Queue()
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "Hi"}],
+                sse_queue=sse_queue,
+            )
+        finally:
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            await client.close()
+            reset_settings()
+
+        assert sse_queue.empty()
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "blocking answer"
+        assert result.text == "blocking answer"

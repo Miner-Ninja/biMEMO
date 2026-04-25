@@ -1458,3 +1458,134 @@ class TestOllamaClientEmptyRetry:
         assert call_count == 1
         assert result.text == "First answer"
         await client.close()
+
+
+class TestStructuredStreaming:
+    """Tests for the JSON_SCHEMA + streaming path."""
+
+    @pytest.mark.asyncio
+    async def test_streaming_json_schema_emits_answer_deltas(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        """Feed streamed JSON chunks and confirm decoded deltas reach SSE."""
+        from backend.config import reset_settings
+
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "true")
+        reset_settings()
+
+        chunks = [
+            {"message": {"content": '{"answer":"hel'}, "done": False},
+            {"message": {"content": 'lo world"'}, "done": False},
+            {"message": {"content": ',"sql":"SELECT 1"'}, "done": False},
+            {
+                "message": {"content": ',"suggestions":[]}'},
+                "done": True,
+                "prompt_eval_count": 1,
+                "eval_count": 4,
+                "prompt_eval_duration": 10,
+                "eval_duration": 20,
+                "total_duration": 30,
+            },
+        ]
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is True
+            assert body["format"]["type"] == "object"
+            payload = "\n".join(json.dumps(chunk) for chunk in chunks)
+            return httpx.Response(200, text=payload)
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        sse_queue: asyncio.Queue = asyncio.Queue()
+
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "Hi"}],
+                sse_queue=sse_queue,
+            )
+        finally:
+            await client.close()
+            reset_settings()
+
+        token_events: list[str] = []
+        while not sse_queue.empty():
+            event = sse_queue.get_nowait()
+            if event["type"] == "token":
+                token_events.append(event["content"])
+        assert "".join(token_events) == "hello world"
+        assert all(
+            "SELECT" not in content and "sql" not in content.lower()
+            for content in token_events
+        )
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "hello world"
+        assert result.structured_content.sql == "SELECT 1"
+        assert result.text == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_json_schema_preserves_blocking_path(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        """Confirm stream=false keeps today's single-POST structured path."""
+        from backend.config import reset_settings
+
+        monkeypatch.setenv("BIMEMO_LLM_RESPONSE_STREAM", "false")
+        reset_settings()
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is False
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {
+                                "answer": "blocking answer",
+                                "sql": None,
+                                "suggestions": [],
+                            }
+                        ),
+                        "thinking": "",
+                    },
+                    "prompt_eval_count": 1,
+                    "eval_count": 3,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+        sse_queue: asyncio.Queue = asyncio.Queue()
+
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "Hi"}],
+                sse_queue=sse_queue,
+            )
+        finally:
+            await client.close()
+            reset_settings()
+
+        assert sse_queue.empty()
+        assert result.text == "blocking answer"
+        assert result.structured_content is not None
+        assert result.structured_content.answer == "blocking answer"

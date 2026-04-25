@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 
+from backend.config import get_settings
 from backend.llm.call_factory import (
     LLM_CALL_TIMEOUT,
     LLMResponse,
@@ -41,6 +42,7 @@ from backend.llm.structured_response import (
     StructuredAssistantContent,
     parse_structured_response_json,
 )
+from backend.llm.structured_stream import AnswerFieldStreamExtractor
 from backend.llm.usage import LLMCallUsage
 
 
@@ -338,6 +340,16 @@ class OllamaClient:
         """Return whether this Ollama request should use JSON schema output."""
         return capabilities.llm_response_format is LlmResponseFormat.JSON_SCHEMA
 
+    def _should_stream(self, capabilities: ModelCapabilities) -> bool:
+        """Return whether this Ollama request should stream token chunks.
+
+        TEXT mode always streams. JSON_SCHEMA mode streams only when the
+        operator opted in via ``BIMEMO_LLM_RESPONSE_STREAM=true``.
+        """
+        if not self._uses_structured_response(capabilities):
+            return True
+        return get_settings().llm_response_stream
+
     def _structured_response_messages(
         self,
         messages: list[dict],
@@ -372,7 +384,7 @@ class OllamaClient:
         payload: dict[str, object] = {
             "model": self.model,
             "messages": convert_messages_for_ollama(request_messages),
-            "stream": not self._uses_structured_response(capabilities),
+            "stream": self._should_stream(capabilities),
             "options": self._build_options(capabilities),
         }
         if self._uses_structured_response(capabilities):
@@ -531,6 +543,66 @@ class OllamaClient:
         final_usage = await self._build_usage_from_done_chunk(chunk, capabilities)
         return content, thinking, tool_calls, final_usage
 
+    async def _stream_structured_chat(
+        self,
+        payload: dict[str, object],
+        sse_queue: asyncio.Queue | None,
+        capabilities: ModelCapabilities,
+    ) -> tuple[str, str, list[LLMToolCall], LLMCallUsage | None]:
+        """Stream a JSON-schema response and emit decoded answer deltas.
+
+        Accumulates raw ``message.content`` chunks (which arrive as
+        partial JSON text) into an :class:`AnswerFieldStreamExtractor`
+        and forwards the newly-decoded characters of the ``answer``
+        field as ``token`` SSE events. Reasoning deltas from Ollama's
+        separate ``message.thinking`` channel continue to flow as
+        ``thinking`` SSE events, unchanged from the TEXT path.
+
+        Returns the full accumulated raw JSON text (for the caller's
+        final ``parse_structured_response_json`` call), the full
+        thinking text, any tool calls, and the final usage record.
+        """
+        extractor = AnswerFieldStreamExtractor()
+        thinking_parts: list[str] = []
+        tool_calls: list[LLMToolCall] = []
+        final_usage: LLMCallUsage | None = None
+        async with self._client.stream(
+            "POST",
+            "/api/chat",
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                message = chunk.get("message", {})
+                content = str(message.get("content", ""))
+                thinking = str(message.get("thinking", ""))
+                answer_delta = extractor.feed(content) if content else ""
+                if thinking:
+                    thinking_parts.append(thinking)
+                if answer_delta or thinking:
+                    await self._emit_reasoning_deltas(
+                        sse_queue,
+                        visible_delta=answer_delta,
+                        thinking_delta=thinking,
+                    )
+                if message.get("tool_calls"):
+                    tool_calls.extend(self._extract_tool_calls(message))
+                if chunk.get("done", False):
+                    final_usage = await self._build_usage_from_done_chunk(
+                        chunk,
+                        capabilities,
+                    )
+                    break
+        return (
+            extractor.full_text,
+            "".join(thinking_parts),
+            tool_calls,
+            final_usage,
+        )
+
     def _structured_content_from_ollama(
         self,
         *,
@@ -599,12 +671,24 @@ class OllamaClient:
         it in ``OllamaClientError``.
         """
         if self._uses_structured_response(capabilities):
-            (
-                raw_text,
-                raw_thinking,
-                tool_calls,
-                final_usage,
-            ) = await self._request_structured_chat(payload, capabilities)
+            if self._should_stream(capabilities):
+                (
+                    raw_text,
+                    raw_thinking,
+                    tool_calls,
+                    final_usage,
+                ) = await self._stream_structured_chat(
+                    payload,
+                    sse_queue,
+                    capabilities,
+                )
+            else:
+                (
+                    raw_text,
+                    raw_thinking,
+                    tool_calls,
+                    final_usage,
+                ) = await self._request_structured_chat(payload, capabilities)
             if skip_structured_parsing:
                 return raw_text, tool_calls, final_usage, None
             structured_content = self._structured_content_from_ollama(

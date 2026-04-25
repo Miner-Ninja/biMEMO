@@ -47,6 +47,10 @@ class Settings(BaseSettings):
         host: HTTP server bind address.
         port: HTTP server bind port.
         llm_response_format: LLM transport format (text or json_schema).
+        llm_response_stream: Whether json_schema responses stream
+            token-by-token (true) or block until the full JSON body
+            arrives (false). Ignored when llm_response_format=text,
+            which always streams.
     """
 
     model_config = {"env_prefix": "BIMEMO_"}
@@ -65,6 +69,7 @@ class Settings(BaseSettings):
     host: str
     port: int
     llm_response_format: str
+    llm_response_stream: bool
     whisper_endpoint: str = ""
     whisper_language: str = ""
     whisper_model: str = ""
