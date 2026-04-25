@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -368,6 +368,26 @@ CREATE INDEX IF NOT EXISTS idx_chat_bridge_message_links_bridge_link_id
 ON chat_bridge_message_links(bridge_link_id)
 """
 
+CREATE_SECURITY_PROFILES_TABLE = """
+CREATE TABLE IF NOT EXISTS security_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    settings_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+)
+"""
+
+CREATE_APP_SETTINGS_TABLE = """
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+)
+"""
+
 # --- Ordered list for schema initialization ---
 SCHEMA_STATEMENTS = [
     CREATE_SCHEMA_VERSION_TABLE,
@@ -406,6 +426,8 @@ SCHEMA_STATEMENTS = [
     CREATE_SCHEDULED_TASKS_DUE_IDX,
     CREATE_SCHEDULED_TASK_RUNS_TABLE,
     CREATE_SCHEDULED_TASK_RUNS_TASK_IDX,
+    CREATE_SECURITY_PROFILES_TABLE,
+    CREATE_APP_SETTINGS_TABLE,
 ]
 
 
@@ -656,6 +678,56 @@ def _migrate_reminders_to_scheduled_tasks(
     db.execute("DROP TABLE IF EXISTS reminders")
 
 
+def _seed_security_profiles(
+    db: DatabaseManager,
+) -> None:
+    """Seed built-in security profiles and set personal active by default.
+
+    Idempotent: built-ins are inserted only if their id is missing,
+    so settings of an existing built-in are not overwritten on each
+    schema apply (avoids stomping on customizations to a built-in's
+    description if the catalog grows new keys later — those gaps
+    are handled by the resolver's catalog-fallback path).
+    """
+    # Imported here to avoid a circular import on module load
+    # (profiles.builtins -> profiles.catalog -> profiles.models is
+    # safe; schema.py belongs to a higher-level package).
+    import json
+
+    from backend.security.profiles.builtins import (
+        all_builtin_names,
+        get_builtin_description,
+        get_builtin_settings,
+    )
+
+    for name in all_builtin_names():
+        cursor = db.execute(
+            "SELECT 1 FROM security_profiles WHERE id = ?",
+            (name,),
+        )
+        if cursor.fetchone() is not None:
+            continue
+        db.execute(
+            "INSERT INTO security_profiles "
+            "(id, name, description, is_builtin, settings_json) "
+            "VALUES (?, ?, ?, 1, ?)",
+            (
+                name,
+                name,
+                get_builtin_description(name),
+                json.dumps(get_builtin_settings(name)),
+            ),
+        )
+
+    cursor = db.execute(
+        "SELECT value FROM app_settings WHERE key = 'active_profile_id'"
+    )
+    if cursor.fetchone() is None:
+        db.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('active_profile_id', 'personal')"
+        )
+
+
 def initialize_schema(
     db: DatabaseManager,
 ) -> None:
@@ -675,4 +747,5 @@ def initialize_schema(
     _ensure_skills_schema(db)
     _migrate_reminders_to_scheduled_tasks(db)
     _ensure_scheduled_tasks_schema(db)
+    _seed_security_profiles(db)
     db.commit()
