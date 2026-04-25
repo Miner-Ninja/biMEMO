@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Settings, Database, Cpu, User, Bug, Sparkles, MessageSquare, Shield, CalendarClock } from 'lucide-react'
+import { Settings, Database, Cpu, User, Bug, Sparkles, MessageSquare, Shield, ShieldCheck, CalendarClock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { UserMenu } from './UserMenu'
@@ -22,6 +22,7 @@ const adminLinks = [
   { to: '/admin/integrations', icon: Settings, label: 'Integrations' },
   { to: '/admin/backups', icon: Database, label: 'Backups' },
   { to: '/admin/llm', icon: Cpu, label: 'LLM Configuration' },
+  { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
 ]
 
 /**
