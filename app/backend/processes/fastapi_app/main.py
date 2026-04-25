@@ -33,6 +33,9 @@ from .clients import (
     OrchestratorClient,
     SigningClient,
 )
+from backend.security.profiles.resolver import ProfileResolver, set_resolver
+from backend.security.profiles.storage import ProfileStorage
+
 from .deps import _csrf_tokens, _get_csrf_token_for_jti
 from .routes import (
     admin_router,
@@ -252,12 +255,6 @@ def create_app(
         # Security profile resolver — feeds active-profile values
         # to defense modules. Loaded once here; reload() is called
         # from the activation endpoint when the active profile changes.
-        from backend.security.profiles.resolver import (
-            ProfileResolver,
-            set_resolver,
-        )
-        from backend.security.profiles.storage import ProfileStorage
-
         profile_storage = ProfileStorage(admin_client)
         profile_resolver = ProfileResolver(profile_storage)
         await profile_resolver.load()

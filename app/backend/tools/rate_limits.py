@@ -1,8 +1,13 @@
 """Per-tool rate limits within agentic loops.
 
 Two layers of enforcement:
+
 - ToolRateLimiter: per-loop counts, reset each agentic loop.
 - PersistentRateLimiter: sliding-window limits that survive across loops.
+
+All numeric thresholds (per-tool caps, total budget, injection-mode
+budget, sliding-window size) are sourced from the active security
+profile via ProfileResolver.
 """
 
 import asyncio
@@ -12,35 +17,48 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from backend.security.profiles.resolver import get_resolver
+
 
 logger = logging.getLogger(__name__)
 
 
-# Default per-tool limits (per agentic loop)
-_DEFAULT_LIMITS: dict[str, int] = {
-    "file_read": 10,
-    "file_write": 5,
-    "file_search": 5,
-    "web_search": 10,
-    "http_fetch": 2,
-    "email_send": 3,
-    "schedule_task": 5,
-    "memory_recall": 5,
+# --- Per-tool limit catalog keys ---
+_TOOL_LIMIT_KEYS: dict[str, str] = {
+    "file_read": "agent_limits.tools.file_read_per_loop",
+    "file_write": "agent_limits.tools.file_write_per_loop",
+    "file_search": "agent_limits.tools.file_search_per_loop",
+    "web_search": "agent_limits.tools.web_search_per_loop",
+    "http_fetch": "agent_limits.tools.http_fetch_per_loop",
+    "email_send": "agent_limits.tools.email_send_per_loop",
+    "schedule_task": "agent_limits.tools.schedule_task_per_loop",
+    "memory_recall": "agent_limits.tools.memory_recall_per_loop",
 }
 
-# Total budget across all tools per loop
-_DEFAULT_BUDGET = 30
-_INJECTION_BUDGET = 10
+# --- Aggregate budget catalog keys ---
+_KEY_TOTAL_BUDGET = "agent_limits.tools.total_budget_per_loop"
+_KEY_INJECTION_BUDGET = "agent_limits.tools.total_budget_when_injection"
 
-# Sliding-window limits: tool → (max_calls, window_seconds)
-_WINDOW_LIMITS: dict[str, tuple[int, float]] = {
-    "web_search": (10, 60.0),
-}
+# --- Sliding-window catalog keys ---
+_WEB_SEARCH_WINDOW_KEYS: tuple[str, str] = (
+    "agent_limits.web_search_window.max_calls",
+    "agent_limits.web_search_window.seconds",
+)
+
+# --- Fallback for unknown tools ---
+_UNKNOWN_TOOL_LIMIT = 1
 
 
 def _tool_window_limits() -> dict[str, tuple[int, float]]:
     """Return the configured sliding-window limits for persistent tools."""
-    return _WINDOW_LIMITS
+    resolver = get_resolver()
+    max_calls_key, window_key = _WEB_SEARCH_WINDOW_KEYS
+    return {
+        "web_search": (
+            resolver.get_int(max_calls_key),
+            float(resolver.get_int(window_key)),
+        ),
+    }
 
 
 @dataclass
@@ -178,25 +196,30 @@ class ToolRateLimiter:
         return self._counts.get(tool_name, 0)
 
     def _get_limit(self, tool_name: str) -> int:
-        """Get effective limit for a tool.
+        """Get the effective per-tool limit from the active profile.
 
         Args:
             tool_name: Name of the tool.
 
         Returns:
-            Per-tool call limit.
+            Per-tool call limit, halved when an injection flag is set.
         """
-        base = _DEFAULT_LIMITS.get(tool_name, 1)
+        catalog_key = _TOOL_LIMIT_KEYS.get(tool_name)
+        if catalog_key is None:
+            base = _UNKNOWN_TOOL_LIMIT
+        else:
+            base = get_resolver().get_int(catalog_key)
         if self.injection_flag:
             return max(1, base // 2)
         return base
 
     @property
     def budget(self) -> int:
-        """Return total budget for this loop."""
+        """Return total per-loop budget from the active profile."""
+        resolver = get_resolver()
         if self.injection_flag:
-            return _INJECTION_BUDGET
-        return _DEFAULT_BUDGET
+            return resolver.get_int(_KEY_INJECTION_BUDGET)
+        return resolver.get_int(_KEY_TOTAL_BUDGET)
 
     def is_allowed(self, tool_name: str) -> bool:
         """Check if a tool call is within limits.

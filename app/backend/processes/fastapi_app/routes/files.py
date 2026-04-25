@@ -1,4 +1,10 @@
-"""File management routes (upload, list, delete, read)."""
+"""File management routes (upload, list, delete, read).
+
+Allowed extensions, bare-name allowlist (Makefile, Dockerfile,
+...), and the maximum file size are sourced from the active
+security profile via ProfileResolver, so changing profile takes
+effect on the next upload without restarting the process.
+"""
 
 import asyncio
 import logging
@@ -12,6 +18,7 @@ from fastapi.responses import FileResponse
 
 from backend.channels.jwt_auth import TokenClaims
 from backend.files import FileContextManager
+from backend.security.profiles.resolver import get_resolver
 
 from ..clients import AdminDBClient
 from ..deps import _get_admin_client, _require_auth
@@ -21,38 +28,39 @@ logger = logging.getLogger(__name__)
 
 files_router = APIRouter(prefix="/files")
 
+# --- On-disk paths and conversion factors ---
 FILES_DIR = Path("/data/files")
+BYTES_PER_MEGABYTE = 1024 * 1024
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-
-ALLOWED_EXTENSIONS = {
-    ".txt",
-    ".md",
-    ".pdf",
-    ".csv",
-    ".json",
-    ".xml",
-    ".html",
-    ".py",
-    ".js",
-    ".ts",
-    ".yaml",
-    ".yml",
-    ".log",
-    ".sh",
-    ".sql",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".conf",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-}
+# --- Catalog keys read from ProfileResolver ---
+_KEY_ALLOWED_EXTENSIONS = "filesystem.uploads.allowed_extensions"
+_KEY_BARE_NAME_ALLOWLIST = "filesystem.uploads.bare_name_allowlist"
+_KEY_MAX_SIZE_MB = "filesystem.uploads.max_size_mb"
 
 FILE_CONTEXT_MANAGER = FileContextManager()
+
+
+def _allowed_extensions() -> frozenset[str]:
+    """Return the active profile's allowlist of file extensions."""
+    return frozenset(get_resolver().get_list_str(_KEY_ALLOWED_EXTENSIONS))
+
+
+def _bare_name_allowlist() -> frozenset[str]:
+    """Return the active profile's allowlist of files without extensions."""
+    return frozenset(get_resolver().get_list_str(_KEY_BARE_NAME_ALLOWLIST))
+
+
+def _max_file_size_bytes() -> int:
+    """Return the active profile's per-file size limit in bytes."""
+    return get_resolver().get_int(_KEY_MAX_SIZE_MB) * BYTES_PER_MEGABYTE
+
+
+def _is_filename_allowed(file_name: str) -> bool:
+    """Return whether one filename is accepted by the active profile."""
+    extension = Path(file_name).suffix.lower()
+    if extension and extension in _allowed_extensions():
+        return True
+    return file_name in _bare_name_allowlist()
 
 
 async def _require_file_metadata(
@@ -71,11 +79,6 @@ def _file_path(file_id: str, original_name: str) -> Path:
     """Return the on-disk path for one stored file."""
     ext = Path(original_name).suffix.lower()
     return FILES_DIR / f"{file_id}{ext}"
-
-
-def _file_extension(file_name: str) -> str:
-    """Return the normalized lowercase suffix for one file name."""
-    return Path(file_name).suffix.lower()
 
 
 def _uploaded_file_response(
@@ -113,18 +116,18 @@ async def upload_file(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
-    ext = _file_extension(file.filename)
-    if ext not in ALLOWED_EXTENSIONS:
+    if not _is_filename_allowed(file.filename):
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported file type: {ext}",
+            detail=f"Unsupported file type: {file.filename}",
         )
 
+    max_size_bytes = _max_file_size_bytes()
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > max_size_bytes:
         raise HTTPException(
             status_code=413,
-            detail=f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE})",
+            detail=f"File too large: {len(content)} bytes (max {max_size_bytes})",
         )
 
     file_id = str(uuid.uuid4())

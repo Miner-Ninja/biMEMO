@@ -9,7 +9,14 @@ successful unlock.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
+
+from backend.security.profiles.builtins import (
+    all_builtin_names,
+    get_builtin_description,
+    get_builtin_settings,
+)
 
 
 if TYPE_CHECKING:
@@ -685,21 +692,10 @@ def _seed_security_profiles(
 
     Idempotent: built-ins are inserted only if their id is missing,
     so settings of an existing built-in are not overwritten on each
-    schema apply (avoids stomping on customizations to a built-in's
-    description if the catalog grows new keys later — those gaps
-    are handled by the resolver's catalog-fallback path).
+    schema apply. Catalog-version drift (a stored profile missing
+    keys that the catalog grew later) is handled by the resolver's
+    fallback path, not here.
     """
-    # Imported here to avoid a circular import on module load
-    # (profiles.builtins -> profiles.catalog -> profiles.models is
-    # safe; schema.py belongs to a higher-level package).
-    import json
-
-    from backend.security.profiles.builtins import (
-        all_builtin_names,
-        get_builtin_description,
-        get_builtin_settings,
-    )
-
     for name in all_builtin_names():
         cursor = db.execute(
             "SELECT 1 FROM security_profiles WHERE id = ?",

@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 
 from backend.security.database import DatabaseManager
+from backend.security.profiles.builtins import PERSONAL_SETTINGS
 from backend.security.profiles.models import (
     BuiltinProtectedError,
     ProfileNotFoundError,
@@ -125,8 +126,6 @@ def make_create_security_profile_handler(
     """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        from backend.security.profiles.builtins import PERSONAL_SETTINGS
-
         p = validate_params(params, CreateSecurityProfileParams)
 
         if p.base_profile_id:
