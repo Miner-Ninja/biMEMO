@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ChatRequest,
@@ -186,6 +187,7 @@ def _build_chat_response(
         retrieved_messages=response.retrieved_messages or None,
         transcription=transcription,
         stats=response.stats,
+        stream_enabled=get_settings().llm_response_stream,
     )
 
 
@@ -222,6 +224,7 @@ def _build_missing_llm_response(
         structured_content=_build_plain_structured_content(visible_answer),
         input_filtered=False,
         output_filtered=False,
+        stream_enabled=get_settings().llm_response_stream,
     )
 
 
@@ -237,6 +240,7 @@ def _build_voice_transcription_failure_response(
         structured_content=_build_plain_structured_content(visible_answer),
         input_filtered=False,
         output_filtered=False,
+        stream_enabled=get_settings().llm_response_stream,
     )
 
 

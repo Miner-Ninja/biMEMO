@@ -261,6 +261,7 @@ def build_http_chat_response(
         transcription=ipc_response.transcription,
         stats=ipc_response.stats,
         structured_content=structured_content,
+        stream_enabled=ipc_response.stream_enabled,
     )
 
 
@@ -506,9 +507,7 @@ async def list_conversation_message_items(
         messages,
         key=lambda message: str(message.get("created_at", "")),
     )
-    return [
-        build_conversation_message_item(message) for message in ordered_messages
-    ]
+    return [build_conversation_message_item(message) for message in ordered_messages]
 
 
 async def update_conversation_item(
