@@ -36,6 +36,7 @@
 		path /admin /admin/*
 		path /files /files/*
 		path /bridge /bridge/*
+		path /security /security/*
 	}
 
 	handle @api {
