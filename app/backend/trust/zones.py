@@ -1,7 +1,7 @@
 """Trust zone configuration for tools.
 
 Classifies each tool into GREEN/YELLOW/RED based on the active
-security profile's `trust.red_zone_tools` and
+assistant policy's `trust.red_zone_tools` and
 `trust.yellow_zone_tools` lists. Outbound tools are tracked
 separately as a fixed capability set so callers can detect
 network-bound operations regardless of zone.
@@ -12,7 +12,7 @@ import re
 from enum import StrEnum
 from typing import Any
 
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,14 @@ class TrustZone(StrEnum):
 # --- Tools whose effect is observable outside the host ---
 _OUTBOUND_TOOLS: frozenset[str] = frozenset({"http_fetch", "email_send"})
 
-# --- Catalog keys read from ProfileResolver ---
+# --- Policy keys ---
 _KEY_RED_ZONE_TOOLS = "trust.red_zone_tools"
 _KEY_YELLOW_ZONE_TOOLS = "trust.yellow_zone_tools"
 
 
-def _profile_zone_mapping() -> dict[str, TrustZone]:
-    """Build the active tool-to-zone mapping from the profile."""
-    resolver = get_resolver()
+def _policy_zone_mapping() -> dict[str, TrustZone]:
+    """Build the tool-to-zone mapping from the assistant policy."""
+    resolver = get_policy()
     mapping: dict[str, TrustZone] = {}
     for tool in resolver.get_list_str(_KEY_YELLOW_ZONE_TOOLS):
         mapping[tool] = TrustZone.YELLOW
@@ -56,7 +56,7 @@ def _zone_mapping(
     """Return the active tool-to-zone mapping."""
     if custom_zones is not None:
         return custom_zones
-    return _profile_zone_mapping()
+    return _policy_zone_mapping()
 
 
 def _split_target(
@@ -77,7 +77,7 @@ def get_zone(
     tool_name: str,
     custom_zones: dict[str, TrustZone] | None = None,
 ) -> TrustZone:
-    """Get the trust zone for a tool from the active profile.
+    """Get the trust zone for a tool from the assistant policy.
 
     Args:
         tool_name: Name of the tool.
@@ -92,7 +92,7 @@ def get_zone(
     if custom_zones is not None:
         return custom_zones.get(tool_name, TrustZone.RED)
 
-    zones = _profile_zone_mapping()
+    zones = _policy_zone_mapping()
     if tool_name in zones:
         return zones[tool_name]
     if tool_name in _OUTBOUND_TOOLS:

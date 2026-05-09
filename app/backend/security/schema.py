@@ -9,21 +9,14 @@ successful unlock.
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
-
-from backend.security.profiles.builtins import (
-    all_builtin_names,
-    get_builtin_description,
-    get_builtin_settings,
-)
 
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -375,24 +368,34 @@ CREATE INDEX IF NOT EXISTS idx_chat_bridge_message_links_bridge_link_id
 ON chat_bridge_message_links(bridge_link_id)
 """
 
-CREATE_SECURITY_PROFILES_TABLE = """
-CREATE TABLE IF NOT EXISTS security_profiles (
+CREATE_PROJECT_ROOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS project_roots (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL DEFAULT '',
-    is_builtin INTEGER NOT NULL DEFAULT 0,
-    settings_json TEXT NOT NULL,
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
 )
 """
 
-CREATE_APP_SETTINGS_TABLE = """
-CREATE TABLE IF NOT EXISTS app_settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+CREATE_CAPABILITY_GRANTS_TABLE = """
+CREATE TABLE IF NOT EXISTS capability_grants (
+    id TEXT PRIMARY KEY,
+    scope_type TEXT NOT NULL,
+    scope_value TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT '',
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    UNIQUE(scope_type, scope_value, capability, channel)
 )
+"""
+
+CREATE_CAPABILITY_GRANTS_LOOKUP_IDX = """
+CREATE INDEX IF NOT EXISTS idx_capability_grants_lookup
+ON capability_grants(scope_type, scope_value, capability, channel, expires_at)
 """
 
 # --- Ordered list for schema initialization ---
@@ -433,8 +436,9 @@ SCHEMA_STATEMENTS = [
     CREATE_SCHEDULED_TASKS_DUE_IDX,
     CREATE_SCHEDULED_TASK_RUNS_TABLE,
     CREATE_SCHEDULED_TASK_RUNS_TASK_IDX,
-    CREATE_SECURITY_PROFILES_TABLE,
-    CREATE_APP_SETTINGS_TABLE,
+    CREATE_PROJECT_ROOTS_TABLE,
+    CREATE_CAPABILITY_GRANTS_TABLE,
+    CREATE_CAPABILITY_GRANTS_LOOKUP_IDX,
 ]
 
 
@@ -685,45 +689,6 @@ def _migrate_reminders_to_scheduled_tasks(
     db.execute("DROP TABLE IF EXISTS reminders")
 
 
-def _seed_security_profiles(
-    db: DatabaseManager,
-) -> None:
-    """Seed built-in security profiles and set personal active by default.
-
-    Idempotent: built-ins are inserted only if their id is missing,
-    so settings of an existing built-in are not overwritten on each
-    schema apply. Catalog-version drift (a stored profile missing
-    keys that the catalog grew later) is handled by the resolver's
-    fallback path, not here.
-    """
-    for name in all_builtin_names():
-        cursor = db.execute(
-            "SELECT 1 FROM security_profiles WHERE id = ?",
-            (name,),
-        )
-        if cursor.fetchone() is not None:
-            continue
-        db.execute(
-            "INSERT INTO security_profiles "
-            "(id, name, description, is_builtin, settings_json) "
-            "VALUES (?, ?, ?, 1, ?)",
-            (
-                name,
-                name,
-                get_builtin_description(name),
-                json.dumps(get_builtin_settings(name)),
-            ),
-        )
-
-    cursor = db.execute(
-        "SELECT value FROM app_settings WHERE key = 'active_profile_id'"
-    )
-    if cursor.fetchone() is None:
-        db.execute(
-            "INSERT INTO app_settings (key, value) VALUES ('active_profile_id', 'personal')"
-        )
-
-
 def initialize_schema(
     db: DatabaseManager,
 ) -> None:
@@ -743,5 +708,4 @@ def initialize_schema(
     _ensure_skills_schema(db)
     _migrate_reminders_to_scheduled_tasks(db)
     _ensure_scheduled_tasks_schema(db)
-    _seed_security_profiles(db)
     db.commit()

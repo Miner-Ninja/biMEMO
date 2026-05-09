@@ -14,7 +14,6 @@ import { LLMConfigPage } from '@/pages/admin/LLMConfigPage'
 import { MemoryDebugPage } from '@/pages/admin/MemoryDebugPage'
 import { ProfilePage } from '@/pages/admin/ProfilePage'
 import { ScheduledTasksPage } from '@/pages/admin/ScheduledTasksPage'
-import { SecurityPage } from '@/pages/settings/security/SecurityPage'
 import { SkillsPage } from '@/pages/admin/SkillsPage'
 import { SkillDetailPage } from '@/pages/admin/SkillDetailPage'
 
@@ -73,7 +72,6 @@ function AppRoutes() {
       <Route path="/admin/memory-debug" element={<MemoryDebugPage />} />
       <Route path="/admin/skills" element={<SkillsPage />} />
       <Route path="/admin/skills/:name" element={<SkillDetailPage />} />
-      <Route path="/settings/security" element={<SecurityPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

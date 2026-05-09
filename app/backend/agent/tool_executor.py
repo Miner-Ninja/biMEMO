@@ -21,12 +21,22 @@ from backend.agent.agent_loop_models import (
     ToolCall,
     ToolRoundResult,
 )
-from backend.trust.zones import TrustZone
+from backend.permissions import (
+    ActionContext,
+    ActionDecision,
+    ActionDecisionService,
+    DecisionKind,
+)
+from backend.trust.zones import TrustZone, get_zone
 
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from backend.tools.broker import ToolBroker, ToolResult
     from backend.trust.confirmation import ConfirmationManager, PendingAction
+
+    PendingActionRecorder = Callable[..., Awaitable[dict[str, object] | None]]
 
 
 logger = logging.getLogger(__name__)
@@ -44,15 +54,22 @@ class ToolExecutor:
         self,
         broker: ToolBroker,
         confirmation_mgr: ConfirmationManager,
+        action_decisions: ActionDecisionService | None = None,
+        pending_action_recorder: PendingActionRecorder | None = None,
     ) -> None:
         """Initialize tool executor.
 
         Args:
             broker: Tool broker for execution.
             confirmation_mgr: Manager for red-zone confirmations.
+            action_decisions: Optional action decision service.
+            pending_action_recorder: Optional async persistence hook for
+                confirmation-required actions.
         """
         self.broker = broker
         self.confirmation_mgr = confirmation_mgr
+        self.action_decisions = action_decisions or ActionDecisionService()
+        self.pending_action_recorder = pending_action_recorder
         self.sse_queue: object | None = None
         self._pending_red: list[PendingAction] = []
         self.tool_call_count: int = 0
@@ -88,6 +105,14 @@ class ToolExecutor:
                 "for this scheduled task"
             )
             raise PermissionError(msg)
+        decision = self._decide_tool_action(tool_call)
+        if decision.kind == DecisionKind.BLOCK:
+            msg = f"Tool action blocked: {decision.reason}"
+            if self.sse_queue is not None:
+                await self.sse_queue.put(
+                    {"type": "tool_status", "name": tool_call.name, "status": "error"}
+                )
+            raise PermissionError(msg)
         if self.sse_queue is not None:
             await self.sse_queue.put(
                 {"type": "tool_status", "name": tool_call.name, "status": "started"}
@@ -111,6 +136,38 @@ class ToolExecutor:
                 {"type": "tool_status", "name": tool_call.name, "status": "completed"}
             )
         return result
+
+    def _action_context(self, tool_call: ToolCall) -> ActionContext:
+        """Build the action policy context for one tool call."""
+        return ActionContext(
+            conversation_id=self.current_context.get("conversation_id", ""),
+            channel=self.current_context.get("channel", ""),
+            session_id=self.current_context.get("session_id", ""),
+            tool_name=tool_call.name,
+            parameters=tool_call.parameters,
+            trust_zone=get_zone(tool_call.name).value,
+        )
+
+    def _decide_tool_action(self, tool_call: ToolCall) -> ActionDecision:
+        """Evaluate one tool call against the action policy."""
+        return self.action_decisions.decide(self._action_context(tool_call))
+
+    def _promote_saved_grants(
+        self,
+        red_calls: list[ToolCall],
+    ) -> tuple[list[ToolCall], list[ToolCall]]:
+        """Move already granted RED calls into the immediate bucket."""
+        immediate: list[ToolCall] = []
+        still_red: list[ToolCall] = []
+        for call in red_calls:
+            decision = self._decide_tool_action(call)
+            if decision.kind == DecisionKind.ALLOW:
+                immediate.append(call)
+            elif decision.kind == DecisionKind.BLOCK:
+                raise PermissionError(f"Tool action blocked: {decision.reason}")
+            else:
+                still_red.append(call)
+        return immediate, still_red
 
     async def execute_immediate_tool_calls(
         self,
@@ -140,10 +197,12 @@ class ToolExecutor:
                     }
                 )
 
-    def queue_red_tool_confirmations(
+    async def queue_red_tool_confirmations(
         self,
         red_calls: list[ToolCall],
         channel: str,
+        messages: list[dict[str, object]] | None = None,
+        assistant_message: dict[str, object] | None = None,
     ) -> None:
         """Queue confirmation requests for red-zone tool calls."""
         pending_actions: list[PendingAction] = []
@@ -153,8 +212,65 @@ class ToolExecutor:
                 call.parameters,
                 channel,
             )
+            await self._persist_pending_action(
+                call,
+                action.action_id,
+                channel,
+                messages=messages,
+                assistant_message=assistant_message,
+            )
+            await self._emit_waiting_confirmation(call, action.action_id)
             pending_actions.append(action)
         self._pending_red = pending_actions
+
+    async def _emit_waiting_confirmation(
+        self,
+        call: ToolCall,
+        action_id: str,
+    ) -> None:
+        """Emit a stream event for one action awaiting confirmation."""
+        if self.sse_queue is None:
+            return
+        await self.sse_queue.put(
+            {
+                "type": "confirmation",
+                "status": "waiting_confirmation",
+                "action_id": action_id,
+                "tool_name": call.name,
+                "parameters": call.parameters,
+            }
+        )
+
+    async def _persist_pending_action(
+        self,
+        call: ToolCall,
+        action_id: str,
+        channel: str,
+        messages: list[dict[str, object]] | None = None,
+        assistant_message: dict[str, object] | None = None,
+    ) -> None:
+        """Persist one confirmation-required action when a recorder is configured."""
+        if self.pending_action_recorder is None:
+            return
+        run_id = self.current_context.get("agent_run_id", "")
+        if not run_id:
+            return
+        await self.pending_action_recorder(
+            run_id=run_id,
+            action_id=action_id,
+            tool_name=call.name,
+            parameters=call.parameters,
+            channel=channel,
+            preview={
+                "action_id": action_id,
+                "tool_call_id": call.id,
+            },
+            resume_snapshot={
+                "tool_call_id": call.id,
+                "messages": messages or [],
+                "assistant_message": assistant_message or {},
+            },
+        )
 
     def append_tool_results_to_messages(
         self,
@@ -192,9 +308,16 @@ class ToolExecutor:
             tool_calls,
             user_intent_tools=user_intent_tools,
         )
+        granted_red, red = self._promote_saved_grants(red)
+        immediate.extend(granted_red)
         results = await self.execute_immediate_tool_calls(immediate)
         await self.emit_yellow_tool_notifications(results)
-        self.queue_red_tool_confirmations(red, channel)
+        await self.queue_red_tool_confirmations(
+            red,
+            channel,
+            messages=messages,
+            assistant_message=llm_response.raw_message,
+        )
         self.append_tool_results_to_messages(
             messages=messages,
             llm_response=llm_response,

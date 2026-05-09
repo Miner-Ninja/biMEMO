@@ -33,9 +33,9 @@ class TestGetZone:
         """Verify unknown tools default to RED."""
         assert get_zone("unknown_tool") == TrustZone.RED
 
-    def test_outbound_always_red(self):
-        """Verify outbound tools always RED."""
-        assert get_zone("http_fetch") == TrustZone.RED
+    def test_fetch_is_yellow_in_single_assistant_policy(self):
+        """Verify http_fetch runs immediately with notification."""
+        assert get_zone("http_fetch") == TrustZone.YELLOW
 
 
 class TestIsOutbound:
@@ -72,19 +72,17 @@ class TestListToolsByZone:
         tools = list_tools_by_zone(TrustZone.YELLOW)
         assert "file_write" in tools
         assert "web_search" in tools
-
-    def test_red_tools_include_outbound(self):
-        """Verify RED includes outbound tools."""
-        tools = list_tools_by_zone(TrustZone.RED)
         assert "http_fetch" in tools
+
+    def test_red_tools_include_confirmed_actions(self):
+        """Verify RED includes actions that still need confirmation."""
+        tools = list_tools_by_zone(TrustZone.RED)
         assert "email_send" in tools
 
-    def test_outbound_not_in_other_zones(self):
-        """Verify outbound tools not in GREEN/YELLOW."""
+    def test_fetch_not_in_green(self):
+        """Verify http_fetch is not silent."""
         green = list_tools_by_zone(TrustZone.GREEN)
-        yellow = list_tools_by_zone(TrustZone.YELLOW)
         assert "http_fetch" not in green
-        assert "http_fetch" not in yellow
 
 
 class TestExtractUserIntentTools:
@@ -128,20 +126,20 @@ class TestSplitByZoneWithIntent:
 
     def test_red_tool_in_intent_goes_to_immediate(self):
         """Verify RED tool matching user intent executes immediately."""
-        calls = [{"name": "http_fetch", "params": {}}]
+        calls = [{"name": "email_send", "params": {}}]
         immediate, confirm = split_by_zone(
             calls,
-            user_intent_tools={"http_fetch"},
+            user_intent_tools={"email_send"},
         )
         assert len(immediate) == 1
         assert len(confirm) == 0
 
     def test_red_tool_not_in_intent_goes_to_confirmation(self):
         """Verify RED tool without user intent requires confirmation."""
-        calls = [{"name": "http_fetch", "params": {}}]
+        calls = [{"name": "email_send", "params": {}}]
         immediate, confirm = split_by_zone(
             calls,
-            user_intent_tools={"email_send"},
+            user_intent_tools={"http_fetch"},
         )
         assert len(immediate) == 0
         assert len(confirm) == 1

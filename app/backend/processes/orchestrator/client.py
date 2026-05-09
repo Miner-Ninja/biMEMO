@@ -890,6 +890,288 @@ class DBProxyClient:
         result = await self.send_operation("get_user_profile")
         return result.get("profile", {})
 
+    # --- Assistant permission operations ---
+
+    async def list_project_roots(self) -> list[dict[str, Any]]:
+        """Return configured project roots for assistant actions."""
+        result = await self.send_operation("list_project_roots")
+        return result.get("project_roots", [])
+
+    async def add_project_root(
+        self,
+        *,
+        name: str,
+        root_path: str,
+    ) -> dict[str, Any] | None:
+        """Create or update one trusted project root."""
+        result = await self.send_operation(
+            "add_project_root",
+            {"name": name, "root_path": root_path},
+        )
+        return result.get("project_root")
+
+    async def remove_project_root(self, root_id: str) -> bool:
+        """Remove one trusted project root."""
+        result = await self.send_operation("remove_project_root", {"id": root_id})
+        return bool(result.get("removed"))
+
+    async def list_capability_grants(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_value: str | None = None,
+        capability: str | None = None,
+        channel: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return persisted assistant action grants."""
+        params = {
+            key: value
+            for key, value in {
+                "scope_type": scope_type,
+                "scope_value": scope_value,
+                "capability": capability,
+                "channel": channel,
+            }.items()
+            if value is not None
+        }
+        result = await self.send_operation("list_capability_grants", params)
+        return result.get("grants", [])
+
+    async def create_capability_grant(
+        self,
+        *,
+        scope_type: str,
+        scope_value: str,
+        capability: str,
+        decision: str,
+        channel: str = "",
+        expires_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Persist one assistant action grant."""
+        result = await self.send_operation(
+            "create_capability_grant",
+            {
+                "scope_type": scope_type,
+                "scope_value": scope_value,
+                "capability": capability,
+                "decision": decision,
+                "channel": channel,
+                "expires_at": expires_at,
+            },
+        )
+        return result.get("grant")
+
+    async def lookup_capability_grant(
+        self,
+        *,
+        scope_type: str,
+        scope_value: str,
+        capability: str,
+        channel: str = "",
+    ) -> dict[str, Any] | None:
+        """Return the best persisted grant for one action scope."""
+        result = await self.send_operation(
+            "lookup_capability_grant",
+            {
+                "scope_type": scope_type,
+                "scope_value": scope_value,
+                "capability": capability,
+                "channel": channel,
+            },
+        )
+        return result.get("grant")
+
+    async def revoke_capability_grant(self, grant_id: str) -> bool:
+        """Remove one persisted assistant action grant."""
+        result = await self.send_operation("revoke_capability_grant", {"id": grant_id})
+        return bool(result.get("revoked"))
+
+    async def expire_capability_grants(self, now: str | None = None) -> int:
+        """Delete expired assistant action grants."""
+        params = {"now": now} if now is not None else {}
+        result = await self.send_operation("expire_capability_grants", params)
+        return int(result.get("expired", 0))
+
+    async def create_agent_run(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str = "",
+        channel: str = "",
+        request_id: str = "",
+        status: str = "running",
+        current_step: str = "",
+        resume_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a persisted assistant run."""
+        result = await self.send_operation(
+            "create_agent_run",
+            {
+                "conversation_id": conversation_id,
+                "session_id": session_id,
+                "channel": channel,
+                "request_id": request_id,
+                "status": status,
+                "current_step": current_step,
+                "resume_payload": resume_payload or {},
+            },
+        )
+        return result.get("agent_run")
+
+    async def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
+        """Return one persisted assistant run."""
+        result = await self.send_operation("get_agent_run", {"run_id": run_id})
+        return result.get("agent_run")
+
+    async def update_agent_run_status(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        current_step: str = "",
+        resume_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Update one persisted assistant run status."""
+        params: dict[str, Any] = {
+            "run_id": run_id,
+            "status": status,
+            "current_step": current_step,
+        }
+        if resume_payload is not None:
+            params["resume_payload"] = resume_payload
+        result = await self.send_operation("update_agent_run_status", params)
+        return result.get("agent_run")
+
+    async def create_pending_action(
+        self,
+        *,
+        run_id: str,
+        tool_name: str,
+        action_id: str | None = None,
+        parameters: dict[str, Any] | None = None,
+        channel: str = "",
+        status: str = "waiting",
+        preview: dict[str, Any] | None = None,
+        resume_snapshot: dict[str, Any] | None = None,
+        expires_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a persisted pending action for one assistant run."""
+        result = await self.send_operation(
+            "create_pending_action",
+            {
+                "run_id": run_id,
+                "action_id": action_id,
+                "tool_name": tool_name,
+                "parameters": parameters or {},
+                "channel": channel,
+                "status": status,
+                "preview": preview or {},
+                "resume_snapshot": resume_snapshot or {},
+                "expires_at": expires_at,
+            },
+        )
+        return result.get("pending_action")
+
+    async def get_pending_action(self, action_id: str) -> dict[str, Any] | None:
+        """Return one persisted pending action."""
+        result = await self.send_operation(
+            "get_pending_action",
+            {"action_id": action_id},
+        )
+        return result.get("pending_action")
+
+    async def get_resume_snapshot(
+        self,
+        *,
+        action_id: str = "",
+        snapshot_id: str = "",
+    ) -> dict[str, Any] | None:
+        """Return continuation state for one persisted pending action."""
+        result = await self.send_operation(
+            "get_resume_snapshot",
+            {"action_id": action_id, "snapshot_id": snapshot_id},
+        )
+        return result.get("resume_snapshot")
+
+    async def list_pending_actions(
+        self,
+        *,
+        run_id: str | None = None,
+        status: str | None = None,
+        channel: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return persisted pending actions with optional filters."""
+        params = {
+            key: value
+            for key, value in {
+                "run_id": run_id,
+                "status": status,
+                "channel": channel,
+            }.items()
+            if value is not None
+        }
+        result = await self.send_operation("list_pending_actions", params)
+        return result.get("pending_actions", [])
+
+    async def decide_pending_action(
+        self,
+        *,
+        action_id: str,
+        decision: str,
+        channel: str = "",
+    ) -> dict[str, Any]:
+        """Persist an approve/deny decision for one pending action."""
+        return await self.send_operation(
+            "decide_pending_action",
+            {"action_id": action_id, "decision": decision, "channel": channel},
+        )
+
+    async def complete_pending_action(
+        self,
+        *,
+        action_id: str,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error_message: str = "",
+    ) -> dict[str, Any]:
+        """Persist the execution result for one approved pending action."""
+        return await self.send_operation(
+            "complete_pending_action",
+            {
+                "action_id": action_id,
+                "status": status,
+                "result": result or {},
+                "error_message": error_message,
+            },
+        )
+
+    async def expire_pending_actions(self, now: str | None = None) -> int:
+        """Mark expired pending actions as expired."""
+        params = {"now": now} if now is not None else {}
+        result = await self.send_operation("expire_pending_actions", params)
+        return int(result.get("expired", 0))
+
+    async def prune_runtime_state(
+        self,
+        *,
+        now: str | None = None,
+        snapshot_retention_hours: int = 24,
+        run_retention_days: int = 7,
+    ) -> dict[str, int]:
+        """Expire and delete stale short-lived assistant runtime rows."""
+        params: dict[str, Any] = {
+            "snapshot_retention_hours": snapshot_retention_hours,
+            "run_retention_days": run_retention_days,
+        }
+        if now is not None:
+            params["now"] = now
+        result = await self.send_operation("prune_runtime_state", params)
+        return {
+            "expired_pending_actions": int(result.get("expired_pending_actions", 0)),
+            "deleted_resume_snapshots": int(result.get("deleted_resume_snapshots", 0)),
+            "deleted_agent_runs": int(result.get("deleted_agent_runs", 0)),
+        }
+
     # --- Admin operations ---
 
     async def get_stats(self) -> dict[str, int]:

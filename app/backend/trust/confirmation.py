@@ -3,7 +3,7 @@
 Generates cryptographic action IDs for single-use confirmations
 with timeout and channel binding. The timeout and the
 channel-binding toggle are sourced from the active security
-profile via ProfileResolver, so policy changes take effect
+profile via AssistantPolicy, so policy changes take effect
 without restarting the manager.
 """
 
@@ -12,12 +12,12 @@ import secrets
 import time
 from dataclasses import dataclass
 
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
 logger = logging.getLogger(__name__)
 
-# --- Catalog keys read from ProfileResolver ---
+# --- Catalog keys read from AssistantPolicy ---
 _KEY_CONFIRMATION_TIMEOUT_SECONDS = "trust.confirmation_timeout_seconds"
 _KEY_CONFIRMATION_CHANNEL_BINDING = "trust.confirmation_channel_binding"
 
@@ -74,7 +74,7 @@ class ConfirmationManager:
         Args:
             timeout: Optional fixed timeout in seconds. When omitted
                 (the production path), the timeout is read fresh from
-                the active security profile on every check. Tests pass
+                the assistant policy on every check. Tests pass
                 an explicit value to avoid wiring up a resolver.
             channel_binding: Optional fixed channel-binding flag. When
                 omitted, the value is read from the active profile.
@@ -88,14 +88,14 @@ class ConfirmationManager:
         """Return the effective confirmation timeout in seconds."""
         if self._timeout_override is not None:
             return self._timeout_override
-        return float(get_resolver().get_int(_KEY_CONFIRMATION_TIMEOUT_SECONDS))
+        return float(get_policy().get_int(_KEY_CONFIRMATION_TIMEOUT_SECONDS))
 
     @property
     def _channel_binding_enabled(self) -> bool:
         """Return whether channel-binding enforcement is currently active."""
         if self._channel_binding_override is not None:
             return self._channel_binding_override
-        return get_resolver().get_bool(_KEY_CONFIRMATION_CHANNEL_BINDING)
+        return get_policy().get_bool(_KEY_CONFIRMATION_CHANNEL_BINDING)
 
     def _now(self) -> float:
         """Return the current monotonic time."""

@@ -56,6 +56,7 @@ from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
 )
+from backend.permissions import ActionDecisionService, ActionGrantReader
 from backend.trust.zones import extract_user_intent_tools
 
 
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
+    from backend.agent.tool_executor import PendingActionRecorder
 
 
 logger = logging.getLogger(__name__)
@@ -138,10 +140,17 @@ class AgentOrchestrator:
     search_skills_fn: Callable | None = None
     create_skill_fn: Callable | None = None
     log_skill_usage_fn: Callable | None = None
+    action_grants: ActionGrantReader | None = None
+    pending_action_recorder: PendingActionRecorder | None = None
 
     def __post_init__(self) -> None:
         """Initialize delegate objects after dataclass construction."""
-        self.tool_executor = ToolExecutor(self.broker, self.confirmation_mgr)
+        self.tool_executor = ToolExecutor(
+            self.broker,
+            self.confirmation_mgr,
+            action_decisions=ActionDecisionService(self.action_grants),
+            pending_action_recorder=self.pending_action_recorder,
+        )
         self.llm_caller = LLMCaller(
             self.model_name,
             self.web_search_classifier_fn,
@@ -829,6 +838,7 @@ class AgentOrchestrator:
         images: list[str] | None = None,
         attached_files: list[str] | None = None,
         meta: dict | None = None,
+        agent_run_id: str = "",
     ) -> AgentResponse:
         """Process a user message through the agentic loop.
 
@@ -842,6 +852,7 @@ class AgentOrchestrator:
             images: Inline images attached to the current message.
             attached_files: File names attached to this message.
             meta: Extra metadata to store with the message.
+            agent_run_id: Optional persisted run identifier for action prompts.
 
         Returns:
             AgentResponse with final text.
@@ -863,6 +874,7 @@ class AgentOrchestrator:
                 images=images or [],
                 attached_files=attached_files,
                 meta=meta,
+                agent_run_id=agent_run_id,
             )
         finally:
             self.concurrency.release()
@@ -878,6 +890,7 @@ class AgentOrchestrator:
         images: list[str] | None = None,
         attached_files: list[str] | None = None,
         meta: dict | None = None,
+        agent_run_id: str = "",
     ) -> AgentResponse:
         """Process one fully handled user turn through the agent loop.
 
@@ -904,6 +917,7 @@ class AgentOrchestrator:
                 "conversation_id": conversation_id,
                 "session_id": session_id,
                 "channel": channel,
+                "agent_run_id": agent_run_id,
             }
 
             # Programmatic skill search before processing

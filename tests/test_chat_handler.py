@@ -22,8 +22,10 @@ from backend.processes.orchestrator.chat_handler import (
     _forward_request_events_to_ipc,
     _mark_conversation_processing_active,
     _mark_conversation_processing_idle,
+    _pending_confirmations_from_orchestrator,
     _push_conversation_updated_event,
 )
+from backend.trust.confirmation import PendingAction
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
@@ -176,6 +178,29 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
     assert chat_response.structured_content.answer == "Main answer."
     assert chat_response.structured_content.sql == "SELECT 1"
     assert chat_response.structured_content.suggestions == []
+
+
+def test_pending_confirmations_from_orchestrator_serializes_red_calls() -> None:
+    """Expose RED-zone pending actions in the IPC chat response payload."""
+    orch = SimpleNamespace(
+        pending_red_calls=[
+            PendingAction(
+                action_id="action-1",
+                tool_name="http_fetch",
+                parameters={"url": "https://example.com"},
+                channel="web",
+                created_at=0.0,
+            )
+        ]
+    )
+
+    assert _pending_confirmations_from_orchestrator(orch) == [
+        {
+            "action_id": "action-1",
+            "tool_name": "http_fetch",
+            "parameters": {"url": "https://example.com"},
+        }
+    ]
 
 
 @pytest.mark.parametrize("stream_enabled_value", ["true", "false"])
@@ -388,6 +413,35 @@ def test_forwarder_maps_conversation_updated_to_stream_event_type() -> None:
         "processing_stage": "",
         "processing_started_at": None,
     }
+
+
+def test_forwarder_maps_confirmation_to_stream_event_type() -> None:
+    """The forwarder passes confirmation lifecycle events through."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(
+        {
+            "type": "confirmation",
+            "status": "waiting_confirmation",
+            "action_id": "act-1",
+        }
+    )
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-3",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.CONFIRMATION,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[0].data["status"] == "waiting_confirmation"
+    assert ipc_server.events[0].data["action_id"] == "act-1"
 
 
 def test_forwarder_skips_unknown_event_types() -> None:

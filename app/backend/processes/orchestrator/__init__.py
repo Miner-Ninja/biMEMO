@@ -73,6 +73,8 @@ def __getattr__(name: str) -> object:
     if name in _IPC_SERVER_EXPORTS:
         module = import_module(".ipc_server", __name__)
         return getattr(module, name)
+    if name == "process_helpers":
+        return import_module(".process_helpers", __name__)
     if name in _LAZY_EXPORT_MAP:
         module = import_module(_LAZY_EXPORT_MAP[name], __name__)
         return getattr(module, name)

@@ -45,10 +45,10 @@ from backend.memory.dialog_recorder.rules import (
 from backend.memory.dialog_recorder.trace import append_dialog_recorder_trace
 from backend.memory.models import Record
 from backend.security.content_filter import filter_input, filter_output
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
-# --- Catalog keys read from ProfileResolver ---
+# --- Catalog keys read from AssistantPolicy ---
 _KEY_ENABLE_LONG_TERM_MEMORY = "memory.enable_long_term_memory"
 _KEY_SANITIZE_BEFORE_SAVE = "memory.sanitize_before_save"
 
@@ -91,7 +91,7 @@ def _filter_record_fields(
     Returns:
         Filtered record, or ``None`` when any field is unsafe.
     """
-    if not get_resolver().get_bool(_KEY_SANITIZE_BEFORE_SAVE):
+    if not get_policy().get_bool(_KEY_SANITIZE_BEFORE_SAVE):
         return record
 
     filtered_summary = filter_output(record.summary)
@@ -455,7 +455,7 @@ async def process_record(
     event_bus: MemoryEventBus | None = None,
 ) -> str | None:
     """Run the dialog recorder pipeline through the DB proxy path only."""
-    if not get_resolver().get_bool(_KEY_ENABLE_LONG_TERM_MEMORY):
+    if not get_policy().get_bool(_KEY_ENABLE_LONG_TERM_MEMORY):
         # The active profile disables long-term memory; nothing to record.
         return None
 

@@ -2,7 +2,7 @@
 
 Allowed extensions, bare-name allowlist (Makefile, Dockerfile,
 ...), and the maximum file size are sourced from the active
-security profile via ProfileResolver, so changing profile takes
+assistant policy via AssistantPolicy, so changing profile takes
 effect on the next upload without restarting the process.
 """
 
@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 
 from backend.channels.jwt_auth import TokenClaims
 from backend.files import FileContextManager
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 from ..clients import AdminDBClient
 from ..deps import _get_admin_client, _require_auth
@@ -32,7 +32,7 @@ files_router = APIRouter(prefix="/files")
 FILES_DIR = Path("/data/files")
 BYTES_PER_MEGABYTE = 1024 * 1024
 
-# --- Catalog keys read from ProfileResolver ---
+# --- Catalog keys read from AssistantPolicy ---
 _KEY_ALLOWED_EXTENSIONS = "filesystem.uploads.allowed_extensions"
 _KEY_BARE_NAME_ALLOWLIST = "filesystem.uploads.bare_name_allowlist"
 _KEY_MAX_SIZE_MB = "filesystem.uploads.max_size_mb"
@@ -42,17 +42,17 @@ FILE_CONTEXT_MANAGER = FileContextManager()
 
 def _allowed_extensions() -> frozenset[str]:
     """Return the active profile's allowlist of file extensions."""
-    return frozenset(get_resolver().get_list_str(_KEY_ALLOWED_EXTENSIONS))
+    return frozenset(get_policy().get_list_str(_KEY_ALLOWED_EXTENSIONS))
 
 
 def _bare_name_allowlist() -> frozenset[str]:
     """Return the active profile's allowlist of files without extensions."""
-    return frozenset(get_resolver().get_list_str(_KEY_BARE_NAME_ALLOWLIST))
+    return frozenset(get_policy().get_list_str(_KEY_BARE_NAME_ALLOWLIST))
 
 
 def _max_file_size_bytes() -> int:
     """Return the active profile's per-file size limit in bytes."""
-    return get_resolver().get_int(_KEY_MAX_SIZE_MB) * BYTES_PER_MEGABYTE
+    return get_policy().get_int(_KEY_MAX_SIZE_MB) * BYTES_PER_MEGABYTE
 
 
 def _is_filename_allowed(file_name: str) -> bool:

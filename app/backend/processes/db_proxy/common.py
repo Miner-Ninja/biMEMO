@@ -1,13 +1,16 @@
 """Shared constants and helper functions for DB proxy handlers."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from backend.security.database import DatabaseManager
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 # --- Hash anchor interval ---

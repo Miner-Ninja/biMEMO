@@ -7,7 +7,7 @@ Two layers of enforcement:
 
 All numeric thresholds (per-tool caps, total budget, injection-mode
 budget, sliding-window size) are sourced from the active security
-profile via ProfileResolver.
+profile via AssistantPolicy.
 """
 
 import asyncio
@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ _UNKNOWN_TOOL_LIMIT = 1
 
 def _tool_window_limits() -> dict[str, tuple[int, float]]:
     """Return the configured sliding-window limits for persistent tools."""
-    resolver = get_resolver()
+    resolver = get_policy()
     max_calls_key, window_key = _WEB_SEARCH_WINDOW_KEYS
     return {
         "web_search": (
@@ -208,7 +208,7 @@ class ToolRateLimiter:
         if catalog_key is None:
             base = _UNKNOWN_TOOL_LIMIT
         else:
-            base = get_resolver().get_int(catalog_key)
+            base = get_policy().get_int(catalog_key)
         if self.injection_flag:
             return max(1, base // 2)
         return base
@@ -216,7 +216,7 @@ class ToolRateLimiter:
     @property
     def budget(self) -> int:
         """Return total per-loop budget from the active profile."""
-        resolver = get_resolver()
+        resolver = get_policy()
         if self.injection_flag:
             return resolver.get_int(_KEY_INJECTION_BUDGET)
         return resolver.get_int(_KEY_TOTAL_BUDGET)

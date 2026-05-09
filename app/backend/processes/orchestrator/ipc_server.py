@@ -20,6 +20,7 @@ from backend.ipc.models import (
     StopRequest,
     StopResponse,
     StreamEvent,
+    StreamEventType,
     StructuredAssistantContent,
 )
 
@@ -294,7 +295,7 @@ class OrchestratorIPCServer:
         if inspect.isawaitable(result):
             await result
 
-    def _handle_stop(self, request: StopRequest) -> StopResponse:
+    async def _handle_stop(self, request: StopRequest) -> StopResponse:
         """Cancel the active agentic loop.
 
         Args:
@@ -305,6 +306,13 @@ class OrchestratorIPCServer:
         """
         if self._active_task is not None and not self._active_task.done():
             self._active_task.cancel()
+            await self.push_event(
+                StreamEvent(
+                    request_id=request.request_id,
+                    event_type=StreamEventType.CONFIRMATION,
+                    data={"status": "stopped"},
+                )
+            )
             return self._stop_response(request.request_id, stopped=True)
         return self._stop_response(request.request_id, stopped=False)
 

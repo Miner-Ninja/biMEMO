@@ -186,6 +186,9 @@ class ConfirmResponse(IPCModel):
     request_id: str
     action_id: str
     accepted: bool
+    status: str = ""
+    message_id: str = ""
+    result_summary: str = ""
 
 
 class BridgeInboundSyncResponse(IPCModel):

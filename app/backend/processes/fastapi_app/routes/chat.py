@@ -358,4 +358,7 @@ async def confirm(
     return build_confirm_response(
         accepted=ipc_response.accepted,
         action_id=body.action_id,
+        status=ipc_response.status,
+        message_id=ipc_response.message_id,
+        result_summary=ipc_response.result_summary,
     )

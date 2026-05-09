@@ -3,7 +3,7 @@
 Provides path-traversal detection, URL-scheme allowlist, and SSRF
 prevention via resolve-first validation. Profile-driven toggles
 (loopback / RFC1918 / CGNAT / link-local / sensitive paths /
-HTTPS-only) are read from ProfileResolver every call so a
+HTTPS-only) are read from AssistantPolicy every call so a
 profile activation takes effect immediately.
 
 A small set of networks and patterns stays always-on regardless
@@ -19,7 +19,7 @@ import re
 import socket
 from urllib.parse import urlparse
 
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ _PRIVATE_KEY_PATHS: frozenset[str] = frozenset({".ssh", ".gnupg"})
 # --- Always-allowed URL schemes (HTTPS is permanent) ---
 _ALWAYS_ALLOWED_SCHEMES: frozenset[str] = frozenset({"https"})
 
-# --- Catalog keys read from ProfileResolver ---
+# --- Catalog keys read from AssistantPolicy ---
 _KEY_BLOCK_LOOPBACK = "network.block_loopback"
 _KEY_BLOCK_RFC1918 = "network.block_rfc1918"
 _KEY_BLOCK_CGNAT = "network.block_cgnat"
@@ -91,7 +91,7 @@ def _validation_error(message: str) -> ValidationError:
 
 def _active_blocked_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     """Build the active blocked-networks list from the active profile."""
-    resolver = get_resolver()
+    resolver = get_policy()
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = list(
         _ALWAYS_BLOCKED_NETWORKS,
     )
@@ -108,7 +108,7 @@ def _active_blocked_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Net
 
 def _active_write_block_paths() -> frozenset[str]:
     """Return the path components blocked for write under the active profile."""
-    resolver = get_resolver()
+    resolver = get_policy()
     blocked: set[str] = set(_PRIVATE_KEY_PATHS)
     if resolver.get_bool(_KEY_DENY_WRITE_DOTFILES):
         blocked.update(_DOTFILE_NAMES)
@@ -118,7 +118,7 @@ def _active_write_block_paths() -> frozenset[str]:
 
 def _active_read_block_paths() -> frozenset[str]:
     """Return the path components blocked for read under the active profile."""
-    resolver = get_resolver()
+    resolver = get_policy()
     blocked: set[str] = set(_PRIVATE_KEY_PATHS)
     if resolver.get_bool(_KEY_DENY_READ_DOTFILES):
         blocked.update(_DOTFILE_NAMES)
@@ -128,7 +128,7 @@ def _active_read_block_paths() -> frozenset[str]:
 
 def _allowed_url_schemes() -> frozenset[str]:
     """Return the URL-scheme allowlist for the active profile."""
-    resolver = get_resolver()
+    resolver = get_policy()
     if resolver.get_bool(_KEY_HTTPS_ONLY):
         return _ALWAYS_ALLOWED_SCHEMES
     return _ALWAYS_ALLOWED_SCHEMES | frozenset({"http"})
@@ -136,14 +136,14 @@ def _allowed_url_schemes() -> frozenset[str]:
 
 def _http_host_allowed(hostname: str) -> bool:
     """Return whether one hostname is in the active HTTP allowlist."""
-    resolver = get_resolver()
+    resolver = get_policy()
     allowlist = resolver.get_list_str(_KEY_HTTP_ALLOWED_HOSTS)
     return hostname in allowlist
 
 
 def _dns_timeout_seconds() -> float:
     """Return the active DNS resolution timeout in seconds."""
-    return get_resolver().get_float(_KEY_DNS_TIMEOUT_SECONDS)
+    return get_policy().get_float(_KEY_DNS_TIMEOUT_SECONDS)
 
 
 def check_path_traversal(path: str) -> None:

@@ -406,9 +406,19 @@ def build_confirm_response(
     *,
     accepted: bool,
     action_id: str,
+    status: str = "",
+    message_id: str = "",
+    result_summary: str = "",
 ) -> dict[str, str]:
     """Build the HTTP response for one confirmation decision."""
-    return {"detail": confirm_detail(accepted), "action_id": action_id}
+    response = {"detail": confirm_detail(accepted), "action_id": action_id}
+    if status:
+        response["status"] = status
+    if message_id:
+        response["message_id"] = message_id
+    if result_summary:
+        response["result_summary"] = result_summary
+    return response
 
 
 def confirm_detail(accepted: bool) -> str:

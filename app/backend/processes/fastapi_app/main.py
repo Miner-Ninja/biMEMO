@@ -33,8 +33,6 @@ from .clients import (
     OrchestratorClient,
     SigningClient,
 )
-from backend.security.profiles.resolver import ProfileResolver, set_resolver
-from backend.security.profiles.storage import ProfileStorage
 
 from .deps import _csrf_tokens, _get_csrf_token_for_jti
 from .routes import (
@@ -48,7 +46,6 @@ from .routes import (
     llm_router,
     memory_router,
     scheduled_tasks_router,
-    security_router,
     tools_catalog_router,
     tts_router,
 )
@@ -187,7 +184,6 @@ def _register_api_routes(application: FastAPI) -> None:
     application.include_router(files_router)
     application.include_router(avatars_router)
     application.include_router(scheduled_tasks_router)
-    application.include_router(security_router)
     application.include_router(tools_catalog_router)
     application.include_router(tts_router)
 
@@ -252,16 +248,6 @@ def create_app(
             admin_client=admin_client,
         )
 
-        # Security profile resolver — feeds active-profile values
-        # to defense modules. Loaded once here; reload() is called
-        # from the activation endpoint when the active profile changes.
-        profile_storage = ProfileStorage(admin_client)
-        profile_resolver = ProfileResolver(profile_storage)
-        await profile_resolver.load()
-        application.state.profile_storage = profile_storage
-        application.state.profile_resolver = profile_resolver
-        set_resolver(profile_resolver)
-
         sign_ipc = await _connect_optional_ipc_client(
             socket_path=signing_socket,
             secret=signing_secret,
@@ -303,7 +289,6 @@ def create_app(
 
         # Shutdown: close IPC connections
         logger.info("FastAPI process shutting down")
-        set_resolver(None)
         await orch_client.stop()
         await _close_optional_ipc_client(cred_ipc)
         await _close_optional_ipc_client(sign_ipc)

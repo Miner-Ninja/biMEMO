@@ -1,12 +1,9 @@
-"""Profile-aware content filter facade.
+"""Assistant-policy content filter facade.
 
 Exposes ``filter_input`` and ``filter_output`` — the entry points
 called by the agent loop, the chat memory pipeline, and the tool
-broker. Internally builds a ContentFilter per active security
-profile by reading toggle flags and pattern lists from
-ProfileResolver and selecting the right pattern subsets from
-content_scanning. Filters are cached by profile id and rebuilt
-the next time the active profile changes.
+broker. Internally builds a ContentFilter from the single assistant
+policy and selects the right pattern subsets from content_scanning.
 """
 
 from __future__ import annotations
@@ -27,11 +24,11 @@ from backend.security.content_scanning import (
     shannon_entropy,
 )
 from backend.security.content_scanning_models import FilterResult
-from backend.security.profiles.resolver import get_resolver
+from backend.security.policy import get_policy
 
 
 if TYPE_CHECKING:
-    from backend.security.profiles.resolver import ProfileResolver
+    from backend.security.policy import AssistantPolicy
 
 
 # --- Catalog keys for input filter toggles ---
@@ -62,9 +59,9 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
 _CUSTOM_CREDENTIAL_LABEL = "Custom credential"
 
 
-# --- Per-profile filter cache (rebuilt when active profile changes) ---
-_input_cache: tuple[str | None, ContentFilter] | None = None
-_output_cache: tuple[str | None, ContentFilter] | None = None
+# --- Single-policy filter cache ---
+_input_cache: ContentFilter | None = None
+_output_cache: ContentFilter | None = None
 
 
 def _custom_credential_pairs(patterns: list[str]) -> list[tuple[str, str]]:
@@ -72,8 +69,8 @@ def _custom_credential_pairs(patterns: list[str]) -> list[tuple[str, str]]:
     return [(pattern, _CUSTOM_CREDENTIAL_LABEL) for pattern in patterns]
 
 
-def _build_input_filter(resolver: ProfileResolver) -> ContentFilter:
-    """Compose a ContentFilter for input scanning under the active profile."""
+def _build_input_filter(resolver: AssistantPolicy) -> ContentFilter:
+    """Compose a ContentFilter for input scanning under the assistant policy."""
     credential_patterns: list[tuple[str, str]] = []
     if resolver.get_bool(_KEY_BLOCK_CREDENTIALS_STRICT):
         credential_patterns.extend(STRICT_CREDENTIAL_PATTERNS)
@@ -106,8 +103,8 @@ def _build_input_filter(resolver: ProfileResolver) -> ContentFilter:
     )
 
 
-def _build_output_filter(resolver: ProfileResolver) -> ContentFilter:
-    """Compose a ContentFilter for output scanning under the active profile."""
+def _build_output_filter(resolver: AssistantPolicy) -> ContentFilter:
+    """Compose a ContentFilter for output scanning under the assistant policy."""
     credential_patterns: list[tuple[str, str]] = []
     if resolver.get_bool(_KEY_REDACT_CREDENTIALS_IN_OUTPUT):
         credential_patterns.extend(STRICT_CREDENTIAL_PATTERNS)
@@ -138,39 +135,35 @@ def _build_output_filter(resolver: ProfileResolver) -> ContentFilter:
 
 
 def _input_filter() -> ContentFilter:
-    """Return the cached input filter for the active profile."""
+    """Return the cached input filter for the assistant policy."""
     global _input_cache
-    resolver = get_resolver()
-    active_id = resolver.active_profile_id
-    if _input_cache is None or _input_cache[0] != active_id:
-        _input_cache = (active_id, _build_input_filter(resolver))
-    return _input_cache[1]
+    if _input_cache is None:
+        _input_cache = _build_input_filter(get_policy())
+    return _input_cache
 
 
 def _output_filter() -> ContentFilter:
-    """Return the cached output filter for the active profile."""
+    """Return the cached output filter for the assistant policy."""
     global _output_cache
-    resolver = get_resolver()
-    active_id = resolver.active_profile_id
-    if _output_cache is None or _output_cache[0] != active_id:
-        _output_cache = (active_id, _build_output_filter(resolver))
-    return _output_cache[1]
+    if _output_cache is None:
+        _output_cache = _build_output_filter(get_policy())
+    return _output_cache
 
 
 def reset_filter_cache() -> None:
-    """Clear the per-profile filter cache (used by tests on teardown)."""
+    """Clear the filter cache (used by tests on teardown)."""
     global _input_cache, _output_cache
     _input_cache = None
     _output_cache = None
 
 
 def filter_input(text: str) -> FilterResult:
-    """Filter incoming text against the active profile's input rules."""
+    """Filter incoming text against the assistant policy input rules."""
     return _input_filter().scan_input(text)
 
 
 def filter_output(text: str) -> FilterResult:
-    """Filter outgoing text against the active profile's output rules."""
+    """Filter outgoing text against the assistant policy output rules."""
     return _output_filter().scan_output(text)
 
 
