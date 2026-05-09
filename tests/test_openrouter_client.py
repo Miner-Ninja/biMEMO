@@ -11,9 +11,9 @@ import httpx
 import pytest
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
 from backend.llm.capabilities import LlmResponseFormat
+from backend.llm.custom_provider.client import SOURCE_CUSTOM_MODELS, CustomLLMClient
 from backend.llm.openrouter.client import (
     DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
-    SOURCE_OPENAI_COMPAT_MODELS,
     SOURCE_PROVIDER_DEFAULT,
     OpenRouterClient,
     OpenRouterClientError,
@@ -32,6 +32,7 @@ OPENROUTER_ENV_OVERRIDE_VALUE = "32000"
 OPENROUTER_ENV_OVERRIDE_TOKENS = 32000
 STRUCTURED_OPENROUTER_MODEL = "openai/gpt-4o"
 STRUCTURED_OPENROUTER_OVERRIDE_KEY = ("openrouter", STRUCTURED_OPENROUTER_MODEL)
+STRUCTURED_CUSTOM_OVERRIDE_KEY = ("custom_llm", STRUCTURED_OPENROUTER_MODEL)
 STRUCTURED_ANSWER_TEXT = "Structured answer"
 STRUCTURED_SQL_TEXT = "select 1"
 STRUCTURED_SUGGESTION_TEXT = "Follow up"
@@ -55,7 +56,7 @@ def make_client(transport, model=DEFAULT_OPENROUTER_MODEL):
 
 def make_custom_client(transport, model=DEFAULT_CUSTOM_MODEL, num_ctx=None):
     """Create a custom-provider client with OpenAI-style /v1 paths."""
-    client = OpenRouterClient(
+    client = CustomLLMClient(
         api_key="",
         model=model,
         base_url=DEFAULT_CUSTOM_BASE_URL,
@@ -507,7 +508,7 @@ class TestChat:
             }
             return httpx.Response(200, json=response_body)
 
-        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
+        EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_CUSTOM_OVERRIDE_KEY] = (
             LlmResponseFormat.JSON_SCHEMA
         )
         transport = httpx.MockTransport(handler)
@@ -521,7 +522,7 @@ class TestChat:
                 ]
             )
         finally:
-            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
+            del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_CUSTOM_OVERRIDE_KEY]
             await client.close()
         assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
         assert result.text == STRUCTURED_ANSWER_TEXT
@@ -616,7 +617,8 @@ class TestResolveCapabilities:
         finally:
             await client.close()
         assert caps.max_context_tokens == 32768
-        assert caps.source == SOURCE_OPENAI_COMPAT_MODELS
+        assert caps.source == SOURCE_CUSTOM_MODELS
+        assert caps.provider == "custom_llm"
 
     @pytest.mark.asyncio
     async def test_detected_context_is_used_for_usage_accounting(

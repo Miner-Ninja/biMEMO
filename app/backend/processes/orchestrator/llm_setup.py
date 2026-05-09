@@ -203,6 +203,7 @@ async def _init_llm(
         capabilities resolver into the orchestrator's context_fn.
     """
     from backend.llm.call_factory import make_llm_call
+    from backend.llm.custom_provider.client import CustomLLMClient
     from backend.llm.ollama.client import OllamaClient
     from backend.llm.openrouter.client import OpenRouterClient
 
@@ -225,6 +226,7 @@ async def _init_llm(
         active_service_type=active_service_type,
         llm_config=llm_config,
         settings=settings,
+        custom_client_cls=CustomLLMClient,
         openrouter_client_cls=OpenRouterClient,
         ollama_client_cls=OllamaClient,
         capabilities_registry=capabilities_registry,
@@ -262,6 +264,7 @@ def _build_llm_client(
     active_service_type: str,
     llm_config: dict[str, object],
     settings: Settings,
+    custom_client_cls: object,
     openrouter_client_cls: object,
     ollama_client_cls: object,
     capabilities_registry: CapabilitiesRegistry | None = None,
@@ -277,7 +280,7 @@ def _build_llm_client(
             num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         )
     if active_service_type == "custom":
-        return openrouter_client_cls(
+        return custom_client_cls(
             api_key=llm_config.get("api_key", ""),
             model=llm_config.get("model", ""),
             base_url=llm_config.get("base_url", ""),

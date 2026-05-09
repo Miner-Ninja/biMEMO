@@ -106,6 +106,7 @@ async def _setup_dialog_recorder_pipeline(
         (tasks, embed_fn) where tasks is a list of asyncio.Task
         (dialog_recorder, distiller, reembed) and embed_fn may be None.
     """
+    from backend.llm.custom_provider.provider import CustomLLMProvider
     from backend.llm.openrouter.provider import OpenRouterProvider
     from backend.memory.runtime.rate_limiter import (
         DialogRecorderQueue,
@@ -122,6 +123,7 @@ async def _setup_dialog_recorder_pipeline(
     dialog_recorder_provider = _build_dialog_recorder_provider(
         llm_config=llm_config,
         service_type=service_type,
+        custom_provider_cls=CustomLLMProvider,
         openrouter_provider_cls=OpenRouterProvider,
         capabilities_registry=capabilities_registry,
     )
@@ -284,6 +286,7 @@ def _build_dialog_recorder_provider(
     *,
     llm_config: dict[str, object],
     service_type: str,
+    custom_provider_cls: object,
     openrouter_provider_cls: object,
     capabilities_registry: object,
 ) -> object | None:
@@ -294,7 +297,7 @@ def _build_dialog_recorder_provider(
         "dialog_recorder_model", llm_config.get("model", "")
     )
     embedding_model = llm_config.get("embedding_model", "")
-    if service_type in ("openrouter", "custom"):
+    if service_type == "openrouter":
         return openrouter_provider_cls(
             api_key=llm_config.get("api_key", ""),
             primary_model=llm_config.get("model", ""),
@@ -302,7 +305,18 @@ def _build_dialog_recorder_provider(
             base_url=llm_config.get("base_url", "https://openrouter.ai"),
             dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
             embedding_base_url=llm_config.get("embedding_base_url") or None,
-            api_prefix=(CUSTOM_API_PREFIX if service_type == "custom" else "/api/v1"),
+            api_prefix="/api/v1",
+            embedding_model=embedding_model,
+        )
+    if service_type == "custom":
+        return custom_provider_cls(
+            api_key=llm_config.get("api_key", ""),
+            primary_model=llm_config.get("model", ""),
+            dialog_recorder_model=dialog_recorder_model,
+            base_url=llm_config.get("base_url", ""),
+            dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
+            embedding_base_url=llm_config.get("embedding_base_url") or None,
+            api_prefix=CUSTOM_API_PREFIX,
             embedding_model=embedding_model,
         )
     if service_type == "ollama":
