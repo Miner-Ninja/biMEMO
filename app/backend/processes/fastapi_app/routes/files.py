@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from backend.files import FileContextManager
+from backend.files.paths import UPLOADED_FILES_DIR
 from backend.security.policy import get_policy
 
 from ..deps import _get_admin_client, _require_auth
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 files_router = APIRouter(prefix="/files")
 
 # --- On-disk paths and conversion factors ---
-FILES_DIR = Path("/data/files")
+FILES_DIR = UPLOADED_FILES_DIR
 BYTES_PER_MEGABYTE = 1024 * 1024
 
 # --- Catalog keys read from AssistantPolicy ---
