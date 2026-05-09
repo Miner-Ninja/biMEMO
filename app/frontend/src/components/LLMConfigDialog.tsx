@@ -12,6 +12,10 @@ const PROVIDER_LABELS: Record<ProviderType, string> = {
   custom: 'Custom LLM Provider',
 }
 
+const PROVIDER_SUBTITLES: Partial<Record<ProviderType, string>> = {
+  custom: 'OpenAI-compatible API',
+}
+
 interface LLMConfigDialogProps {
   open: boolean
   onClose: () => void
@@ -67,6 +71,7 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
 
   const showApiKey = serviceType === 'openrouter' || serviceType === 'custom'
   const showBaseUrl = serviceType === 'ollama' || serviceType === 'custom'
+  const providerSubtitle = PROVIDER_SUBTITLES[serviceType]
 
   const loadModels = async () => {
     setLoadingModels(true)
@@ -150,6 +155,9 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
                 <option key={key} value={key}>{PROVIDER_LABELS[key]}</option>
               ))}
             </select>
+            {providerSubtitle && (
+              <p className="text-xs text-muted-foreground">{providerSubtitle}</p>
+            )}
           </div>
 
           {showApiKey && (

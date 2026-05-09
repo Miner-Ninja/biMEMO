@@ -8,6 +8,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   custom: 'Custom LLM Provider',
 }
 
+const PROVIDER_SUBTITLES: Record<string, string> = {
+  custom: 'OpenAI-compatible API',
+}
+
 const PROVIDER_ICONS: Record<string, typeof Cpu> = {
   openrouter: Globe,
   ollama: Server,
@@ -35,6 +39,7 @@ export function LLMConfigCard({
 }: LLMConfigCardProps) {
   const Icon = PROVIDER_ICONS[config.service_type] ?? Cpu
   const label = PROVIDER_LABELS[config.service_type] ?? config.service_type
+  const subtitle = PROVIDER_SUBTITLES[config.service_type]
 
   return (
     <div className={`rounded-lg border p-4 space-y-3 ${config.enabled ? 'border-primary/50 bg-primary/5' : 'border-border'}`}>
@@ -56,6 +61,9 @@ export function LLMConfigCard({
             </div>
             {config.model && (
               <p className="text-sm text-muted-foreground truncate">{config.model}</p>
+            )}
+            {subtitle && (
+              <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
             )}
             {config.dialog_recorder_model && (
               <p className="text-xs text-muted-foreground truncate">Dialog Recorder: {config.dialog_recorder_model}</p>
