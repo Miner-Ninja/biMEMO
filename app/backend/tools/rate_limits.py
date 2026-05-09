@@ -6,18 +6,23 @@ Two layers of enforcement:
 - PersistentRateLimiter: sliding-window limits that survive across loops.
 
 All numeric thresholds (per-tool caps, total budget, injection-mode
-budget, sliding-window size) are sourced from the active security
-profile via AssistantPolicy.
+budget, sliding-window size) are sourced from AssistantPolicy.
 """
+
+from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from backend.security.policy import get_policy
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 logger = logging.getLogger(__name__)
@@ -196,7 +201,7 @@ class ToolRateLimiter:
         return self._counts.get(tool_name, 0)
 
     def _get_limit(self, tool_name: str) -> int:
-        """Get the effective per-tool limit from the active profile.
+        """Get the effective per-tool limit from AssistantPolicy.
 
         Args:
             tool_name: Name of the tool.
@@ -215,7 +220,7 @@ class ToolRateLimiter:
 
     @property
     def budget(self) -> int:
-        """Return total per-loop budget from the active profile."""
+        """Return total per-loop budget from AssistantPolicy."""
         resolver = get_policy()
         if self.injection_flag:
             return resolver.get_int(_KEY_INJECTION_BUDGET)

@@ -12,6 +12,8 @@ import pytest
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.openrouter.client import (
+    DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+    SOURCE_PROVIDER_DEFAULT,
     OpenRouterClient,
     OpenRouterClientError,
 )
@@ -557,6 +559,26 @@ class TestResolveCapabilities:
             await client.close()
         assert caps.max_context_tokens == OPENROUTER_ENV_OVERRIDE_TOKENS
         assert caps.llm_response_format is LlmResponseFormat.TEXT
+
+    @pytest.mark.asyncio
+    async def test_missing_override_uses_conservative_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Use a safe provider default when context overrides are absent."""
+        monkeypatch.delenv(OPENROUTER_ENV_OVERRIDE, raising=False)
+        monkeypatch.delenv("BIMEMO_CUSTOM_NUM_CTX", raising=False)
+        client = OpenRouterClient(
+            api_key="test-api-key",
+            model=DEFAULT_CUSTOM_MODEL,
+            api_prefix="/v1",
+        )
+        try:
+            caps = await client.resolve_capabilities(DEFAULT_CUSTOM_MODEL)
+        finally:
+            await client.close()
+        assert caps.max_context_tokens == DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS
+        assert caps.source == SOURCE_PROVIDER_DEFAULT
 
 
 class TestMakeLlmCall:

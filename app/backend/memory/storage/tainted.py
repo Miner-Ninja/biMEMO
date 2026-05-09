@@ -2,8 +2,11 @@
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from backend.security.database import DatabaseManager
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 logger = logging.getLogger(__name__)

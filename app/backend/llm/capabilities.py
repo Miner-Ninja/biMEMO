@@ -3,10 +3,10 @@
 This module defines the immutable value object that carries the resolved
 context window capacity for a single ``(provider, model)`` pair, and the
 exception raised when capacity cannot be determined. The value object is
-populated either by an explicit user override (env var or UI field) or by
-provider-native auto-detection. It is consumed by the chat path, the memory
-context builder, and the auxiliary models that need to size their prompts.
-There is no fallback constant anywhere in this module.
+populated by an explicit user override, provider-native auto-detection, or a
+provider-owned conservative default. It is consumed by the chat path, the
+memory context builder, and the auxiliary models that need to size their
+prompts.
 """
 
 from __future__ import annotations

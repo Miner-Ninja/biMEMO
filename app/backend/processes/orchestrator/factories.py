@@ -8,12 +8,18 @@ to the DB Proxy via IPC.
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
-from zoneinfo import ZoneInfo
+from typing import TYPE_CHECKING
 
 import httpx
 
 from .client import DBProxyClient, DBProxyError
+
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+    from zoneinfo import ZoneInfo
+
+    from backend.memory.context_builder import ContextResult
 
 
 logger = logging.getLogger(__name__)
@@ -135,7 +141,6 @@ def make_context_fn(
     """
     from backend.memory.classification.question_classifier import is_memory_query
     from backend.memory.context_builder import (
-        ContextResult,
         build_context_with_ids,
     )
     from backend.memory.retrieval import SearchResult
@@ -302,7 +307,6 @@ def make_zone_context_fn(
     Returns:
         Async callable(session_id, query, conversation_id) -> ContextResult.
     """
-    from backend.memory.context_builder import ContextResult
     from backend.memory.context_builder.models import ContextZoneBudget
     from backend.memory.context_builder.zone_builder import (
         build_zone_context,

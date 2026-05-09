@@ -124,7 +124,7 @@ async def stream_events(
     session_id: str,
     orchestrator_client: OrchestratorClient,
     sse_manager: SSEManager,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Yield SSE frames for one connected browser session."""
     try:
         while sse_manager.is_valid(session_id):

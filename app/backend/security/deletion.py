@@ -7,9 +7,13 @@ is overwritten in the database file.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from backend.memory.retrieval.fulltext import delete_summary_index
-from backend.security.database import DatabaseManager
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 logger = logging.getLogger(__name__)

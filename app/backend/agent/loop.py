@@ -88,7 +88,7 @@ class AgenticLoop:
         return self._iteration
 
     def _iteration_limit(self) -> int:
-        """Return the effective iteration cap from the active profile."""
+        """Return the effective iteration cap from AssistantPolicy."""
         resolver = get_policy()
         if self.injection_flag:
             return resolver.get_int(_KEY_INJECTION_MAX_ITERATIONS)

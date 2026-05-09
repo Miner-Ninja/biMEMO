@@ -132,7 +132,7 @@ def list_tools_by_zone(
 ) -> list[str]:
     """List all known tools in a given trust zone.
 
-    The result merges the active profile's red/yellow lists with
+    The result merges AssistantPolicy red/yellow lists with
     the canonical GREEN tool set so callers can enumerate every
     well-known tool (not only those explicitly mapped).
 

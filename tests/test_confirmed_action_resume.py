@@ -12,7 +12,10 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ORCH_ROOT = ROOT / "app" / "backend" / "processes" / "orchestrator"
+BACKEND_ROOT = ROOT / "backend"
+if not BACKEND_ROOT.exists():
+    BACKEND_ROOT = ROOT / "app" / "backend"
+ORCH_ROOT = BACKEND_ROOT / "processes" / "orchestrator"
 
 
 def _load_orchestrator_process() -> types.ModuleType:
@@ -40,9 +43,10 @@ def _load_orchestrator_process() -> types.ModuleType:
 
     module_name = "backend.processes.orchestrator.process"
     spec = importlib.util.spec_from_file_location(module_name, ORCH_ROOT / "process.py")
+    assert spec
+    assert spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
-    assert spec and spec.loader
     spec.loader.exec_module(module)
     return module
 
@@ -51,6 +55,7 @@ class FakeDBClient:
     """Minimal DB proxy client for confirmed action resume tests."""
 
     def __init__(self, snapshot: dict[str, object] | None) -> None:
+        """Initialize the fake DB client."""
         self.snapshot = snapshot
         self.completed: list[dict[str, object]] = []
         self.messages: list[dict[str, object]] = []
@@ -110,6 +115,7 @@ class FakeBroker:
     """Minimal tool broker for confirmed action resume tests."""
 
     def __init__(self) -> None:
+        """Initialize the fake broker."""
         self.context: dict[str, str] = {}
         self.executed: list[tuple[str, dict[str, object]]] = []
         self.cleared = False
@@ -138,7 +144,8 @@ class FakeBroker:
 
 
 @pytest.mark.asyncio
-async def test_confirmed_action_executes_tool_and_resumes_from_runtime_snapshot() -> None:
+async def test_confirmed_action_executes_tool_and_resumes(
+) -> None:
     """Approved action should execute, resume LLM, and save final message."""
     process = _load_orchestrator_process()
     db_client = FakeDBClient(
@@ -193,7 +200,7 @@ async def test_confirmed_action_executes_tool_and_resumes_from_runtime_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_confirmed_action_fails_before_tool_when_runtime_snapshot_missing() -> None:
+async def test_confirmed_action_fails_when_snapshot_missing() -> None:
     """Missing runtime snapshot should fail visibly before tool execution."""
     process = _load_orchestrator_process()
     db_client = FakeDBClient(snapshot=None)

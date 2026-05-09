@@ -6,16 +6,20 @@ Skill_search finds relevant skills via FTS5 and increments use count.
 Skill_load retrieves full content of a skill by name.
 """
 
-from backend.tools.builtin import (
-    SkillCreateInput,
-    SkillLoadInput,
-    SkillSearchInput,
-)
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from backend.tools.builtin import (
+        SkillCreateInput,
+        SkillLoadInput,
+        SkillSearchInput,
+    )
 
 
 def make_skill_create_handler(
     db_client: object,
-) -> "callable":
+) -> callable:
     """Create a skill_create handler backed by DB Proxy IPC.
 
     Args:
@@ -57,7 +61,7 @@ def make_skill_create_handler(
 
 def make_skill_search_handler(
     db_client: object,
-) -> "callable":
+) -> callable:
     """Create a skill_search handler backed by DB Proxy IPC.
 
     Args:
@@ -109,7 +113,7 @@ def make_skill_search_handler(
 
 def make_skill_load_handler(
     db_client: object,
-) -> "callable":
+) -> callable:
     """Create a skill_load handler backed by DB Proxy IPC.
 
     Args:

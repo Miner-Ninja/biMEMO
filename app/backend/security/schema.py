@@ -219,7 +219,14 @@ ON skill_usage_log(skill_id)
 
 CREATE_SKILLS_FTS_TABLE = """
 CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts
-USING fts5(name, title, trigger_text, verification, content='skills', content_rowid='rowid')
+USING fts5(
+    name,
+    title,
+    trigger_text,
+    verification,
+    content='skills',
+    content_rowid='rowid'
+)
 """
 
 CREATE_SKILLS_FTS_INSERT_TRIGGER = """
@@ -232,7 +239,14 @@ END
 CREATE_SKILLS_FTS_UPDATE_TRIGGER = """
 CREATE TRIGGER IF NOT EXISTS skills_fts_update AFTER UPDATE ON skills BEGIN
     INSERT INTO skills_fts(skills_fts, rowid, name, title, trigger_text, verification)
-    VALUES ('delete', old.rowid, old.name, old.title, old.trigger_text, old.verification);
+    VALUES (
+        'delete',
+        old.rowid,
+        old.name,
+        old.title,
+        old.trigger_text,
+        old.verification
+    );
     INSERT INTO skills_fts(rowid, name, title, trigger_text, verification)
     VALUES (new.rowid, new.name, new.title, new.trigger_text, new.verification);
 END
@@ -241,7 +255,14 @@ END
 CREATE_SKILLS_FTS_DELETE_TRIGGER = """
 CREATE TRIGGER IF NOT EXISTS skills_fts_delete AFTER DELETE ON skills BEGIN
     INSERT INTO skills_fts(skills_fts, rowid, name, title, trigger_text, verification)
-    VALUES ('delete', old.rowid, old.name, old.title, old.trigger_text, old.verification);
+    VALUES (
+        'delete',
+        old.rowid,
+        old.name,
+        old.title,
+        old.trigger_text,
+        old.verification
+    );
 END
 """
 

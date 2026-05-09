@@ -1,16 +1,16 @@
 """Parameter validation for tool calls.
 
 Provides path-traversal detection, URL-scheme allowlist, and SSRF
-prevention via resolve-first validation. Profile-driven toggles
+prevention via resolve-first validation. AssistantPolicy toggles
 (loopback / RFC1918 / CGNAT / link-local / sensitive paths /
 HTTPS-only) are read from AssistantPolicy every call so a
-profile activation takes effect immediately.
+runtime policy update takes effect immediately.
 
-A small set of networks and patterns stays always-on regardless
-of profile: the cloud-metadata IP (169.254.169.254), the
-zero-network (0.0.0.0/8), the IETF benchmark range
-(198.18.0.0/15), the IPv4-mapped IPv6 range (::ffff:0:0/96),
-numeric-IP obfuscation formats, and the path-traversal pattern.
+A small set of networks and patterns stays always-on: the
+cloud-metadata IP (169.254.169.254), the zero-network
+(0.0.0.0/8), the IETF benchmark range (198.18.0.0/15), the
+IPv4-mapped IPv6 range (::ffff:0:0/96), numeric-IP obfuscation
+formats, and the path-traversal pattern.
 """
 
 import ipaddress
@@ -25,7 +25,7 @@ from backend.security.policy import get_policy
 logger = logging.getLogger(__name__)
 
 
-# --- Always-on always-blocked networks (cannot be disabled by any profile) ---
+# --- Always-on always-blocked networks ---
 _ALWAYS_BLOCKED_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.ip_network("169.254.169.254/32"),  # cloud metadata
     ipaddress.ip_network("0.0.0.0/8"),  # this network / unspecified
@@ -90,7 +90,7 @@ def _validation_error(message: str) -> ValidationError:
 
 
 def _active_blocked_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """Build the active blocked-networks list from the active profile."""
+    """Build the active blocked-networks list from AssistantPolicy."""
     resolver = get_policy()
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = list(
         _ALWAYS_BLOCKED_NETWORKS,
@@ -107,7 +107,7 @@ def _active_blocked_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Net
 
 
 def _active_write_block_paths() -> frozenset[str]:
-    """Return the path components blocked for write under the active profile."""
+    """Return path components blocked for write by AssistantPolicy."""
     resolver = get_policy()
     blocked: set[str] = set(_PRIVATE_KEY_PATHS)
     if resolver.get_bool(_KEY_DENY_WRITE_DOTFILES):
@@ -117,7 +117,7 @@ def _active_write_block_paths() -> frozenset[str]:
 
 
 def _active_read_block_paths() -> frozenset[str]:
-    """Return the path components blocked for read under the active profile."""
+    """Return path components blocked for read by AssistantPolicy."""
     resolver = get_policy()
     blocked: set[str] = set(_PRIVATE_KEY_PATHS)
     if resolver.get_bool(_KEY_DENY_READ_DOTFILES):
@@ -127,7 +127,7 @@ def _active_read_block_paths() -> frozenset[str]:
 
 
 def _allowed_url_schemes() -> frozenset[str]:
-    """Return the URL-scheme allowlist for the active profile."""
+    """Return the URL-scheme allowlist from AssistantPolicy."""
     resolver = get_policy()
     if resolver.get_bool(_KEY_HTTPS_ONLY):
         return _ALWAYS_ALLOWED_SCHEMES
@@ -192,13 +192,13 @@ def check_sensitive_read_path(path: str) -> None:
 
 
 def check_url_scheme(url: str) -> None:
-    """Validate URL uses an allowed scheme under the active profile.
+    """Validate URL uses a scheme allowed by AssistantPolicy.
 
     Args:
         url: URL to validate.
 
     Raises:
-        ValidationError: If scheme is not allowed for this profile.
+        ValidationError: If the scheme is not allowed by AssistantPolicy.
     """
     parsed = urlparse(url)
     if parsed.scheme not in _allowed_url_schemes():

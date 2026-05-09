@@ -85,7 +85,7 @@ class ActionDecisionService:
     """Decide whether assistant tool calls can execute.
 
     The service is deliberately deterministic and narrow at this stage. It
-    blocks safety boundaries that should not be bypassed by profile changes:
+    blocks safety boundaries that should not be bypassed by policy changes:
     traversal, sensitive key paths, cloud metadata/blocked network fetches,
     and catastrophic shell commands.
     """

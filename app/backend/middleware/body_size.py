@@ -7,10 +7,13 @@ requests.
 
 import json
 import logging
-
-from starlette.types import ASGIApp, Receive, Scope, Send
+from typing import TYPE_CHECKING
 
 from backend.middleware.responses import send_json_error
+
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 logger = logging.getLogger(__name__)

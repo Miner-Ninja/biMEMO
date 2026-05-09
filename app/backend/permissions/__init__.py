@@ -9,6 +9,7 @@ from .action_decisions import (
 )
 from .grant_cache import ActionGrantCache, CachedActionGrant
 
+
 __all__ = [
     "ActionContext",
     "ActionDecision",

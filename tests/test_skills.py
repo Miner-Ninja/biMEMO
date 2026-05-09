@@ -93,7 +93,8 @@ class TestSkillSchema:
     def test_usage_log_table_exists(self, db):
         """Verify skill_usage_log table is created."""
         rows = db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='skill_usage_log'"
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='skill_usage_log'"
         ).fetchall()
         assert len(rows) == 1
 
@@ -250,7 +251,8 @@ class TestSkillDBProxyHandlers:
         assert result["status"] == "saved"
 
         row = db.execute(
-            "SELECT trigger_text, procedure, errors, verification FROM skills WHERE name = ?",
+            "SELECT trigger_text, procedure, errors, verification "
+            "FROM skills WHERE name = ?",
             ("structured-test",),
         ).fetchone()
         assert row[0] == "when X happens"

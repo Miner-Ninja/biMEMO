@@ -15,6 +15,7 @@ import logging
 import signal
 from typing import TYPE_CHECKING
 
+from backend.agent.agent_loop_helpers import llm_accepts_tools_override
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import (
     ConfirmRequest,
@@ -26,7 +27,6 @@ from backend.ipc.models import (
 )
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.permissions import ActionGrantCache
-from backend.agent.agent_loop_helpers import llm_accepts_tools_override
 
 from .client import DBProxyClient, DBProxyError
 from .ipc_server import OrchestratorIPCServer

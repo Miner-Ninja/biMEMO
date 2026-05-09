@@ -7,9 +7,10 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from pydantic import BaseModel
+
     from backend.security.database import DatabaseManager
 
 

@@ -9,18 +9,21 @@ import types
 from pathlib import Path
 
 import pytest
-
 from backend.security.runtime_schema import initialize_runtime_schema
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DB_PROXY_ROOT = ROOT / "app" / "backend" / "processes" / "db_proxy"
+BACKEND_ROOT = ROOT / "backend"
+if not BACKEND_ROOT.exists():
+    BACKEND_ROOT = ROOT / "app" / "backend"
+DB_PROXY_ROOT = BACKEND_ROOT / "processes" / "db_proxy"
 
 
 class RuntimeDB:
     """Small sqlite-backed stand-in for DatabaseManager."""
 
     def __init__(self) -> None:
+        """Initialize an in-memory runtime database."""
         self.connection = sqlite3.connect(":memory:")
         self.connection.execute("PRAGMA foreign_keys = ON")
         initialize_runtime_schema(self)
@@ -52,9 +55,10 @@ def _load_runtime_permissions_module() -> types.ModuleType:
         ),
     ):
         spec = importlib.util.spec_from_file_location(name, path)
+        assert spec
+        assert spec.loader
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
-        assert spec and spec.loader
         spec.loader.exec_module(module)
     return sys.modules["backend.processes.db_proxy.handlers.permissions"]
 
@@ -166,7 +170,7 @@ def test_health_check_covers_core_runtime_and_diagnostics_dbs() -> None:
 def test_approve_flow_fails_visibly_when_resume_snapshot_missing() -> None:
     """Approve path should fail before tool execution if snapshot is gone."""
     process_source = (
-        ROOT / "app" / "backend" / "processes" / "orchestrator" / "process.py"
+        BACKEND_ROOT / "processes" / "orchestrator" / "process.py"
     ).read_text()
 
     missing_check = process_source.index('if resume_context == "missing":')
@@ -178,7 +182,7 @@ def test_approve_flow_fails_visibly_when_resume_snapshot_missing() -> None:
 
 def test_startup_copies_legacy_core_runtime_rows_without_deleting() -> None:
     """DB proxy startup should copy legacy runtime rows into runtime DB."""
-    targets_source = (ROOT / "app" / "backend" / "processes" / "targets.py").read_text()
+    targets_source = (BACKEND_ROOT / "processes" / "targets.py").read_text()
 
     assert "_migrate_core_runtime_state(core_db, runtime_db, logger)" in targets_source
     assert "INSERT OR IGNORE INTO agent_runs" in targets_source
@@ -189,7 +193,7 @@ def test_startup_copies_legacy_core_runtime_rows_without_deleting() -> None:
 
 def test_legacy_pending_preview_is_split_into_snapshot_reference() -> None:
     """Legacy preview payloads should become small previews plus snapshots."""
-    targets_source = (ROOT / "app" / "backend" / "processes" / "targets.py").read_text()
+    targets_source = (BACKEND_ROOT / "processes" / "targets.py").read_text()
 
     assert 'preview.pop("messages", [])' in targets_source
     assert 'preview.pop("assistant_message", {})' in targets_source

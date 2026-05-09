@@ -48,6 +48,7 @@ from backend.llm.usage import aggregate_call_usages
 from backend.memory.classification.resolver import (
     LongTermMemoryResolver,
 )
+from backend.permissions import ActionDecisionService, ActionGrantReader
 from backend.security.content_filter import (
     filter_input,
     filter_output,
@@ -56,7 +57,6 @@ from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
 )
-from backend.permissions import ActionDecisionService, ActionGrantReader
 from backend.trust.zones import extract_user_intent_tools
 
 
@@ -64,10 +64,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.concurrency import AgentConcurrency
+    from backend.agent.tool_executor import PendingActionRecorder
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
-    from backend.agent.tool_executor import PendingActionRecorder
 
 
 logger = logging.getLogger(__name__)
@@ -904,6 +904,7 @@ class AgentOrchestrator:
             images: Inline images attached to the current message.
             attached_files: File names attached to this message.
             meta: Extra metadata to store with the message.
+            agent_run_id: Runtime agent run identifier for resumable actions.
 
         Returns:
             AgentResponse with results.

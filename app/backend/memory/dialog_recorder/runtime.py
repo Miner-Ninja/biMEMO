@@ -81,7 +81,7 @@ def _filter_record_fields(
 ) -> Record | None:
     """Filter all structured record fields before persistence.
 
-    Honors the active profile's `memory.sanitize_before_save`
+    Honors the AssistantPolicy `memory.sanitize_before_save`
     toggle: when off, the record is stored as produced by the
     recorder model.
 
@@ -456,7 +456,7 @@ async def process_record(
 ) -> str | None:
     """Run the dialog recorder pipeline through the DB proxy path only."""
     if not get_policy().get_bool(_KEY_ENABLE_LONG_TERM_MEMORY):
-        # The active profile disables long-term memory; nothing to record.
+        # AssistantPolicy disables long-term memory; nothing to record.
         return None
 
     text_messages, input_injection_flagged = _dialog_recorder_text_messages(messages)

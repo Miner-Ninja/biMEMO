@@ -1,15 +1,20 @@
 """Text-to-speech routes."""
 
+# ruff: noqa: B008
+
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend.channels.jwt_auth import TokenClaims
-from backend.llm.tts_client import TTSClient
-
 from ..deps import _require_auth
+
+
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import TokenClaims
+    from backend.llm.tts_client import TTSClient
 
 
 logger = logging.getLogger(__name__)
@@ -54,8 +59,8 @@ def _tts_audio_response(audio: bytes) -> Response:
 @tts_router.post("/tts")
 async def synthesize(
     body: TTSRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    tts: TTSClient | None = Depends(_get_tts_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    tts: TTSClient | None = Depends(_get_tts_client),
 ) -> Response:
     """Synthesize text to speech audio.
 
@@ -74,8 +79,8 @@ async def synthesize(
 
 @tts_router.get("/tts/status")
 async def tts_status(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    tts: TTSClient | None = Depends(_get_tts_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    tts: TTSClient | None = Depends(_get_tts_client),
 ) -> dict:
     """Check TTS availability.
 

@@ -1,25 +1,25 @@
 """Chat, stream, stop, confirm routes."""
 
+# ruff: noqa: B008
+
 import asyncio
 import uuid
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from backend.channels.jwt_auth import SessionManager, TokenClaims
-from backend.channels.sse import SSEManager
-from backend.chat_bridge import ChatBridgeService
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.ipc.models import StopRequest as IPCStopRequest
 from backend.ipc.models import StreamEventType
-from backend.models.requests import ChatRequest as HTTPChatRequest
-from backend.models.requests import ChatSettingsUpdateRequest
-from backend.models.requests import ConfirmRequest as HTTPConfirmRequest
+from backend.models.requests import ChatRequest as HTTPChatRequest  # noqa: TC001
+from backend.models.requests import ChatSettingsUpdateRequest  # noqa: TC001
+from backend.models.requests import ConfirmRequest as HTTPConfirmRequest  # noqa: TC001
 from backend.models.requests import (
-    ConversationCreateRequest as HTTPConversationCreateRequest,
+    ConversationCreateRequest as HTTPConversationCreateRequest,  # noqa: TC001
 )
 from backend.models.requests import (
-    ConversationUpdateRequest as HTTPConversationUpdateRequest,
+    ConversationUpdateRequest as HTTPConversationUpdateRequest,  # noqa: TC001
 )
 from backend.models.responses import ChatResponse as HTTPChatResponse
 from backend.models.responses import ChatSettingsResponse
@@ -35,7 +35,6 @@ from backend.models.responses import (
 )
 from backend.models.responses import StopResponse as HTTPStopResponse
 
-from ..clients import AdminDBClient, OrchestratorClient
 from ..deps import (
     _get_admin_client,
     _get_optional_chat_bridge_service,
@@ -68,6 +67,14 @@ from .chat_stream import (
 )
 
 
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import SessionManager, TokenClaims
+    from backend.channels.sse import SSEManager
+    from backend.chat_bridge import ChatBridgeService
+
+    from ..clients import AdminDBClient, OrchestratorClient
+
+
 chat_router = APIRouter()
 
 
@@ -75,12 +82,12 @@ chat_router = APIRouter()
 async def chat(
     body: HTTPChatRequest,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
-    chat_bridge_service: ChatBridgeService | None = Depends(  # noqa: B008
+    admin_client: AdminDBClient = Depends(_get_admin_client),
+    chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
     ),
 ) -> HTTPChatResponse | dict:
@@ -116,12 +123,12 @@ async def chat(
 async def create_conversation(
     body: HTTPConversationCreateRequest,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
-    chat_bridge_service: ChatBridgeService | None = Depends(  # noqa: B008
+    chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
     ),
 ) -> HTTPConversationCreateResponse:
@@ -140,8 +147,8 @@ async def create_conversation(
 
 @chat_router.get("/chat/conversations")
 async def list_conversations(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
     limit: int = DEFAULT_CONVERSATION_LIST_LIMIT,
     offset: int = 0,
 ) -> list[HTTPConversationItem]:
@@ -156,8 +163,8 @@ async def list_conversations(
 @chat_router.get("/chat/conversations/{conversation_id}/messages")
 async def list_conversation_messages(
     conversation_id: str,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
     limit: int = DEFAULT_CONVERSATION_MESSAGES_LIMIT,
     offset: int = 0,
 ) -> list[HTTPConversationMessageItem]:
@@ -174,9 +181,9 @@ async def list_conversation_messages(
 async def update_conversation(
     conversation_id: str,
     body: HTTPConversationUpdateRequest,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> HTTPConversationItem:
@@ -198,9 +205,9 @@ async def update_conversation(
 async def update_conversation_settings(
     conversation_id: str,
     body: ChatSettingsUpdateRequest,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> ChatSettingsResponse:
@@ -228,9 +235,9 @@ async def update_conversation_settings(
 @chat_router.delete("/chat/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin_client: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin_client: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> HTTPConversationDeleteResponse:
@@ -251,12 +258,12 @@ async def delete_conversation(
 async def stream(
     request: Request,
     conversation_id: str = "",
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
-    sse_manager: SSEManager = Depends(_get_sse_manager),  # noqa: B008
-    session_manager: SessionManager = Depends(_get_session_manager),  # noqa: B008
+    sse_manager: SSEManager = Depends(_get_sse_manager),
+    session_manager: SessionManager = Depends(_get_session_manager),
 ) -> StreamingResponse:
     """Establish SSE connection for real-time streaming.
 
@@ -300,8 +307,8 @@ async def stream(
 @chat_router.post("/stop")
 async def stop(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> HTTPStopResponse:
@@ -329,8 +336,8 @@ async def stop(
 async def confirm(
     body: HTTPConfirmRequest,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> dict:

@@ -7,14 +7,19 @@ parameter validation, and audit logging before execution.
 import asyncio
 import logging
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError as PydanticError
 
 from backend.tools.rate_limits import PersistentRateLimiter, ToolRateLimiter
-from backend.tools.registry import ToolDefinition, ToolRegistry
-from backend.trust.zones import TrustZone
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from backend.tools.registry import ToolDefinition, ToolRegistry
+    from backend.trust.zones import TrustZone
 
 
 logger = logging.getLogger(__name__)

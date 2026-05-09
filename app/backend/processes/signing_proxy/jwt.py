@@ -1,13 +1,18 @@
 """JWT encoding, decoding, and token issuance."""
 
+# ruff: noqa: S105
+
 import base64
 import json
 import time
 import uuid
+from typing import TYPE_CHECKING
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-)
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
 
 
 JWT_CONTEXT_LABEL = b"bimemo-jwt-signing-v1"
@@ -15,8 +20,8 @@ JWT_CONTEXT_LABEL = b"bimemo-jwt-signing-v1"
 # JWT token lifetimes (seconds).
 ACCESS_TOKEN_LIFETIME = 900  # 15 minutes
 REFRESH_TOKEN_LIFETIME = 604800  # 7 days
-ACCESS_TOKEN_TYPE = "access"  # noqa: S105
-REFRESH_TOKEN_TYPE = "refresh"  # noqa: S105
+ACCESS_TOKEN_TYPE = "access"
+REFRESH_TOKEN_TYPE = "refresh"
 
 
 def _urlsafe_b64encode(data: bytes) -> bytes:

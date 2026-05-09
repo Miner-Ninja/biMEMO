@@ -5,16 +5,19 @@ loops. Builds providers for different LLM backends, probes vector embedding
 support, and wires scheduling hooks into the gateway orchestrator.
 """
 
-import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
 from backend.ipc.ipc_channel import IPCChannelError
 
-from .client import DBProxyClient
+
+if TYPE_CHECKING:
+    import asyncio
+    from collections.abc import Awaitable, Callable
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)

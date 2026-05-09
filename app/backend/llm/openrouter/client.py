@@ -19,7 +19,6 @@ from backend.config import get_settings
 from backend.llm.call_factory import LLMResponse, LLMToolCall
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
-    ContextDetectionError,
     LlmResponseFormat,
     ModelCapabilities,
 )
@@ -54,20 +53,20 @@ EMPTY_LLM_RESPONSE_WARNING = (
     "LLM returned an empty response. Check your connection to LLM and try again."
 )
 
-# --- Capability override sources for OpenRouter ---
+# --- Capability sources for OpenRouter / OpenAI-compatible providers ---
 ENV_VAR_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
 ENV_VAR_CUSTOM_NUM_CTX = "BIMEMO_CUSTOM_NUM_CTX"
 SOURCE_ENV_OVERRIDE = "env-override"
 SOURCE_UI_OVERRIDE = "ui-override"
+SOURCE_PROVIDER_DEFAULT = "provider-default"
+DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS = 8192
 
 
 def _read_openrouter_env_override() -> int | None:
     """Read OpenRouter / custom env num_ctx and return a positive int.
 
     Treats unset, empty, non-integer, and non-positive values as "unset"
-    so the priority chain proceeds to the UI override or hard error.
-    Auto-detect for OpenRouter is intentionally not implemented in this
-    change (deferred to a follow-up) — there is no fallback constant.
+    so the priority chain proceeds to the UI override or provider default.
     """
     for env_name in (ENV_VAR_OPENROUTER_NUM_CTX, ENV_VAR_CUSTOM_NUM_CTX):
         raw = os.environ.get(env_name)
@@ -321,11 +320,12 @@ class OpenRouterClient:
     _client: httpx.AsyncClient = field(init=False, repr=False)
 
     async def resolve_capabilities(self, model: str) -> ModelCapabilities:
-        """Resolve capabilities via the override-only chain.
+        """Resolve capabilities via overrides and a conservative fallback.
 
         OpenRouter auto-detect (querying ``/api/v1/models/{slug}/endpoints``)
         is deferred to a follow-up change; for now, the resolution chain
-        consists of the env override, the UI override, and a hard error.
+        consists of the env override, the UI override, and a conservative
+        OpenAI-compatible provider default.
 
         Args:
             model: Provider-specific model identifier.
@@ -334,12 +334,6 @@ class OpenRouterClient:
             ``ModelCapabilities`` populated from the first override that
             yields a positive integer.
 
-        Raises:
-            ContextDetectionError: If neither override is set. The
-                operator must configure ``BIMEMO_OPENROUTER_NUM_CTX``
-                (or ``BIMEMO_CUSTOM_NUM_CTX``) or set ``num_ctx`` on
-                the integration credentials until OpenRouter auto-detect
-                is implemented.
         """
         env_override = _read_openrouter_env_override()
         if env_override is not None:
@@ -364,10 +358,15 @@ class OpenRouterClient:
                     model_name=model,
                 ),
             )
-        raise ContextDetectionError(
+        return ModelCapabilities(
             provider=self.name,
             model=model,
-            attempted_sources=("env-override", "ui-override"),
+            max_context_tokens=DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+            source=SOURCE_PROVIDER_DEFAULT,
+            llm_response_format=resolve_llm_response_format(
+                provider_name=self.name,
+                model_name=model,
+            ),
         )
 
     def __post_init__(self) -> None:

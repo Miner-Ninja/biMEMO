@@ -1,6 +1,10 @@
 """Shared ASGI response helpers for middleware."""
 
-from starlette.types import Send
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from starlette.types import Send
 
 
 def _json_headers(

@@ -39,7 +39,7 @@ class TestTrustZone:
         assert get_zone("my_tool", custom) == TrustZone.GREEN
 
     def test_get_zone_custom_overrides_built_in_outbound(self) -> None:
-        """Custom mapping wins for outbound tools too — profile is source of truth."""
+        """Custom mapping wins for outbound tools too."""
         custom = {"email_send": TrustZone.GREEN}
         assert get_zone("email_send", custom) == TrustZone.GREEN
 

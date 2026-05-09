@@ -6,6 +6,8 @@ messages resolve pending futures for request handlers. Manages
 session-to-conversation bindings and memory event fan-out.
 """
 
+# ruff: noqa: ASYNC109
+
 from __future__ import annotations
 
 import asyncio
@@ -241,7 +243,7 @@ class OrchestratorClient:
         self,
         request: IPCChatRequest,
         session_id: str,
-        timeout: float = 300.0,  # noqa: ASYNC109
+        timeout: float = 300.0,
     ) -> IPCChatResponse:
         """Send a ChatRequest and wait for the ChatResponse.
 
@@ -275,7 +277,7 @@ class OrchestratorClient:
     async def send_bridge_inbound_sync(
         self,
         request: IPCBridgeInboundSyncRequest,
-        timeout: float = 30.0,  # noqa: ASYNC109
+        timeout: float = 30.0,
     ) -> IPCBridgeInboundSyncResponse:
         """Send one inbound bridge message for persistence via Orchestrator."""
         self._require_connected()
@@ -291,7 +293,7 @@ class OrchestratorClient:
     async def send_stop(
         self,
         request: IPCStopRequest,
-        timeout: float = 10.0,  # noqa: ASYNC109
+        timeout: float = 10.0,
     ) -> IPCStopResponse:
         """Send a StopRequest and wait for the StopResponse.
 
@@ -318,7 +320,7 @@ class OrchestratorClient:
     async def send_reload_llm(
         self,
         request_id: str,
-        timeout: float = 30.0,  # noqa: ASYNC109
+        timeout: float = 30.0,
     ) -> IPCReloadLLMResponse:
         """Send one runtime LLM reload request and wait for the response."""
         self._require_connected()
@@ -335,7 +337,7 @@ class OrchestratorClient:
     async def send_confirm(
         self,
         request: IPCConfirmRequest,
-        timeout: float = 30.0,  # noqa: ASYNC109
+        timeout: float = 30.0,
     ) -> IPCConfirmResponse:
         """Send a ConfirmRequest and wait for the ConfirmResponse.
 
@@ -363,7 +365,7 @@ class OrchestratorClient:
         self,
         *,
         request: BaseModel,
-        timeout: float,  # noqa: ASYNC109
+        timeout: float,
     ) -> BaseModel:
         """Send one IPC request and wait for its matching response."""
         response_future = self._register_response_future(request.request_id)

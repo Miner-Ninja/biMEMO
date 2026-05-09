@@ -7,14 +7,18 @@ database proxy client.
 
 import logging
 import time
-from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from backend.config import Settings
-
-from .client import DBProxyClient
 from .factories import make_audit_fn
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from backend.config import Settings
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)

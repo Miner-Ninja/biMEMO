@@ -3463,7 +3463,7 @@ class TestFileReplacement:
 
 
 class TestProfileContract:
-    """Integration tests for the active profile route contract."""
+    """Integration tests for the user profile route contract."""
 
     def test_profile_returns_raw_profile_object(self) -> None:
         """GET /admin/profile should return the profile object directly."""

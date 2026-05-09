@@ -36,7 +36,7 @@ class TestNetworkTopology:
         assert set(nets.keys()) == {"bm-caddy", "bm-searxng"}
 
     def test_bimemo_networks(self, compose: dict[str, object]) -> None:
-        """biMEMO connects to bm-caddy and bm-searxng only."""
+        """BiMEMO connects to bm-caddy and bm-searxng only."""
         nets = compose["services"]["bimemo"]["networks"]
         assert set(nets) == {"bm-caddy", "bm-searxng"}
 

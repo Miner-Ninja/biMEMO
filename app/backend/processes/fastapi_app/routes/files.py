@@ -1,10 +1,14 @@
 """File management routes (upload, list, delete, read).
 
 Allowed extensions, bare-name allowlist (Makefile, Dockerfile,
-...), and the maximum file size are sourced from the active
-assistant policy via AssistantPolicy, so changing profile takes
-effect on the next upload without restarting the process.
+...), and the maximum file size are sourced from AssistantPolicy,
+so runtime policy changes take effect on the next upload without
+restarting the process.
 """
+
+# ruff: noqa: B008
+
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -12,16 +16,21 @@ import mimetypes
 import uuid
 from contextlib import suppress
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from backend.channels.jwt_auth import TokenClaims
 from backend.files import FileContextManager
 from backend.security.policy import get_policy
 
-from ..clients import AdminDBClient
 from ..deps import _get_admin_client, _require_auth
+
+
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import TokenClaims
+
+    from ..clients import AdminDBClient
 
 
 logger = logging.getLogger(__name__)
@@ -41,22 +50,22 @@ FILE_CONTEXT_MANAGER = FileContextManager()
 
 
 def _allowed_extensions() -> frozenset[str]:
-    """Return the active profile's allowlist of file extensions."""
+    """Return AssistantPolicy's allowlist of file extensions."""
     return frozenset(get_policy().get_list_str(_KEY_ALLOWED_EXTENSIONS))
 
 
 def _bare_name_allowlist() -> frozenset[str]:
-    """Return the active profile's allowlist of files without extensions."""
+    """Return AssistantPolicy's allowlist of files without extensions."""
     return frozenset(get_policy().get_list_str(_KEY_BARE_NAME_ALLOWLIST))
 
 
 def _max_file_size_bytes() -> int:
-    """Return the active profile's per-file size limit in bytes."""
+    """Return AssistantPolicy's per-file size limit in bytes."""
     return get_policy().get_int(_KEY_MAX_SIZE_MB) * BYTES_PER_MEGABYTE
 
 
 def _is_filename_allowed(file_name: str) -> bool:
-    """Return whether one filename is accepted by the active profile."""
+    """Return whether one filename is accepted by AssistantPolicy."""
     extension = Path(file_name).suffix.lower()
     if extension and extension in _allowed_extensions():
         return True
@@ -100,8 +109,8 @@ def _uploaded_file_response(
 @files_router.post("/upload")
 async def upload_file(
     file: UploadFile,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Upload a file with type and size validation.
 
@@ -209,8 +218,8 @@ async def upload_file(
 
 @files_router.get("")
 async def list_files(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """List all uploaded files.
 
@@ -227,8 +236,8 @@ async def list_files(
 @files_router.delete("/{file_id}")
 async def delete_file(
     file_id: uuid.UUID,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> None:
     """Delete a file from disk and database.
 
@@ -248,8 +257,8 @@ async def delete_file(
 @files_router.get("/{file_id}/content")
 async def get_file_content(
     file_id: uuid.UUID,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> FileResponse:
     """Read file content.
 

@@ -6,6 +6,8 @@ methods are implemented in companion modules (client_memory_ops,
 client_diagnostic_ops, client_conversation_ops) and delegated here.
 """
 
+# ruff: noqa: ASYNC109
+
 import asyncio
 import uuid
 from typing import Any
@@ -56,7 +58,7 @@ class DBProxyClient:
         self,
         operation: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Send a named operation to DB Proxy and await the result.
 
@@ -100,7 +102,7 @@ class DBProxyClient:
         *,
         result_key: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> list[dict[str, Any]]:
         """Send one operation and return a list field from the response."""
         result = await self.send_operation(operation, parameters, timeout)
@@ -115,7 +117,7 @@ class DBProxyClient:
         *,
         result_key: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> dict[str, Any] | None:
         """Send one operation and return an optional dict field."""
         result = await self.send_operation(operation, parameters, timeout)
@@ -130,7 +132,7 @@ class DBProxyClient:
         *,
         result_key: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> str:
         """Send one operation and return a string identifier field."""
         result = await self.send_operation(operation, parameters, timeout)
@@ -142,7 +144,7 @@ class DBProxyClient:
         *,
         result_key: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> int:
         """Send one operation and return an integer field."""
         result = await self.send_operation(operation, parameters, timeout)
@@ -154,7 +156,7 @@ class DBProxyClient:
         *,
         result_key: str,
         parameters: dict[str, Any] | None = None,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> bool:
         """Send one operation and return a boolean-ish field."""
         result = await self.send_operation(operation, parameters, timeout)
@@ -186,7 +188,7 @@ class DBProxyClient:
         self,
         *,
         operation_request: DBOperation,
-        timeout: float,  # noqa: ASYNC109
+        timeout: float,
     ) -> DBResult | object:
         """Send one DB operation envelope through IPC."""
         return await asyncio.wait_for(

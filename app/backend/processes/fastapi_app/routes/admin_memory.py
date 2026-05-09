@@ -1,19 +1,26 @@
 """Admin routes for memory debug dashboard."""
 
+# ruff: noqa: B008
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from backend.channels.jwt_auth import TokenClaims
 from backend.files import FileContextManager
 from backend.tools.handlers.registration import get_recall_stats
 
-from ..clients import AdminDBClient, CredentialClient
 from ..deps import (
     _get_admin_client,
     _require_auth,
 )
 from . import files as files_routes
+
+
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import TokenClaims
+
+    from ..clients import AdminDBClient, CredentialClient
 
 
 memory_router = APIRouter(prefix="/admin/memory")
@@ -110,8 +117,8 @@ def _stored_file_prompt_blocks(
 
 @memory_router.get("/pipeline")
 async def get_pipeline_status(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return memory pipeline status (counts of entries)."""
     del _claims
@@ -125,8 +132,8 @@ async def get_pipeline_status(
 
 @memory_router.get("/messages")
 async def get_messages_view(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
         default=DEFAULT_MEMORY_LIST_LIMIT,
         ge=1,
@@ -159,8 +166,8 @@ async def get_messages_view(
 
 @memory_router.get("/records")
 async def get_observations_view(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
         default=DEFAULT_MEMORY_LIST_LIMIT,
         ge=1,
@@ -187,8 +194,8 @@ async def get_observations_view(
 
 @memory_router.get("/summaries")
 async def get_reflections_view(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
         default=DEFAULT_MEMORY_LIST_LIMIT,
         ge=1,
@@ -215,8 +222,8 @@ async def get_reflections_view(
 
 @memory_router.get("/context")
 async def get_context_view(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return context assembly breakdown by tier."""
     del _claims
@@ -225,8 +232,8 @@ async def get_context_view(
 
 @memory_router.get("/quality")
 async def get_quality_view(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return a quality report for the current memory graph."""
     del _claims
@@ -235,8 +242,8 @@ async def get_quality_view(
 
 @memory_router.get("/timeline")
 async def get_timeline(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     entry_type: str = Query(default="", alias="type"),
     sort: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -262,8 +269,8 @@ async def get_timeline(
 
 @memory_router.get("/audit")
 async def get_audit_log(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     event_type: str = Query(default=""),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -282,8 +289,8 @@ async def get_audit_log(
 
 @memory_router.get("/files")
 async def get_file_context_index(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return uploaded files for file-context debugging."""
     del _claims
@@ -293,8 +300,8 @@ async def get_file_context_index(
 @memory_router.get("/files/{file_id}/context")
 async def get_file_context_view(
     file_id: str,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return stored file context for one uploaded file."""
     del _claims
@@ -317,8 +324,8 @@ async def get_file_context_view(
 
 @memory_router.get("/route-diagnostics")
 async def get_route_diagnostics(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     final_intent: str = Query(default=""),
@@ -353,8 +360,8 @@ async def get_route_diagnostics(
 
 @memory_router.get("/route-diagnostics/summary")
 async def get_route_diagnostics_summary(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     recent_hours: int | None = Query(default=None, ge=1, le=720),
 ) -> dict:
     """Return aggregated route-diagnostics metrics for admin debugging."""
@@ -366,8 +373,8 @@ async def get_route_diagnostics_summary(
 
 @memory_router.get("/dialog-recorder-trace")
 async def get_dialog_recorder_trace(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
         default=100,
         ge=1,
@@ -388,8 +395,8 @@ async def get_dialog_recorder_trace(
 
 @memory_router.get("/distiller-trace")
 async def get_distiller_trace(
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
         default=100,
         ge=1,
@@ -424,8 +431,8 @@ async def _resolve_num_ctx(
 @memory_router.get("/health")
 async def get_memory_health(
     request: Request,
-    _claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Return a unified memory subsystem health snapshot."""
     del _claims

@@ -7,10 +7,13 @@ vector operations on locally generated embeddings.
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
 import sqlite_vec
 
-from backend.security.database import DatabaseManager
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 logger = logging.getLogger(__name__)

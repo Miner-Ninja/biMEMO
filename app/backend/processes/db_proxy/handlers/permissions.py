@@ -1,11 +1,14 @@
 """DB proxy handlers for assistant project roots and capability grants."""
 
+# ruff: noqa: S608
+
 from __future__ import annotations
 
-import uuid
 import json
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
@@ -15,10 +18,9 @@ from backend.security.runtime_schema import prune_runtime_state
 from ..common import OperationHandler, validate_params
 from ..params import (
     AddProjectRootParams,
-    AgentRunIdParams,
     CompletePendingActionParams,
-    CreateCapabilityGrantParams,
     CreateAgentRunParams,
+    CreateCapabilityGrantParams,
     CreatePendingActionParams,
     DecidePendingActionParams,
     ExpireCapabilityGrantsParams,
@@ -30,8 +32,8 @@ from ..params import (
     ListPendingActionsParams,
     ListProjectRootsParams,
     LookupCapabilityGrantParams,
-    PruneRuntimeStateParams,
     ProjectRootIdParams,
+    PruneRuntimeStateParams,
     RenameProjectRootParams,
     ResolveProjectRootParams,
     RevokeCapabilityGrantParams,
@@ -186,7 +188,10 @@ def make_remove_project_root_handler(db: DatabaseManager) -> OperationHandler:
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, ProjectRootIdParams)
-        row = db.execute("SELECT root_path FROM project_roots WHERE id = ?", (p.id,)).fetchone()
+        row = db.execute(
+            "SELECT root_path FROM project_roots WHERE id = ?",
+            (p.id,),
+        ).fetchone()
         cursor = db.execute("DELETE FROM project_roots WHERE id = ?", (p.id,))
         if row is not None:
             db.execute(
@@ -263,7 +268,8 @@ def make_create_capability_grant_handler(db: DatabaseManager) -> OperationHandle
         row = db.execute(
             "SELECT id, scope_type, scope_value, capability, decision, channel, "
             "expires_at, created_at, updated_at FROM capability_grants "
-            "WHERE scope_type = ? AND scope_value = ? AND capability = ? AND channel = ?",
+            "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
+            "AND channel = ?",
             (p.scope_type, p.scope_value, p.capability, p.channel),
         ).fetchone()
         return {"grant": _grant_record(row)}
@@ -306,7 +312,8 @@ def make_lookup_capability_grant_handler(db: DatabaseManager) -> OperationHandle
             "expires_at, created_at, updated_at FROM capability_grants "
             "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
             "AND channel IN (?, '') "
-            "AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
+            "AND (expires_at IS NULL OR expires_at > "
+            "strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
             "ORDER BY CASE WHEN channel = ? THEN 0 ELSE 1 END, created_at DESC "
             "LIMIT 1",
             (p.scope_type, p.scope_value, p.capability, p.channel, p.channel),
@@ -463,7 +470,8 @@ def make_create_pending_action_handler(db: DatabaseManager) -> OperationHandler:
                 ),
             )
         db.execute(
-            "UPDATE agent_runs SET status = 'waiting', current_step = 'pending_action', "
+            "UPDATE agent_runs SET status = 'waiting', "
+            "current_step = 'pending_action', "
             "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
             (p.run_id,),
         )
@@ -579,7 +587,8 @@ def make_complete_pending_action_handler(db: DatabaseManager) -> OperationHandle
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, CompletePendingActionParams)
         cursor = db.execute(
-            "UPDATE pending_actions SET status = ?, result_json = ?, error_message = ?, "
+            "UPDATE pending_actions SET status = ?, result_json = ?, "
+            "error_message = ?, "
             "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
             "executed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
             "WHERE id = ? AND status = 'approved'",
@@ -598,7 +607,8 @@ def make_complete_pending_action_handler(db: DatabaseManager) -> OperationHandle
             )
             db.execute(
                 "UPDATE agent_runs SET status = ?, current_step = ?, "
-                "resume_payload = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
+                "resume_payload = ?, "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
                 "completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
                 (
                     run_status,
@@ -624,10 +634,12 @@ def make_expire_pending_actions_handler(db: DatabaseManager) -> OperationHandler
         p = validate_params(params, ExpirePendingActionsParams)
         if p.now:
             cursor = db.execute(
-                "UPDATE pending_actions SET status = 'expired', decision = 'expired', "
+                "UPDATE pending_actions SET status = 'expired', "
+                "decision = 'expired', "
                 "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
                 "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-                "WHERE status = 'waiting' AND expires_at IS NOT NULL AND expires_at <= ?",
+                "WHERE status = 'waiting' AND expires_at IS NOT NULL "
+                "AND expires_at <= ?",
                 (p.now,),
             )
         else:
@@ -669,7 +681,10 @@ def _fetch_agent_run(db: DatabaseManager, run_id: str) -> tuple[Any, ...] | None
     ).fetchone()
 
 
-def _fetch_pending_action(db: DatabaseManager, action_id: str) -> tuple[Any, ...] | None:
+def _fetch_pending_action(
+    db: DatabaseManager,
+    action_id: str,
+) -> tuple[Any, ...] | None:
     """Fetch one pending action row by id."""
     return db.execute(
         "SELECT id, run_id, tool_name, parameters_json, channel, status, decision, "
@@ -701,4 +716,3 @@ def _fetch_resume_snapshot(
             (action_id,),
         ).fetchone()
     return None
-

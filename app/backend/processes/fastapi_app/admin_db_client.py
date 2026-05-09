@@ -556,7 +556,7 @@ class AdminDBClient(_BaseIPCClient):
         """Delete a skill by name."""
         return await self.send_operation("skill_delete", {"name": name})
 
-    async def update_skill(self, name: str, **fields: Any) -> dict[str, Any]:
+    async def update_skill(self, name: str, **fields: object) -> dict[str, Any]:
         """Update skill fields by name."""
         params: dict[str, Any] = {"name": name}
         for key in (

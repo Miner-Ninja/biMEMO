@@ -22,6 +22,7 @@ interface LLMConfigDialogProps {
     dialog_recorder_model?: string
     base_url?: string
     dialog_recorder_base_url?: string
+    num_ctx?: string
   }) => Promise<void>
   editConfig?: LLMConfigEntry | null
 }
@@ -111,6 +112,7 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
         dialog_recorder_model: dialogRecorderModel || undefined,
         base_url: baseUrl || undefined,
         dialog_recorder_base_url: dialogRecorderBaseUrl || undefined,
+        num_ctx: editConfig?.num_ctx,
       })
     } finally {
       setSaving(false)

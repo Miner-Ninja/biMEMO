@@ -7,6 +7,8 @@ serialization boundary. Extends the existing ToolRequest/ToolResponse
 models from protocol.py with chat, streaming, and database operation types.
 """
 
+# ruff: noqa: S105
+
 from enum import StrEnum
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
@@ -114,7 +116,7 @@ class ReloadLLMRequest(IPCModel):
 class StreamEventType(StrEnum):
     """Types of streaming events sent from orchestrator to frontend."""
 
-    TOKEN = "token"  # noqa: S105
+    TOKEN = "token"
     THINKING = "thinking"
     TOOL_STATUS = "tool_status"
     CONFIRMATION = "confirmation"

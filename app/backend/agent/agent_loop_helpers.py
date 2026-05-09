@@ -6,6 +6,8 @@ detection. None of these functions hold state or perform I/O;
 they only inspect and transform their inputs.
 """
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import inspect
@@ -341,7 +343,7 @@ MEMORY_RECALL_HINT_MARKERS = (
     "past conversation",
     "we discussed",
     "мы обсуждали",
-    "о чём говорили",  # noqa: RUF001
+    "о чём говорили",
 )
 
 

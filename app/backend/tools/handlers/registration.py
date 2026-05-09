@@ -6,11 +6,10 @@ Also registers ToolDefinition objects in the ToolRegistry.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
-from backend.bus.worker_manager import WorkerManager
 from backend.memory.evidence_chain import load_evidence_bundle_for_query
 from backend.memory.evidence_recall import is_evidence_recall_question
-from backend.tools.broker import ToolBroker
 from backend.tools.builtin import (
     EmailSendInput,
     FileReadInput,
@@ -40,6 +39,11 @@ from backend.tools.handlers.worker_proxy import (
 )
 from backend.tools.registry import ToolDefinition, ToolRegistry, WorkerTarget
 from backend.trust.zones import TrustZone
+
+
+if TYPE_CHECKING:
+    from backend.bus.worker_manager import WorkerManager
+    from backend.tools.broker import ToolBroker
 
 
 logger = logging.getLogger(__name__)
@@ -415,8 +419,8 @@ def register_all_handlers(
     net_worker: WorkerManager,
     data_dir: str,
     ready_since: float,
-    get_ollama_status: "callable",
-    get_worker_count: "callable",
+    get_ollama_status: callable,
+    get_worker_count: callable,
     db_path: str | None = None,
     smtp_config: dict | None = None,
 ) -> None:

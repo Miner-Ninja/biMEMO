@@ -12,6 +12,7 @@ class RuntimeSchemaDB:
     """Small sqlite-backed stand-in for DatabaseManager."""
 
     def __init__(self) -> None:
+        """Initialize an in-memory runtime database."""
         self.connection = sqlite3.connect(":memory:")
         self.connection.execute("PRAGMA foreign_keys = ON")
 

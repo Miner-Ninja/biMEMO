@@ -7,6 +7,7 @@ class TestActionGrantCache:
     """Verify action grant lookup precedence."""
 
     def test_conversation_channel_grant_matches_first(self):
+        """Prefer conversation and channel-specific grants."""
         cache = ActionGrantCache(
             [
                 {
@@ -28,6 +29,7 @@ class TestActionGrantCache:
         assert decision == "allow"
 
     def test_global_grant_is_fallback(self):
+        """Use a global grant when no conversation grant matches."""
         cache = ActionGrantCache()
         cache.remember(
             scope_type="global",
@@ -45,6 +47,7 @@ class TestActionGrantCache:
         assert decision == "block"
 
     def test_missing_grant_returns_none(self):
+        """Return None when no grant matches."""
         cache = ActionGrantCache()
 
         decision = cache.find_decision(

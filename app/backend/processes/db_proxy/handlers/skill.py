@@ -5,12 +5,12 @@ Provides CRUD handlers for the skills table with structured columns
 usage log, and list operations.
 """
 
+# ruff: noqa: RUF001, S608
+
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -24,12 +24,17 @@ from ..params import (
 )
 
 
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
+
+
 # --- Column order for SELECT queries ---
 # id, name, title, description, trigger_text, procedure, errors,
 # verification, tool_sequence, use_count, enabled, created_at, updated_at
 _SKILL_COLUMNS = (
     "s.id, s.name, s.title, s.description, s.trigger_text, s.procedure, s.errors, "
-    "s.verification, s.tool_sequence, s.use_count, s.enabled, s.created_at, s.updated_at"
+    "s.verification, s.tool_sequence, s.use_count, s.enabled, "
+    "s.created_at, s.updated_at"
 )
 
 _SKILL_COLUMNS_PLAIN = (
@@ -410,7 +415,8 @@ def make_skill_list_handler(db: DatabaseManager) -> OperationHandler:
         """List all skills with structured fields and last usage status."""
         validate_params(params, SkillListParams)
         rows = db.execute(
-            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills ORDER BY use_count DESC LIMIT 50",
+            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills "
+            "ORDER BY use_count DESC LIMIT 50",
         ).fetchall()
         skills = [_skill_item(row) for row in rows]
 
@@ -461,7 +467,8 @@ def make_skill_usage_log_create_handler(db: DatabaseManager) -> OperationHandler
         skill_id = params.get("skill_id", "")
         if skill_id:
             db.execute(
-                "UPDATE skills SET use_count = use_count + 1, updated_at = ? WHERE id = ?",
+                "UPDATE skills SET use_count = use_count + 1, "
+                "updated_at = ? WHERE id = ?",
                 (_current_utc_timestamp(), skill_id),
             )
         db.commit()

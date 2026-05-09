@@ -8,10 +8,13 @@ discovery.
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
 
-from backend.trust.zones import TrustZone
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from backend.trust.zones import TrustZone
 
 
 logger = logging.getLogger(__name__)

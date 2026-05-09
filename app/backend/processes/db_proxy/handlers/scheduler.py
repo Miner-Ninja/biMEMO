@@ -6,11 +6,11 @@ queries, next-run advancement, run completion marking, status
 updates, and deletion.
 """
 
+# ruff: noqa: S608
+
 import uuid
 from datetime import UTC, datetime
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -23,6 +23,10 @@ from ..params import (
     RecordTaskRunParams,
     UpdateScheduledTaskParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 def _current_utc_timestamp() -> str:
@@ -109,13 +113,13 @@ def make_list_scheduled_tasks_handler(
         p = validate_params(params, ListScheduledTasksParams)
         if p.status in ("active", "paused", "completed"):
             rows = db.execute(
-                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608
+                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
                 "WHERE status = ? ORDER BY next_run_at ASC LIMIT 100",
                 (p.status,),
             ).fetchall()
         else:
             rows = db.execute(
-                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608
+                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
                 "ORDER BY next_run_at ASC LIMIT 100",
             ).fetchall()
         return {"tasks": [_task_item(row) for row in rows]}
@@ -132,7 +136,7 @@ def make_get_due_tasks_handler(
         """Get all tasks that are due for execution."""
         p = validate_params(params, GetDueTasksParams)
         rows = db.execute(
-            f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608
+            f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
             "WHERE next_run_at <= ? AND status = 'active' "
             "ORDER BY next_run_at ASC",
             (p.now,),
@@ -192,7 +196,7 @@ def make_mark_task_run_handler(
             return {"ok": True}
         values.append(p.task_id)
         db.execute(
-            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",  # noqa: S608
+            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",
             tuple(values),
         )
         db.commit()
@@ -242,7 +246,7 @@ def make_update_scheduled_task_handler(
             return {"ok": True}
         values.append(p.task_id)
         db.execute(
-            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",  # noqa: S608
+            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",
             tuple(values),
         )
         db.commit()

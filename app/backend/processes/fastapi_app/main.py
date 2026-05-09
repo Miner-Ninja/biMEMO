@@ -2,9 +2,9 @@
 
 import logging
 import os
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -33,7 +33,6 @@ from .clients import (
     OrchestratorClient,
     SigningClient,
 )
-
 from .deps import _csrf_tokens, _get_csrf_token_for_jti
 from .routes import (
     admin_router,
@@ -49,6 +48,10 @@ from .routes import (
     tools_catalog_router,
     tts_router,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 logger = logging.getLogger(__name__)

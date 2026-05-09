@@ -5,15 +5,12 @@ client (Ollama, OpenRouter, or custom), and wires context settings into
 the gateway orchestrator. Handles provider lookup order and model identity.
 """
 
+from __future__ import annotations
+
 import logging
 import os
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
-from backend.config import Settings
-
-from .client import DBProxyClient
 from .factories import (
     make_evidence_bundle_fn,
     make_memory_route_diagnostic_fn,
@@ -24,7 +21,13 @@ from .factories import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+    from zoneinfo import ZoneInfo
+
+    from backend.config import Settings
     from backend.llm.capabilities_registry import CapabilitiesRegistry
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)
@@ -95,7 +98,7 @@ def _build_runtime_orchestrator(
 
 def _build_capabilities_resolver(
     *,
-    capabilities_registry: "CapabilitiesRegistry",
+    capabilities_registry: CapabilitiesRegistry,
     llm_client: object,
 ) -> Callable[[], Awaitable[object]]:
     """Build a closure that resolves capabilities for the active LLM client.
@@ -127,7 +130,7 @@ def _apply_llm_context_settings(
     db_client: DBProxyClient,
     llm_config: dict[str, object] | None,
     user_tz: ZoneInfo | None,
-    capabilities_registry: "CapabilitiesRegistry",
+    capabilities_registry: CapabilitiesRegistry,
     llm_client: object,
 ) -> None:
     """Apply LLM-specific context settings to the gateway orchestrator."""
@@ -176,7 +179,7 @@ async def _init_llm(
     db_client: DBProxyClient,
     settings: Settings,
     broker: object = None,
-    capabilities_registry: "CapabilitiesRegistry | None" = None,
+    capabilities_registry: CapabilitiesRegistry | None = None,
 ) -> tuple[
     Callable[..., Awaitable[object]] | None,
     dict[str, object] | None,
@@ -261,7 +264,7 @@ def _build_llm_client(
     settings: Settings,
     openrouter_client_cls: object,
     ollama_client_cls: object,
-    capabilities_registry: "CapabilitiesRegistry | None" = None,
+    capabilities_registry: CapabilitiesRegistry | None = None,
 ) -> object:
     """Build the concrete LLM client for the selected provider."""
     from .process_helpers import parse_optional_int
@@ -271,6 +274,7 @@ def _build_llm_client(
             api_key=llm_config.get("api_key", ""),
             model=llm_config.get("model", ""),
             base_url=llm_config.get("base_url", "https://openrouter.ai"),
+            num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         )
     if active_service_type == "custom":
         return openrouter_client_cls(

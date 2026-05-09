@@ -2,9 +2,8 @@
 
 Generates cryptographic action IDs for single-use confirmations
 with timeout and channel binding. The timeout and the
-channel-binding toggle are sourced from the active security
-profile via AssistantPolicy, so policy changes take effect
-without restarting the manager.
+channel-binding toggle are sourced from AssistantPolicy, so policy
+changes take effect without restarting the manager.
 """
 
 import logging
@@ -77,7 +76,7 @@ class ConfirmationManager:
                 the assistant policy on every check. Tests pass
                 an explicit value to avoid wiring up a resolver.
             channel_binding: Optional fixed channel-binding flag. When
-                omitted, the value is read from the active profile.
+                omitted, the value is read from AssistantPolicy.
         """
         self._timeout_override = timeout
         self._channel_binding_override = channel_binding

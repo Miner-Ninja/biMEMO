@@ -10,6 +10,14 @@ from backend.agent.loop import (
     AgenticLoop,
     LoopState,
 )
+from backend.security.policy import DEFAULT_POLICY
+
+
+DEFAULT_MAX_ITERATIONS = DEFAULT_POLICY["agent_limits.iterations.max"]
+DEFAULT_INJECTION_MAX_ITERATIONS = DEFAULT_POLICY[
+    "agent_limits.iterations.max_when_injection"
+]
+DEFAULT_LOOP_TIMEOUT_SECONDS = DEFAULT_POLICY["agent_limits.loop_timeout_seconds"]
 
 
 class TestLoopLifecycle:
@@ -49,16 +57,16 @@ class TestLoopLifecycle:
 class TestIterationLimit:
     """Tests for iteration limit enforcement."""
 
-    def test_default_limit_20(self):
-        """Verify default max iterations is 20."""
+    def test_default_limit_matches_policy(self):
+        """Verify default max iterations match the assistant policy."""
         loop = AgenticLoop()
-        assert loop.max_iterations == 20
+        assert loop.max_iterations == DEFAULT_MAX_ITERATIONS
 
     def test_blocks_at_limit(self):
         """Verify blocks at iteration limit."""
         loop = AgenticLoop()
         loop.start()
-        for _ in range(20):
+        for _ in range(DEFAULT_MAX_ITERATIONS):
             loop.advance()
         state = loop.check_limits()
         assert state == LoopState.ITERATION_LIMIT
@@ -75,15 +83,15 @@ class TestInjectionFlag:
     """Tests for injection-flagged limits."""
 
     def test_reduced_iterations(self):
-        """Verify iterations reduced to 5."""
+        """Verify injection-flagged iterations match the assistant policy."""
         loop = AgenticLoop(injection_flag=True)
-        assert loop.max_iterations == 5
+        assert loop.max_iterations == DEFAULT_INJECTION_MAX_ITERATIONS
 
     def test_blocks_at_reduced_limit(self):
-        """Verify blocks at 5 iterations."""
+        """Verify injection-flagged loops block at the reduced policy limit."""
         loop = AgenticLoop(injection_flag=True)
         loop.start()
-        for _ in range(5):
+        for _ in range(DEFAULT_INJECTION_MAX_ITERATIONS):
             loop.advance()
         state = loop.check_limits()
         assert state == LoopState.ITERATION_LIMIT
@@ -98,7 +106,7 @@ class TestTimeout:
         loop.start()
         with patch(
             "backend.agent.loop.time.monotonic",
-            return_value=301,
+            return_value=DEFAULT_LOOP_TIMEOUT_SECONDS + 1,
         ):
             loop._start_time = 0
             state = loop.check_limits()

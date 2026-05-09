@@ -71,8 +71,8 @@ class TestUrlScheme:
         check_url_scheme("https://example.com")
 
     def test_rejects_http(self):
-        """Verify HTTP is rejected."""
-        with pytest.raises(ValidationError, match="scheme"):
+        """Verify HTTP is restricted to the assistant policy allowlist."""
+        with pytest.raises(ValidationError, match="allowlist"):
             check_url_scheme("http://example.com")
 
     def test_rejects_file(self):
@@ -113,16 +113,23 @@ class TestResolveAndCheck:
     """Tests for DNS resolution and IP checking."""
 
     @patch("backend.tools.validation.socket.getaddrinfo")
-    def test_rejects_localhost(self, mock_dns):
-        """Verify localhost IP is rejected."""
+    def test_allows_localhost(self, mock_dns):
+        """Verify localhost is allowed by the single assistant policy."""
         mock_dns.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
-        with pytest.raises(ValidationError, match="blocked"):
-            resolve_and_check("evil.example.com")
+        ip = resolve_and_check("local.example.com")
+        assert ip == "127.0.0.1"
 
     @patch("backend.tools.validation.socket.getaddrinfo")
-    def test_rejects_private(self, mock_dns):
-        """Verify private IP is rejected."""
+    def test_allows_private(self, mock_dns):
+        """Verify RFC1918 addresses are allowed by the single assistant policy."""
         mock_dns.return_value = [(2, 1, 6, "", ("192.168.1.1", 0))]
+        ip = resolve_and_check("private.example.com")
+        assert ip == "192.168.1.1"
+
+    @patch("backend.tools.validation.socket.getaddrinfo")
+    def test_rejects_link_local(self, mock_dns):
+        """Verify link-local addresses stay blocked."""
+        mock_dns.return_value = [(2, 1, 6, "", ("169.254.1.1", 0))]
         with pytest.raises(ValidationError, match="blocked"):
             resolve_and_check("evil.example.com")
 
@@ -161,8 +168,8 @@ class TestValidateUrl:
         assert ip == "93.184.216.34"
 
     def test_rejects_http(self):
-        """Verify HTTP rejected before DNS."""
-        with pytest.raises(ValidationError, match="scheme"):
+        """Verify non-allowlisted HTTP is rejected before DNS."""
+        with pytest.raises(ValidationError, match="allowlist"):
             validate_url("http://example.com")
 
     def test_rejects_no_hostname(self):

@@ -2,9 +2,7 @@
 
 import json
 import uuid
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import LLM_SERVICE_TYPES, OperationHandler, validate_params
 from ..params import (
@@ -21,6 +19,10 @@ from ..params import (
     StoreLLMConfigParams,
     UpdateLLMConfigParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 DEACTIVATE_LLM_CONFIGS_SQL = (

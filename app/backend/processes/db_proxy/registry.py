@@ -1,11 +1,12 @@
 """Channel constants, operation sets, and registry/allowlist builders."""
 
+from typing import TYPE_CHECKING
+
 from backend.ipc.db_proxy import (
     ChannelAllowlist,
     OperationRegistry,
     create_health_handler,
 )
-from backend.security.database import DatabaseManager
 
 from .handlers.admin import (
     make_count_memory_entries_handler,
@@ -156,6 +157,10 @@ from .handlers.skill import (
     make_skill_usage_log_list_handler,
     make_skill_use_handler,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 # --- Channel identifiers ---
@@ -570,7 +575,10 @@ def _register_permission_operations(
     registry.register("add_project_root", make_add_project_root_handler(core_db))
     registry.register("remove_project_root", make_remove_project_root_handler(core_db))
     registry.register("rename_project_root", make_rename_project_root_handler(core_db))
-    registry.register("resolve_project_root", make_resolve_project_root_handler(core_db))
+    registry.register(
+        "resolve_project_root",
+        make_resolve_project_root_handler(core_db),
+    )
     registry.register(
         "list_capability_grants",
         make_list_capability_grants_handler(core_db),
@@ -625,7 +633,10 @@ def _register_permission_operations(
         "expire_pending_actions",
         make_expire_pending_actions_handler(runtime_db),
     )
-    registry.register("prune_runtime_state", make_prune_runtime_state_handler(runtime_db))
+    registry.register(
+        "prune_runtime_state",
+        make_prune_runtime_state_handler(runtime_db),
+    )
 
 
 def _register_integration_operations(

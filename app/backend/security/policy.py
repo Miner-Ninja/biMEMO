@@ -7,8 +7,6 @@ security modes.
 
 from __future__ import annotations
 
-from typing import Any
-
 
 PolicyValue = bool | int | float | str | list[str]
 
@@ -212,7 +210,11 @@ class AssistantPolicy:
         """Initialize the policy from static settings."""
         self._settings = settings or DEFAULT_POLICY
 
-    def get(self, key: str, default: Any = None) -> Any:  # noqa: ANN401
+    def get(
+        self,
+        key: str,
+        default: PolicyValue | None = None,
+    ) -> PolicyValue | list[str]:
         """Return one policy value, raising on unknown keys by default."""
         if key in self._settings:
             value = self._settings[key]
@@ -239,7 +241,9 @@ class AssistantPolicy:
         """Return a numeric policy value as float."""
         value = self.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypeError(f"Policy key {key!r} is not numeric: {type(value).__name__}")
+            raise TypeError(
+                f"Policy key {key!r} is not numeric: {type(value).__name__}"
+            )
         return float(value)
 
     def get_str(self, key: str) -> str:
@@ -267,4 +271,4 @@ def get_policy() -> AssistantPolicy:
     return _POLICY
 
 
-__all__ = ["AssistantPolicy", "DEFAULT_POLICY", "PolicyValue", "get_policy"]
+__all__ = ["DEFAULT_POLICY", "AssistantPolicy", "PolicyValue", "get_policy"]

@@ -1,6 +1,10 @@
 """Constants used by the dialog recorder pipeline."""
 
-from backend.memory.models import RecordKind
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from backend.memory.models import RecordKind
 
 
 DIALOG_RECORDER_SYSTEM_PROMPT = (

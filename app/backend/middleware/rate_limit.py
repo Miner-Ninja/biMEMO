@@ -7,11 +7,15 @@ rate limit is exceeded.
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-
-from backend.channels.endpoints import EndpointRateLimiter
 from backend.middleware.responses import send_json_error
+
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    from backend.channels.endpoints import EndpointRateLimiter
 
 
 logger = logging.getLogger(__name__)

@@ -7,8 +7,8 @@ Embeddings are not supported — returns empty vectors.
 
 import json
 import logging
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import httpx
 
@@ -19,6 +19,10 @@ from backend.llm.openrouter.client import (
     normalize_system_messages,
 )
 from backend.llm.reasoning import strip_reasoning_output
+
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 logger = logging.getLogger(__name__)
