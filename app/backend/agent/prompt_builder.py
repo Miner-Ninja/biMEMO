@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from backend.agent.agent_loop_helpers import (
     context_contains_active_long_term_preference,
+    message_allows_file_read_tools,
     message_allows_file_write_tool,
 )
 from backend.memory.evidence_recall import (
@@ -46,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 FILE_WRITE_TOOL_NAME = "file_write"
+FILE_READ_TOOL_NAMES = frozenset({"file_read", "file_search"})
 MEMORY_META_GUARDRAIL = (
     "Memory-answer rule: if retrieved memory already shows an active long-term "
     "preference, do not claim that no durable preference exists, that nothing "
@@ -440,15 +442,24 @@ class PromptBuilder:
         )
         messages.append({"role": "user", "content": user_content})
 
-    def select_openai_tools(self, message: str) -> list[dict] | None:
+    def select_openai_tools(
+        self,
+        message: str,
+        *,
+        attached_files: list[str] | None = None,
+    ) -> list[dict] | None:
         """Return the tool schemas that should be exposed for this message."""
         tool_names = getattr(self.broker.registry, "tool_names", None)
         if tool_names is None:
             return self.broker.list_openai_schemas()
 
         allowed_names = set(tool_names)
+        if not message_allows_file_read_tools(message):
+            allowed_names -= FILE_READ_TOOL_NAMES
         if not message_allows_file_write_tool(message):
             allowed_names.discard(FILE_WRITE_TOOL_NAME)
+        if attached_files:
+            allowed_names -= FILE_READ_TOOL_NAMES
         # Per-call allowlist restriction (used by scheduler for cron tasks)
         if self.allowed_tool_names is not None:
             allowed_names &= self.allowed_tool_names

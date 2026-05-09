@@ -823,6 +823,7 @@ class AgentOrchestrator:
             messages=messages,
             openai_tools=self.prompt_builder.select_openai_tools(
                 turn_input.filtered_message,
+                attached_files=attached_files or [],
             ),
             question_route=question_route,
         )

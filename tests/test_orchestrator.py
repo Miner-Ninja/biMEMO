@@ -18,6 +18,7 @@ from backend.agent.agent_loop import (
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
     build_tool_result_messages,
+    message_allows_file_read_tools,
     message_allows_file_write_tool,
     message_may_need_forced_web_search_classifier,
     message_requires_forced_web_search,
@@ -385,6 +386,23 @@ class TestAgentOrchestrator:
         )
         assert message_allows_file_write_tool(
             "Create a README.md file and write deployment steps into it."
+        )
+
+    def test_file_read_tools_require_explicit_file_intent(self):
+        """Do not expose file_read/file_search for pasted code analysis."""
+        pasted_code = (
+            "Проанализируй этот код:\n"
+            "```python\n"
+            "def hello():\n"
+            "    return 'world'\n"
+            "```"
+        )
+        assert not message_allows_file_read_tools(pasted_code)
+        assert message_allows_file_read_tools(
+            "Проанализируй файл sandbox/CODE_RULES.md"
+        )
+        assert message_allows_file_read_tools(
+            "Search files in app/backend for file_read"
         )
 
     def test_explicit_online_search_phrases_force_web_search(self):
