@@ -9,7 +9,7 @@ import type { LLMConfigEntry, ProviderType } from '@/api/llm'
 const PROVIDER_LABELS: Record<ProviderType, string> = {
   openrouter: 'OpenRouter',
   ollama: 'Ollama (local)',
-  custom: 'Custom (OpenAI-compatible)',
+  custom: 'Custom LLM Provider',
 }
 
 interface LLMConfigDialogProps {

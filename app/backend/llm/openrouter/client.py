@@ -58,8 +58,22 @@ ENV_VAR_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
 ENV_VAR_CUSTOM_NUM_CTX = "BIMEMO_CUSTOM_NUM_CTX"
 SOURCE_ENV_OVERRIDE = "env-override"
 SOURCE_UI_OVERRIDE = "ui-override"
+SOURCE_OPENAI_COMPAT_MODELS = "openai-compatible:/models"
+SOURCE_OPENROUTER_MODELS = "openrouter:/models"
 SOURCE_PROVIDER_DEFAULT = "provider-default"
 DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS = 8192
+CONTEXT_WINDOW_FIELD_NAMES = (
+    "context_length",
+    "context_window",
+    "max_context_length",
+    "max_context_tokens",
+    "max_model_len",
+    "max_model_length",
+    "max_sequence_length",
+    "max_position_embeddings",
+    "n_ctx",
+)
+MODEL_ID_FIELD_NAMES = ("id", "name", "model", "root")
 
 
 def _read_openrouter_env_override() -> int | None:
@@ -84,6 +98,58 @@ def _read_openrouter_env_override() -> int | None:
         if parsed > 0:
             return parsed
     return None
+
+
+def _positive_int(value: object) -> int | None:
+    """Return a positive integer parsed from one provider metadata value."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float) and value.is_integer():
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized.isdecimal():
+            parsed = int(normalized)
+            return parsed if parsed > 0 else None
+    return None
+
+
+def _context_window_from_model_entry(entry: dict[str, object]) -> int | None:
+    """Extract a context-window value from one OpenAI-compatible model entry."""
+    for field_name in CONTEXT_WINDOW_FIELD_NAMES:
+        parsed = _positive_int(entry.get(field_name))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _model_entry_id_values(entry: dict[str, object]) -> set[str]:
+    """Return all known string identifiers for one provider model entry."""
+    return {
+        value
+        for field_name in MODEL_ID_FIELD_NAMES
+        if isinstance((value := entry.get(field_name)), str) and value
+    }
+
+
+def _model_entry_matches(entry: dict[str, object], model: str) -> bool:
+    """Return whether one provider model entry describes the requested model."""
+    return model in _model_entry_id_values(entry)
+
+
+def _model_entries(response_body: object) -> list[dict[str, object]]:
+    """Return OpenAI-style model entries from one ``/models`` response body."""
+    if not isinstance(response_body, dict):
+        return []
+    raw_entries = response_body.get("data")
+    if not isinstance(raw_entries, list):
+        raw_entries = response_body.get("models")
+    if not isinstance(raw_entries, list):
+        return []
+    return [entry for entry in raw_entries if isinstance(entry, dict)]
 
 
 class OpenRouterClientError(Exception):
@@ -318,14 +384,65 @@ class OpenRouterClient:
     num_ctx: int | None = None
     timeout: float = 120.0
     _client: httpx.AsyncClient = field(init=False, repr=False)
+    _resolved_context_tokens: int | None = field(
+        init=False,
+        repr=False,
+        default=None,
+    )
+
+    def _capability_source_for_models_endpoint(self) -> str:
+        """Return the source label for this client's model metadata endpoint."""
+        if self.api_prefix == CUSTOM_API_PREFIX:
+            return SOURCE_OPENAI_COMPAT_MODELS
+        return SOURCE_OPENROUTER_MODELS
+
+    def _remember_context_tokens(self, tokens: int) -> int:
+        """Store the latest resolved context window for usage accounting."""
+        self._resolved_context_tokens = tokens
+        return tokens
+
+    def _usage_context_tokens(self) -> int | None:
+        """Return the best known context window for token usage records."""
+        if self.num_ctx is not None and self.num_ctx > 0:
+            return self.num_ctx
+        return self._resolved_context_tokens
+
+    async def _detect_context_from_models_endpoint(
+        self,
+        model: str,
+    ) -> tuple[int, str] | None:
+        """Detect context window from an OpenAI-compatible ``/models`` endpoint."""
+        try:
+            response = await self._client.get(f"{self.api_prefix}/models")
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            entries = _model_entries(response.json())
+        except Exception:
+            logger.debug(
+                "Failed to detect context window from %s/models",
+                self.api_prefix,
+                exc_info=True,
+            )
+            return None
+
+        matched_entries = [
+            entry for entry in entries if _model_entry_matches(entry, model)
+        ]
+        candidates = matched_entries if matched_entries else entries
+        if len(candidates) != 1 and not matched_entries:
+            return None
+        for entry in candidates:
+            detected = _context_window_from_model_entry(entry)
+            if detected is not None:
+                return detected, self._capability_source_for_models_endpoint()
+        return None
 
     async def resolve_capabilities(self, model: str) -> ModelCapabilities:
         """Resolve capabilities via overrides and a conservative fallback.
 
-        OpenRouter auto-detect (querying ``/api/v1/models/{slug}/endpoints``)
-        is deferred to a follow-up change; for now, the resolution chain
-        consists of the env override, the UI override, and a conservative
-        OpenAI-compatible provider default.
+        The resolution chain consists of the env override, the UI override,
+        OpenAI-compatible model metadata, and a conservative provider default.
 
         Args:
             model: Provider-specific model identifier.
@@ -340,7 +457,7 @@ class OpenRouterClient:
             return ModelCapabilities(
                 provider=self.name,
                 model=model,
-                max_context_tokens=env_override,
+                max_context_tokens=self._remember_context_tokens(env_override),
                 source=SOURCE_ENV_OVERRIDE,
                 llm_response_format=resolve_llm_response_format(
                     provider_name=self.name,
@@ -351,8 +468,21 @@ class OpenRouterClient:
             return ModelCapabilities(
                 provider=self.name,
                 model=model,
-                max_context_tokens=self.num_ctx,
+                max_context_tokens=self._remember_context_tokens(self.num_ctx),
                 source=SOURCE_UI_OVERRIDE,
+                llm_response_format=resolve_llm_response_format(
+                    provider_name=self.name,
+                    model_name=model,
+                ),
+            )
+        detected = await self._detect_context_from_models_endpoint(model)
+        if detected is not None:
+            detected_tokens, source = detected
+            return ModelCapabilities(
+                provider=self.name,
+                model=model,
+                max_context_tokens=self._remember_context_tokens(detected_tokens),
+                source=source,
                 llm_response_format=resolve_llm_response_format(
                     provider_name=self.name,
                     model_name=model,
@@ -361,7 +491,9 @@ class OpenRouterClient:
         return ModelCapabilities(
             provider=self.name,
             model=model,
-            max_context_tokens=DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+            max_context_tokens=self._remember_context_tokens(
+                DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+            ),
             source=SOURCE_PROVIDER_DEFAULT,
             llm_response_format=resolve_llm_response_format(
                 provider_name=self.name,
@@ -550,7 +682,7 @@ class OpenRouterClient:
                     chunk_usage = _usage_from_chunk(
                         chunk,
                         default_model=self.model,
-                        num_ctx=self.num_ctx,
+                        num_ctx=self._usage_context_tokens(),
                     )
                     if chunk_usage is not None:
                         final_usage = chunk_usage
@@ -866,7 +998,7 @@ class OpenRouterClient:
             usage=_usage_from_response_body(
                 response_body,
                 default_model=self.model,
-                num_ctx=self.num_ctx,
+                num_ctx=self._usage_context_tokens(),
             ),
             llm_response_format=llm_response_format,
             structured_content=structured_content,

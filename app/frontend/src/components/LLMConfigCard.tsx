@@ -5,7 +5,7 @@ import type { LLMConfigEntry } from '@/api/llm'
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: 'OpenRouter',
   ollama: 'Ollama (local)',
-  custom: 'Custom (OpenAI-compatible)',
+  custom: 'Custom LLM Provider',
 }
 
 const PROVIDER_ICONS: Record<string, typeof Cpu> = {

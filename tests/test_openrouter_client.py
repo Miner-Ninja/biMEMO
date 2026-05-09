@@ -13,6 +13,7 @@ from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_cal
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.openrouter.client import (
     DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+    SOURCE_OPENAI_COMPAT_MODELS,
     SOURCE_PROVIDER_DEFAULT,
     OpenRouterClient,
     OpenRouterClientError,
@@ -568,10 +569,15 @@ class TestResolveCapabilities:
         """Use a safe provider default when context overrides are absent."""
         monkeypatch.delenv(OPENROUTER_ENV_OVERRIDE, raising=False)
         monkeypatch.delenv("BIMEMO_CUSTOM_NUM_CTX", raising=False)
+        transport = httpx.MockTransport(lambda request: httpx.Response(404))
         client = OpenRouterClient(
             api_key="test-api-key",
             model=DEFAULT_CUSTOM_MODEL,
             api_prefix="/v1",
+        )
+        client._client = httpx.AsyncClient(
+            transport=transport,
+            base_url=DEFAULT_CUSTOM_BASE_URL,
         )
         try:
             caps = await client.resolve_capabilities(DEFAULT_CUSTOM_MODEL)
@@ -579,6 +585,81 @@ class TestResolveCapabilities:
             await client.close()
         assert caps.max_context_tokens == DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS
         assert caps.source == SOURCE_PROVIDER_DEFAULT
+
+    @pytest.mark.asyncio
+    async def test_custom_provider_detects_context_from_models_metadata(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Detect custom provider context from OpenAI-compatible model metadata."""
+        monkeypatch.delenv(OPENROUTER_ENV_OVERRIDE, raising=False)
+        monkeypatch.delenv("BIMEMO_CUSTOM_NUM_CTX", raising=False)
+
+        async def handler(request):
+            assert str(request.url).endswith("/v1/models")
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": DEFAULT_CUSTOM_MODEL,
+                            "max_model_len": 32768,
+                        }
+                    ]
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_custom_client(transport)
+        try:
+            caps = await client.resolve_capabilities(DEFAULT_CUSTOM_MODEL)
+        finally:
+            await client.close()
+        assert caps.max_context_tokens == 32768
+        assert caps.source == SOURCE_OPENAI_COMPAT_MODELS
+
+    @pytest.mark.asyncio
+    async def test_detected_context_is_used_for_usage_accounting(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Use detected context window in usage when num_ctx is not explicit."""
+        monkeypatch.delenv(OPENROUTER_ENV_OVERRIDE, raising=False)
+        monkeypatch.delenv("BIMEMO_CUSTOM_NUM_CTX", raising=False)
+        lines = [
+            'data: {"choices":[{"delta":{"content":"ok"}}],"model":"qwen3.5:35b-4bit"}',
+            (
+                'data: {"choices":[],"usage":{"prompt_tokens":321,'
+                '"completion_tokens":54},"model":"qwen3.5:35b-4bit"}'
+            ),
+            "data: [DONE]",
+        ]
+
+        async def handler(request):
+            if str(request.url).endswith("/v1/models"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "id": DEFAULT_CUSTOM_MODEL,
+                                "max_context_tokens": 32768,
+                            }
+                        ]
+                    },
+                )
+            return httpx.Response(200, text="\n".join(lines))
+
+        transport = httpx.MockTransport(handler)
+        client = make_custom_client(transport)
+        try:
+            await client.resolve_capabilities(DEFAULT_CUSTOM_MODEL)
+            result = await client.chat([{"role": "user", "content": "Hi"}])
+        finally:
+            await client.close()
+        assert result.usage is not None
+        assert result.usage.context_total == 32768
+        assert result.usage.context_used == 375
 
 
 class TestMakeLlmCall:
