@@ -77,6 +77,17 @@ class ChatResponse(StrictResponseModel):
     stream_enabled: bool = False
 
 
+class ChatStartResponse(StrictResponseModel):
+    """Chat start acknowledgement.
+
+    The final assistant response is delivered by the stream `final` event.
+    """
+
+    conversation_id: str
+    request_id: str
+    stream_started: bool = True
+
+
 class StopResponse(StrictResponseModel):
     """Stop endpoint response.
 

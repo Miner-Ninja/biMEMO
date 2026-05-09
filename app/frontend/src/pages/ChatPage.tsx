@@ -42,6 +42,13 @@ import type {
 } from "@/lib/bimemo-api";
 import { generateId } from "@/lib/utils";
 import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
+import { shouldKeepStreamedAssistantResponseAfterRequestError } from "@/lib/chat-request-errors";
+import {
+  markStreamTerminalError,
+  resolveStreamErrorMessage,
+  shouldApplyHttpChatResponse,
+  type ActiveAssistantStreamState,
+} from "@/lib/chat-response-source";
 import { loadCommandHistory, saveCommandHistory } from "@/lib/storage";
 import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
 import { TOOL_LABELS } from "@/types/chat";
@@ -50,6 +57,8 @@ import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
 
 type ChatResponsePayload = {
   conversation_id?: string;
+  request_id?: string;
+  stream_started?: boolean;
   retrieved_memories?: { summary: string; date: string }[];
   transcription?: string;
   stats?: ExtendedUsage;
@@ -126,10 +135,9 @@ type ConversationCreatedEventPayload = {
   created_at?: string;
 };
 
-type ActiveAssistantStream = {
-  assistantMessageId: string | null;
-  httpCompleted: boolean;
-  sseCompleted: boolean;
+type ChatErrorEventPayload = {
+  conversation_id?: string;
+  message?: string;
 };
 
 type PendingBridgeAction = {
@@ -175,6 +183,16 @@ type StructuredAssistantPlaybackInput = {
   stats: ExtendedUsage | undefined;
   sections: StructuredChatSections;
   pendingConfirmations?: PendingConfirmation[];
+};
+
+type ApplyAssistantResponseInput = {
+  assistantMessageId: string;
+  response: ChatResponsePayload;
+};
+
+type ChatFinalEventPayload = ChatResponsePayload & {
+  type?: string;
+  conversation_id?: string;
 };
 
 function buildServerProcessingStage(
@@ -381,9 +399,12 @@ export function ChatPage() {
   const streamedContentRef = useRef("");
   const streamedThinkingRef = useRef("");
   const pseudoStreamRunIdRef = useRef(0);
-  const activeAssistantStreamRef = useRef<ActiveAssistantStream>({
+  const activeAssistantStreamRef = useRef<ActiveAssistantStreamState>({
     assistantMessageId: null,
+    conversationId: null,
+    voiceUserMessageId: null,
     httpCompleted: false,
+    finalReceived: false,
     sseCompleted: false,
   });
   const {
@@ -430,14 +451,23 @@ export function ChatPage() {
   const previousSseStatusRef = useRef<ConnectionStatus>("disconnected");
   const { confirm, ConfirmDialog } = useConfirm();
 
-  const beginAssistantStream = useCallback((assistantMessageId: string) => {
+  const beginAssistantStream = useCallback((
+    assistantMessageId: string,
+    options?: {
+      conversationId?: string;
+      voiceUserMessageId?: string;
+    },
+  ) => {
     pseudoStreamRunIdRef.current += 1;
     assistantMessageIdRef.current = assistantMessageId;
     streamedContentRef.current = "";
     streamedThinkingRef.current = "";
     activeAssistantStreamRef.current = {
       assistantMessageId,
+      conversationId: options?.conversationId ?? null,
+      voiceUserMessageId: options?.voiceUserMessageId ?? null,
       httpCompleted: false,
+      finalReceived: false,
       sseCompleted: false,
     };
   }, []);
@@ -449,7 +479,10 @@ export function ChatPage() {
     streamedThinkingRef.current = "";
     activeAssistantStreamRef.current = {
       assistantMessageId: null,
+      conversationId: null,
+      voiceUserMessageId: null,
       httpCompleted: false,
+      finalReceived: false,
       sseCompleted: false,
     };
   }, []);
@@ -550,6 +583,69 @@ export function ChatPage() {
       return sections.answer;
     },
     [pseudoStreamSection, updateMessage],
+  );
+
+  const applyAssistantResponsePayload = useCallback(
+    async ({
+      assistantMessageId,
+      response,
+    }: ApplyAssistantResponseInput): Promise<string> => {
+      const structuredContent = response.structured_content;
+      const pendingConfirmations = response.pending_confirmations?.map(
+        (c) => ({ ...c, status: "pending" as const }),
+      );
+      const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
+        structuredContent,
+        streamedContentRef.current,
+        streamedThinkingRef.current,
+        response.stream_enabled,
+      )
+        ? structuredContent
+        : null;
+      const visibleAnswer = visible_assistant_answer(
+        structuredContent,
+        streamedContentRef.current,
+      );
+      const finalText = structuredContentForPseudoStream
+        ? await playStructuredAssistantResponse({
+            assistantMessageId,
+            stats: response.stats,
+            sections: {
+              thinking: structuredContentForPseudoStream.thinking || "",
+              answer: visibleAnswer,
+              sql: structuredContentForPseudoStream.sql || "",
+              suggestions: structuredContentForPseudoStream.suggestions,
+            },
+            pendingConfirmations:
+              pendingConfirmations && pendingConfirmations.length > 0
+                ? pendingConfirmations
+                : undefined,
+          })
+        : visibleAnswer;
+      if (!structuredContentForPseudoStream) {
+        const assistantMessageFields = buildAssistantMessageFields({
+          fallbackContent: finalText,
+          structuredContent,
+          stats: response.stats,
+        });
+        updateMessage(
+          assistantMessageId,
+          buildAssistantMessageUpdate(
+            {
+              ...assistantMessageFields,
+              pendingConfirmations:
+                pendingConfirmations && pendingConfirmations.length > 0
+                  ? pendingConfirmations
+                  : undefined,
+              error: undefined,
+            },
+            streamedThinkingRef.current || structuredContent?.thinking || "",
+          ),
+        );
+      }
+      return finalText;
+    },
+    [playStructuredAssistantResponse, updateMessage],
   );
 
   // Load available file names for @mention autocomplete
@@ -758,6 +854,70 @@ export function ChatPage() {
         setTimeout(() => clearStages(), 1000);
         activeAssistantStreamRef.current.sseCompleted = true;
         finalizeAssistantStreamIfReady();
+      } else if (event.type === "final") {
+        const finalPayload = eventPayload as ChatFinalEventPayload | null;
+        const activeStream = activeAssistantStreamRef.current;
+        const assistantMessageId = activeStream.assistantMessageId;
+        if (!assistantMessageId || !finalPayload) {
+          return;
+        }
+        void (async () => {
+          if (
+            finalPayload.transcription &&
+            activeStream.voiceUserMessageId &&
+            activeStream.conversationId
+          ) {
+            updateMessage(activeStream.voiceUserMessageId, {
+              content: finalPayload.transcription,
+              isVoice: true,
+            });
+            updateConversation(activeStream.conversationId, {
+              title: nextConversationTitle(
+                activeChat?.title,
+                finalPayload.transcription,
+              ),
+            });
+          }
+          const finalText = await applyAssistantResponsePayload({
+            assistantMessageId,
+            response: finalPayload,
+          });
+          activeAssistantStreamRef.current.finalReceived = true;
+          if (voiceModeRef.current && finalText) {
+            playTtsAndAutoRecord(finalText);
+          }
+        })().catch((error) => {
+          addToast({
+            type: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Failed to apply streamed response",
+          });
+        });
+      } else if (event.type === "error") {
+        const errorPayload = eventPayload as ChatErrorEventPayload | null;
+        const activeStream = activeAssistantStreamRef.current;
+        const assistantMessageId = activeStream.assistantMessageId;
+        const message = resolveStreamErrorMessage(errorPayload?.message);
+        if (assistantMessageId) {
+          updateMessage(assistantMessageId, {
+            content: streamedContentRef.current || "",
+            error: message,
+          });
+        }
+        activeAssistantStreamRef.current = markStreamTerminalError(
+          activeAssistantStreamRef.current,
+        );
+        setIsLoading(false);
+        clearStages();
+        if (activeStream.conversationId) {
+          updateConversation(activeStream.conversationId, {
+            processingStatus: "idle",
+            processingStage: "",
+            processingStartedAt: undefined,
+          });
+        }
       } else if (event.type === "bridge_inbound_message") {
         const inboundEvent = eventPayload as BridgeInboundMessageEventPayload | null;
         const conversationId = inboundEvent?.conversation_id || "";
@@ -879,6 +1039,9 @@ export function ChatPage() {
       clearStages,
       stagesRef,
       finalizeAssistantStreamIfReady,
+      applyAssistantResponsePayload,
+      activeChat?.title,
+      playTtsAndAutoRecord,
       updateConversationActivity,
     ],
   );
@@ -1024,11 +1187,12 @@ export function ChatPage() {
       timestamp: new Date(),
     };
     addMessage(assistantMessage);
-    beginAssistantStream(assistantMessageId);
+    beginAssistantStream(assistantMessageId, { conversationId });
 
     setIsLoading(true);
     clearStages();
     addStage("Sending...");
+    let streamStarted = false;
 
     try {
       const body: Record<string, unknown> = {
@@ -1046,63 +1210,29 @@ export function ChatPage() {
         body: JSON.stringify(body),
       });
 
-      const structuredContent = response.structured_content;
-      const pendingConfirmations = response.pending_confirmations?.map(
-        (c) => ({ ...c, status: "pending" as const }),
-      );
-      const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
-        structuredContent,
-        streamedContentRef.current,
-        streamedThinkingRef.current,
-        response.stream_enabled,
-      )
-        ? structuredContent
-        : null;
-      const visibleAnswer = visible_assistant_answer(
-        structuredContent,
-        streamedContentRef.current,
-      );
-      const finalText = structuredContentForPseudoStream
-        ? await playStructuredAssistantResponse({
-            assistantMessageId,
-            stats: response.stats,
-            sections: {
-              thinking: structuredContentForPseudoStream.thinking || "",
-              answer: visibleAnswer,
-              sql: structuredContentForPseudoStream.sql || "",
-              suggestions: structuredContentForPseudoStream.suggestions,
-            },
-            pendingConfirmations:
-              pendingConfirmations && pendingConfirmations.length > 0
-                ? pendingConfirmations
-                : undefined,
-          })
-        : visibleAnswer;
-      if (!structuredContentForPseudoStream) {
-        const assistantMessageFields = buildAssistantMessageFields({
-          fallbackContent: finalText,
-          structuredContent,
-          stats: response.stats,
-        });
-        updateMessage(
-          assistantMessageId,
-          buildAssistantMessageUpdate(
-            {
-              ...assistantMessageFields,
-              pendingConfirmations:
-                pendingConfirmations && pendingConfirmations.length > 0
-                  ? pendingConfirmations
-                  : undefined,
-            },
-            streamedThinkingRef.current || structuredContent?.thinking || "",
-          ),
-        );
+      if (response.stream_started) {
+        streamStarted = true;
+        activeAssistantStreamRef.current.httpCompleted = true;
+        finalizeAssistantStreamIfReady();
+        return;
       }
+
+      const streamFinalAlreadyApplied =
+        activeAssistantStreamRef.current.finalReceived;
+      const finalText = !shouldApplyHttpChatResponse(streamFinalAlreadyApplied)
+        ? visible_assistant_answer(
+            response.structured_content,
+            streamedContentRef.current,
+          )
+        : await applyAssistantResponsePayload({
+            assistantMessageId,
+            response,
+          });
       activeAssistantStreamRef.current.httpCompleted = true;
       finalizeAssistantStreamIfReady();
 
       // Voice mode: auto-play TTS
-      if (voiceModeRef.current && finalText) {
+      if (!streamFinalAlreadyApplied && voiceModeRef.current && finalText) {
         playTtsAndAutoRecord(finalText);
       }
 
@@ -1112,27 +1242,43 @@ export function ChatPage() {
         processingStartedAt: undefined,
       });
     } catch (err) {
+      const keepStreamedResponse =
+        shouldKeepStreamedAssistantResponseAfterRequestError(
+          err,
+          streamedContentRef.current,
+          streamedThinkingRef.current,
+        );
       updateMessage(
         assistantMessageId,
         buildAssistantMessageUpdate(
           {
             content: streamedContentRef.current || "",
-            error:
-              err instanceof Error ? err.message : "Failed to send message",
+            error: keepStreamedResponse
+              ? undefined
+              : err instanceof Error
+                ? err.message
+                : "Failed to send message",
           },
           streamedThinkingRef.current,
         ),
       );
-      clearAssistantStream();
+      if (keepStreamedResponse) {
+        activeAssistantStreamRef.current.httpCompleted = true;
+        finalizeAssistantStreamIfReady();
+      } else {
+        clearAssistantStream();
+      }
       updateConversation(conversationId, {
         processingStatus: "idle",
         processingStage: "",
         processingStartedAt: undefined,
       });
     } finally {
-      setIsLoading(false);
-      clearStages();
-      requestAnimationFrame(() => chatInputRef.current?.focus());
+      if (!streamStarted) {
+        setIsLoading(false);
+        clearStages();
+        requestAnimationFrame(() => chatInputRef.current?.focus());
+      }
     }
   };
 
@@ -1251,11 +1397,15 @@ export function ChatPage() {
       timestamp: new Date(),
     };
     addMessage(assistantMessage);
-    beginAssistantStream(assistantMessageId);
+    beginAssistantStream(assistantMessageId, {
+      conversationId: currentChat.id,
+      voiceUserMessageId: userMessage.id,
+    });
 
     setIsLoading(true);
     clearStages();
     addStage("Transcribing...");
+    let streamStarted = false;
 
     try {
       const body: Record<string, unknown> = {
@@ -1270,6 +1420,13 @@ export function ChatPage() {
         body: JSON.stringify(body),
       });
 
+      if (response.stream_started) {
+        streamStarted = true;
+        activeAssistantStreamRef.current.httpCompleted = true;
+        finalizeAssistantStreamIfReady();
+        return;
+      }
+
       // Update user message with transcription
       if (response.transcription) {
         updateMessage(userMessage.id, {
@@ -1281,52 +1438,22 @@ export function ChatPage() {
         });
       }
 
-      const structuredContent = response.structured_content;
-      const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
-        structuredContent,
-        streamedContentRef.current,
-        streamedThinkingRef.current,
-        response.stream_enabled,
-      )
-        ? structuredContent
-        : null;
-      const visibleAnswer = visible_assistant_answer(
-        structuredContent,
-        streamedContentRef.current,
-      );
-      const finalText = structuredContentForPseudoStream
-        ? await playStructuredAssistantResponse({
+      const streamFinalAlreadyApplied =
+        activeAssistantStreamRef.current.finalReceived;
+      const finalText = !shouldApplyHttpChatResponse(streamFinalAlreadyApplied)
+        ? visible_assistant_answer(
+            response.structured_content,
+            streamedContentRef.current,
+          )
+        : await applyAssistantResponsePayload({
             assistantMessageId,
-            stats: response.stats,
-            sections: {
-              thinking: structuredContentForPseudoStream.thinking || "",
-              answer: visibleAnswer,
-              sql: structuredContentForPseudoStream.sql || "",
-              suggestions: structuredContentForPseudoStream.suggestions,
-            },
-          })
-        : visibleAnswer;
-      if (!structuredContentForPseudoStream) {
-        const assistantMessageFields = buildAssistantMessageFields({
-          fallbackContent: finalText,
-          structuredContent,
-          stats: response.stats,
-        });
-        updateMessage(
-          assistantMessageId,
-          buildAssistantMessageUpdate(
-            {
-              ...assistantMessageFields,
-            },
-            streamedThinkingRef.current || structuredContent?.thinking || "",
-          ),
-        );
-      }
+            response,
+          });
       activeAssistantStreamRef.current.httpCompleted = true;
       finalizeAssistantStreamIfReady();
 
       // Voice mode: auto-play TTS
-      if (voiceModeRef.current && finalText) {
+      if (!streamFinalAlreadyApplied && voiceModeRef.current && finalText) {
         playTtsAndAutoRecord(finalText);
       }
 
@@ -1336,29 +1463,43 @@ export function ChatPage() {
         processingStartedAt: undefined,
       });
     } catch (err) {
+      const keepStreamedResponse =
+        shouldKeepStreamedAssistantResponseAfterRequestError(
+          err,
+          streamedContentRef.current,
+          streamedThinkingRef.current,
+        );
       updateMessage(
         assistantMessageId,
         buildAssistantMessageUpdate(
           {
             content: streamedContentRef.current || "",
-            error:
-              err instanceof Error
+            error: keepStreamedResponse
+              ? undefined
+              : err instanceof Error
                 ? err.message
                 : "Failed to send voice message",
           },
           streamedThinkingRef.current,
         ),
       );
-      clearAssistantStream();
+      if (keepStreamedResponse) {
+        activeAssistantStreamRef.current.httpCompleted = true;
+        finalizeAssistantStreamIfReady();
+      } else {
+        clearAssistantStream();
+      }
       updateConversation(currentChat.id, {
         processingStatus: "idle",
         processingStage: "",
         processingStartedAt: undefined,
       });
     } finally {
-      setIsLoading(false);
-      clearStages();
-      requestAnimationFrame(() => chatInputRef.current?.focus());
+      if (!streamStarted) {
+        setIsLoading(false);
+        clearStages();
+        requestAnimationFrame(() => chatInputRef.current?.focus());
+      }
     }
   };
 

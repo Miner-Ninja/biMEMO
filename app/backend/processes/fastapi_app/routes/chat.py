@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
@@ -21,8 +21,8 @@ from backend.models.requests import (
 from backend.models.requests import (
     ConversationUpdateRequest as HTTPConversationUpdateRequest,  # noqa: TC001
 )
-from backend.models.responses import ChatResponse as HTTPChatResponse
 from backend.models.responses import ChatSettingsResponse
+from backend.models.responses import ChatStartResponse as HTTPChatStartResponse
 from backend.models.responses import (
     ConversationCreateResponse as HTTPConversationCreateResponse,
 )
@@ -53,8 +53,8 @@ from .chat_helpers import (
     delete_conversation_item,
     list_conversation_items,
     list_conversation_message_items,
-    run_web_chat_request,
     send_ipc_control_request,
+    start_web_chat_request,
     update_conversation_item,
 )
 from .chat_stream import (
@@ -82,6 +82,7 @@ chat_router = APIRouter()
 async def chat(
     body: HTTPChatRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     claims: TokenClaims = Depends(_require_auth),
     orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
@@ -90,7 +91,7 @@ async def chat(
     chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
     ),
-) -> HTTPChatResponse | dict:
+) -> HTTPChatStartResponse | dict:
     """Process a chat message via Orchestrator IPC.
 
     Returns 202 when the Orchestrator is already processing.
@@ -98,6 +99,7 @@ async def chat(
     Args:
         body: Chat request with message text.
         request: FastAPI request.
+        background_tasks: Background task scheduler for post-response work.
         claims: Authenticated token claims.
         orchestrator_client: Orchestrator IPC client.
         admin_client: Database client for file metadata lookup.
@@ -109,13 +111,14 @@ async def chat(
     if orchestrator_client.is_processing:
         return build_busy_chat_response()
 
-    return await run_web_chat_request(
+    return await start_web_chat_request(
         body=body,
         request=request,
         claims=claims,
         orchestrator_client=orchestrator_client,
         admin_client=admin_client,
         chat_bridge_service=chat_bridge_service,
+        background_tasks=background_tasks,
     )
 
 

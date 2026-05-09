@@ -70,6 +70,12 @@ async def _forward_request_events_to_ipc(
         elif event_type_value == "confirmation":
             event_type = StreamEventType.CONFIRMATION
             payload = event_data
+        elif event_type_value == "final":
+            event_type = StreamEventType.FINAL
+            payload = event_data
+        elif event_type_value == "error":
+            event_type = StreamEventType.ERROR
+            payload = event_data
         elif event_type_value == "conversation_updated":
             event_type = StreamEventType.CONVERSATION_UPDATED
             payload = event_data.get("data", {})
@@ -246,6 +252,62 @@ def _build_voice_transcription_failure_response(
         input_filtered=False,
         output_filtered=False,
         stream_enabled=get_settings().llm_response_stream,
+    )
+
+
+def _chat_response_final_event_data(
+    *,
+    conversation_id: str,
+    response: ChatResponse,
+) -> dict[str, object]:
+    """Build one stream-final payload from the IPC chat response."""
+    return {
+        "type": "final",
+        "conversation_id": conversation_id,
+        "input_filtered": response.input_filtered,
+        "output_filtered": response.output_filtered,
+        "pending_confirmations": response.pending_confirmations or [],
+        "retrieved_memories": response.retrieved_memories,
+        "retrieved_messages": response.retrieved_messages,
+        "transcription": response.transcription,
+        "stats": response.stats.model_dump(mode="json")
+        if response.stats is not None
+        else None,
+        "structured_content": response.structured_content.model_dump(
+            mode="json",
+        ),
+        "stream_enabled": response.stream_enabled,
+    }
+
+
+async def _publish_final_chat_event(
+    *,
+    request_sse_queue: asyncio.Queue,
+    conversation_id: str,
+    response: ChatResponse,
+) -> None:
+    """Publish the authoritative final assistant payload for one request."""
+    await request_sse_queue.put(
+        _chat_response_final_event_data(
+            conversation_id=conversation_id,
+            response=response,
+        )
+    )
+
+
+async def _publish_chat_error_event(
+    *,
+    request_sse_queue: asyncio.Queue,
+    conversation_id: str,
+    message: str,
+) -> None:
+    """Publish one terminal stream error for a failed started request."""
+    await request_sse_queue.put(
+        {
+            "type": "error",
+            "conversation_id": conversation_id,
+            "message": message,
+        }
     )
 
 
@@ -431,7 +493,7 @@ async def _run_chat_request(
         orch=orch,
     )
     try:
-        return await _run_with_processing_state(
+        response = await _run_with_processing_state(
             db_client=db_client,
             orch=orch,
             conversation_id=request.conversation_id,
@@ -445,6 +507,20 @@ async def _run_chat_request(
                 stt_client=stt_client,
             ),
         )
+        await _publish_final_chat_event(
+            request_sse_queue=request_sse_queue,
+            conversation_id=request.conversation_id,
+            response=response,
+        )
+        return response
+    except Exception:
+        logger.exception("Chat request failed after stream start")
+        await _publish_chat_error_event(
+            request_sse_queue=request_sse_queue,
+            conversation_id=request.conversation_id,
+            message="Internal error while processing the chat request.",
+        )
+        raise
     finally:
         await _finish_request_event_forwarding(
             request_sse_queue=request_sse_queue,
@@ -569,7 +645,25 @@ def _build_orchestrator_request_handler(
         """Run one chat request through the orchestrator process entrypoint."""
         llm_call = get_llm_call()
         if llm_call is None:
-            return _build_missing_llm_response(request.request_id)
+            request_sse_queue, event_forwarder = _start_request_event_forwarding(
+                request_id=request.request_id,
+                ipc_server=ipc_server_ref(),
+                orch=orch,
+            )
+            try:
+                response = _build_missing_llm_response(request.request_id)
+                await _publish_final_chat_event(
+                    request_sse_queue=request_sse_queue,
+                    conversation_id=request.conversation_id,
+                    response=response,
+                )
+                return response
+            finally:
+                await _finish_request_event_forwarding(
+                    request_sse_queue=request_sse_queue,
+                    event_forwarder=event_forwarder,
+                    orch=orch,
+                )
         return await _run_chat_request(
             request=request,
             orch=orch,

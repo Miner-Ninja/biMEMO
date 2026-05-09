@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SSE_KEEPALIVE_INTERVAL = 15
+SSE_KEEPALIVE_INTERVAL = 5
 
 
 def build_stream_headers() -> dict[str, str]:
@@ -36,6 +36,7 @@ def build_stream_headers() -> dict[str, str]:
     return {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
     }
 
 

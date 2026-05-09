@@ -120,6 +120,8 @@ class StreamEventType(StrEnum):
     THINKING = "thinking"
     TOOL_STATUS = "tool_status"
     CONFIRMATION = "confirmation"
+    FINAL = "final"
+    ERROR = "error"
     DONE = "done"
     MEMORY_EVENT = "memory_event"
     BRIDGE_INBOUND_MESSAGE = "bridge_inbound_message"

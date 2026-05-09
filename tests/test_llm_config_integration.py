@@ -2430,6 +2430,7 @@ class TestFileReplacement:
                     headers={"X-CSRF-Token": csrf},
                 )
                 assert chat_resp.status_code == 200, chat_resp.text
+                assert chat_resp.json()["stream_started"] is True
                 assert len(sent_requests) == 1
                 assert file_id in admin._file_contexts
                 assert sent_requests[0].attached_files == ["context.txt [inline]"]
@@ -2499,6 +2500,7 @@ class TestFileReplacement:
                     headers={"X-CSRF-Token": csrf},
                 )
                 assert chat_resp.status_code == 200, chat_resp.text
+                assert chat_resp.json()["stream_started"] is True
                 assert len(sent_requests) == 1
                 assert file_id in admin._file_contexts
                 assert sent_requests[0].attached_files == ["rollout.md [summarized]"]
