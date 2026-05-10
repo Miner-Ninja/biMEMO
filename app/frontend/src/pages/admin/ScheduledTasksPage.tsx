@@ -5,7 +5,8 @@ import { ScheduledTaskCard } from '@/components/scheduler/ScheduledTaskCard'
 import { CreateTaskModal } from '@/components/scheduler/CreateTaskModal'
 import { TaskDetailsModal } from '@/components/scheduler/TaskDetailsModal'
 import { ToastContainer, useToasts } from '@/components/ui/Toast'
-import { useSSE, type SSEEvent } from '@/hooks/useSSE'
+import type { SSEEvent } from '@/hooks/useSSE'
+import { useRealtimeStream } from '@/hooks/useRealtimeStream'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -96,7 +97,7 @@ export function ScheduledTasksPage() {
     [addToast, filter, loadTasks],
   )
 
-  const { connect, disconnect } = useSSE(handleSseEvent, null)
+  const { connect, disconnect } = useRealtimeStream(handleSseEvent, null)
 
   useEffect(() => {
     void connect()

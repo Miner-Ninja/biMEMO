@@ -71,6 +71,12 @@ class ConfirmRequest(StrictRequestModel):
     decision: str = Field(pattern=r"^(approve|deny)$")
 
 
+class StopRequest(StrictRequestModel):
+    """Stop an in-progress chat request."""
+
+    request_id: str = Field(default="", max_length=200)
+
+
 class IntegrationCreateRequest(StrictRequestModel):
     """Add integration request.
 

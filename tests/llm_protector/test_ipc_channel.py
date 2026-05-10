@@ -99,6 +99,45 @@ class TestIPCChannel:
             await server.stop()
 
     @pytest.mark.asyncio
+    async def test_send_and_receive_matching_discards_stale_push(self, socket_path):
+        """Ignore a stale pushed message while waiting for the matching response."""
+        server: IPCSocketServer
+
+        async def handler(type_name, message):
+            """Push a stale event before returning the matching response."""
+            await server.push(PushEvent(request_id="stale", data="old"))
+            return PongResponse(
+                request_id=message.request_id,
+                reply="pong: " + message.message,
+            )
+
+        server = IPCSocketServer(
+            socket_path=socket_path,
+            secret=SHARED_SECRET,
+            handler=handler,
+            type_map=SERVER_TYPE_MAP,
+        )
+        await server.start()
+
+        client = IPCSocketClient(
+            socket_path=socket_path,
+            secret=SHARED_SECRET,
+            type_map=CLIENT_TYPE_MAP,
+        )
+        await client.connect()
+
+        try:
+            response = await client.send_and_receive_matching(
+                PingRequest(request_id="r1", message="hello")
+            )
+            assert isinstance(response, PongResponse)
+            assert response.request_id == "r1"
+            assert response.reply == "pong: hello"
+        finally:
+            await client.close()
+            await server.stop()
+
+    @pytest.mark.asyncio
     async def test_server_push(self, socket_path):
         """Server pushes a message without prior request."""
 

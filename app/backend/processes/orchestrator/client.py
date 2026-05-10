@@ -136,6 +136,10 @@ class DBProxyClient:
     ) -> str:
         """Send one operation and return a string identifier field."""
         result = await self.send_operation(operation, parameters, timeout)
+        if result_key not in result:
+            raise DBProxyError(
+                f"DB Proxy operation '{operation}' returned no '{result_key}' field",
+            )
         return str(result[result_key])
 
     async def _send_int_operation(
@@ -191,8 +195,13 @@ class DBProxyClient:
         timeout: float,
     ) -> DBResult | object:
         """Send one DB operation envelope through IPC."""
+        send_and_receive = getattr(
+            self._ipc,
+            "send_and_receive_matching",
+            self._ipc.send_and_receive,
+        )
         return await asyncio.wait_for(
-            self._ipc.send_and_receive(operation_request),
+            send_and_receive(operation_request),
             timeout=timeout,
         )
 

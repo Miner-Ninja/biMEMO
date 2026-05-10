@@ -16,7 +16,8 @@ import {
 } from "@/hooks/useChat";
 import { useProcessingStages } from "@/hooks/useProcessingStages";
 import { ProcessingStages } from "@/components/chat/ProcessingStages";
-import { useSSE, type ConnectionStatus, type SSEEvent } from "@/hooks/useSSE";
+import type { ConnectionStatus, SSEEvent } from "@/hooks/useSSE";
+import { useRealtimeStream } from "@/hooks/useRealtimeStream";
 import { useAuth } from "@/hooks/useAuth";
 import { DEFAULT_CHAT_SETTINGS } from "@/types/chat";
 import { updateChatSettings } from "@/lib/bimemo-api";
@@ -399,9 +400,11 @@ export function ChatPage() {
   const streamedContentRef = useRef("");
   const streamedThinkingRef = useRef("");
   const pseudoStreamRunIdRef = useRef(0);
+  const stoppedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
   const activeAssistantStreamRef = useRef<ActiveAssistantStreamState>({
     assistantMessageId: null,
     conversationId: null,
+    requestId: null,
     voiceUserMessageId: null,
     httpCompleted: false,
     finalReceived: false,
@@ -465,6 +468,7 @@ export function ChatPage() {
     activeAssistantStreamRef.current = {
       assistantMessageId,
       conversationId: options?.conversationId ?? null,
+      requestId: null,
       voiceUserMessageId: options?.voiceUserMessageId ?? null,
       httpCompleted: false,
       finalReceived: false,
@@ -480,6 +484,7 @@ export function ChatPage() {
     activeAssistantStreamRef.current = {
       assistantMessageId: null,
       conversationId: null,
+      requestId: null,
       voiceUserMessageId: null,
       httpCompleted: false,
       finalReceived: false,
@@ -494,6 +499,24 @@ export function ChatPage() {
     }
     clearAssistantStream();
   }, [clearAssistantStream]);
+
+  const isCurrentAssistantStreamEvent = useCallback((event: SSEEvent) => {
+    const activeStream = activeAssistantStreamRef.current;
+    if (!activeStream.assistantMessageId) {
+      return false;
+    }
+    const eventRequestId =
+      typeof event.request_id === "string" ? event.request_id : "";
+    return (
+      !eventRequestId ||
+      !activeStream.requestId ||
+      eventRequestId === activeStream.requestId
+    );
+  }, []);
+
+  const isAssistantStreamStopped = useCallback((assistantMessageId: string) => {
+    return stoppedAssistantMessageIdsRef.current.has(assistantMessageId);
+  }, []);
 
   const pseudoStreamSection = useCallback(
     async ({
@@ -798,6 +821,17 @@ export function ChatPage() {
 
   const handleSSEEvent = useCallback(
     (event: SSEEvent) => {
+      const isAssistantRunEvent =
+        event.type === "token" ||
+        event.type === "thinking" ||
+        event.type === "tool_status" ||
+        event.type === "final" ||
+        event.type === "error" ||
+        event.type === "done";
+      if (isAssistantRunEvent && !isCurrentAssistantStreamEvent(event)) {
+        return;
+      }
+
       const eventPayload =
         event.data && typeof event.data === "object"
           ? (event.data as Record<string, unknown>)
@@ -1039,6 +1073,7 @@ export function ChatPage() {
       clearStages,
       stagesRef,
       finalizeAssistantStreamIfReady,
+      isCurrentAssistantStreamEvent,
       applyAssistantResponsePayload,
       activeChat?.title,
       playTtsAndAutoRecord,
@@ -1046,7 +1081,7 @@ export function ChatPage() {
     ],
   );
 
-  const { status: sseStatus, connect, disconnect } = useSSE(
+  const { status: sseStatus, connect, disconnect } = useRealtimeStream(
     handleSSEEvent,
     activeChatId,
   );
@@ -1210,8 +1245,19 @@ export function ChatPage() {
         body: JSON.stringify(body),
       });
 
+      if (isAssistantStreamStopped(assistantMessageId)) {
+        stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
+        updateConversation(conversationId, {
+          processingStatus: "idle",
+          processingStage: "",
+          processingStartedAt: undefined,
+        });
+        return;
+      }
+
       if (response.stream_started) {
         streamStarted = true;
+        activeAssistantStreamRef.current.requestId = response.request_id || null;
         activeAssistantStreamRef.current.httpCompleted = true;
         finalizeAssistantStreamIfReady();
         return;
@@ -1242,6 +1288,15 @@ export function ChatPage() {
         processingStartedAt: undefined,
       });
     } catch (err) {
+      if (isAssistantStreamStopped(assistantMessageId)) {
+        stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
+        updateConversation(conversationId, {
+          processingStatus: "idle",
+          processingStage: "",
+          processingStartedAt: undefined,
+        });
+        return;
+      }
       const keepStreamedResponse =
         shouldKeepStreamedAssistantResponseAfterRequestError(
           err,
@@ -1420,8 +1475,19 @@ export function ChatPage() {
         body: JSON.stringify(body),
       });
 
+      if (isAssistantStreamStopped(assistantMessageId)) {
+        stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
+        updateConversation(currentChat.id, {
+          processingStatus: "idle",
+          processingStage: "",
+          processingStartedAt: undefined,
+        });
+        return;
+      }
+
       if (response.stream_started) {
         streamStarted = true;
+        activeAssistantStreamRef.current.requestId = response.request_id || null;
         activeAssistantStreamRef.current.httpCompleted = true;
         finalizeAssistantStreamIfReady();
         return;
@@ -1463,6 +1529,15 @@ export function ChatPage() {
         processingStartedAt: undefined,
       });
     } catch (err) {
+      if (isAssistantStreamStopped(assistantMessageId)) {
+        stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
+        updateConversation(currentChat.id, {
+          processingStatus: "idle",
+          processingStage: "",
+          processingStartedAt: undefined,
+        });
+        return;
+      }
       const keepStreamedResponse =
         shouldKeepStreamedAssistantResponseAfterRequestError(
           err,
@@ -1504,8 +1579,30 @@ export function ChatPage() {
   };
 
   const handleStop = async () => {
+    const activeStream = activeAssistantStreamRef.current;
+    const requestId = activeStream.requestId;
+    if (activeStream.assistantMessageId) {
+      stoppedAssistantMessageIdsRef.current.add(activeStream.assistantMessageId);
+      updateMessage(activeStream.assistantMessageId, {
+        content: streamedContentRef.current || "Stopped.",
+      });
+    }
+    if (activeStream.conversationId) {
+      updateConversation(activeStream.conversationId, {
+        processingStatus: "idle",
+        processingStage: "",
+        processingStartedAt: undefined,
+      });
+    }
+    setIsLoading(false);
+    clearStages();
+    clearAssistantStream();
+    requestAnimationFrame(() => chatInputRef.current?.focus());
     try {
-      await apiRequest("/stop", { method: "POST" });
+      await apiRequest("/stop", {
+        method: "POST",
+        body: JSON.stringify({ request_id: requestId || "" }),
+      });
     } catch {
       /* stop is best-effort */
     }

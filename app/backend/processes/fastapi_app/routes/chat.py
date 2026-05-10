@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Request, WebSocket
 from fastapi.responses import StreamingResponse
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
@@ -21,6 +21,7 @@ from backend.models.requests import (
 from backend.models.requests import (
     ConversationUpdateRequest as HTTPConversationUpdateRequest,  # noqa: TC001
 )
+from backend.models.requests import StopRequest as HTTPStopRequest  # noqa: TC001
 from backend.models.responses import ChatSettingsResponse
 from backend.models.responses import ChatStartResponse as HTTPChatStartResponse
 from backend.models.responses import (
@@ -64,6 +65,14 @@ from .chat_stream import (
     conversation_deleted_event_data,
     conversation_updated_event_data,
     stream_events,
+)
+from .chat_websocket import (
+    WS_POLICY_VIOLATION_CLOSE_CODE,
+    WS_SERVICE_RESTART_CLOSE_CODE,
+    WS_TRY_AGAIN_LATER_CLOSE_CODE,
+    authenticate_websocket,
+    register_websocket_session,
+    websocket_events,
 )
 
 
@@ -285,7 +294,7 @@ async def stream(
         StreamingResponse with SSE content type.
     """
     queue: asyncio.Queue = asyncio.Queue()
-    connect_stream_session(
+    connection = connect_stream_session(
         session_id=claims.jti,
         session_exp=claims.exp,
         conversation_id=conversation_id,
@@ -298,6 +307,7 @@ async def stream(
     return StreamingResponse(
         stream_events(
             queue=queue,
+            connection=connection,
             session_id=claims.jti,
             orchestrator_client=orchestrator_client,
             sse_manager=sse_manager,
@@ -307,9 +317,61 @@ async def stream(
     )
 
 
+@chat_router.websocket("/ws")
+async def websocket_stream(
+    websocket: WebSocket,
+    conversation_id: str = "",
+) -> None:
+    """Establish WebSocket connection for realtime stream events."""
+    session_manager: SessionManager = websocket.app.state.session_manager
+    sse_manager: SSEManager = websocket.app.state.sse_manager
+    orchestrator_client: OrchestratorClient = websocket.app.state.orchestrator_client
+    signing_client = websocket.app.state.signing_client
+    audit_fn = websocket.app.state.audit_fn
+
+    claims = await authenticate_websocket(
+        websocket=websocket,
+        session_manager=session_manager,
+        signing_client=signing_client,
+        audit_fn=audit_fn,
+    )
+    if claims is None:
+        await websocket.accept()
+        await websocket.close(code=WS_POLICY_VIOLATION_CLOSE_CODE)
+        return
+    if not orchestrator_client.is_connected:
+        await websocket.accept()
+        await websocket.close(code=WS_SERVICE_RESTART_CLOSE_CODE)
+        return
+    try:
+        queue, connection = register_websocket_session(
+            session_id=claims.jti,
+            session_exp=claims.exp,
+            conversation_id=conversation_id,
+            orchestrator_client=orchestrator_client,
+            sse_manager=sse_manager,
+            session_manager=session_manager,
+        )
+    except RuntimeError:
+        await websocket.accept()
+        await websocket.close(code=WS_TRY_AGAIN_LATER_CLOSE_CODE)
+        return
+
+    await websocket.accept()
+    await websocket_events(
+        websocket=websocket,
+        queue=queue,
+        connection=connection,
+        session_id=claims.jti,
+        orchestrator_client=orchestrator_client,
+        sse_manager=sse_manager,
+    )
+
+
 @chat_router.post("/stop")
 async def stop(
     request: Request,
+    body: HTTPStopRequest | None = Body(default=None),
     claims: TokenClaims = Depends(_require_auth),
     orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
@@ -319,13 +381,16 @@ async def stop(
 
     Args:
         request: FastAPI request.
+        body: Optional stop payload with the active chat request ID.
         claims: Authenticated token claims.
         orchestrator_client: Orchestrator IPC client.
 
     Returns:
         StopResponse indicating whether a loop was stopped.
     """
-    request_id = str(uuid.uuid4())
+    request_id = body.request_id.strip() if body is not None else ""
+    if not request_id:
+        request_id = str(uuid.uuid4())
     ipc_request = IPCStopRequest(request_id=request_id)
     ipc_response = await send_ipc_control_request(
         send_fn=orchestrator_client.send_stop,

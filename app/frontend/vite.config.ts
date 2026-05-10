@@ -94,6 +94,10 @@ export default defineConfig({
       '/stop': devProxyTarget,
       '/confirm': devProxyTarget,
       '/stream': devProxyTarget,
+      '/ws': {
+        target: devProxyTarget,
+        ws: true,
+      },
       '/files': devProxyTarget,
       '/admin': devProxyTarget,
       '/security': devProxyTarget,

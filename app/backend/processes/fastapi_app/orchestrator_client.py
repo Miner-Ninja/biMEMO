@@ -53,6 +53,9 @@ from backend.ipc.models import (
     StreamEvent,
     StreamEventType,
 )
+from backend.ipc.models import (
+    StructuredAssistantContent as IPCStructuredAssistantContent,
+)
 
 
 if TYPE_CHECKING:
@@ -96,6 +99,9 @@ class OrchestratorClient:
         self._session_to_conversation: dict[str, str] = {}
         self._conversation_to_session: dict[str, str] = {}
         self._request_to_session: dict[str, str] = {}
+        self._request_to_conversation: dict[str, str] = {}
+        self._active_chat_request_id = ""
+        self._stopped_chat_request_ids: set[str] = set()
         self._memory_event_queues: list[asyncio.Queue] = []
         self._reader_task: asyncio.Task | None = None
         self._connected = False
@@ -125,6 +131,19 @@ class OrchestratorClient:
         """Check if a chat request is in progress."""
         return self._is_processing
 
+    def register_chat_request(
+        self,
+        request_id: str,
+        session_id: str,
+        conversation_id: str = "",
+    ) -> None:
+        """Mark a chat request active before its background task starts."""
+        self._request_to_session[request_id] = session_id
+        if conversation_id:
+            self._request_to_conversation[request_id] = conversation_id
+        self._active_chat_request_id = request_id
+        self._is_processing = True
+
     def register_session_queue(
         self,
         session_id: str,
@@ -141,12 +160,20 @@ class OrchestratorClient:
         self._session_queues[session_id] = queue
         self._bind_session_conversation(session_id, conversation_id)
 
-    def unregister_session_queue(self, session_id: str) -> None:
+    def unregister_session_queue(
+        self,
+        session_id: str,
+        queue: asyncio.Queue | None = None,
+    ) -> None:
         """Unregister a session's stream event queue.
 
         Args:
             session_id: Session identifier.
+            queue: Optional queue that must still be current.
         """
+        current_queue = self._session_queues.get(session_id)
+        if queue is not None and current_queue is not queue:
+            return
         self._session_queues.pop(session_id, None)
         self._unbind_session_conversation(session_id)
 
@@ -261,7 +288,22 @@ class OrchestratorClient:
         """
         self._require_connected()
 
+        if request.request_id in self._stopped_chat_request_ids:
+            self._stopped_chat_request_ids.discard(request.request_id)
+            self._request_to_session.pop(request.request_id, None)
+            self._request_to_conversation.pop(request.request_id, None)
+            if self._active_chat_request_id == request.request_id:
+                self._active_chat_request_id = ""
+            self._is_processing = False
+            return IPCChatResponse(
+                request_id=request.request_id,
+                structured_content=IPCStructuredAssistantContent(answer="Stopped."),
+            )
+
         self._request_to_session[request.request_id] = session_id
+        if request.conversation_id:
+            self._request_to_conversation[request.request_id] = request.conversation_id
+        self._active_chat_request_id = request.request_id
         self._is_processing = True
         try:
             return await self._send_request_and_wait(
@@ -272,6 +314,9 @@ class OrchestratorClient:
             raise
         finally:
             self._request_to_session.pop(request.request_id, None)
+            self._request_to_conversation.pop(request.request_id, None)
+            if self._active_chat_request_id == request.request_id:
+                self._active_chat_request_id = ""
             self._is_processing = False
 
     async def send_bridge_inbound_sync(
@@ -310,10 +355,13 @@ class OrchestratorClient:
         self._require_connected()
 
         try:
-            return await self._send_request_and_wait(
+            response = await self._send_request_and_wait(
                 request=request,
                 timeout=timeout,
             )
+            if response.stopped:
+                self._release_stopped_chat_request(request.request_id)
+            return response
         except TimeoutError:
             raise
 
@@ -388,6 +436,42 @@ class OrchestratorClient:
         self._response_futures[request_id] = response_future
         return response_future
 
+    def _release_stopped_chat_request(self, request_id: str) -> None:
+        """Resolve the pending chat future after a successful stop command."""
+        chat_request_id = self._resolve_stopped_chat_request_id(request_id)
+        if not chat_request_id:
+            return
+        response_future = self._response_futures.pop(chat_request_id, None)
+        if response_future is None:
+            self._stopped_chat_request_ids.add(chat_request_id)
+            self._request_to_session.pop(chat_request_id, None)
+            self._request_to_conversation.pop(chat_request_id, None)
+            if self._active_chat_request_id == chat_request_id:
+                self._active_chat_request_id = ""
+            self._is_processing = False
+            return
+        if response_future.done():
+            return
+        self._request_to_session.pop(chat_request_id, None)
+        self._request_to_conversation.pop(chat_request_id, None)
+        if self._active_chat_request_id == chat_request_id:
+            self._active_chat_request_id = ""
+        self._is_processing = False
+        response_future.set_result(
+            IPCChatResponse(
+                request_id=chat_request_id,
+                structured_content=IPCStructuredAssistantContent(answer="Stopped."),
+            )
+        )
+
+    def _resolve_stopped_chat_request_id(self, request_id: str) -> str:
+        """Find the pending chat request associated with one stop command."""
+        if request_id in self._request_to_session:
+            return request_id
+        if self._active_chat_request_id in self._request_to_session:
+            return self._active_chat_request_id
+        return ""
+
     async def _handle_stream_event(self, message: StreamEvent) -> None:
         """Dispatch one incoming stream event to its target queue."""
         if message.event_type == "memory_event":
@@ -424,9 +508,17 @@ class OrchestratorClient:
     ) -> asyncio.Queue | None:
         """Return the SSE queue bound to one request id."""
         session_id = self._request_to_session.get(request_id)
-        if session_id is None:
+        if session_id is not None:
+            session_queue = self._session_queues.get(session_id)
+            if session_queue is not None:
+                return session_queue
+        conversation_id = self._request_to_conversation.get(request_id, "")
+        if not conversation_id:
             return None
-        return self._session_queues.get(session_id)
+        active_session_id = self._conversation_to_session.get(conversation_id)
+        if active_session_id is None:
+            return None
+        return self._session_queues.get(active_session_id)
 
     def _resolve_response_future(self, message: BaseModel) -> None:
         """Resolve one pending response future from an incoming message."""

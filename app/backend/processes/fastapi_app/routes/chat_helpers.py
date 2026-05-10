@@ -515,6 +515,11 @@ async def start_web_chat_request(
         admin_client=admin_client,
         chat_bridge_service=chat_bridge_service,
     )
+    orchestrator_client.register_chat_request(
+        prepared_request.ipc_request.request_id,
+        claims.jti,
+        prepared_request.conversation_id,
+    )
     background_tasks.add_task(
         _finish_started_web_chat_request,
         prepared_request=prepared_request,

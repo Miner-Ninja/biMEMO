@@ -4,6 +4,7 @@ export const DEFAULT_STREAM_ERROR_MESSAGE =
 export type ActiveAssistantStreamState = {
   assistantMessageId: string | null;
   conversationId: string | null;
+  requestId: string | null;
   voiceUserMessageId: string | null;
   httpCompleted: boolean;
   finalReceived: boolean;

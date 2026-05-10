@@ -159,6 +159,122 @@ class TestOrchestratorClient:
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_send_stop_releases_pending_chat_response(self) -> None:
+        """Successful stop unblocks the active chat request future."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        chat_request = IPCChatRequest(
+            request_id="chat-1",
+            message="hi",
+            channel="web",
+            session_id="s1",
+            conversation_id="c1",
+        )
+        chat_task = asyncio.create_task(
+            client.send_chat(chat_request, session_id="s1")
+        )
+        await asyncio.sleep(0)
+        assert client.is_processing
+
+        fake_ipc.queue_receive(IPCStopResponse(request_id="stop-1", stopped=True))
+        stop_response = await client.send_stop(IPCStopRequest(request_id="stop-1"))
+        assert not client.is_processing
+        chat_response = await asyncio.wait_for(chat_task, timeout=1.0)
+
+        assert stop_response.stopped is True
+        assert chat_response.request_id == "chat-1"
+        assert chat_response.structured_content.answer == "Stopped."
+        assert not client.is_processing
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_before_background_send_prevents_late_chat_start(self) -> None:
+        """Stop can win the race before the background chat task sends IPC."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        client.register_chat_request("chat-1", "s1")
+        fake_ipc.queue_receive(IPCStopResponse(request_id="chat-1", stopped=True))
+        stop_response = await client.send_stop(IPCStopRequest(request_id="chat-1"))
+        assert not client.is_processing
+
+        chat_request = IPCChatRequest(
+            request_id="chat-1",
+            message="hi",
+            channel="web",
+            session_id="s1",
+            conversation_id="c1",
+        )
+        chat_response = await client.send_chat(chat_request, session_id="s1")
+
+        assert stop_response.stopped is True
+        assert chat_response.structured_content.answer == "Stopped."
+        assert fake_ipc.sent_messages == [IPCStopRequest(request_id="chat-1")]
+        assert not client.is_processing
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_stream_event_falls_back_to_reconnected_conversation(
+        self,
+    ) -> None:
+        """Route final events to a reconnected session for the same chat."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        old_queue: asyncio.Queue = asyncio.Queue()
+        new_queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("old-session", old_queue, conversation_id="c1")
+        client.register_chat_request("chat-1", "old-session", "c1")
+        client.unregister_session_queue("old-session")
+        client.register_session_queue("new-session", new_queue, conversation_id="c1")
+
+        event = StreamEvent(
+            request_id="chat-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        routed_event = await asyncio.wait_for(new_queue.get(), timeout=1.0)
+        assert routed_event is event
+        assert old_queue.empty()
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_stale_realtime_disconnect_does_not_remove_new_queue(
+        self,
+    ) -> None:
+        """A stale browser connection cannot unregister a newer queue."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        old_queue: asyncio.Queue = asyncio.Queue()
+        new_queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("session-1", old_queue, conversation_id="c1")
+        client.register_session_queue("session-1", new_queue, conversation_id="c1")
+        client.unregister_session_queue("session-1", old_queue)
+
+        event = StreamEvent(
+            request_id="",
+            event_type=StreamEventType.CONVERSATION_UPDATED,
+            data={"conversation_id": "c1"},
+        )
+        await client.publish_conversation_event(
+            conversation_id="c1",
+            event_type=event.event_type,
+            data=event.data,
+        )
+
+        routed_event = await asyncio.wait_for(new_queue.get(), timeout=1.0)
+        assert routed_event.event_type == StreamEventType.CONVERSATION_UPDATED
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_send_confirm_returns_response(self) -> None:
         """Sends ``ConfirmRequest`` and returns ``ConfirmResponse``."""
         fake_ipc = FakeOrchestratorIPC()

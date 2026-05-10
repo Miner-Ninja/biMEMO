@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from typing import TYPE_CHECKING
@@ -26,7 +27,6 @@ from backend.ipc.models import (
 
 
 if TYPE_CHECKING:
-    import asyncio
     from collections.abc import Callable
 
     from pydantic import BaseModel
@@ -224,25 +224,52 @@ class OrchestratorIPCServer:
         response = await self._reload_llm_fn()
         return response.model_copy(update={"request_id": request.request_id})
 
-    async def _handle_chat(self, request: ChatRequest) -> ChatResponse:
+    async def _handle_chat(self, request: ChatRequest) -> ChatResponse | None:
         """Process a chat request through the orchestrator.
 
         Args:
             request: Chat request from FastAPI.
 
         Returns:
-            ChatResponse with the result.
+            ``None`` after scheduling the chat task. The task pushes the
+            ``ChatResponse`` over the same full-duplex IPC channel.
         """
+        if self._active_task is not None and not self._active_task.done():
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(
+                    answer="Internal error: another chat request is already running"
+                ),
+            )
+        self._active_task = asyncio.create_task(
+            self._run_chat_task(request),
+        )
+        self._active_task.add_done_callback(self._clear_finished_chat_task)
+        return None
+
+    async def _run_chat_task(self, request: ChatRequest) -> None:
+        """Run one chat request and push its response when it finishes."""
         try:
-            return await self._orchestrator_fn(request)
+            response = await self._orchestrator_fn(request)
+        except asyncio.CancelledError:
+            response = ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="Stopped."),
+            )
         except Exception as error:
             logger.error("Orchestrator error: %s", error, exc_info=True)
             error_text = self._build_internal_error_text(error)
             await self._save_error_response(request, error_text)
-            return ChatResponse(
+            response = ChatResponse(
                 request_id=request.request_id,
                 structured_content=StructuredAssistantContent(answer=error_text),
             )
+        await self._server.push(response)
+
+    def _clear_finished_chat_task(self, task: asyncio.Task) -> None:
+        """Forget the active chat task once it is no longer running."""
+        if self._active_task is task:
+            self._active_task = None
 
     async def _save_error_response(
         self,
@@ -305,7 +332,9 @@ class OrchestratorIPCServer:
             StopResponse confirming cancellation.
         """
         if self._active_task is not None and not self._active_task.done():
-            self._active_task.cancel()
+            active_task = self._active_task
+            self._active_task = None
+            active_task.cancel()
             await self.push_event(
                 StreamEvent(
                     request_id=request.request_id,
