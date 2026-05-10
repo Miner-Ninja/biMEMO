@@ -40,6 +40,7 @@ from backend.llm.structured_response import (
     STRUCTURED_RESPONSE_INSTRUCTION,
     STRUCTURED_RESPONSE_SCHEMA,
     StructuredAssistantContent,
+    normalize_legacy_response_text,
     parse_structured_response_json,
 )
 from backend.llm.structured_stream import AnswerFieldStreamExtractor
@@ -613,10 +614,24 @@ class OllamaClient:
         """Build structured assistant content from one Ollama JSON response."""
         if tool_calls:
             return None
-        return parse_structured_response_json(
-            text,
-            thinking=thinking,
-        )
+        try:
+            return parse_structured_response_json(
+                text,
+                thinking=thinking,
+            )
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(
+                "Ollama returned non-JSON structured response; "
+                "using plaintext fallback",
+                exc_info=True,
+            )
+            structured_content = normalize_legacy_response_text(text)
+            return StructuredAssistantContent(
+                answer=structured_content.answer,
+                thinking=thinking.strip() if thinking else None,
+                sql=structured_content.sql,
+                suggestions=structured_content.suggestions,
+            )
 
     def _final_visible_text(self, full_text: list[str]) -> str:
         """Return the assembled visible text with a defensive ``<think>`` strip.

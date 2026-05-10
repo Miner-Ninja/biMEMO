@@ -1459,6 +1459,46 @@ class TestOllamaClientEmptyRetry:
         assert result.text == "First answer"
         await client.close()
 
+    @pytest.mark.asyncio
+    async def test_invalid_structured_json_uses_plaintext_fallback(self, tmp_path):
+        """Verify non-JSON structured responses do not crash the chat."""
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "model": "qwen3:8b",
+                    "message": {
+                        "role": "assistant",
+                        "content": "GRAM trades near 0.01 USD today.",
+                    },
+                    "prompt_eval_count": 1,
+                    "eval_count": 1,
+                    "prompt_eval_duration": 10,
+                    "eval_duration": 20,
+                    "total_duration": 30,
+                    "done": True,
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        client = make_client(transport, tmp_path)
+        client.capabilities_registry = _prebuilt_registry(
+            "qwen3:8b",
+            response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+
+        result = await client.chat([{"role": "user", "content": "GRAM price?"}])
+
+        assert call_count == 1
+        assert result.text == "GRAM trades near 0.01 USD today."
+        assert result.structured_content is not None
+        assert result.structured_content.answer == result.text
+        await client.close()
+
 
 class TestStructuredStreaming:
     """Tests for the JSON_SCHEMA + streaming path."""
