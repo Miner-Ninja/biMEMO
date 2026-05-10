@@ -13,10 +13,10 @@ from backend.processes.fastapi_app.deps import (
     _get_credential_client,
     _get_csrf_token_for_jti,
     _get_orchestrator_client,
+    _get_realtime_manager,
     _get_reauth_manager,
     _get_session_manager,
     _get_signing_client,
-    _get_sse_manager,
     _require_auth,
 )
 from fastapi import HTTPException
@@ -57,11 +57,11 @@ class TestDependencyFunctions:
         req = _make_request({"session_manager": mock})
         assert _get_session_manager(req) is mock
 
-    def test_get_sse_manager(self):
-        """Verify SSE manager retrieved from state."""
+    def test_get_realtime_manager(self):
+        """Verify realtime manager retrieved from state."""
         mock = MagicMock()
-        req = _make_request({"sse_manager": mock})
-        assert _get_sse_manager(req) is mock
+        req = _make_request({"realtime_manager": mock})
+        assert _get_realtime_manager(req) is mock
 
     def test_get_reauth_manager(self):
         """Verify reauth manager retrieved from state."""

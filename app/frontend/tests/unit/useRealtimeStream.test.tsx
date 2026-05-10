@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRealtimeStream } from '@/hooks/useRealtimeStream'
 
@@ -25,30 +25,14 @@ class FakeWebSocket {
   }
 }
 
-class FakeEventSource {
-  static instances: FakeEventSource[] = []
-  onopen: (() => void) | null = null
-  onmessage: ((event: MessageEvent<string>) => void) | null = null
-  onerror: (() => void) | null = null
-  url: string
-
-  constructor(url: string) {
-    this.url = url
-    FakeEventSource.instances.push(this)
-  }
-
-  close() {}
-}
-
 describe('useRealtimeStream', () => {
   beforeEach(() => {
     FakeWebSocket.instances = []
-    FakeEventSource.instances = []
     vi.stubGlobal('WebSocket', FakeWebSocket)
-    vi.stubGlobal('EventSource', FakeEventSource)
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -73,10 +57,10 @@ describe('useRealtimeStream', () => {
     })
 
     expect(onEvent).toHaveBeenCalledWith({ type: 'final', request_id: 'req-1' })
-    expect(FakeEventSource.instances).toHaveLength(0)
   })
 
-  it('falls back to SSE when WebSocket closes before opening', async () => {
+  it('reconnects with WebSocket when the connection closes', async () => {
+    vi.useFakeTimers()
     const onEvent = vi.fn()
     const { result } = renderHook(() => useRealtimeStream(onEvent, 'conv-2'))
 
@@ -89,20 +73,13 @@ describe('useRealtimeStream', () => {
       socket.onclose?.()
     })
 
-    await waitFor(() => {
-      expect(FakeEventSource.instances).toHaveLength(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
     })
 
-    const source = FakeEventSource.instances[0]
-    expect(source.url).toBe('/stream?conversation_id=conv-2')
-    act(() => {
-      source.onmessage?.(
-        new MessageEvent('message', {
-          data: JSON.stringify({ type: 'done', request_id: 'req-2' }),
-        }),
-      )
-    })
-
-    expect(onEvent).toHaveBeenCalledWith({ type: 'done', request_id: 'req-2' })
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(FakeWebSocket.instances[1].url).toContain(
+      '/ws?conversation_id=conv-2',
+    )
   })
 })

@@ -19,7 +19,7 @@ from .deps import (
     _get_reauth_manager,
     _get_session_manager,
     _get_signing_client,
-    _get_sse_manager,
+    _get_realtime_manager,
     _require_auth,
 )
 from .main import (
@@ -38,7 +38,6 @@ from .routes import (
     health_router,
     llm_router,
 )
-from .routes.chat_stream import SSE_KEEPALIVE_INTERVAL
 
 
 __all__ = [
@@ -50,7 +49,6 @@ __all__ = [
     "HEALTH_ROUTER",
     "LLM_ROUTER",
     "ORCHESTRATOR_RESPONSE_TYPES",
-    "SSE_KEEPALIVE_INTERVAL",
     "AdminDBClient",
     "CredentialClient",
     "OrchestratorClient",
@@ -66,7 +64,7 @@ __all__ = [
     "_get_reauth_manager",
     "_get_session_manager",
     "_get_signing_client",
-    "_get_sse_manager",
+    "_get_realtime_manager",
     "_require_auth",
     "_set_auth_cookies",
     "admin_router",

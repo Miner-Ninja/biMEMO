@@ -11,7 +11,7 @@ from fastapi import HTTPException, Request
 if TYPE_CHECKING:
     from backend.channels.endpoints import ReauthManager
     from backend.channels.jwt_auth import SessionManager, TokenClaims
-    from backend.channels.sse import SSEManager
+    from backend.channels.realtime import RealtimeConnectionManager
     from backend.chat_bridge import ChatBridgeService
 
     from .clients import (
@@ -112,9 +112,9 @@ def _get_session_manager(request: Request) -> SessionManager:
     return _app_state_value(request, "session_manager")
 
 
-def _get_sse_manager(request: Request) -> SSEManager:
-    """Return the SSE connection manager."""
-    return _app_state_value(request, "sse_manager")
+def _get_realtime_manager(request: Request) -> RealtimeConnectionManager:
+    """Return the realtime connection manager."""
+    return _app_state_value(request, "realtime_manager")
 
 
 def _get_reauth_manager(request: Request) -> ReauthManager:

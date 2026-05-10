@@ -8,7 +8,7 @@ export type ActiveAssistantStreamState = {
   voiceUserMessageId: string | null;
   httpCompleted: boolean;
   finalReceived: boolean;
-  sseCompleted: boolean;
+  realtimeCompleted: boolean;
 };
 
 export function shouldApplyHttpChatResponse(streamFinalReceived: boolean): boolean {

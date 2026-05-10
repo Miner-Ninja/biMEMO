@@ -25,7 +25,7 @@ describe('markStreamTerminalError', () => {
       voiceUserMessageId: null,
       httpCompleted: false,
       finalReceived: false,
-      sseCompleted: false,
+      realtimeCompleted: false,
     }
 
     expect(markStreamTerminalError(stream)).toEqual({
@@ -35,17 +35,17 @@ describe('markStreamTerminalError', () => {
     })
   })
 
-  it('does not claim SSE done arrived before the done event', () => {
+  it('does not claim realtime done arrived before the done event', () => {
     const stream: ActiveAssistantStreamState = {
       assistantMessageId: 'assistant-1',
       conversationId: 'conversation-1',
       voiceUserMessageId: null,
       httpCompleted: false,
       finalReceived: false,
-      sseCompleted: false,
+      realtimeCompleted: false,
     }
 
-    expect(markStreamTerminalError(stream).sseCompleted).toBe(false)
+    expect(markStreamTerminalError(stream).realtimeCompleted).toBe(false)
   })
 })
 

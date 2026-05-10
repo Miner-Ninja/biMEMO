@@ -11,7 +11,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 if TYPE_CHECKING:
     from backend.channels.jwt_auth import SessionManager, TokenClaims
-    from backend.channels.sse import SSEConnection, SSEManager
+    from backend.channels.realtime import RealtimeConnection, RealtimeConnectionManager
     from backend.ipc.models import StreamEvent
 
     from ..clients import OrchestratorClient, SigningClient
@@ -59,9 +59,9 @@ def register_websocket_session(
     session_exp: int,
     conversation_id: str,
     orchestrator_client: OrchestratorClient,
-    sse_manager: SSEManager,
+    realtime_manager: RealtimeConnectionManager,
     session_manager: SessionManager,
-) -> tuple[asyncio.Queue, SSEConnection]:
+) -> tuple[asyncio.Queue, RealtimeConnection]:
     """Register one WebSocket queue with the shared stream session managers."""
     queue: asyncio.Queue = asyncio.Queue()
     orchestrator_client.register_session_queue(
@@ -69,7 +69,7 @@ def register_websocket_session(
         queue,
         conversation_id=conversation_id,
     )
-    connection = sse_manager.connect(session_id, session_exp, session_manager)
+    connection = realtime_manager.connect(session_id, session_exp, session_manager)
     if connection is not None:
         return queue, connection
     orchestrator_client.unregister_session_queue(session_id, queue)
@@ -80,27 +80,27 @@ def disconnect_websocket_session(
     *,
     session_id: str,
     queue: asyncio.Queue,
-    connection: SSEConnection,
+    connection: RealtimeConnection,
     orchestrator_client: OrchestratorClient,
-    sse_manager: SSEManager,
+    realtime_manager: RealtimeConnectionManager,
 ) -> None:
     """Unregister one WebSocket stream session from IPC and session tracking."""
     orchestrator_client.unregister_session_queue(session_id, queue)
-    sse_manager.disconnect(session_id, connection)
+    realtime_manager.disconnect(session_id, connection)
 
 
 async def websocket_events(
     *,
     websocket: WebSocket,
     queue: asyncio.Queue,
-    connection: SSEConnection,
+    connection: RealtimeConnection,
     session_id: str,
     orchestrator_client: OrchestratorClient,
-    sse_manager: SSEManager,
+    realtime_manager: RealtimeConnectionManager,
 ) -> None:
     """Send queued stream events to one connected WebSocket client."""
     try:
-        while sse_manager.is_valid(session_id):
+        while realtime_manager.is_valid(session_id):
             try:
                 event = await asyncio.wait_for(
                     queue.get(),
@@ -123,5 +123,5 @@ async def websocket_events(
             queue=queue,
             connection=connection,
             orchestrator_client=orchestrator_client,
-            sse_manager=sse_manager,
+            realtime_manager=realtime_manager,
         )

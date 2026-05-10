@@ -1,13 +1,11 @@
-"""Chat, stream, stop, confirm routes."""
+"""Chat, WebSocket, stop, confirm routes."""
 
 # ruff: noqa: B008
 
-import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Request, WebSocket
-from fastapi.responses import StreamingResponse
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.ipc.models import StopRequest as IPCStopRequest
@@ -40,9 +38,12 @@ from ..deps import (
     _get_admin_client,
     _get_optional_chat_bridge_service,
     _get_orchestrator_client,
-    _get_session_manager,
-    _get_sse_manager,
     _require_auth,
+)
+from .chat_event_payloads import (
+    conversation_created_event_data,
+    conversation_deleted_event_data,
+    conversation_updated_event_data,
 )
 from .chat_helpers import (
     DEFAULT_CONVERSATION_LIST_LIMIT,
@@ -58,14 +59,6 @@ from .chat_helpers import (
     start_web_chat_request,
     update_conversation_item,
 )
-from .chat_stream import (
-    build_stream_headers,
-    connect_stream_session,
-    conversation_created_event_data,
-    conversation_deleted_event_data,
-    conversation_updated_event_data,
-    stream_events,
-)
 from .chat_websocket import (
     WS_POLICY_VIOLATION_CLOSE_CODE,
     WS_SERVICE_RESTART_CLOSE_CODE,
@@ -78,7 +71,7 @@ from .chat_websocket import (
 
 if TYPE_CHECKING:
     from backend.channels.jwt_auth import SessionManager, TokenClaims
-    from backend.channels.sse import SSEManager
+    from backend.channels.realtime import RealtimeConnectionManager
     from backend.chat_bridge import ChatBridgeService
 
     from ..clients import AdminDBClient, OrchestratorClient
@@ -266,57 +259,6 @@ async def delete_conversation(
     return response
 
 
-@chat_router.get("/stream")
-async def stream(
-    request: Request,
-    conversation_id: str = "",
-    claims: TokenClaims = Depends(_require_auth),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
-    sse_manager: SSEManager = Depends(_get_sse_manager),
-    session_manager: SessionManager = Depends(_get_session_manager),
-) -> StreamingResponse:
-    """Establish SSE connection for real-time streaming.
-
-    Reads StreamEvent messages from the Orchestrator IPC and
-    forwards them to the browser as SSE events.
-
-    Args:
-        request: FastAPI request.
-        conversation_id: Currently open chat id for direct chat events.
-        claims: Authenticated token claims.
-        orchestrator_client: Orchestrator IPC client.
-        sse_manager: SSE connection manager.
-        session_manager: Session tracking for SSE connection limits.
-
-    Returns:
-        StreamingResponse with SSE content type.
-    """
-    queue: asyncio.Queue = asyncio.Queue()
-    connection = connect_stream_session(
-        session_id=claims.jti,
-        session_exp=claims.exp,
-        conversation_id=conversation_id,
-        queue=queue,
-        orchestrator_client=orchestrator_client,
-        sse_manager=sse_manager,
-        session_manager=session_manager,
-    )
-
-    return StreamingResponse(
-        stream_events(
-            queue=queue,
-            connection=connection,
-            session_id=claims.jti,
-            orchestrator_client=orchestrator_client,
-            sse_manager=sse_manager,
-        ),
-        media_type="text/event-stream",
-        headers=build_stream_headers(),
-    )
-
-
 @chat_router.websocket("/ws")
 async def websocket_stream(
     websocket: WebSocket,
@@ -324,7 +266,7 @@ async def websocket_stream(
 ) -> None:
     """Establish WebSocket connection for realtime stream events."""
     session_manager: SessionManager = websocket.app.state.session_manager
-    sse_manager: SSEManager = websocket.app.state.sse_manager
+    realtime_manager: RealtimeConnectionManager = websocket.app.state.realtime_manager
     orchestrator_client: OrchestratorClient = websocket.app.state.orchestrator_client
     signing_client = websocket.app.state.signing_client
     audit_fn = websocket.app.state.audit_fn
@@ -349,7 +291,7 @@ async def websocket_stream(
             session_exp=claims.exp,
             conversation_id=conversation_id,
             orchestrator_client=orchestrator_client,
-            sse_manager=sse_manager,
+            realtime_manager=realtime_manager,
             session_manager=session_manager,
         )
     except RuntimeError:
@@ -364,7 +306,7 @@ async def websocket_stream(
         connection=connection,
         session_id=claims.jti,
         orchestrator_client=orchestrator_client,
-        sse_manager=sse_manager,
+        realtime_manager=realtime_manager,
     )
 
 

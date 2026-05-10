@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.channels.endpoints import EndpointRateLimiter, ReauthManager
 from backend.channels.jwt_auth import SessionManager
-from backend.channels.sse import SSEManager
+from backend.channels.realtime import RealtimeConnectionManager
 from backend.chat_bridge import (
     ChatBridgeService,
 )
@@ -227,7 +227,7 @@ def create_app(
         Configured FastAPI application.
     """
     session_manager = SessionManager()
-    sse_manager = SSEManager()
+    realtime_manager = RealtimeConnectionManager()
     reauth_manager = ReauthManager()
     rate_limiter = EndpointRateLimiter()
 
@@ -306,7 +306,7 @@ def create_app(
 
     # Store managers on app.state
     application.state.session_manager = session_manager
-    application.state.sse_manager = sse_manager
+    application.state.realtime_manager = realtime_manager
     application.state.reauth_manager = reauth_manager
     application.state.rate_limiter = rate_limiter
     application.state.csrf_tokens = _csrf_tokens

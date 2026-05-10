@@ -17,7 +17,7 @@ import httpx
 import pytest
 from backend.channels.endpoints import EndpointRateLimiter, ReauthManager
 from backend.channels.jwt_auth import SessionManager
-from backend.channels.sse import SSEManager
+from backend.channels.realtime import RealtimeConnectionManager
 from backend.chat_bridge import (
     BridgeDeliveryMode,
     BridgePersonaMode,
@@ -132,7 +132,7 @@ def _build_test_app() -> tuple[FastAPI, str, SessionManager, FakeSigningClient, 
     """
     session_manager = SessionManager()
     signing_client = FakeSigningClient(session_manager)
-    sse_manager = SSEManager()
+    realtime_manager = RealtimeConnectionManager()
     reauth_manager = ReauthManager()
     rate_limiter = EndpointRateLimiter()
 
@@ -163,7 +163,7 @@ def _build_test_app() -> tuple[FastAPI, str, SessionManager, FakeSigningClient, 
 
     # App state
     app.state.session_manager = session_manager
-    app.state.sse_manager = sse_manager
+    app.state.realtime_manager = realtime_manager
     app.state.reauth_manager = reauth_manager
     app.state.rate_limiter = rate_limiter
     app.state.csrf_tokens = _csrf_tokens

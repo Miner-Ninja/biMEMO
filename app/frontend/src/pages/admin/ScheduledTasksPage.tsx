@@ -5,8 +5,7 @@ import { ScheduledTaskCard } from '@/components/scheduler/ScheduledTaskCard'
 import { CreateTaskModal } from '@/components/scheduler/CreateTaskModal'
 import { TaskDetailsModal } from '@/components/scheduler/TaskDetailsModal'
 import { ToastContainer, useToasts } from '@/components/ui/Toast'
-import type { SSEEvent } from '@/hooks/useSSE'
-import { useRealtimeStream } from '@/hooks/useRealtimeStream'
+import { useRealtimeStream, type RealtimeEvent } from '@/hooks/useRealtimeStream'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,10 +67,10 @@ export function ScheduledTasksPage() {
     void loadTasks(filter)
   }, [filter, loadTasks])
 
-  // Listen for scheduled_task_result SSE events to refresh the list
+  // Listen for scheduled_task_result realtime events to refresh the list
   // and show a toast when a task fires.
-  const handleSseEvent = useCallback(
-    (event: SSEEvent) => {
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeEvent) => {
       if (event.type !== 'scheduled_task_result') return
       const eventPayload =
         event.data && typeof event.data === 'object'
@@ -97,7 +96,7 @@ export function ScheduledTasksPage() {
     [addToast, filter, loadTasks],
   )
 
-  const { connect, disconnect } = useRealtimeStream(handleSseEvent, null)
+  const { connect, disconnect } = useRealtimeStream(handleRealtimeEvent, null)
 
   useEffect(() => {
     void connect()

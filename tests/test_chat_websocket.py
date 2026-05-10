@@ -4,8 +4,9 @@ import asyncio
 from types import SimpleNamespace
 
 from backend.channels.jwt_auth_models import TokenClaims
-from backend.channels.sse import SSEManager
+from backend.channels.realtime import RealtimeConnectionManager
 from backend.ipc.models import StreamEvent, StreamEventType
+from backend.processes.fastapi_app.routes.chat import chat_router
 from backend.processes.fastapi_app.routes.chat_websocket import (
     authenticate_websocket,
     build_websocket_payload,
@@ -61,8 +62,8 @@ class _FakeSessionManager:
         return self.claims
 
 
-def test_build_websocket_payload_matches_sse_envelope() -> None:
-    """WebSocket payloads use the same event envelope as browser SSE events."""
+def test_build_websocket_payload_matches_realtime_envelope() -> None:
+    """WebSocket payloads use the same event envelope as browser realtime events."""
     event = StreamEvent(
         request_id="request-1",
         event_type=StreamEventType.FINAL,
@@ -76,17 +77,27 @@ def test_build_websocket_payload_matches_sse_envelope() -> None:
     }
 
 
+def test_chat_router_does_not_expose_stream_endpoint() -> None:
+    """The old HTTP stream route is removed."""
+    routes = {
+        (next(iter(route.methods)), route.path)
+        for route in chat_router.routes
+        if hasattr(route, "methods")
+    }
+    assert ("GET", "/stream") not in routes
+
+
 def test_register_and_disconnect_websocket_session() -> None:
-    """WebSocket sessions share queue registration and cleanup with SSE."""
+    """WebSocket sessions share queue registration and cleanup with realtime."""
     orchestrator_client = _FakeOrchestratorClient()
-    sse_manager = SSEManager()
+    realtime_manager = RealtimeConnectionManager()
 
     queue, connection = register_websocket_session(
         session_id="session-1",
         session_exp=9_999_999_999,
         conversation_id="conversation-1",
         orchestrator_client=orchestrator_client,
-        sse_manager=sse_manager,
+        realtime_manager=realtime_manager,
         session_manager=SimpleNamespace(
             register_session=lambda _jti, _exp: True,
             unregister_session=lambda _jti: True,
@@ -95,18 +106,18 @@ def test_register_and_disconnect_websocket_session() -> None:
 
     assert orchestrator_client.queues["session-1"] is queue
     assert orchestrator_client.conversation_ids["session-1"] == "conversation-1"
-    assert sse_manager.is_valid("session-1") is True
+    assert realtime_manager.is_valid("session-1") is True
 
     disconnect_websocket_session(
         session_id="session-1",
         queue=queue,
         connection=connection,
         orchestrator_client=orchestrator_client,
-        sse_manager=sse_manager,
+        realtime_manager=realtime_manager,
     )
 
     assert "session-1" not in orchestrator_client.queues
-    assert sse_manager.is_valid("session-1") is False
+    assert realtime_manager.is_valid("session-1") is False
 
 
 def test_authenticate_websocket_uses_existing_access_cookie() -> None:

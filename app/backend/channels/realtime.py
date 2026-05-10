@@ -1,4 +1,4 @@
-"""SSE connection security for Web UI.
+"""Realtime connection tracking for the Web UI.
 
 Enforces max connection lifetime, JWT re-validation,
 and single connection per session. Integrates with
@@ -21,14 +21,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# SSE connection limits
-SSE_MAX_LIFETIME = 300  # 5 minutes
-SSE_MAX_CONNECTIONS = 3
+# Realtime connection limits
+REALTIME_MAX_LIFETIME = 300  # 5 minutes
+REALTIME_MAX_CONNECTIONS = 3
 
 
 @dataclass(frozen=True)
-class SSEConnection:
-    """Active SSE connection state.
+class RealtimeConnection:
+    """Active browser realtime connection state.
 
     Attributes:
         session_jti: JWT token identifier.
@@ -42,8 +42,8 @@ class SSEConnection:
 
 
 @dataclass
-class SSEManager:
-    """Manages active SSE connections.
+class RealtimeConnectionManager:
+    """Manages active browser realtime connections.
 
     Enforces single connection per session and
     max lifetime limits.
@@ -52,8 +52,8 @@ class SSEManager:
         max_lifetime: Maximum connection lifetime.
     """
 
-    max_lifetime: int = SSE_MAX_LIFETIME
-    _connections: dict[str, SSEConnection] = field(default_factory=dict)
+    max_lifetime: int = REALTIME_MAX_LIFETIME
+    _connections: dict[str, RealtimeConnection] = field(default_factory=dict)
     _session_managers: dict[str, SessionManager] = field(default_factory=dict)
 
     def connect(
@@ -61,11 +61,11 @@ class SSEManager:
         session_jti: str,
         token_exp: float,
         session_manager: SessionManager | None = None,
-    ) -> SSEConnection | None:
-        """Register a new SSE connection.
+    ) -> RealtimeConnection | None:
+        """Register a new realtime connection.
 
         Closes previous connection for the same session.
-        Returns None if session or SSE limit exceeded.
+        Returns None if session or realtime limit exceeded.
 
         Args:
             session_jti: JWT token identifier.
@@ -74,7 +74,7 @@ class SSEManager:
                 for global session limit check.
 
         Returns:
-            SSEConnection if accepted, None if rejected.
+            RealtimeConnection if accepted, None if rejected.
         """
         if session_manager is not None and not session_manager.register_session(
             session_jti, token_exp
@@ -83,11 +83,11 @@ class SSEManager:
         self._prune_expired()
         if session_jti in self._connections:
             self._remove_connection(session_jti)
-        if len(self._connections) >= SSE_MAX_CONNECTIONS:
+        if len(self._connections) >= REALTIME_MAX_CONNECTIONS:
             if session_manager is not None:
                 session_manager.unregister_session(session_jti)
             return None
-        conn = SSEConnection(
+        conn = RealtimeConnection(
             session_jti=session_jti,
             started_at=time.time(),
             token_exp=token_exp,
@@ -101,16 +101,16 @@ class SSEManager:
         """Return the current wall-clock timestamp."""
         return time.time()
 
-    def _is_expired(self, conn: SSEConnection, *, now: float) -> bool:
-        """Return whether one SSE connection is expired."""
+    def _is_expired(self, conn: RealtimeConnection, *, now: float) -> bool:
+        """Return whether one realtime connection is expired."""
         return now - conn.started_at > self.max_lifetime or now > conn.token_exp
 
     def disconnect(
         self,
         session_jti: str,
-        connection: SSEConnection | None = None,
+        connection: RealtimeConnection | None = None,
     ) -> bool:
-        """Remove an SSE connection.
+        """Remove a realtime connection.
 
         Args:
             session_jti: JWT token identifier.

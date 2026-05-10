@@ -1,7 +1,7 @@
 """Multiplexing IPC client for the Orchestrator process.
 
 Runs a background reader loop that dispatches incoming messages:
-StreamEvents go to per-session queues for SSE forwarding, response
+StreamEvents go to per-session queues for realtime forwarding, response
 messages resolve pending futures for request handlers. Manages
 session-to-conversation bindings and memory event fan-out.
 """
@@ -79,7 +79,7 @@ class OrchestratorClient:
     """Multiplexing IPC client for the Orchestrator process.
 
     Runs a background reader loop that dispatches incoming messages:
-    StreamEvents go to per-session queues for SSE forwarding,
+    StreamEvents go to per-session queues for realtime forwarding,
     response messages resolve pending futures for request handlers.
 
     Attributes:
@@ -205,7 +205,7 @@ class OrchestratorClient:
         event_type: StreamEventType,
         data: dict[str, Any],
     ) -> None:
-        """Push one SSE event into the browser that currently shows this chat."""
+        """Push one realtime event into the browser that currently shows this chat."""
         session_id = self._conversation_to_session.get(conversation_id)
         if session_id is None:
             return
@@ -485,7 +485,7 @@ class OrchestratorClient:
             await session_queue.put(message)
 
     async def _broadcast_to_all_sessions(self, message: StreamEvent) -> None:
-        """Fan out one stream event to every active SSE session queue.
+        """Fan out one stream event to every active realtime session queue.
 
         Used for events that aren't tied to a specific request_id, such
         as scheduled_task_result — they need to reach any browser tab
@@ -506,7 +506,7 @@ class OrchestratorClient:
         self,
         request_id: str,
     ) -> asyncio.Queue | None:
-        """Return the SSE queue bound to one request id."""
+        """Return the realtime queue bound to one request id."""
         session_id = self._request_to_session.get(request_id)
         if session_id is not None:
             session_queue = self._session_queues.get(session_id)

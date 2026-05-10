@@ -93,7 +93,6 @@ export default defineConfig({
       '/chat': devProxyTarget,
       '/stop': devProxyTarget,
       '/confirm': devProxyTarget,
-      '/stream': devProxyTarget,
       '/ws': {
         target: devProxyTarget,
         ws: true,

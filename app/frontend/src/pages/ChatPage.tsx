@@ -16,8 +16,11 @@ import {
 } from "@/hooks/useChat";
 import { useProcessingStages } from "@/hooks/useProcessingStages";
 import { ProcessingStages } from "@/components/chat/ProcessingStages";
-import type { ConnectionStatus, SSEEvent } from "@/hooks/useSSE";
-import { useRealtimeStream } from "@/hooks/useRealtimeStream";
+import {
+  useRealtimeStream,
+  type ConnectionStatus,
+  type RealtimeEvent,
+} from "@/hooks/useRealtimeStream";
 import { useAuth } from "@/hooks/useAuth";
 import { DEFAULT_CHAT_SETTINGS } from "@/types/chat";
 import { updateChatSettings } from "@/lib/bimemo-api";
@@ -408,7 +411,7 @@ export function ChatPage() {
     voiceUserMessageId: null,
     httpCompleted: false,
     finalReceived: false,
-    sseCompleted: false,
+    realtimeCompleted: false,
   });
   const {
     processingStages,
@@ -451,7 +454,7 @@ export function ChatPage() {
     useState<PendingBridgeSettingsSave | null>(null);
   const [showBridgeDetails, setShowBridgeDetails] = useState(false);
   const voiceModeRef = useRef(voiceMode);
-  const previousSseStatusRef = useRef<ConnectionStatus>("disconnected");
+  const previousRealtimeStatusRef = useRef<ConnectionStatus>("disconnected");
   const { confirm, ConfirmDialog } = useConfirm();
 
   const beginAssistantStream = useCallback((
@@ -472,7 +475,7 @@ export function ChatPage() {
       voiceUserMessageId: options?.voiceUserMessageId ?? null,
       httpCompleted: false,
       finalReceived: false,
-      sseCompleted: false,
+      realtimeCompleted: false,
     };
   }, []);
 
@@ -488,19 +491,19 @@ export function ChatPage() {
       voiceUserMessageId: null,
       httpCompleted: false,
       finalReceived: false,
-      sseCompleted: false,
+      realtimeCompleted: false,
     };
   }, []);
 
   const finalizeAssistantStreamIfReady = useCallback(() => {
     const activeStream = activeAssistantStreamRef.current;
-    if (!activeStream.httpCompleted || !activeStream.sseCompleted) {
+    if (!activeStream.httpCompleted || !activeStream.realtimeCompleted) {
       return;
     }
     clearAssistantStream();
   }, [clearAssistantStream]);
 
-  const isCurrentAssistantStreamEvent = useCallback((event: SSEEvent) => {
+  const isCurrentAssistantStreamEvent = useCallback((event: RealtimeEvent) => {
     const activeStream = activeAssistantStreamRef.current;
     if (!activeStream.assistantMessageId) {
       return false;
@@ -819,8 +822,8 @@ export function ChatPage() {
     [ttsAvailable],
   );
 
-  const handleSSEEvent = useCallback(
-    (event: SSEEvent) => {
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeEvent) => {
       const isAssistantRunEvent =
         event.type === "token" ||
         event.type === "thinking" ||
@@ -886,7 +889,7 @@ export function ChatPage() {
         }
         setIsLoading(false);
         setTimeout(() => clearStages(), 1000);
-        activeAssistantStreamRef.current.sseCompleted = true;
+        activeAssistantStreamRef.current.realtimeCompleted = true;
         finalizeAssistantStreamIfReady();
       } else if (event.type === "final") {
         const finalPayload = eventPayload as ChatFinalEventPayload | null;
@@ -1081,12 +1084,12 @@ export function ChatPage() {
     ],
   );
 
-  const { status: sseStatus, connect, disconnect } = useRealtimeStream(
-    handleSSEEvent,
+  const { status: realtimeStatus, connect, disconnect } = useRealtimeStream(
+    handleRealtimeEvent,
     activeChatId,
   );
 
-  // Connect SSE on mount
+  // Connect realtime on mount
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -1888,12 +1891,12 @@ export function ChatPage() {
   );
 
   useEffect(() => {
-    const previousSseStatus = previousSseStatusRef.current;
-    previousSseStatusRef.current = sseStatus;
-    if (!isReady || sseStatus !== "connected") {
+    const previousRealtimeStatus = previousRealtimeStatusRef.current;
+    previousRealtimeStatusRef.current = realtimeStatus;
+    if (!isReady || realtimeStatus !== "connected") {
       return;
     }
-    if (previousSseStatus === "connected") {
+    if (previousRealtimeStatus === "connected") {
       return;
     }
     void refreshConversations();
@@ -1907,7 +1910,7 @@ export function ChatPage() {
     isReady,
     refreshConversations,
     refreshConversationMessages,
-    sseStatus,
+    realtimeStatus,
   ]);
 
   const isUploading = uploadProgress !== null;
@@ -1988,9 +1991,9 @@ export function ChatPage() {
         isLoading={isLoading}
         uploadProgress={uploadProgress}
         placeholder={
-          sseStatus === "connecting"
+          realtimeStatus === "connecting"
             ? "Connecting to server..."
-            : sseStatus === "disconnected"
+            : realtimeStatus === "disconnected"
               ? "Server disconnected. Reconnecting..."
               : "Ask me anything..."
         }

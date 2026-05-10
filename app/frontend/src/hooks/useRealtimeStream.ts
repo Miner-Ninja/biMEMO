@@ -1,21 +1,21 @@
 /**
- * Realtime stream hook with WebSocket primary transport and SSE fallback.
+ * WebSocket-only realtime stream hook.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { authStatus, refreshAccessToken } from '@/lib/bimemo-api'
-import type { ConnectionStatus, SSEEvent } from '@/hooks/useSSE'
 
 const MIN_BACKOFF = 1000
 const MAX_BACKOFF = 30000
-const WS_EARLY_CLOSE_MS = 1500
 
-function streamUrl(conversationId?: string | null): string {
-  if (!conversationId) {
-    return '/stream'
-  }
-  return `/stream?conversation_id=${encodeURIComponent(conversationId)}`
+export interface RealtimeEvent {
+  type: string
+  data?: unknown
+  content?: string
+  request_id?: string
 }
+
+export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected'
 
 function websocketUrl(conversationId?: string | null): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -39,18 +39,16 @@ async function ensureAuthenticated(): Promise<boolean> {
 }
 
 export function useRealtimeStream(
-  onEvent: (event: SSEEvent) => void,
+  onEvent: (event: RealtimeEvent) => void,
   conversationId?: string | null,
 ) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const webSocketRef = useRef<WebSocket | null>(null)
-  const eventSourceRef = useRef<EventSource | null>(null)
   const backoffRef = useRef(MIN_BACKOFF)
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRef = useRef(false)
   const onEventRef = useRef(onEvent)
   const connectRef = useRef<(() => Promise<void>) | null>(null)
-  const openedAtRef = useRef(0)
   const reconnectingRef = useRef(false)
 
   useEffect(() => {
@@ -65,10 +63,6 @@ export function useRealtimeStream(
     if (webSocketRef.current) {
       webSocketRef.current.close()
       webSocketRef.current = null
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-      eventSourceRef.current = null
     }
   }, [])
 
@@ -90,7 +84,7 @@ export function useRealtimeStream(
 
   const dispatchEvent = useCallback((rawData: string) => {
     try {
-      const data: SSEEvent = JSON.parse(rawData)
+      const data: RealtimeEvent = JSON.parse(rawData)
       if (data.type === 'heartbeat') {
         return
       }
@@ -99,36 +93,6 @@ export function useRealtimeStream(
       /* ignore malformed realtime messages */
     }
   }, [])
-
-  const connectSSE = useCallback(async () => {
-    const authenticated = await ensureAuthenticated()
-    if (!authenticated) {
-      setStatus('disconnected')
-      scheduleReconnect()
-      return
-    }
-
-    const source = new EventSource(streamUrl(conversationId))
-    eventSourceRef.current = source
-
-    source.onopen = () => {
-      setStatus('connected')
-      backoffRef.current = MIN_BACKOFF
-    }
-
-    source.onmessage = (event) => {
-      dispatchEvent(event.data)
-    }
-
-    source.onerror = () => {
-      source.close()
-      if (eventSourceRef.current === source) {
-        eventSourceRef.current = null
-      }
-      setStatus('disconnected')
-      scheduleReconnect()
-    }
-  }, [conversationId, dispatchEvent, scheduleReconnect])
 
   const connectWebSocket = useCallback(async () => {
     const authenticated = await ensureAuthenticated()
@@ -140,10 +104,8 @@ export function useRealtimeStream(
 
     const socket = new WebSocket(websocketUrl(conversationId))
     webSocketRef.current = socket
-    openedAtRef.current = 0
 
     socket.onopen = () => {
-      openedAtRef.current = Date.now()
       setStatus('connected')
       backoffRef.current = MIN_BACKOFF
     }
@@ -155,7 +117,7 @@ export function useRealtimeStream(
     }
 
     socket.onerror = () => {
-      if (!openedAtRef.current && activeRef.current) {
+      if (activeRef.current) {
         socket.close()
       }
     }
@@ -166,19 +128,9 @@ export function useRealtimeStream(
       }
       setStatus('disconnected')
       if (!activeRef.current) return
-
-      const connectedDuration = openedAtRef.current
-        ? Date.now() - openedAtRef.current
-        : 0
-      const shouldFallbackToSSE =
-        !openedAtRef.current || connectedDuration < WS_EARLY_CLOSE_MS
-      if (shouldFallbackToSSE) {
-        void connectSSE()
-        return
-      }
       scheduleReconnect()
     }
-  }, [connectSSE, conversationId, dispatchEvent, scheduleReconnect])
+  }, [conversationId, dispatchEvent, scheduleReconnect])
 
   const connect = useCallback(async () => {
     activeRef.current = false
