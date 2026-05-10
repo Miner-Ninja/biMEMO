@@ -503,6 +503,21 @@ export function ChatPage() {
     clearAssistantStream();
   }, [clearAssistantStream]);
 
+  const persistAssistantStageTimes = useCallback(() => {
+    const assistantMessageId = assistantMessageIdRef.current;
+    if (!assistantMessageId || stagesRef.current.length === 0) {
+      return;
+    }
+    const now = performance.now();
+    const stageTimes = stagesRef.current.map((stage) => ({
+      label: stage.label,
+      durationMs: stage.frozenDurationMs ?? now - stage.startedAt,
+    }));
+    if (stageTimes.length > 0) {
+      updateMessage(assistantMessageId, { stageTimes });
+    }
+  }, [stagesRef, updateMessage]);
+
   const isCurrentAssistantStreamEvent = useCallback((event: RealtimeEvent) => {
     const activeStream = activeAssistantStreamRef.current;
     if (!activeStream.assistantMessageId) {
@@ -876,17 +891,7 @@ export function ChatPage() {
           errorActiveStage();
         }
       } else if (event.type === "done") {
-        // Persist stage timing data to the assistant message
-        if (assistantMessageIdRef.current && stagesRef.current.length > 0) {
-          const now = performance.now();
-          const stageTimes = stagesRef.current.map((s) => ({
-            label: s.label,
-            durationMs: s.frozenDurationMs ?? now - s.startedAt,
-          }));
-          if (stageTimes.length > 0) {
-            updateMessage(assistantMessageIdRef.current, { stageTimes });
-          }
-        }
+        persistAssistantStageTimes();
         setIsLoading(false);
         setTimeout(() => clearStages(), 1000);
         activeAssistantStreamRef.current.realtimeCompleted = true;
@@ -919,7 +924,12 @@ export function ChatPage() {
             assistantMessageId,
             response: finalPayload,
           });
+          persistAssistantStageTimes();
           activeAssistantStreamRef.current.finalReceived = true;
+          activeAssistantStreamRef.current.realtimeCompleted = true;
+          setIsLoading(false);
+          setTimeout(() => clearStages(), 1000);
+          finalizeAssistantStreamIfReady();
           if (voiceModeRef.current && finalText) {
             playTtsAndAutoRecord(finalText);
           }
@@ -1013,6 +1023,22 @@ export function ChatPage() {
             ? new Date(conversationEvent.updated_at)
             : undefined,
         });
+        if (conversationEvent?.processing_status === "idle") {
+          const activeStream = activeAssistantStreamRef.current;
+          if (
+            activeStream.assistantMessageId &&
+            activeStream.conversationId === conversationId &&
+            !activeStream.finalReceived
+          ) {
+            activeAssistantStreamRef.current.realtimeCompleted = true;
+            activeAssistantStreamRef.current.finalReceived = true;
+            setIsLoading(false);
+            setTimeout(() => clearStages(), 1000);
+            void refreshConversationMessages(conversationId).finally(() => {
+              clearAssistantStream();
+            });
+          }
+        }
       } else if (event.type === "conversation_deleted") {
         const conversationEvent =
           eventPayload as ConversationDeletedEventPayload | null;
@@ -1074,8 +1100,10 @@ export function ChatPage() {
       completeActiveStage,
       errorActiveStage,
       clearStages,
-      stagesRef,
       finalizeAssistantStreamIfReady,
+      persistAssistantStageTimes,
+      refreshConversationMessages,
+      clearAssistantStream,
       isCurrentAssistantStreamEvent,
       applyAssistantResponsePayload,
       activeChat?.title,
