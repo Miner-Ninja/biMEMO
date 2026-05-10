@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         unlock_password_file: Optional path to an automatic unlock password file.
         unlock_password: Optional development-only automatic unlock password.
         database_path: Path to the SQLCipher database file.
+        runtime_database_path: Optional path to the encrypted runtime DB.
         diagnostics_database_path: Optional path to the encrypted diagnostics DB.
         diagnostics_retention_days: Number of days to keep route diagnostics.
         searxng_url: Base URL for the local SearXNG search instance.
@@ -63,6 +64,7 @@ class Settings(BaseSettings):
     unlock_password_file: str | None = None
     unlock_password: str | None = None
     database_path: str
+    runtime_database_path: str = ""
     diagnostics_database_path: str = ""
     diagnostics_retention_days: int = 14
     searxng_url: str

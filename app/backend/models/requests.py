@@ -52,7 +52,7 @@ class ChatRequest(StrictRequestModel):
         return _deduplicated_uuid_strings(value)
 
     @model_validator(mode="after")
-    def _require_message_or_voice(self) -> "ChatRequest":
+    def _require_message_or_voice(self) -> ChatRequest:
         """Require at least one chat input source."""
         if not self.message.strip() and not self.voice:
             raise ValueError("Either message or voice must be provided")
@@ -69,6 +69,12 @@ class ConfirmRequest(StrictRequestModel):
 
     action_id: str = Field(min_length=1)
     decision: str = Field(pattern=r"^(approve|deny)$")
+
+
+class StopRequest(StrictRequestModel):
+    """Stop an in-progress chat request."""
+
+    request_id: str = Field(default="", max_length=200)
 
 
 class IntegrationCreateRequest(StrictRequestModel):
@@ -116,7 +122,7 @@ class ChatBridgeCreateRequest(StrictRequestModel):
     title: str = Field(default="", max_length=200)
 
     @model_validator(mode="after")
-    def _validate_persona_mapping(self) -> "ChatBridgeCreateRequest":
+    def _validate_persona_mapping(self) -> ChatBridgeCreateRequest:
         """Require a provider user id when persona mapping is enabled."""
         if self.persona_mode == "mapped_user" and not self.persona_user_id.strip():
             raise ValueError(
@@ -139,7 +145,7 @@ class ChatBridgeUpdateRequest(StrictRequestModel):
     persona_user_id: str = Field(default="", max_length=200)
 
     @model_validator(mode="after")
-    def _validate_persona_mapping(self) -> "ChatBridgeUpdateRequest":
+    def _validate_persona_mapping(self) -> ChatBridgeUpdateRequest:
         """Require a provider user id when persona mapping is enabled."""
         if self.persona_mode == "mapped_user" and not self.persona_user_id.strip():
             raise ValueError(

@@ -4,6 +4,8 @@ Wraps the socket server/client with worker lifecycle management,
 health checking, and graceful shutdown.
 """
 
+# ruff: noqa: ASYNC109
+
 import asyncio
 import logging
 import multiprocessing
@@ -13,10 +15,8 @@ import secrets
 import signal
 import sys
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass
-from types import FrameType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.ipc.ipc_channel import (
     IPCChannelError as IPCChannelError,
@@ -59,6 +59,11 @@ from backend.ipc.models import (
 )
 from backend.ipc.protocol import ToolRequest, ToolResponse
 from backend.ipc.socket import Handler, WorkerSocketClient, WorkerSocketServer
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import FrameType
 
 
 logger = logging.getLogger(__name__)
@@ -255,7 +260,7 @@ class WorkerIsolator:
     async def send_request(
         self,
         request: ToolRequest,
-        timeout: float | None = None,  # noqa: ASYNC109
+        timeout: float | None = None,
     ) -> ToolResponse:
         """Send a request to the worker with optional timeout."""
         if not self.is_alive():

@@ -1,10 +1,11 @@
-# ruff: noqa: RUF001
 """Deterministic resolver for long-term memory questions.
 
 This module handles a narrow class of meta-questions about what should remain
 durable across future conversations versus what belongs only to the current
 session or validation run.
 """
+
+# ruff: noqa: RUF001
 
 from __future__ import annotations
 

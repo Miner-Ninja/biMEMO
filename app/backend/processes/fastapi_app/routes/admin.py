@@ -1,18 +1,27 @@
 """Admin routes (integrations, summaries, conversations, profile)."""
 
+# ruff: noqa: B008
+
 import base64
 import mimetypes
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 
-from backend.channels.endpoints import ReauthManager
-from backend.channels.jwt_auth import TokenClaims
 from backend.chat_bridge import BridgeProvider, ChatBridgeService
 from backend.ipc.models import StreamEventType
-from backend.models.requests import (
+from backend.models.requests import (  # noqa: TC001
     ChatBridgeCreateRequest,
     ChatBridgeUpdateRequest,
     IntegrationCreateRequest,
@@ -27,7 +36,6 @@ from backend.models.responses import (
     SummaryItem,
 )
 
-from ..clients import AdminDBClient, CredentialClient, OrchestratorClient, SigningClient
 from ..deps import (
     _get_admin_client,
     _get_chat_bridge_service,
@@ -37,6 +45,18 @@ from ..deps import (
     _get_signing_client,
     _require_auth,
 )
+
+
+if TYPE_CHECKING:
+    from backend.channels.endpoints import ReauthManager
+    from backend.channels.jwt_auth import TokenClaims
+
+    from ..clients import (
+        AdminDBClient,
+        CredentialClient,
+        OrchestratorClient,
+        SigningClient,
+    )
 
 
 admin_router = APIRouter(prefix="/admin")
@@ -181,9 +201,9 @@ def _bridge_link_updated_event_data(
 @admin_router.post("/reauth")
 async def admin_reauth(
     body: ReauthRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),  # noqa: B008
-    signing_client: SigningClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    signing_client: SigningClient = Depends(
         _get_signing_client
     ),
 ) -> dict:
@@ -219,8 +239,8 @@ async def admin_reauth(
 
 @admin_router.get("/integrations")
 async def list_integrations(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(
         _get_credential_client
     ),
 ) -> list[IntegrationListItem]:
@@ -241,8 +261,8 @@ async def list_integrations(
 @admin_router.post("/integrations", status_code=201)
 async def create_integration(
     body: IntegrationCreateRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(
         _get_credential_client
     ),
 ) -> dict:
@@ -265,11 +285,11 @@ async def create_integration(
 async def delete_integration(
     name: str,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    cred: CredentialClient = Depends(  # noqa: B008
+    cred: CredentialClient = Depends(
         _get_credential_client
     ),
 ) -> dict:
@@ -296,8 +316,8 @@ async def delete_integration(
 
 @admin_router.get("/summaries")
 async def list_summaries(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
     page: int = Query(default=1, ge=1),
@@ -326,11 +346,11 @@ async def list_summaries(
 async def delete_conversation_endpoint(
     conversation_id: str,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    admin: AdminDBClient = Depends(  # noqa: B008
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
 ) -> dict:
@@ -357,8 +377,8 @@ async def delete_conversation_endpoint(
 
 @admin_router.get("/chat-bridges")
 async def list_chat_bridge_links(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
     provider: str | None = Query(default=None),
@@ -379,8 +399,8 @@ async def list_chat_bridge_links(
 
 @admin_router.get("/chat-bridge-providers")
 async def list_chat_bridge_providers(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    chat_bridge_service: ChatBridgeService = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    chat_bridge_service: ChatBridgeService = Depends(
         _get_chat_bridge_service
     ),
 ) -> list[ChatBridgeProviderItem]:
@@ -400,8 +420,8 @@ async def list_chat_bridge_providers(
 @admin_router.get("/chat-bridges/conversations/{conversation_id}")
 async def get_chat_bridge_for_conversation(
     conversation_id: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
 ) -> ChatBridgeLinkItem | dict[str, None]:
@@ -415,8 +435,8 @@ async def get_chat_bridge_for_conversation(
 @admin_router.get("/chat-bridges/{bridge_link_id}/messages")
 async def list_chat_bridge_message_links(
     bridge_link_id: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
     limit: int = Query(default=100, ge=1, le=500),
@@ -438,14 +458,14 @@ async def list_chat_bridge_message_links(
 async def create_chat_bridge_link(
     body: ChatBridgeCreateRequest,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    chat_bridge_service: ChatBridgeService = Depends(  # noqa: B008
+    chat_bridge_service: ChatBridgeService = Depends(
         _get_chat_bridge_service
     ),
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> ChatBridgeLinkItem:
@@ -474,14 +494,14 @@ async def create_chat_bridge_link(
 async def disable_chat_bridge_link(
     bridge_link_id: str,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    admin: AdminDBClient = Depends(  # noqa: B008
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> dict[str, object]:
@@ -510,14 +530,14 @@ async def disable_chat_bridge_link(
 async def enable_chat_bridge_link(
     bridge_link_id: str,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    admin: AdminDBClient = Depends(  # noqa: B008
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> dict[str, object]:
@@ -547,14 +567,14 @@ async def update_chat_bridge_link_settings(
     bridge_link_id: str,
     body: ChatBridgeUpdateRequest,
     reauth_token: str = Depends(_require_reauth_token),
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    reauth_mgr: ReauthManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    reauth_mgr: ReauthManager = Depends(
         _get_reauth_manager
     ),
-    chat_bridge_service: ChatBridgeService = Depends(  # noqa: B008
+    chat_bridge_service: ChatBridgeService = Depends(
         _get_chat_bridge_service
     ),
-    orchestrator_client: OrchestratorClient = Depends(  # noqa: B008
+    orchestrator_client: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
 ) -> ChatBridgeLinkItem | dict[str, None]:
@@ -580,8 +600,8 @@ async def update_chat_bridge_link_settings(
 
 @admin_router.get("/profile")
 async def get_user_profile(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
 ) -> dict:
@@ -601,8 +621,8 @@ async def get_user_profile(
 @admin_router.post("/profile")
 async def store_user_profile(
     body: UserProfileRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(
         _get_admin_client
     ),
 ) -> dict:
@@ -631,8 +651,8 @@ MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2 MB
 async def upload_avatar(
     avatar_type: str,
     file: UploadFile,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Upload an avatar image.
 
@@ -679,8 +699,8 @@ async def upload_avatar(
 @admin_router.delete("/avatars/{avatar_type}")
 async def delete_avatar(
     avatar_type: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Delete an avatar image.
 
@@ -717,12 +737,12 @@ def _avatar_file_extension(filename: str) -> str:
 @admin_router.get("/skills")
 async def list_skills(
     request: Request,
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict[str, list[dict]]:
     """List all saved skills.
 
     Args:
-        claims: Authenticated token claims.
+        request: Incoming request, used for SPA fallback and auth.
         admin: DB Proxy Socket B client.
 
     Returns:
@@ -739,8 +759,8 @@ async def list_skills(
 @admin_router.delete("/skills/{name}")
 async def delete_skill(
     name: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict[str, str]:
     """Delete a skill by name.
 
@@ -761,8 +781,8 @@ async def delete_skill(
 async def update_skill(
     name: str,
     body: dict,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict[str, str]:
     """Update a skill by name.
 
@@ -793,13 +813,13 @@ async def update_skill(
 async def get_skill(
     name: str,
     request: Request,
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Get a single skill with full data and usage log.
 
     Args:
         name: Skill name.
-        claims: Authenticated token claims.
+        request: Incoming request, used for SPA fallback and auth.
         admin: DB Proxy Socket B client.
 
     Returns:

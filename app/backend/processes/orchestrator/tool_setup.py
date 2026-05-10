@@ -7,14 +7,18 @@ database proxy client.
 
 import logging
 import time
-from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from backend.config import Settings
-
-from .client import DBProxyClient
 from .factories import make_audit_fn
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from backend.config import Settings
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)
@@ -121,13 +125,20 @@ def _build_runtime_tool_workers(
 ) -> tuple[_InProcessWorker, _InProcessWorker, str]:
     """Build the in-process filesystem and network tool workers."""
     data_dir = str(Path(settings.database_path).parent)
-    fs_dispatch = make_fs_dispatch_fn([data_dir])
+    fs_dispatch = make_fs_dispatch_fn(_build_fs_allowed_dirs(data_dir))
     net_dispatch = make_net_dispatch_fn(settings.searxng_url)
     return (
         _InProcessWorker("fs-worker", fs_dispatch),
         _InProcessWorker("net-worker", net_dispatch),
         data_dir,
     )
+
+
+def _build_fs_allowed_dirs(data_dir: str) -> list[str]:
+    """Return directories that file tools may access."""
+    from backend.files.paths import UPLOADED_FILES_DIR
+
+    return [data_dir, str(UPLOADED_FILES_DIR)]
 
 
 def _register_runtime_tool_handlers(

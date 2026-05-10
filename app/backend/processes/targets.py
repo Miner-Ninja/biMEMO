@@ -12,8 +12,10 @@ pulling in the heavy orchestrator / DB proxy code.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -42,6 +44,12 @@ def _default_diagnostics_database_path(database_path: str) -> str:
     """Derive the encrypted diagnostics DB path next to the main database."""
     database_file = Path(database_path)
     return str(database_file.with_name(f"{database_file.stem}_diagnostics.db"))
+
+
+def _default_runtime_database_path(database_path: str) -> str:
+    """Derive the encrypted runtime DB path next to the main database."""
+    database_file = Path(database_path)
+    return str(database_file.with_name(f"{database_file.stem}_runtime.db"))
 
 
 def _ensure_parent_directory(file_path: str) -> None:
@@ -209,6 +217,143 @@ def _open_diagnostics_db(settings: object, master_key: bytes) -> object:
     return diagnostics_db
 
 
+def _open_runtime_db(settings: object, master_key: bytes) -> object:
+    """Open and initialize the short-lived assistant runtime database."""
+    from backend.security.database import DatabaseManager
+    from backend.security.runtime_schema import (
+        initialize_runtime_schema,
+        prune_runtime_state,
+    )
+
+    runtime_database_path = (
+        settings.runtime_database_path
+        or _default_runtime_database_path(settings.database_path)
+    )
+    _ensure_parent_directory(runtime_database_path)
+    runtime_db = DatabaseManager(runtime_database_path)
+    runtime_db.open(master_key)
+    initialize_runtime_schema(runtime_db)
+    prune_runtime_state(runtime_db)
+    return runtime_db
+
+
+def _table_exists(db: object, table_name: str) -> bool:
+    """Return whether one table exists in a database connection."""
+    row = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _migrate_core_runtime_state(
+    core_db: object,
+    runtime_db: object,
+    logger: object,
+) -> None:
+    """Copy legacy runtime rows from core DB into runtime DB without deleting them."""
+    if not _table_exists(core_db, "agent_runs") or not _table_exists(
+        core_db,
+        "pending_actions",
+    ):
+        return
+    run_rows = core_db.execute(
+        "SELECT id, conversation_id, session_id, channel, status, current_step, "
+        "request_id, resume_payload, created_at, updated_at, completed_at "
+        "FROM agent_runs WHERE status NOT IN ('completed', 'failed', 'stopped')"
+    ).fetchall()
+    action_rows = core_db.execute(
+        "SELECT id, run_id, tool_name, parameters_json, channel, status, decision, "
+        "preview_json, result_json, error_message, created_at, updated_at, "
+        "expires_at, decided_at, executed_at "
+        "FROM pending_actions WHERE status = 'waiting'"
+    ).fetchall()
+    if not run_rows and not action_rows:
+        return
+
+    for row in run_rows:
+        runtime_db.execute(
+            "INSERT OR IGNORE INTO agent_runs "
+            "(id, conversation_id, session_id, channel, status, current_step, "
+            "request_id, resume_payload, created_at, updated_at, completed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            row,
+        )
+    for row in action_rows:
+        preview, snapshot_id, snapshot = _split_legacy_pending_preview(row[7])
+        runtime_db.execute(
+            "INSERT OR IGNORE INTO pending_actions "
+            "(id, run_id, tool_name, parameters_json, channel, status, decision, "
+            "preview_json, result_json, error_message, created_at, updated_at, "
+            "expires_at, decided_at, executed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                json.dumps(preview, sort_keys=True, separators=(",", ":")),
+                row[8],
+                row[9],
+                row[10],
+                row[11],
+                row[12],
+                row[13],
+                row[14],
+            ),
+        )
+        if snapshot_id and snapshot:
+            runtime_db.execute(
+                "INSERT OR IGNORE INTO resume_snapshots "
+                "(id, run_id, action_id, snapshot_json, created_at, updated_at, "
+                "expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    snapshot_id,
+                    row[1],
+                    row[0],
+                    json.dumps(snapshot, sort_keys=True, separators=(",", ":")),
+                    row[10],
+                    row[11],
+                    row[12],
+                ),
+            )
+    runtime_db.commit()
+    logger.info(
+        "Copied legacy runtime rows from core DB to runtime DB "
+        "(agent_runs=%s, pending_actions=%s)",
+        len(run_rows),
+        len(action_rows),
+    )
+
+
+def _split_legacy_pending_preview(
+    preview_json: str,
+) -> tuple[dict[str, object], str, dict[str, object]]:
+    """Move legacy prompt snapshots out of pending action preview payloads."""
+    try:
+        preview = json.loads(preview_json)
+    except json.JSONDecodeError:
+        return {}, "", {}
+    if not isinstance(preview, dict):
+        return {}, "", {}
+    if "resume_snapshot_id" in preview:
+        return preview, str(preview["resume_snapshot_id"]), {}
+    if "messages" not in preview and "assistant_message" not in preview:
+        return preview, "", {}
+
+    snapshot_id = str(uuid.uuid4())
+    snapshot = {
+        "tool_call_id": preview.get("tool_call_id", ""),
+        "messages": preview.pop("messages", []),
+        "assistant_message": preview.pop("assistant_message", {}),
+    }
+    preview["resume_snapshot_id"] = snapshot_id
+    return preview, snapshot_id, snapshot
+
+
 async def _build_db_proxy_servers(
     *,
     handler_factory: Callable[
@@ -315,12 +460,15 @@ def _db_proxy_target(
     type_map = {"DBOperation": DBOperation}
     loop = asyncio.new_event_loop()
     master_key = loop.run_until_complete(_load_master_key(settings, startup_password))
-    db = _open_primary_db(settings, master_key, logger)
+    core_db = _open_primary_db(settings, master_key, logger)
+    runtime_db = _open_runtime_db(settings, master_key)
+    _migrate_core_runtime_state(core_db, runtime_db, logger)
     diagnostics_db = _open_diagnostics_db(settings, master_key)
     registry = build_registry(
-        db,
+        core_db,
         settings.database_path,
         master_key,
+        runtime_db=runtime_db,
         diagnostics_db=diagnostics_db,
         diagnostics_retention_days=settings.diagnostics_retention_days,
     )
@@ -358,7 +506,8 @@ def _db_proxy_target(
         await stop_event.wait()
 
         await _stop_db_proxy_servers(server_a, server_b, server_c)
-        db.close()
+        core_db.close()
+        runtime_db.close()
         diagnostics_db.close()
 
     loop.run_until_complete(run())

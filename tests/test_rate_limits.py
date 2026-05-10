@@ -4,9 +4,16 @@ Covers per-tool limits, total budget, injection flag
 halving, and tool reset.
 """
 
+from backend.security.policy import DEFAULT_POLICY
 from backend.tools.rate_limits import (
     ToolRateLimiter,
 )
+
+
+FILE_READ_LIMIT = DEFAULT_POLICY["agent_limits.tools.file_read_per_loop"]
+FILE_READ_INJECTION_LIMIT = FILE_READ_LIMIT // 2
+TOTAL_BUDGET = DEFAULT_POLICY["agent_limits.tools.total_budget_per_loop"]
+INJECTION_BUDGET = DEFAULT_POLICY["agent_limits.tools.total_budget_when_injection"]
 
 
 class TestPerToolLimits:
@@ -22,14 +29,14 @@ class TestPerToolLimits:
     def test_blocks_at_limit(self):
         """Verify calls at limit are blocked."""
         limiter = ToolRateLimiter()
-        for _ in range(10):
+        for _ in range(FILE_READ_LIMIT):
             limiter.record("file_read")
         assert not limiter.is_allowed("file_read")
 
     def test_different_tools_separate(self):
         """Verify different tools have separate limits."""
         limiter = ToolRateLimiter()
-        for _ in range(10):
+        for _ in range(FILE_READ_LIMIT):
             limiter.record("file_read")
         assert limiter.is_allowed("file_write")
 
@@ -46,14 +53,14 @@ class TestTotalBudget:
     def test_blocks_at_budget(self):
         """Verify total budget is enforced."""
         limiter = ToolRateLimiter()
-        for _ in range(30):
+        for _ in range(TOTAL_BUDGET):
             limiter.record("file_read")
         assert not limiter.is_allowed("file_write")
 
     def test_budget_value(self):
-        """Verify default budget is 30."""
+        """Verify default budget matches the assistant policy."""
         limiter = ToolRateLimiter()
-        assert limiter.budget == 30
+        assert limiter.budget == TOTAL_BUDGET
 
 
 class TestInjectionFlag:
@@ -62,14 +69,14 @@ class TestInjectionFlag:
     def test_halved_limits(self):
         """Verify limits are halved."""
         limiter = ToolRateLimiter(injection_flag=True)
-        for _ in range(5):
+        for _ in range(FILE_READ_INJECTION_LIMIT):
             limiter.record("file_read")
         assert not limiter.is_allowed("file_read")
 
     def test_halved_budget(self):
-        """Verify budget is reduced to 10."""
+        """Verify injection budget matches the assistant policy."""
         limiter = ToolRateLimiter(injection_flag=True)
-        assert limiter.budget == 10
+        assert limiter.budget == INJECTION_BUDGET
 
     def test_minimum_limit_one(self):
         """Verify halved limit is at least 1."""
@@ -85,7 +92,7 @@ class TestResetAndCount:
     def test_reset_tool(self):
         """Verify reset allows more calls."""
         limiter = ToolRateLimiter()
-        for _ in range(10):
+        for _ in range(FILE_READ_LIMIT):
             limiter.record("file_read")
         assert not limiter.is_allowed("file_read")
         limiter.reset_tool("file_read")

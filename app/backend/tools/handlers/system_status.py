@@ -7,10 +7,13 @@ metrics without executing shell commands.
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
 import psutil
 
-from backend.tools.builtin import SystemStatusInput
+
+if TYPE_CHECKING:
+    from backend.tools.builtin import SystemStatusInput
 
 
 logger = logging.getLogger(__name__)
@@ -80,10 +83,10 @@ def _base_status_lines(
 def make_system_status_handler(
     data_dir: str,
     ready_since: float,
-    get_ollama_status: "callable",
-    get_worker_count: "callable",
+    get_ollama_status: callable,
+    get_worker_count: callable,
     db_path: str | None = None,
-) -> "callable":
+) -> callable:
     """Create a handler for system_status tool.
 
     Args:

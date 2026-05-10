@@ -7,11 +7,14 @@ LOCKED state allows /health and /unlock only.
 
 import json
 import logging
-
-from starlette.types import ASGIApp, Receive, Scope, Send
+from typing import TYPE_CHECKING
 
 from backend.app_state import AppState, AppStateManager
 from backend.middleware.responses import send_json_error
+
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 logger = logging.getLogger(__name__)

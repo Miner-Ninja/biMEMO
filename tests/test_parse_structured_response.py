@@ -51,3 +51,45 @@ class TestParseStructuredResponseJsonEmptyGuard:
         )
         assert result.answer == "hi"
         assert result.sql is None
+        assert result.suggestions == ["next"]
+
+    def test_json_answer_suggestion_block_is_not_rendered_twice(self):
+        """Strip legacy suggestions blocks accidentally placed inside JSON answer."""
+        result = parse_structured_response_json(
+            "\n".join(
+                [
+                    "{",
+                    (
+                        '  "answer": "Main answer.\\n\\n```suggestions\\n'
+                        'Open logs\\nCheck config\\n```",'
+                    ),
+                    '  "sql": null,',
+                    '  "suggestions": ["Open logs", "Check config", "Restart service"]',
+                    "}",
+                ]
+            )
+        )
+        assert result.answer == "Main answer."
+        assert result.sql is None
+        assert result.suggestions == [
+            "Open logs",
+            "Check config",
+            "Restart service",
+        ]
+
+    def test_json_answer_sql_block_is_extracted_when_sql_field_is_empty(self):
+        """Recover SQL blocks accidentally placed inside JSON answer."""
+        result = parse_structured_response_json(
+            "\n".join(
+                [
+                    "{",
+                    '  "answer": "Main answer.\\n\\n```sql\\nSELECT 1\\n```",',
+                    '  "sql": null,',
+                    '  "suggestions": []',
+                    "}",
+                ]
+            )
+        )
+        assert result.answer == "Main answer."
+        assert result.sql == "SELECT 1"
+        assert result.suggestions == []

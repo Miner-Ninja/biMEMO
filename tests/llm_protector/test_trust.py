@@ -23,10 +23,10 @@ class TestTrustZone:
         assert get_zone("file_write") == TrustZone.YELLOW
         assert get_zone("schedule_task") == TrustZone.YELLOW
         assert get_zone("web_search") == TrustZone.YELLOW
+        assert get_zone("http_fetch") == TrustZone.YELLOW
 
     def test_get_zone_red_tools(self) -> None:
-        """Outbound tools map to the red trust zone."""
-        assert get_zone("http_fetch") == TrustZone.RED
+        """Actions performed on the user's behalf still require approval."""
         assert get_zone("email_send") == TrustZone.RED
 
     def test_get_zone_unknown_defaults_to_red(self) -> None:
@@ -38,10 +38,10 @@ class TestTrustZone:
         custom = {"my_tool": TrustZone.GREEN}
         assert get_zone("my_tool", custom) == TrustZone.GREEN
 
-    def test_get_zone_outbound_ignores_custom(self) -> None:
-        """Outbound tools stay red even if a custom map says otherwise."""
+    def test_get_zone_custom_overrides_built_in_outbound(self) -> None:
+        """Custom mapping wins for outbound tools too."""
         custom = {"email_send": TrustZone.GREEN}
-        assert get_zone("email_send", custom) == TrustZone.RED
+        assert get_zone("email_send", custom) == TrustZone.GREEN
 
     def test_is_outbound(self) -> None:
         """Outbound classifier flags only explicitly external tools."""
@@ -68,7 +68,7 @@ class TestSplitByZone:
         """Red calls are routed to the confirmation bucket."""
         calls = [
             {"name": "email_send", "params": {}},
-            {"name": "http_fetch", "params": {}},
+            {"name": "unknown_tool", "params": {}},
         ]
         immediate, confirm = split_by_zone(calls)
         assert len(immediate) == 0

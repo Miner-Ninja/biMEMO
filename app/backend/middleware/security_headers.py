@@ -6,10 +6,13 @@ X-Content-Type-Options, Referrer-Policy, and Permissions-Policy.
 """
 
 import logging
-
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from typing import TYPE_CHECKING
 
 from backend.channels.web import SECURITY_HEADERS
+
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 logger = logging.getLogger(__name__)

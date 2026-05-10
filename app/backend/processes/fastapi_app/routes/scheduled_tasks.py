@@ -5,13 +5,15 @@ task scheduler. List, create, update (pause/resume), and delete
 scheduled tasks via the DB Proxy Socket B client.
 """
 
+# ruff: noqa: B008
+
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.channels.jwt_auth import TokenClaims
-from backend.models.requests import (
+from backend.models.requests import (  # noqa: TC001
     ScheduledTaskCreateRequest,
     ScheduledTaskUpdateRequest,
 )
@@ -21,8 +23,13 @@ from backend.scheduler.parsing import (
     parse_schedule,
 )
 
-from ..clients import AdminDBClient
 from ..deps import _get_admin_client, _require_auth
+
+
+if TYPE_CHECKING:
+    from backend.channels.jwt_auth import TokenClaims
+
+    from ..clients import AdminDBClient
 
 
 logger = logging.getLogger(__name__)
@@ -33,8 +40,8 @@ scheduled_tasks_router = APIRouter(prefix="/admin/scheduled-tasks")
 @scheduled_tasks_router.get("")
 async def list_scheduled_tasks(
     status: str = "all",
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """List scheduled tasks with optional status filter.
 
@@ -61,8 +68,8 @@ async def list_scheduled_tasks(
 @scheduled_tasks_router.post("")
 async def create_scheduled_task(
     body: ScheduledTaskCreateRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Create a new scheduled task.
 
@@ -119,8 +126,8 @@ async def create_scheduled_task(
 async def update_scheduled_task(
     task_id: str,
     body: ScheduledTaskUpdateRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Update a scheduled task.
 
@@ -187,8 +194,8 @@ async def update_scheduled_task(
 @scheduled_tasks_router.delete("/{task_id}")
 async def delete_scheduled_task(
     task_id: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Delete a scheduled task.
 
@@ -209,8 +216,8 @@ async def delete_scheduled_task(
 async def list_task_runs(
     task_id: str,
     limit: int = 20,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """List recent execution history for a scheduled task.
 
@@ -239,7 +246,7 @@ tools_catalog_router = APIRouter(prefix="/admin/tools")
 
 @tools_catalog_router.get("")
 async def list_available_tools(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
 ) -> dict:
     """Return the catalog of registered tool definitions.
 

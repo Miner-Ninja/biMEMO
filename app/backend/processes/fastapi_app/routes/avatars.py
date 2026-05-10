@@ -6,13 +6,19 @@ Content-Type header. Used by frontend components to display avatars
 in chat messages, sidebar, and profile page.
 """
 
+# ruff: noqa: B008
+
 import base64
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from ..clients import AdminDBClient
 from ..deps import _get_admin_client
+
+
+if TYPE_CHECKING:
+    from ..clients import AdminDBClient
 
 
 avatars_router = APIRouter(prefix="/avatars")
@@ -21,7 +27,7 @@ avatars_router = APIRouter(prefix="/avatars")
 @avatars_router.get("/{avatar_type}")
 async def get_avatar(
     avatar_type: str,
-    admin: AdminDBClient = Depends(_get_admin_client),  # noqa: B008
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> Response:
     """Serve an avatar image from the database.
 

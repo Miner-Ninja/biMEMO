@@ -3,9 +3,13 @@
 Common entry-point logic used by both FS and Net workers.
 """
 
-import multiprocessing.connection
 import signal
 import time
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import multiprocessing.connection
 
 
 def _sleep_forever() -> None:

@@ -1,20 +1,25 @@
 """Dependency injection helpers for FastAPI routes."""
 
+from __future__ import annotations
+
 import secrets
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, Request
 
-from backend.channels.endpoints import ReauthManager
-from backend.channels.jwt_auth import SessionManager, TokenClaims
-from backend.channels.sse import SSEManager
-from backend.chat_bridge import ChatBridgeService
 
-from .clients import (
-    AdminDBClient,
-    CredentialClient,
-    OrchestratorClient,
-    SigningClient,
-)
+if TYPE_CHECKING:
+    from backend.channels.endpoints import ReauthManager
+    from backend.channels.jwt_auth import SessionManager, TokenClaims
+    from backend.channels.sse import SSEManager
+    from backend.chat_bridge import ChatBridgeService
+
+    from .clients import (
+        AdminDBClient,
+        CredentialClient,
+        OrchestratorClient,
+        SigningClient,
+    )
 
 
 # CSRF token store (module-level, per-process)

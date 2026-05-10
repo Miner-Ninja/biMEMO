@@ -1,9 +1,7 @@
 """File metadata DB proxy handler factories."""
 
 import json
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -14,6 +12,10 @@ from ..params import (
     SaveFileContextParams,
     SaveFileContextUsageParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 def _json_string(value: object) -> str:

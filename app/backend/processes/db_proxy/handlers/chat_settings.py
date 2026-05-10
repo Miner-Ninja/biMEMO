@@ -5,15 +5,17 @@ Each row stores a single key-value pair scoped to a conversation.
 Cascade delete on conversation removal is handled by the foreign key.
 """
 
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
     ListChatSettingsParams,
     UpsertChatSettingsParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 def make_list_chat_settings_handler(

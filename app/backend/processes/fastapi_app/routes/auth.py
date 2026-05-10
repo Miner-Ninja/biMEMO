@@ -1,6 +1,9 @@
 """Authentication routes."""
 
+# ruff: noqa: B008
+
 from http.cookies import SimpleCookie
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
@@ -9,9 +12,8 @@ from backend.channels.jwt_auth import (
     TokenClaims,
     generate_csrf_token,
 )
-from backend.models.requests import PasswordAuthRequest
+from backend.models.requests import PasswordAuthRequest  # noqa: TC001
 
-from ..clients import SigningClient
 from ..deps import (
     _get_audit_fn,
     _get_session_manager,
@@ -19,6 +21,10 @@ from ..deps import (
     _require_auth,
 )
 from ..middleware import _cookie_secure, _set_auth_cookies
+
+
+if TYPE_CHECKING:
+    from ..clients import SigningClient
 
 
 REFRESH_TOKEN_TYPE = "refresh"  # noqa: S105
@@ -115,7 +121,7 @@ def _clear_auth_cookies(response: Response) -> None:
 @auth_router.get("/auth/status")
 async def auth_status(
     request: Request,
-    signing_client: SigningClient = Depends(  # noqa: B008
+    signing_client: SigningClient = Depends(
         _get_signing_client
     ),
 ) -> dict:
@@ -140,7 +146,7 @@ async def auth_setup(
     body: PasswordAuthRequest,
     request: Request,
     response: Response,
-    signing_client: SigningClient = Depends(  # noqa: B008
+    signing_client: SigningClient = Depends(
         _get_signing_client
     ),
     audit_fn: object = Depends(_get_audit_fn),
@@ -177,7 +183,7 @@ async def auth_login(
     body: PasswordAuthRequest,
     request: Request,
     response: Response,
-    signing_client: SigningClient = Depends(  # noqa: B008
+    signing_client: SigningClient = Depends(
         _get_signing_client
     ),
     audit_fn: object = Depends(_get_audit_fn),
@@ -221,10 +227,10 @@ async def auth_login(
 async def refresh(
     request: Request,
     response: Response,
-    session_mgr: SessionManager = Depends(  # noqa: B008
+    session_mgr: SessionManager = Depends(
         _get_session_manager
     ),
-    signing_client: SigningClient = Depends(  # noqa: B008
+    signing_client: SigningClient = Depends(
         _get_signing_client
     ),
 ) -> dict:
@@ -281,8 +287,8 @@ async def refresh(
 @auth_router.post("/logout")
 async def logout(
     response: Response,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    session_mgr: SessionManager = Depends(  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    session_mgr: SessionManager = Depends(
         _get_session_manager
     ),
 ) -> dict:
@@ -304,7 +310,7 @@ async def logout(
 @auth_router.get("/csrf-token")
 async def csrf_token(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
 ) -> dict:
     """Issue a CSRF token for the authenticated session.
 

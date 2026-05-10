@@ -4,6 +4,8 @@ Implements EdDSA (Ed25519) token signing via HKDF-SHA256
 derived key, with access/refresh token lifecycle.
 """
 
+# ruff: noqa: S106
+
 import hmac
 import json
 import logging
@@ -334,7 +336,7 @@ class SessionManager:
         """
         claims, _ = _issued_token_payload(
             generation=self.generation,
-            token_type="access",  # noqa: S106
+            token_type="access",
             lifetime_seconds=ACCESS_TOKEN_LIFETIME,
         )
         return encode_token(claims, private_key)
@@ -353,7 +355,7 @@ class SessionManager:
         """
         claims, _ = _issued_token_payload(
             generation=self.generation,
-            token_type="refresh",  # noqa: S106
+            token_type="refresh",
             lifetime_seconds=REFRESH_TOKEN_LIFETIME,
         )
         return encode_token(claims, private_key)
@@ -397,7 +399,7 @@ class SessionManager:
         """
         _, payload = _issued_token_payload(
             generation=self.generation,
-            token_type="access",  # noqa: S106
+            token_type="access",
             lifetime_seconds=ACCESS_TOKEN_LIFETIME,
         )
         return await signing_client.sign_token(payload)
@@ -416,7 +418,7 @@ class SessionManager:
         """
         _, payload = _issued_token_payload(
             generation=self.generation,
-            token_type="refresh",  # noqa: S106
+            token_type="refresh",
             lifetime_seconds=REFRESH_TOKEN_LIFETIME,
         )
         return await signing_client.sign_token(payload)
@@ -427,7 +429,7 @@ class SessionManager:
         signing_client: object,
         expected_type: str = "access",
         audit_fn: object = None,
-    ) -> "TokenClaims | None":
+    ) -> TokenClaims | None:
         """Validate a JWT token via Signing Proxy.
 
         Delegates signature verification to the signing client,

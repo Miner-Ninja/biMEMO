@@ -140,7 +140,7 @@ class ChatBridgeLink:
     created_at: str
 
     @classmethod
-    def from_dict(cls, payload: dict[str, object]) -> "ChatBridgeLink":
+    def from_dict(cls, payload: dict[str, object]) -> ChatBridgeLink:
         """Build a typed bridge link from DB or API payload data."""
         return cls(
             id=_payload_string(payload, "id"),
@@ -217,7 +217,7 @@ class ChatBridgeMessageLink:
     created_at: str
 
     @classmethod
-    def from_dict(cls, payload: dict[str, object]) -> "ChatBridgeMessageLink":
+    def from_dict(cls, payload: dict[str, object]) -> ChatBridgeMessageLink:
         """Build a typed message mapping from DB or API payload data."""
         return cls(
             id=_payload_string(payload, "id"),

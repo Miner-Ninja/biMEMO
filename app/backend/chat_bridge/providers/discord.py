@@ -7,13 +7,16 @@ import re
 import unicodedata
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.config import Settings
-
 from ..models import BridgeTarget, OutboundBridgeMessage, ProviderMessageRef
 from .base import ChatBridgeProviderBase
+
+
+if TYPE_CHECKING:
+    from backend.config import Settings
 
 
 DISCORD_API_BASE_URL = "https://discord.com/api/v10"

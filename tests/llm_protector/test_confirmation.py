@@ -35,12 +35,23 @@ class TestConfirmationManager:
 
     def test_approve_wrong_channel(self) -> None:
         """Rejects approval when the action is confirmed from another channel."""
-        manager = ConfirmationManager(timeout=300)
+        manager = ConfirmationManager(timeout=300, channel_binding=True)
 
         action = manager.request_confirmation("email_send", {}, "telegram")
         approved_action = manager.approve(action.action_id, "web")
 
         assert approved_action is None
+        assert manager.pending_count == 0
+
+    def test_approve_wrong_channel_when_binding_disabled(self) -> None:
+        """Approves cross-channel confirmation when channel binding is off."""
+        manager = ConfirmationManager(timeout=300, channel_binding=False)
+
+        action = manager.request_confirmation("email_send", {}, "telegram")
+        approved_action = manager.approve(action.action_id, "web")
+
+        assert approved_action is not None
+        assert approved_action.tool_name == "email_send"
         assert manager.pending_count == 0
 
     def test_approve_unknown_id(self) -> None:

@@ -4,9 +4,7 @@ import json
 import os
 import shutil
 from datetime import UTC, datetime
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import (
     JWT_CONTEXT_LABEL,
@@ -29,6 +27,10 @@ from ..params import (
     StorePasswordHashParams,
     StoreUserProfileParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 RATE_LIMIT_RETENTION_SECONDS = 120.0

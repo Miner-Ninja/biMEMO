@@ -14,7 +14,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import httpx
-from fastapi import HTTPException, Request
+from fastapi import BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from backend.ipc.ipc_channel import IPCChannelError
@@ -23,6 +23,7 @@ from backend.ipc.models import ChatResponse as IPCChatResponse
 from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import ChatResponse as HTTPChatResponse
 from backend.models.responses import ChatSettingsResponse, ConfirmationItem
+from backend.models.responses import ChatStartResponse as HTTPChatStartResponse
 from backend.models.responses import (
     ConversationDeleteResponse as HTTPConversationDeleteResponse,
 )
@@ -406,9 +407,19 @@ def build_confirm_response(
     *,
     accepted: bool,
     action_id: str,
+    status: str = "",
+    message_id: str = "",
+    result_summary: str = "",
 ) -> dict[str, str]:
     """Build the HTTP response for one confirmation decision."""
-    return {"detail": confirm_detail(accepted), "action_id": action_id}
+    response = {"detail": confirm_detail(accepted), "action_id": action_id}
+    if status:
+        response["status"] = status
+    if message_id:
+        response["message_id"] = message_id
+    if result_summary:
+        response["result_summary"] = result_summary
+    return response
 
 
 def confirm_detail(accepted: bool) -> str:
@@ -456,6 +467,71 @@ async def run_web_chat_request(
     return build_http_chat_response(
         conversation_id=prepared_request.conversation_id,
         ipc_response=ipc_response,
+    )
+
+
+async def _finish_started_web_chat_request(
+    *,
+    prepared_request: PreparedChatRequest,
+    body: HTTPChatRequest,
+    request: Request,
+    claims: TokenClaims,
+    orchestrator_client: OrchestratorClient,
+    chat_bridge_service: ChatBridgeService | None,
+) -> None:
+    """Wait for a started chat turn and run post-completion integrations."""
+    try:
+        await send_chat_to_orchestrator(
+            orchestrator_client=orchestrator_client,
+            ipc_request=prepared_request.ipc_request,
+            session_id=claims.jti,
+        )
+        await sync_recent_bridge_messages(
+            request=request,
+            chat_bridge_service=chat_bridge_service,
+            conversation_id=prepared_request.conversation_id,
+            created_by=claims.jti,
+            bridge_title=build_auto_bridge_title(body.message),
+        )
+    except Exception:
+        logger.exception("Background web chat request failed")
+
+
+async def start_web_chat_request(
+    *,
+    body: HTTPChatRequest,
+    request: Request,
+    claims: TokenClaims,
+    orchestrator_client: OrchestratorClient,
+    admin_client: AdminDBClient,
+    chat_bridge_service: ChatBridgeService | None,
+    background_tasks: BackgroundTasks,
+) -> HTTPChatStartResponse:
+    """Start one web chat request and return before the final answer."""
+    prepared_request = await prepare_chat_request(
+        body=body,
+        request=request,
+        claims=claims,
+        admin_client=admin_client,
+        chat_bridge_service=chat_bridge_service,
+    )
+    orchestrator_client.register_chat_request(
+        prepared_request.ipc_request.request_id,
+        claims.jti,
+        prepared_request.conversation_id,
+    )
+    background_tasks.add_task(
+        _finish_started_web_chat_request,
+        prepared_request=prepared_request,
+        body=body,
+        request=request,
+        claims=claims,
+        orchestrator_client=orchestrator_client,
+        chat_bridge_service=chat_bridge_service,
+    )
+    return HTTPChatStartResponse(
+        conversation_id=prepared_request.conversation_id,
+        request_id=prepared_request.ipc_request.request_id,
     )
 
 

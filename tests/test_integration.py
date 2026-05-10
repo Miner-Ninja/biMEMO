@@ -134,8 +134,8 @@ class TestRedZoneConfirmation:
         registry = ToolRegistry()
         registry.register(
             ToolDefinition(
-                name="http_fetch",
-                description="Fetch URL",
+                name="email_send",
+                description="Send email",
                 input_model=MagicMock(),
                 zone=TrustZone.RED,
                 worker=WorkerTarget.NET_WORKER,
@@ -156,8 +156,8 @@ class TestRedZoneConfirmation:
                 tool_calls=[
                     LLMToolCall(
                         id="call_1",
-                        name="http_fetch",
-                        arguments={"url": "https://example.com"},
+                        name="email_send",
+                        arguments={"to": "user@example.com"},
                     )
                 ],
                 raw_message={
@@ -168,8 +168,8 @@ class TestRedZoneConfirmation:
                             "id": "call_1",
                             "type": "function",
                             "function": {
-                                "name": "http_fetch",
-                                "arguments": json.dumps({"url": "https://example.com"}),
+                                "name": "email_send",
+                                "arguments": json.dumps({"to": "user@example.com"}),
                             },
                         }
                     ],
@@ -177,14 +177,14 @@ class TestRedZoneConfirmation:
             )
 
         await orchestrator.process_message(
-            message="fetch example.com",
+            message="send email",
             channel="telegram",
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
         pending = orchestrator.pending_red_calls
         assert len(pending) == 1
-        assert pending[0].tool_name == "http_fetch"
+        assert pending[0].tool_name == "email_send"
         orchestrator.clear_pending()
         assert len(orchestrator.pending_red_calls) == 0
 

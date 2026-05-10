@@ -1,7 +1,9 @@
 """Agentic loop for the Gateway orchestrator.
 
-Implements the LLM call → tool extraction → execution →
-feedback cycle with safety limits and stop handling.
+Implements the LLM call -> tool extraction -> execution ->
+feedback cycle with safety limits and stop handling. All safety
+limits (iteration cap, timeout, injection-mode cap) come from
+the assistant policy via AssistantPolicy.
 """
 
 import asyncio
@@ -10,13 +12,15 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from backend.security.policy import get_policy
+
 
 logger = logging.getLogger(__name__)
 
-# Safety limits
-MAX_ITERATIONS = 20
-INJECTION_MAX_ITERATIONS = 5
-LOOP_TIMEOUT = 300  # 5 minutes
+# --- Catalog keys read from AssistantPolicy ---
+_KEY_MAX_ITERATIONS = "agent_limits.iterations.max"
+_KEY_INJECTION_MAX_ITERATIONS = "agent_limits.iterations.max_when_injection"
+_KEY_LOOP_TIMEOUT_SECONDS = "agent_limits.loop_timeout_seconds"
 
 
 class LoopState(StrEnum):
@@ -84,10 +88,11 @@ class AgenticLoop:
         return self._iteration
 
     def _iteration_limit(self) -> int:
-        """Return the effective iteration cap for this loop."""
+        """Return the effective iteration cap from AssistantPolicy."""
+        resolver = get_policy()
         if self.injection_flag:
-            return INJECTION_MAX_ITERATIONS
-        return MAX_ITERATIONS
+            return resolver.get_int(_KEY_INJECTION_MAX_ITERATIONS)
+        return resolver.get_int(_KEY_MAX_ITERATIONS)
 
     def _set_state(self, state: LoopState) -> LoopState:
         """Store one loop state and return it."""
@@ -114,7 +119,7 @@ class AgenticLoop:
         if self._stop_event.is_set():
             return self._set_state(LoopState.STOPPED)
         elapsed = time.monotonic() - self._start_time
-        if elapsed > LOOP_TIMEOUT:
+        if elapsed > get_policy().get_int(_KEY_LOOP_TIMEOUT_SECONDS):
             return self._set_state(LoopState.TIMEOUT)
         if self._iteration >= self.max_iterations:
             return self._set_state(LoopState.ITERATION_LIMIT)

@@ -151,6 +151,33 @@ Tools are classified by risk level:
 | YELLOW | `file_write`, `web_search` | Executes, notifies after |
 | RED | `email_send`, `http_fetch` | Requires user confirmation |
 
+The exact zone for each tool comes from the active **security profile** —
+see below.
+
+## Security Profiles
+
+Settings → Security exposes a typed catalog of every defense parameter
+(content filter patterns, path/URL allowlists, agent loop limits,
+trust zones, memory toggles, audit retention) and three built-in
+profiles:
+
+| Profile | Use case |
+|---------|----------|
+| `paranoid` | Maximum safety — everything blocks, narrow allowlists, short timeouts |
+| `personal` | Default — balanced for the personal-assistant use case |
+| `developer` | Coding assistant — pasted `subprocess`/code is allowed, `http://localhost` resolves, larger limits and quotas |
+
+Built-in profiles are read-only; clone any of them to start a custom
+profile. Activation reloads the in-memory `ProfileResolver` so every
+defense module picks up the new values without restarting. Critical
+defenses (master-key memory protection, HMAC IPC, parameterised SQL,
+cloud-metadata IP block, DNS-resolve SSRF, JWT, CSRF, log secret
+masking, path traversal, numeric-IP block, tainted-memory respect)
+are always-on — they appear in the page as informational lock cards
+but cannot be edited.
+
+The page is documented under [`docs/security.md`](./docs/security.md).
+
 ## Configuration
 
 All configuration via environment variables with prefix `BIMEMO_`:

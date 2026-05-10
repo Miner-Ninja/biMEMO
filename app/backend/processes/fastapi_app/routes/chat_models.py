@@ -7,9 +7,13 @@ blocks, and inline image data through the request pipeline.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from backend.ipc.models import ChatRequest as IPCChatRequest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from backend.ipc.models import ChatRequest as IPCChatRequest
 
 
 @dataclass(frozen=True, slots=True)

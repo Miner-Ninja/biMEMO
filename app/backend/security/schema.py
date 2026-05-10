@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 15
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -219,7 +219,14 @@ ON skill_usage_log(skill_id)
 
 CREATE_SKILLS_FTS_TABLE = """
 CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts
-USING fts5(name, title, trigger_text, verification, content='skills', content_rowid='rowid')
+USING fts5(
+    name,
+    title,
+    trigger_text,
+    verification,
+    content='skills',
+    content_rowid='rowid'
+)
 """
 
 CREATE_SKILLS_FTS_INSERT_TRIGGER = """
@@ -232,7 +239,14 @@ END
 CREATE_SKILLS_FTS_UPDATE_TRIGGER = """
 CREATE TRIGGER IF NOT EXISTS skills_fts_update AFTER UPDATE ON skills BEGIN
     INSERT INTO skills_fts(skills_fts, rowid, name, title, trigger_text, verification)
-    VALUES ('delete', old.rowid, old.name, old.title, old.trigger_text, old.verification);
+    VALUES (
+        'delete',
+        old.rowid,
+        old.name,
+        old.title,
+        old.trigger_text,
+        old.verification
+    );
     INSERT INTO skills_fts(rowid, name, title, trigger_text, verification)
     VALUES (new.rowid, new.name, new.title, new.trigger_text, new.verification);
 END
@@ -241,7 +255,14 @@ END
 CREATE_SKILLS_FTS_DELETE_TRIGGER = """
 CREATE TRIGGER IF NOT EXISTS skills_fts_delete AFTER DELETE ON skills BEGIN
     INSERT INTO skills_fts(skills_fts, rowid, name, title, trigger_text, verification)
-    VALUES ('delete', old.rowid, old.name, old.title, old.trigger_text, old.verification);
+    VALUES (
+        'delete',
+        old.rowid,
+        old.name,
+        old.title,
+        old.trigger_text,
+        old.verification
+    );
 END
 """
 
@@ -368,6 +389,36 @@ CREATE INDEX IF NOT EXISTS idx_chat_bridge_message_links_bridge_link_id
 ON chat_bridge_message_links(bridge_link_id)
 """
 
+CREATE_PROJECT_ROOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS project_roots (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    root_path TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+)
+"""
+
+CREATE_CAPABILITY_GRANTS_TABLE = """
+CREATE TABLE IF NOT EXISTS capability_grants (
+    id TEXT PRIMARY KEY,
+    scope_type TEXT NOT NULL,
+    scope_value TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT '',
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    UNIQUE(scope_type, scope_value, capability, channel)
+)
+"""
+
+CREATE_CAPABILITY_GRANTS_LOOKUP_IDX = """
+CREATE INDEX IF NOT EXISTS idx_capability_grants_lookup
+ON capability_grants(scope_type, scope_value, capability, channel, expires_at)
+"""
+
 # --- Ordered list for schema initialization ---
 SCHEMA_STATEMENTS = [
     CREATE_SCHEMA_VERSION_TABLE,
@@ -406,6 +457,9 @@ SCHEMA_STATEMENTS = [
     CREATE_SCHEDULED_TASKS_DUE_IDX,
     CREATE_SCHEDULED_TASK_RUNS_TABLE,
     CREATE_SCHEDULED_TASK_RUNS_TASK_IDX,
+    CREATE_PROJECT_ROOTS_TABLE,
+    CREATE_CAPABILITY_GRANTS_TABLE,
+    CREATE_CAPABILITY_GRANTS_LOOKUP_IDX,
 ]
 
 

@@ -5,9 +5,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.agent.agent_loop_models import AgentResponse
-from backend.ipc.models import ChatResponse as IPCChatResponse
-from backend.ipc.models import StreamEvent, StreamEventType
+from backend.ipc.models import (
+    ChatRequest,
+    StreamEvent,
+    StreamEventType,
+)
+from backend.ipc.models import (
+    ChatResponse as IPCChatResponse,
+)
 from backend.ipc.models import (
     StructuredAssistantContent as IPCStructuredAssistantContent,
 )
@@ -19,11 +26,15 @@ from backend.processes.fastapi_app.routes.chat_helpers import (
 )
 from backend.processes.orchestrator.chat_handler import (
     _build_chat_response,
+    _build_orchestrator_request_handler,
+    _chat_response_final_event_data,
     _forward_request_events_to_ipc,
     _mark_conversation_processing_active,
     _mark_conversation_processing_idle,
+    _pending_confirmations_from_orchestrator,
     _push_conversation_updated_event,
 )
+from backend.trust.confirmation import PendingAction
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
@@ -178,6 +189,29 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
     assert chat_response.structured_content.suggestions == []
 
 
+def test_pending_confirmations_from_orchestrator_serializes_red_calls() -> None:
+    """Expose RED-zone pending actions in the IPC chat response payload."""
+    orch = SimpleNamespace(
+        pending_red_calls=[
+            PendingAction(
+                action_id="action-1",
+                tool_name="http_fetch",
+                parameters={"url": "https://example.com"},
+                channel="web",
+                created_at=0.0,
+            )
+        ]
+    )
+
+    assert _pending_confirmations_from_orchestrator(orch) == [
+        {
+            "action_id": "action-1",
+            "tool_name": "http_fetch",
+            "parameters": {"url": "https://example.com"},
+        }
+    ]
+
+
 @pytest.mark.parametrize("stream_enabled_value", ["true", "false"])
 def test_build_chat_response_propagates_stream_enabled_setting(
     monkeypatch: pytest.MonkeyPatch,
@@ -223,6 +257,63 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
         suggestions=[],
     )
     assert http_response.stream_enabled is True
+
+
+def test_chat_response_final_event_data_mirrors_chat_payload() -> None:
+    """Build the stream-final event from the same IPC chat response fields."""
+    chat_response = IPCChatResponse(
+        request_id="request-final",
+        structured_content=IPCStructuredAssistantContent(
+            answer="Visible answer",
+            thinking="Internal plan",
+            sql="SELECT 1",
+            suggestions=["Next step"],
+        ),
+        input_filtered=False,
+        output_filtered=True,
+        pending_confirmations=[
+            {
+                "action_id": "action-1",
+                "tool_name": "http_fetch",
+                "parameters": {"url": "https://example.com"},
+            }
+        ],
+        retrieved_memories=[{"summary": "Memory", "date": "2026-05-10"}],
+        retrieved_messages=[{"role": "user", "content": "Earlier"}],
+        transcription="voice text",
+        stats=None,
+        stream_enabled=True,
+    )
+
+    event_data = _chat_response_final_event_data(
+        conversation_id="conversation-1",
+        response=chat_response,
+    )
+
+    assert event_data == {
+        "type": "final",
+        "conversation_id": "conversation-1",
+        "input_filtered": False,
+        "output_filtered": True,
+        "pending_confirmations": [
+            {
+                "action_id": "action-1",
+                "tool_name": "http_fetch",
+                "parameters": {"url": "https://example.com"},
+            }
+        ],
+        "retrieved_memories": [{"summary": "Memory", "date": "2026-05-10"}],
+        "retrieved_messages": [{"role": "user", "content": "Earlier"}],
+        "transcription": "voice text",
+        "stats": None,
+        "structured_content": {
+            "answer": "Visible answer",
+            "thinking": "Internal plan",
+            "sql": "SELECT 1",
+            "suggestions": ["Next step"],
+        },
+        "stream_enabled": True,
+    }
 
 
 class _FakeIPCServer:
@@ -388,6 +479,131 @@ def test_forwarder_maps_conversation_updated_to_stream_event_type() -> None:
         "processing_stage": "",
         "processing_started_at": None,
     }
+
+
+def test_forwarder_maps_confirmation_to_stream_event_type() -> None:
+    """The forwarder passes confirmation lifecycle events through."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(
+        {
+            "type": "confirmation",
+            "status": "waiting_confirmation",
+            "action_id": "act-1",
+        }
+    )
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-3",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.CONFIRMATION,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[0].data["status"] == "waiting_confirmation"
+    assert ipc_server.events[0].data["action_id"] == "act-1"
+
+
+def test_forwarder_maps_final_to_stream_event_type() -> None:
+    """The forwarder passes final assistant payload events through."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(
+        {
+            "type": "final",
+            "conversation_id": "conv-1",
+            "structured_content": {"answer": "Done", "suggestions": []},
+            "pending_confirmations": [],
+        }
+    )
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-final",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.FINAL,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[0].data["type"] == "final"
+    assert ipc_server.events[0].data["structured_content"]["answer"] == "Done"
+
+
+def test_forwarder_maps_error_to_stream_event_type() -> None:
+    """The forwarder passes terminal stream errors through."""
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(
+        {
+            "type": "error",
+            "conversation_id": "conv-1",
+            "message": "Request failed",
+        }
+    )
+    queue.put_nowait({"type": "done"})
+    ipc_server = _FakeIPCServer()
+
+    asyncio.run(
+        _forward_request_events_to_ipc(
+            request_id="req-error",
+            request_sse_queue=queue,
+            ipc_server=ipc_server,
+        )
+    )
+
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.ERROR,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[0].data["type"] == "error"
+    assert ipc_server.events[0].data["message"] == "Request failed"
+
+
+def test_orchestrator_handler_streams_missing_llm_final_response() -> None:
+    """No-LLM fallback still reaches the browser stream in start-only mode."""
+    ipc_server = _FakeIPCServer()
+    orch = SimpleNamespace(sse_queue=None)
+    handler = _build_orchestrator_request_handler(
+        orch=orch,
+        ipc_server_ref=lambda: ipc_server,
+        db_client=SimpleNamespace(),
+        broker=SimpleNamespace(),
+        get_llm_call=lambda: None,
+        stt_client=None,
+    )
+
+    response = asyncio.run(
+        handler(
+            ChatRequest(
+                request_id="req-no-llm",
+                message="hello",
+                channel="web",
+                session_id="session-1",
+                conversation_id="conv-1",
+            )
+        )
+    )
+
+    assert "No LLM provider configured" in response.structured_content.answer
+    assert [event.event_type for event in ipc_server.events] == [
+        StreamEventType.FINAL,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[0].data["type"] == "final"
+    assert (
+        "No LLM provider configured"
+        in ipc_server.events[0].data["structured_content"]["answer"]
+    )
 
 
 def test_forwarder_skips_unknown_event_types() -> None:

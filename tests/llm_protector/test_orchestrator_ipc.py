@@ -605,9 +605,27 @@ class TestAuditFn:
 class TestOrchestratorIPCServer:
     """Verify message handling in the orchestrator IPC server."""
 
+    async def _start_chat_and_collect_response(
+        self,
+        server: OrchestratorIPCServer,
+        request: ChatRequest,
+    ) -> ChatResponse:
+        """Start one chat request and return the pushed async response."""
+        server._server.push = AsyncMock()
+        response = await server._handle_message("ChatRequest", request)
+
+        assert response is None
+        active_task = server._active_task
+        assert active_task is not None
+        await active_task
+
+        pushed_response = server._server.push.await_args.args[0]
+        assert isinstance(pushed_response, ChatResponse)
+        return pushed_response
+
     @pytest.mark.asyncio
     async def test_handle_chat_request(self) -> None:
-        """Processes ``ChatRequest`` and returns ``ChatResponse``."""
+        """Processes ``ChatRequest`` and pushes ``ChatResponse`` asynchronously."""
 
         async def orchestrator_fn(request: ChatRequest) -> ChatResponse:
             """Return a trivial chat response for the supplied request."""
@@ -629,7 +647,7 @@ class TestOrchestratorIPCServer:
             session_id="s1",
             conversation_id="c1",
         )
-        response = await server._handle_message("ChatRequest", request)
+        response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
         assert response.structured_content.answer == "Hello!"
@@ -656,7 +674,7 @@ class TestOrchestratorIPCServer:
             session_id="s1",
             conversation_id="c1",
         )
-        response = await server._handle_message("ChatRequest", request)
+        response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
         assert "Internal error" in response.structured_content.answer
@@ -693,7 +711,7 @@ class TestOrchestratorIPCServer:
             session_id="s1",
             conversation_id="c1",
         )
-        response = await server._handle_message("ChatRequest", request)
+        response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
         assert response.structured_content.answer == "Internal error: boom"
@@ -733,7 +751,7 @@ class TestOrchestratorIPCServer:
             session_id="session-123",
             conversation_id="",
         )
-        response = await server._handle_message("ChatRequest", request)
+        response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
         assert response.structured_content.answer == "Internal error: broken"
@@ -763,6 +781,54 @@ class TestOrchestratorIPCServer:
 
         assert isinstance(response, StopResponse)
         assert response.stopped is False
+
+    @pytest.mark.asyncio
+    async def test_handle_stop_cancels_active_chat_task(self) -> None:
+        """StopRequest cancels the active chat task before it finishes."""
+        started = asyncio.Event()
+
+        async def slow_fn(request: ChatRequest) -> ChatResponse:
+            """Block until cancelled by the stop request."""
+            started.set()
+            await asyncio.sleep(60)
+            return ChatResponse(
+                request_id=request.request_id,
+                structured_content=StructuredAssistantContent(answer="late"),
+            )
+
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=slow_fn,
+        )
+        server._server.push = AsyncMock()
+
+        chat_request = ChatRequest(
+            request_id="r-stop",
+            message="hi",
+            channel="web",
+            session_id="s1",
+            conversation_id="c1",
+        )
+        response = await server._handle_message("ChatRequest", chat_request)
+        assert response is None
+        await started.wait()
+        active_task = server._active_task
+        assert active_task is not None
+
+        stop_response = await server._handle_message(
+            "StopRequest",
+            StopRequest(request_id="r-stop"),
+        )
+        assert isinstance(stop_response, StopResponse)
+        assert stop_response.stopped is True
+        assert server._active_task is None
+
+        await active_task
+        pushed_response = server._server.push.await_args_list[-1].args[0]
+        assert isinstance(pushed_response, ChatResponse)
+        assert pushed_response.request_id == "r-stop"
+        assert pushed_response.structured_content.answer == "Stopped."
 
 
 class TestDialogRecorderSchedulingSelection:

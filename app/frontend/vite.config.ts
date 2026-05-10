@@ -75,8 +75,12 @@ export default defineConfig({
       interval: 200,
     },
     hmr: {
-      host: '127.0.0.1',
-      port: 5273,
+      // The page is served over HTTPS through Caddy on the host's
+      // 443; the browser refuses plain ws from an https page, so
+      // route the HMR socket through the same Caddy proxy.
+      protocol: 'wss',
+      host: 'localhost',
+      clientPort: 443,
     },
     proxy: {
       '/health': devProxyTarget,
@@ -90,8 +94,13 @@ export default defineConfig({
       '/stop': devProxyTarget,
       '/confirm': devProxyTarget,
       '/stream': devProxyTarget,
+      '/ws': {
+        target: devProxyTarget,
+        ws: true,
+      },
       '/files': devProxyTarget,
       '/admin': devProxyTarget,
+      '/security': devProxyTarget,
       '/tts': devProxyTarget,
     },
   },

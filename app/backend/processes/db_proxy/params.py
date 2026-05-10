@@ -807,3 +807,169 @@ class UpsertChatSettingsParams(ConversationIdParams):
     """Parameters for upsert_chat_settings operation."""
 
     entries: list[ChatSettingEntry]
+
+
+# --- Assistant permissions ---
+
+
+class ListProjectRootsParams(ForbidExtraParams):
+    """Parameters for list_project_roots operation."""
+
+
+class AddProjectRootParams(ForbidExtraParams):
+    """Parameters for add_project_root operation."""
+
+    name: str = Field(min_length=1, max_length=120)
+    root_path: str = Field(min_length=1, max_length=4096)
+
+
+class ProjectRootIdParams(ForbidExtraParams):
+    """Common project root identifier field."""
+
+    id: str = Field(min_length=1, max_length=128)
+
+
+class ResolveProjectRootParams(ProjectRootIdParams):
+    """Parameters for resolve_project_root operation."""
+
+
+class RenameProjectRootParams(ProjectRootIdParams):
+    """Parameters for rename_project_root operation."""
+
+    name: str = Field(min_length=1, max_length=120)
+
+
+class CreateCapabilityGrantParams(ForbidExtraParams):
+    """Parameters for create_capability_grant operation."""
+
+    scope_type: str = Field(min_length=1, max_length=64)
+    scope_value: str = Field(min_length=1, max_length=4096)
+    capability: str = Field(min_length=1, max_length=128)
+    decision: str = Field(min_length=1, max_length=64)
+    channel: str = Field(default="", max_length=128)
+    expires_at: str | None = None
+
+
+class ListCapabilityGrantsParams(ForbidExtraParams):
+    """Parameters for list_capability_grants operation."""
+
+    scope_type: str | None = Field(default=None, max_length=64)
+    scope_value: str | None = Field(default=None, max_length=4096)
+    capability: str | None = Field(default=None, max_length=128)
+    channel: str | None = Field(default=None, max_length=128)
+
+
+class LookupCapabilityGrantParams(ForbidExtraParams):
+    """Parameters for lookup_capability_grant operation."""
+
+    scope_type: str = Field(min_length=1, max_length=64)
+    scope_value: str = Field(min_length=1, max_length=4096)
+    capability: str = Field(min_length=1, max_length=128)
+    channel: str = Field(default="", max_length=128)
+
+
+class RevokeCapabilityGrantParams(ForbidExtraParams):
+    """Parameters for revoke_capability_grant operation."""
+
+    id: str = Field(min_length=1, max_length=128)
+
+
+class ExpireCapabilityGrantsParams(ForbidExtraParams):
+    """Parameters for expire_capability_grants operation."""
+
+    now: str | None = None
+
+
+class CreateAgentRunParams(ForbidExtraParams):
+    """Parameters for create_agent_run operation."""
+
+    conversation_id: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(default="", max_length=128)
+    channel: str = Field(default="", max_length=128)
+    request_id: str = Field(default="", max_length=128)
+    status: str = Field(default="running", max_length=64)
+    current_step: str = Field(default="", max_length=128)
+    resume_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentRunIdParams(ForbidExtraParams):
+    """Common agent run identifier field."""
+
+    run_id: str = Field(min_length=1, max_length=128)
+
+
+class GetAgentRunParams(AgentRunIdParams):
+    """Parameters for get_agent_run operation."""
+
+
+class UpdateAgentRunStatusParams(AgentRunIdParams):
+    """Parameters for update_agent_run_status operation."""
+
+    status: str = Field(min_length=1, max_length=64)
+    current_step: str = Field(default="", max_length=128)
+    resume_payload: dict[str, Any] | None = None
+
+
+class ListPendingActionsParams(ForbidExtraParams):
+    """Parameters for list_pending_actions operation."""
+
+    run_id: str | None = Field(default=None, max_length=128)
+    status: str | None = Field(default=None, max_length=64)
+    channel: str | None = Field(default=None, max_length=128)
+
+
+class CreatePendingActionParams(AgentRunIdParams):
+    """Parameters for create_pending_action operation."""
+
+    action_id: str | None = Field(default=None, max_length=128)
+    tool_name: str = Field(min_length=1, max_length=128)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    channel: str = Field(default="", max_length=128)
+    status: str = Field(default="waiting", max_length=64)
+    preview: dict[str, Any] = Field(default_factory=dict)
+    resume_snapshot: dict[str, Any] = Field(default_factory=dict)
+    expires_at: str | None = None
+
+
+class DecidePendingActionParams(ForbidExtraParams):
+    """Parameters for decide_pending_action operation."""
+
+    action_id: str = Field(min_length=1, max_length=128)
+    decision: str = Field(min_length=1, max_length=64)
+    channel: str = Field(default="", max_length=128)
+
+
+class CompletePendingActionParams(ForbidExtraParams):
+    """Parameters for complete_pending_action operation."""
+
+    action_id: str = Field(min_length=1, max_length=128)
+    status: str = Field(min_length=1, max_length=64)
+    result: dict[str, Any] = Field(default_factory=dict)
+    error_message: str = Field(default="", max_length=4096)
+
+
+class GetPendingActionParams(ForbidExtraParams):
+    """Parameters for get_pending_action operation."""
+
+    action_id: str = Field(min_length=1, max_length=128)
+
+
+class GetResumeSnapshotParams(ForbidExtraParams):
+    """Parameters for get_resume_snapshot operation."""
+
+    action_id: str = Field(default="", max_length=128)
+    snapshot_id: str = Field(default="", max_length=128)
+
+
+class ExpirePendingActionsParams(ForbidExtraParams):
+    """Parameters for expire_pending_actions operation."""
+
+    now: str | None = None
+
+
+class PruneRuntimeStateParams(ForbidExtraParams):
+    """Parameters for prune_runtime_state operation."""
+
+    now: str | None = None
+    snapshot_retention_hours: int = Field(default=24, ge=1, le=720)
+    run_retention_days: int = Field(default=7, ge=1, le=365)

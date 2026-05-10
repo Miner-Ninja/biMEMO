@@ -105,19 +105,27 @@ class SSEManager:
         """Return whether one SSE connection is expired."""
         return now - conn.started_at > self.max_lifetime or now > conn.token_exp
 
-    def disconnect(self, session_jti: str) -> bool:
+    def disconnect(
+        self,
+        session_jti: str,
+        connection: SSEConnection | None = None,
+    ) -> bool:
         """Remove an SSE connection.
 
         Args:
             session_jti: JWT token identifier.
+            connection: Optional connection object that must still be current.
 
         Returns:
             True if connection existed.
         """
-        if session_jti in self._connections:
-            self._remove_connection(session_jti)
-            return True
-        return False
+        current = self._connections.get(session_jti)
+        if current is None:
+            return False
+        if connection is not None and current is not connection:
+            return False
+        self._remove_connection(session_jti)
+        return True
 
     def is_valid(self, session_jti: str) -> bool:
         """Check if a connection is still valid.

@@ -1,8 +1,4 @@
-"""Shared test fixtures for biMEMO test suite.
-
-Provides common fixtures including test settings and
-environment variable management for isolated test execution.
-"""
+"""Shared test fixtures for biMEMO test suite."""
 
 import pytest
 
@@ -32,3 +28,13 @@ def _set_test_env(monkeypatch):
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
+
+
+@pytest.fixture(autouse=True)
+def _reset_policy_backed_caches():
+    """Reset caches derived from the static assistant policy."""
+    from backend.security.content_filter import reset_filter_cache
+
+    reset_filter_cache()
+    yield
+    reset_filter_cache()

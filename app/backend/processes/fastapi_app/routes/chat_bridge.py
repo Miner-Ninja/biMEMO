@@ -1,9 +1,12 @@
 """Provider-facing routes for external chat bridge synchronization."""
 
+# ruff: noqa: B008
+
 import json
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -17,15 +20,18 @@ from backend.ipc.models import (
     StreamEventType,
     build_multimodal_content,
 )
-from backend.models.requests import ChatBridgeInboundMessageRequest
+from backend.models.requests import ChatBridgeInboundMessageRequest  # noqa: TC001
 from backend.models.responses import ChatBridgeInboundMessageResponse
 
-from ..clients import OrchestratorClient
 from ..deps import (
     _get_audit_fn,
     _get_orchestrator_client,
     _require_chat_bridge_bearer,
 )
+
+
+if TYPE_CHECKING:
+    from ..clients import OrchestratorClient
 
 
 chat_bridge_router = APIRouter(prefix="/bridge")
@@ -130,10 +136,10 @@ async def sync_bridge_inbound_message(
     provider: str,
     body: ChatBridgeInboundMessageRequest,
     request: Request,
-    orchestrator: OrchestratorClient = Depends(  # noqa: B008
+    orchestrator: OrchestratorClient = Depends(
         _get_orchestrator_client
     ),
-    audit_fn: AuditCallable = Depends(_get_audit_fn),  # noqa: B008
+    audit_fn: AuditCallable = Depends(_get_audit_fn),
 ) -> ChatBridgeInboundMessageResponse:
     """Accept one inbound external bridge message for a linked web conversation."""
     normalized_provider = _require_supported_bridge_inbound_provider(provider)

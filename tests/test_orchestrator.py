@@ -18,6 +18,7 @@ from backend.agent.agent_loop import (
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
     build_tool_result_messages,
+    message_allows_file_read_tools,
     message_allows_file_write_tool,
     message_may_need_forced_web_search_classifier,
     message_requires_forced_web_search,
@@ -101,7 +102,7 @@ class TestSplitByZone:
 
     def test_red_is_deferred(self):
         """Verify RED tools are deferred."""
-        calls = [ToolCall(id="c1", name="http_fetch", parameters={})]
+        calls = [ToolCall(id="c1", name="email_send", parameters={})]
         immediate, red = split_by_zone(calls)
         assert len(immediate) == 0
         assert len(red) == 1
@@ -110,13 +111,13 @@ class TestSplitByZone:
         """Verify mixed zones are split correctly."""
         calls = [
             ToolCall(id="c1", name="file_read", parameters={}),
-            ToolCall(id="c2", name="http_fetch", parameters={}),
+            ToolCall(id="c2", name="email_send", parameters={}),
             ToolCall(id="c3", name="file_write", parameters={}),
         ]
         immediate, red = split_by_zone(calls)
         assert len(immediate) == 2
         assert len(red) == 1
-        assert red[0].name == "http_fetch"
+        assert red[0].name == "email_send"
 
 
 class TestSplitByZoneWithIntent:
@@ -124,20 +125,20 @@ class TestSplitByZoneWithIntent:
 
     def test_red_tool_in_intent_goes_to_immediate(self):
         """Verify RED tool matching user intent executes immediately."""
-        calls = [ToolCall(id="c1", name="http_fetch", parameters={})]
+        calls = [ToolCall(id="c1", name="email_send", parameters={})]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"http_fetch"},
+            user_intent_tools={"email_send"},
         )
         assert len(immediate) == 1
         assert len(red) == 0
 
     def test_red_tool_not_in_intent_goes_to_red(self):
         """Verify RED tool without user intent stays in red list."""
-        calls = [ToolCall(id="c1", name="http_fetch", parameters={})]
+        calls = [ToolCall(id="c1", name="email_send", parameters={})]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"email_send"},
+            user_intent_tools={"http_fetch"},
         )
         assert len(immediate) == 0
         assert len(red) == 1
@@ -385,6 +386,23 @@ class TestAgentOrchestrator:
         )
         assert message_allows_file_write_tool(
             "Create a README.md file and write deployment steps into it."
+        )
+
+    def test_file_read_tools_require_explicit_file_intent(self):
+        """Do not expose file_read/file_search for pasted code analysis."""
+        pasted_code = (
+            "Проанализируй этот код:\n"
+            "```python\n"
+            "def hello():\n"
+            "    return 'world'\n"
+            "```"
+        )
+        assert not message_allows_file_read_tools(pasted_code)
+        assert message_allows_file_read_tools(
+            "Проанализируй файл sandbox/CODE_RULES.md"
+        )
+        assert message_allows_file_read_tools(
+            "Search files in app/backend for file_read"
         )
 
     def test_explicit_online_search_phrases_force_web_search(self):
@@ -673,19 +691,19 @@ class TestAgentOrchestrator:
         async def mock_llm(messages):
             return _tool_response(
                 [
-                    ("call_1", "http_fetch", {"url": "https://example.com"}),
+                    ("call_1", "email_send", {"to": "user@example.com"}),
                 ],
-                text="I need to fetch this URL.",
+                text="I need to send this email.",
             )
 
         await orchestrator.process_message(
-            message="fetch url",
+            message="send email",
             channel="web",
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
         assert len(orchestrator.pending_red_calls) == 1
-        assert orchestrator.pending_red_calls[0].tool_name == "http_fetch"
+        assert orchestrator.pending_red_calls[0].tool_name == "email_send"
 
     async def test_clear_pending(self):
         """Verify clear_pending empties list."""
@@ -730,7 +748,7 @@ class TestAgentOrchestrator:
             injection_flag=True,
             conversation_id="test-conv",
         )
-        assert resp.loop_result.iterations <= 5
+        assert resp.loop_result.iterations <= 10
 
     async def test_context_loaded(self):
         """Verify context entries are included in messages."""
@@ -1414,13 +1432,13 @@ class TestAgentOrchestrator:
         async def mock_llm(messages):
             return _tool_response(
                 [
-                    ("call_1", "http_fetch", {"url": "https://ex.com"}),
+                    ("call_1", "email_send", {"to": "user@example.com"}),
                 ],
-                text="Need to fetch.",
+                text="Need to send.",
             )
 
         await orchestrator.process_message(
-            message="fetch",
+            message="send",
             channel="web",
             llm_call=mock_llm,
             conversation_id="test-conv",

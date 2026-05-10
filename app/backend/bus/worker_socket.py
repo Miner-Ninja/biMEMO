@@ -85,7 +85,7 @@ class WorkerSocketServer:
         self,
         socket_path: str,
         secret: bytes,
-        handler: "asyncio.coroutines",
+        handler: asyncio.coroutines,
     ) -> None:
         """Initialize the server.
 

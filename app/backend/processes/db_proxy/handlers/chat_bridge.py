@@ -1,9 +1,7 @@
 """DB proxy handlers for external chat bridge links and message mappings."""
 
 import uuid
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -20,6 +18,10 @@ from ..params import (
     ListChatBridgeMessageLinksParams,
     UpdateChatBridgeLinkSettingsParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 SELECT_CHAT_BRIDGE_LINK_COLUMNS_SQL = (

@@ -1,7 +1,11 @@
 """Message persistence for conversation history."""
 
-import sqlite3
 import uuid
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 def _message_id() -> str:

@@ -629,8 +629,8 @@ class TestScheduleTaskTool:
     @pytest.mark.asyncio
     async def test_broker_executes_schedule_task_with_validated_model(self):
         """Broker should pass validated models to schedule_task without crashing."""
-        from backend.tools.builtin import ScheduleTaskInput
         from backend.tools.broker import ToolBroker
+        from backend.tools.builtin import ScheduleTaskInput
         from backend.tools.handlers.schedule import make_schedule_task_handler
         from backend.tools.registry import ToolDefinition, ToolRegistry, WorkerTarget
         from backend.trust.zones import TrustZone
@@ -714,6 +714,52 @@ class TestAllowlistEnforcement:
         allowed_names = call_kwargs.kwargs["allowed_names"]
         assert "web_search" in allowed_names
         assert "memory_recall" in allowed_names
+
+    def test_prompt_builder_hides_file_read_for_pasted_code(self):
+        """Pasted code should be analyzed from prompt text, not file tools."""
+        from backend.agent.prompt_builder import PromptBuilder
+
+        mock_broker = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.tool_names = [
+            "web_search",
+            "file_read",
+            "file_search",
+            "memory_recall",
+        ]
+        mock_broker.registry = mock_registry
+        mock_broker.list_openai_schemas.return_value = []
+
+        builder = PromptBuilder("test-model", {}, mock_broker, None)
+        builder.select_openai_tools(
+            "Проанализируй этот код:\n```python\ndef f():\n    return 1\n```"
+        )
+
+        allowed_names = mock_broker.list_openai_schemas.call_args.kwargs[
+            "allowed_names"
+        ]
+        assert "file_read" not in allowed_names
+        assert "file_search" not in allowed_names
+        assert "memory_recall" in allowed_names
+
+    def test_prompt_builder_allows_file_read_for_explicit_file_path(self):
+        """Explicit file/path requests may use file tools."""
+        from backend.agent.prompt_builder import PromptBuilder
+
+        mock_broker = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.tool_names = ["file_read", "file_search", "memory_recall"]
+        mock_broker.registry = mock_registry
+        mock_broker.list_openai_schemas.return_value = []
+
+        builder = PromptBuilder("test-model", {}, mock_broker, None)
+        builder.select_openai_tools("Прочитай файл sandbox/CODE_RULES.md")
+
+        allowed_names = mock_broker.list_openai_schemas.call_args.kwargs[
+            "allowed_names"
+        ]
+        assert "file_read" in allowed_names
+        assert "file_search" in allowed_names
 
     @pytest.mark.asyncio
     async def test_tool_executor_rejects_disallowed_tool(self):

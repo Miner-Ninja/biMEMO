@@ -6,13 +6,17 @@ secret generation, and default handler.
 
 import asyncio
 import multiprocessing
-import multiprocessing.connection
 import os
 import time
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from backend.bus.worker_manager import WorkerManager
 from backend.ipc.protocol import ToolRequest, ToolResponse
+
+
+if TYPE_CHECKING:
+    import multiprocessing.connection
 
 
 def dummy_worker(socket_path: str, conn: multiprocessing.connection.Connection) -> None:

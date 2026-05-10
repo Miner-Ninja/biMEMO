@@ -6,9 +6,12 @@ detection. None of these functions hold state or perform I/O;
 they only inspect and transform their inputs.
 """
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import inspect
+import re
 from typing import TYPE_CHECKING
 
 from backend.llm.structured_response import normalize_legacy_response_text
@@ -71,6 +74,52 @@ FILE_WRITE_TARGET_MARKERS = (
     ".css",
     "readme",
     "config",
+)
+
+# --- File read/search intent detection ---
+FILE_READ_ACTION_MARKERS = (
+    "read",
+    "open",
+    "show",
+    "inspect",
+    "analyze",
+    "analyse",
+    "search",
+    "find",
+    "list",
+    "cat",
+    "grep",
+    "прочитай",
+    "открой",
+    "покажи",
+    "посмотри",
+    "проанализируй",
+    "анализируй",
+    "найди",
+    "поищи",
+    "список",
+)
+FILE_READ_TARGET_MARKERS = (
+    "file",
+    "files",
+    "path",
+    "directory",
+    "folder",
+    "repo",
+    "repository",
+    "файл",
+    "файлы",
+    "путь",
+    "папк",
+    "директор",
+    "репозитор",
+)
+PATH_LIKE_PATTERN = re.compile(
+    r"(^|\s)(?:"
+    r"(?:/[\w.@:+-][\w.@:+\-/]*[\w.@:+-])"
+    r"|(?:~[/\w.@:+-][\w.@:+\-/]*[\w.@:+-])"
+    r"|(?:[\w.@:+-]+/[\w.@:+\-/]*[\w.@:+-])"
+    r")(?=\s|$|[.,;:!?])"
 )
 
 # --- Forced web search detection ---
@@ -312,6 +361,19 @@ def message_allows_file_write_tool(message: str) -> bool:
     return has_action_marker and has_target_marker
 
 
+def message_allows_file_read_tools(message: str) -> bool:
+    """Return True when the user clearly asked to read or search files."""
+    normalized_message = message.casefold()
+    has_action_marker = any(
+        marker in normalized_message for marker in FILE_READ_ACTION_MARKERS
+    )
+    has_target_marker = any(
+        marker in normalized_message for marker in FILE_READ_TARGET_MARKERS
+    )
+    has_path_like_target = PATH_LIKE_PATTERN.search(message) is not None
+    return has_action_marker and (has_target_marker or has_path_like_target)
+
+
 def message_requires_forced_web_search(message: str) -> bool:
     """Return True when the user explicitly asks to search online."""
     normalized_message = " ".join(message.casefold().split())
@@ -341,7 +403,7 @@ MEMORY_RECALL_HINT_MARKERS = (
     "past conversation",
     "we discussed",
     "мы обсуждали",
-    "о чём говорили",  # noqa: RUF001
+    "о чём говорили",
 )
 
 

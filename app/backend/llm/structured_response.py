@@ -234,9 +234,15 @@ def parse_structured_response_json(
     raw_data = json.loads(text)
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
-    answer = str(raw_data.get("answer", ""))
+    raw_answer = str(raw_data.get("answer", ""))
     raw_sql = raw_data.get("sql")
-    sql = str(raw_sql).strip() if isinstance(raw_sql, str) and raw_sql.strip() else None
+    answer_without_sql, extracted_sql = _split_sql_block(raw_answer)
+    answer, extracted_suggestions = _split_suggestions_block(answer_without_sql)
+    sql = (
+        str(raw_sql).strip()
+        if isinstance(raw_sql, str) and raw_sql.strip()
+        else extracted_sql
+    )
     raw_suggestions = raw_data.get("suggestions", [])
     if not isinstance(raw_suggestions, list):
         raise ValueError("Structured response suggestions must be a list")
@@ -245,7 +251,12 @@ def parse_structured_response_json(
         for suggestion in raw_suggestions
         if str(suggestion).strip()
     ]
-    trimmed_suggestions = _trim_suggestions(suggestions)
+    combined_suggestions = suggestions + [
+        suggestion
+        for suggestion in extracted_suggestions
+        if suggestion not in suggestions
+    ]
+    trimmed_suggestions = _trim_suggestions(combined_suggestions)
     if not _suggestions_match_content_language(answer, trimmed_suggestions):
         trimmed_suggestions = []
     return StructuredAssistantContent(

@@ -5,6 +5,8 @@ Maps detected hardware to one of four profiles that determine
 which Qwen3 models are used for primary and dialog recorder tasks.
 """
 
+# ruff: noqa: S607
+
 import logging
 import os
 import subprocess
@@ -113,7 +115,7 @@ class HardwareInfo:
 def _run_nvidia_smi() -> subprocess.CompletedProcess[str]:
     """Run nvidia-smi with the fixed query used for VRAM detection."""
     return subprocess.run(
-        [  # noqa: S607
+        [
             "nvidia-smi",
             "--query-gpu=memory.total",
             "--format=csv,noheader,nounits",

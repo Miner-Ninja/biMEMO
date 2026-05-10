@@ -8,6 +8,8 @@ this channel supports multiple message types via a JSON envelope with
 a _type discriminator field.
 """
 
+# ruff: noqa: ASYNC240
+
 import asyncio
 import json
 import logging
@@ -223,7 +225,7 @@ class IPCSocketServer:
 
     async def start(self) -> None:
         """Start listening on the Unix domain socket."""
-        if os.path.exists(self.socket_path):  # noqa: ASYNC240
+        if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
 
         self._server = await asyncio.start_unix_server(
@@ -244,7 +246,7 @@ class IPCSocketServer:
             await self._server.wait_closed()
             self._server = None
 
-        if os.path.exists(self.socket_path):  # noqa: ASYNC240
+        if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
 
     async def push(self, message: BaseModel) -> None:
@@ -381,3 +383,28 @@ class IPCSocketClient:
         async with self._rpc_lock:
             await self.send(message)
             return await self.receive()
+
+    async def send_and_receive_matching(self, message: BaseModel) -> BaseModel:
+        """Send a request and wait for the response with the same request_id.
+
+        A cancelled caller can leave an already-sent response unread in the
+        stream. Plain send-and-receive would hand that stale response to the
+        next RPC. This method drains mismatched responses until the current
+        request's response arrives.
+        """
+        expected_request_id = str(getattr(message, "request_id", ""))
+        async with self._rpc_lock:
+            await self.send(message)
+            while True:
+                response = await self.receive()
+                response_request_id = str(getattr(response, "request_id", ""))
+                if (
+                    not expected_request_id
+                    or response_request_id == expected_request_id
+                ):
+                    return response
+                logger.warning(
+                    "Discarding stale IPC response: expected request_id=%s got=%s",
+                    expected_request_id,
+                    response_request_id,
+                )

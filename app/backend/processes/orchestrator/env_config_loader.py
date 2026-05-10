@@ -7,8 +7,11 @@ orchestrator startup to allow configuration via environment without the Admin UI
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
-from .client import DBProxyClient
+
+if TYPE_CHECKING:
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,11 @@ import type { LLMConfigEntry, ProviderType } from '@/api/llm'
 const PROVIDER_LABELS: Record<ProviderType, string> = {
   openrouter: 'OpenRouter',
   ollama: 'Ollama (local)',
-  custom: 'Custom (OpenAI-compatible)',
+  custom: 'Custom LLM Provider',
+}
+
+const PROVIDER_SUBTITLES: Partial<Record<ProviderType, string>> = {
+  custom: 'OpenAI-compatible API',
 }
 
 interface LLMConfigDialogProps {
@@ -22,6 +26,7 @@ interface LLMConfigDialogProps {
     dialog_recorder_model?: string
     base_url?: string
     dialog_recorder_base_url?: string
+    num_ctx?: string
   }) => Promise<void>
   editConfig?: LLMConfigEntry | null
 }
@@ -66,6 +71,7 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
 
   const showApiKey = serviceType === 'openrouter' || serviceType === 'custom'
   const showBaseUrl = serviceType === 'ollama' || serviceType === 'custom'
+  const providerSubtitle = PROVIDER_SUBTITLES[serviceType]
 
   const loadModels = async () => {
     setLoadingModels(true)
@@ -111,6 +117,7 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
         dialog_recorder_model: dialogRecorderModel || undefined,
         base_url: baseUrl || undefined,
         dialog_recorder_base_url: dialogRecorderBaseUrl || undefined,
+        num_ctx: editConfig?.num_ctx,
       })
     } finally {
       setSaving(false)
@@ -148,6 +155,9 @@ export function LLMConfigDialog({ open, onClose, onSave, editConfig }: LLMConfig
                 <option key={key} value={key}>{PROVIDER_LABELS[key]}</option>
               ))}
             </select>
+            {providerSubtitle && (
+              <p className="text-xs text-muted-foreground">{providerSubtitle}</p>
+            )}
           </div>
 
           {showApiKey && (

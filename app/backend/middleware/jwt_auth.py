@@ -9,11 +9,15 @@ routes.
 import json
 import logging
 from http.cookies import SimpleCookie
+from typing import TYPE_CHECKING
 
-from starlette.types import ASGIApp, Receive, Scope, Send
-
-from backend.channels.jwt_auth import SessionManager
 from backend.middleware.responses import send_json_error
+
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    from backend.channels.jwt_auth import SessionManager
 
 
 logger = logging.getLogger(__name__)

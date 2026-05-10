@@ -12,9 +12,12 @@ import contextlib
 import logging
 import multiprocessing
 import time
-from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 
 logger = logging.getLogger(__name__)

@@ -12,10 +12,13 @@ map to the same stem and match correctly.
 
 import logging
 import re
+from typing import TYPE_CHECKING
 
 import snowballstemmer
 
-from backend.security.database import DatabaseManager
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 logger = logging.getLogger(__name__)

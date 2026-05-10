@@ -1,9 +1,7 @@
 """Conversation-related DB proxy handler factories."""
 
 import uuid
-from typing import Any
-
-from backend.security.database import DatabaseManager
+from typing import TYPE_CHECKING, Any
 
 from ..common import (
     OperationHandler,
@@ -18,6 +16,10 @@ from ..params import (
     UpdateConversationProcessingStateParams,
     UpdateConversationTitleParams,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 def _conversation_item(row: tuple[Any, ...]) -> dict[str, Any]:

@@ -1,5 +1,7 @@
 """LLM configuration routes."""
 
+# ruff: noqa: B008
+
 from typing import TYPE_CHECKING
 
 import httpx
@@ -256,8 +258,8 @@ async def _detect_ollama_runtime_capabilities(
 
 @llm_router.get("/config")
 async def get_llm_config(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Return current LLM provider configuration (no secrets).
 
@@ -271,8 +273,8 @@ async def get_llm_config(
 @llm_router.post("/config")
 async def save_llm_config(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Save LLM provider configuration.
 
@@ -289,7 +291,7 @@ async def save_llm_config(
 @llm_router.post("/test")
 async def probe_llm_connection(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
 ) -> dict:
     """Test connectivity to an LLM provider using credentials from the request body.
 
@@ -305,7 +307,7 @@ async def probe_llm_connection(
 @llm_router.post("/models")
 async def list_llm_models(
     body: ModelListRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
 ) -> dict:
     """Return available models from the LLM provider.
 
@@ -323,7 +325,7 @@ async def list_llm_models(
 @llm_router.post("/capabilities")
 async def detect_llm_capabilities(
     body: OllamaCapabilitiesRequest,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
 ) -> dict[str, object]:
     """Return runtime capabilities for an Ollama model."""
     del claims
@@ -345,8 +347,8 @@ async def detect_llm_capabilities(
 
 @llm_router.get("/configs")
 async def list_llm_configs(
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Return all saved LLM configurations (no secrets)."""
     del claims
@@ -356,8 +358,8 @@ async def list_llm_configs(
 @llm_router.post("/configs")
 async def create_llm_config(
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Create a new LLM configuration (inactive by default)."""
     del claims
@@ -372,8 +374,8 @@ async def create_llm_config(
 async def update_llm_config(
     config_id: str,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Update an existing LLM configuration (merge credentials)."""
     del claims
@@ -398,8 +400,8 @@ async def update_llm_config(
 async def delete_llm_config(
     config_id: str,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Delete an LLM configuration and its credentials."""
     del claims
@@ -420,8 +422,8 @@ async def delete_llm_config(
 async def activate_llm_config(
     config_id: str,
     request: Request,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Set an LLM configuration as active and reload the runtime when possible."""
     del claims
@@ -441,8 +443,8 @@ async def activate_llm_config(
 @llm_router.post("/configs/{config_id}/test")
 async def probe_saved_llm_config(
     config_id: str,
-    claims: TokenClaims = Depends(_require_auth),  # noqa: B008
-    cred: CredentialClient = Depends(_get_credential_client),  # noqa: B008
+    claims: TokenClaims = Depends(_require_auth),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Test connectivity using stored credentials of a saved configuration."""
     del claims

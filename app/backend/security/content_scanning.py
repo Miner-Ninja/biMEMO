@@ -13,8 +13,8 @@ from backend.security.content_scanning_models import FilterResult
 
 logger = logging.getLogger(__name__)
 
-# --- Credential detection patterns ---
-_CREDENTIAL_PATTERNS = [
+# --- Strict credential patterns: precise provider/format signatures ---
+STRICT_CREDENTIAL_PATTERNS: list[tuple[str, str]] = [
     # AI Providers
     (r"sk-[a-zA-Z0-9]{20,}", "OpenAI API key"),
     (r"sk-proj-[a-zA-Z0-9_-]{20,}", "OpenAI Project API key"),
@@ -38,7 +38,13 @@ _CREDENTIAL_PATTERNS = [
     (r"AIza[0-9A-Za-z_-]{35}", "Google API Key"),
     (r"[A-Za-z0-9_-]*\.firebaseio\.com", "Firebase URL"),
     (r"https://[a-z0-9-]+\.supabase\.co", "Supabase URL"),
-    # Generic
+    # Crypto material
+    (r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----", "Private Key"),
+    (r"-----BEGIN\s+CERTIFICATE-----", "Certificate"),
+]
+
+# --- Generic credential patterns: free-form password=/api_key=/bearer ---
+GENERIC_CREDENTIAL_PATTERNS: list[tuple[str, str]] = [
     (
         r"(?:api[_-]?key|apikey|api_secret|secret_key)\s*[=:]\s*['\"]?[a-zA-Z0-9_-]{16,}['\"]?",
         "Generic API Key",
@@ -48,116 +54,144 @@ _CREDENTIAL_PATTERNS = [
         r"(?:password|passwd|pwd|pass)\s*[=:]\s*['\"]?[^\s'\"]{8,}['\"]?",
         "Password in text",
     ),
-    (r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----", "Private Key"),
-    (r"-----BEGIN\s+CERTIFICATE-----", "Certificate"),
 ]
+
+# --- Union list — backward-compatible default for ContentFilter() ---
+_CREDENTIAL_PATTERNS: list[tuple[str, str]] = (
+    STRICT_CREDENTIAL_PATTERNS + GENERIC_CREDENTIAL_PATTERNS
+)
 
 _CREDENTIAL_COMPILED = [
     (re.compile(pattern, re.IGNORECASE), description)
     for pattern, description in _CREDENTIAL_PATTERNS
 ]
 
-# --- Prompt injection patterns ---
+# --- Strict prompt-injection patterns: direct jailbreak attempts ---
+STRICT_INJECTION_PATTERN_STRINGS: list[str] = [
+    r"ignore\s+(all\s+)?(?:previous|prior|above)\s+instructions?",
+    (
+        r"(?:disregard|forget|ignore)\s+(?:all\s+)?your\s+"
+        r"(?:previous|prior|system|original)?\s*instructions?"
+    ),
+    r"(?:override|overwrite)\s+(?:your|the)\s+(?:system|prompt|instructions)",
+    r"forget\s+(?:everything|all)\s+(?:you|we)\s+know",
+    r"ignore\s+any\s+(?:previous|prior|system)\s+(?:rules|prompts|instructions)",
+    r"(?:you\s+have|no\s+longer)\s+to\s+follow\s+(?:any\s+)?(?:rules?|instructions)",
+    r"output\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:the\s+)?(?:system\s+)?prompt",
+    r"(?:show|print|reveal)\s+(?:me\s+)?your\s+(?:system\s+)?prompt",
+]
+
+# --- Role-play injection patterns: act-as / system: / pretend ---
+ROLEPLAY_INJECTION_PATTERN_STRINGS: list[str] = [
+    (
+        r"you\s+(?:are|should act)\s+(?:now\s+)?(?:as\s+)?"
+        r"(?:a|an|like)\s+(?:\w+\s+){0,3}"
+        r"(?:AI|assistant|bot|model|helpful)"
+    ),
+    r"(?:new|additional|extra)\s+instructions?\s*:",
+    r"system\s*:\s*(?:you\s+are|this\s+is)",
+    r"assistant\s*:\s*",
+    r"(?:pretend|act)\s+(?:as|like)\s+",
+    r"(?:pretend|act\s+(?:as|like))\s+(?:you\s+are|i\s+am)\s+",
+    r"let\s+(?:us|me)\s+play\s+a\s+(?:different|fake)\s+character",
+]
+
+# --- Union compiled list — backward-compatible default ---
 _INJECTION_PATTERNS = [
-    # Direct commands
     re.compile(p, re.IGNORECASE)
-    for p in [
-        r"ignore\s+(all\s+)?(?:previous|prior|above)\s+instructions?",
-        (
-            r"(?:disregard|forget|ignore)\s+(?:all\s+)?your\s+"
-            r"(?:previous|prior|system|original)?\s*instructions?"
-        ),
-        (
-            r"you\s+(?:are|should act)\s+(?:now\s+)?(?:as\s+)?"
-            r"(?:a|an|like)\s+(?:\w+\s+){0,3}"
-            r"(?:AI|assistant|bot|model|helpful)"
-        ),
-        r"(?:new|additional|extra)\s+instructions?\s*:",
-        r"(?:override|overwrite)\s+(?:your|the)\s+(?:system|prompt|instructions)",
-        r"system\s*:\s*(?:you\s+are|this\s+is)",
-        r"assistant\s*:\s*",
-        r"(?:pretend|act)\s+(?:as|like)\s+",
-        r"(?:pretend|act\s+(?:as|like))\s+(?:you\s+are|i\s+am)\s+",
-        r"forget\s+(?:everything|all)\s+(?:you|we)\s+know",
-        r"ignore\s+any\s+(?:previous|prior|system)\s+(?:rules|prompts|instructions)",
-        r"(?:you\s+have|no\s+longer)\s+to\s+follow\s+(?:any\s+)?(?:rules?|instructions)",
-        r"output\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:the\s+)?(?:system\s+)?prompt",
-        r"(?:show|print|reveal)\s+(?:me\s+)?your\s+(?:system\s+)?prompt",
-        r"let\s+(?:us|me)\s+play\s+a\s+(?:different|fake)\s+character",
-    ]
+    for p in (STRICT_INJECTION_PATTERN_STRINGS + ROLEPLAY_INJECTION_PATTERN_STRINGS)
 ]
 
-# --- PII patterns ---
-_PII_PATTERNS = [
-    # Email
-    re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
-    # Phone (various formats)
-    re.compile(r"\+?[1-9]\d{1,14}"),  # E.164
-    re.compile(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"),  # US
-    # SSN
-    re.compile(r"\d{3}-\d{2}-\d{4}"),
-    # Credit card (basic)
-    re.compile(r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}"),
-    # IP Address
-    re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"),
+# --- PII pattern source strings (email, phone, SSN, card, IPv4) ---
+PII_PATTERN_STRINGS: list[str] = [
+    r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+    r"\+?[1-9]\d{1,14}",  # E.164
+    r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",  # US phone
+    r"\d{3}-\d{2}-\d{4}",  # US SSN
+    r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}",  # credit card
+    r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",  # IPv4
 ]
 
-# --- Internal info patterns ---
-_INTERNAL_PATTERNS = [
-    re.compile(p)
-    for p in [
-        r"/home/[^\s]+/[^\s]*\.(?:py|env|key|pem|crt)",
-        r"/app/[^\s]*\.(?:py|env|key|pem|crt)",
-        r"/etc/[^\s]*\.(?:py|env|conf)",
-        r"sqlite3:///[^\s]+",
-        r"postgresql://[^\s]+",
-        r"redis://[^\s]+",
-        r"mongodb(\+srv)?://[^\s]+",
-        r"(?:master|master_key|encryption)_key\s*[=:]\s*\S+",
-    ]
+# --- Compiled PII patterns — backward-compatible default ---
+_PII_PATTERNS = [re.compile(p) for p in PII_PATTERN_STRINGS]
+
+# --- Internal info pattern source strings (paths, conn strings, master key) ---
+INTERNAL_PATTERN_STRINGS: list[str] = [
+    r"/home/[^\s]+/[^\s]*\.(?:py|env|key|pem|crt)",
+    r"/app/[^\s]*\.(?:py|env|key|pem|crt)",
+    r"/etc/[^\s]*\.(?:py|env|conf)",
+    r"sqlite3:///[^\s]+",
+    r"postgresql://[^\s]+",
+    r"redis://[^\s]+",
+    r"mongodb(\+srv)?://[^\s]+",
+    r"(?:master|master_key|encryption)_key\s*[=:]\s*\S+",
 ]
 
-# --- Code execution patterns ---
+# --- Compiled internal patterns — backward-compatible default ---
+_INTERNAL_PATTERNS = [re.compile(p) for p in INTERNAL_PATTERN_STRINGS]
+
+# --- Broad code-execution patterns: any eval/exec/subprocess/shell flag ---
+BROAD_CODE_EXECUTION_PATTERN_STRINGS: list[str] = [
+    r"eval\s*\(",
+    r"exec\s*\(",
+    r"__import__\s*\(",
+    r"subprocess\s*\.",
+    r"os\.system\s*\(",
+    r"os\.popen\s*\(",
+    r"spawn\s*\(",
+    r"shell\s*=\s*True",
+    r"\|\s*bash",
+    r"\|\s*sh",
+    r">\s*/dev/",
+    r"&&\s*rm\s+",
+]
+
+# --- Dangerous-shell-only patterns: truly destructive constructs ---
+DANGEROUS_SHELL_PATTERN_STRINGS: list[str] = [
+    r"rm\s+-rf\s+/(?:\s|$)",
+    r"rm\s+-rf\s+~(?:/|\s|$)",
+    r":\s*\(\s*\)\s*\{\s*:\s*\|",  # fork bomb start
+    r">\s*/dev/sd[a-z]",
+    r">\s*/dev/nvme",
+    r"dd\s+[^\s]*\s*of=/dev/sd",
+]
+
+# --- Union compiled list — backward-compatible default ---
 _CODE_EXECUTION_PATTERNS = [
     re.compile(p, re.IGNORECASE)
-    for p in [
-        r"eval\s*\(",
-        r"exec\s*\(",
-        r"__import__\s*\(",
-        r"subprocess\s*\.",
-        r"os\.system\s*\(",
-        r"os\.popen\s*\(",
-        r"spawn\s*\(",
-        r"shell\s*=\s*True",
-        r"\|\s*bash",
-        r"\|\s*sh",
-        r">\s*/dev/",
-        r"&&\s*rm\s+",
-    ]
+    for p in BROAD_CODE_EXECUTION_PATTERN_STRINGS
 ]
 
-# --- Self-exfiltration patterns (detecting attempts to leak data in output) ---
+# --- Strict exfiltration patterns: explicit URL-with-secret + img beacon ---
+STRICT_EXFILTRATION_PATTERN_STRINGS: list[str] = [
+    (
+        r"(?:fetch|curl|wget|request)\s+https?://[^\s]+"
+        r"(?:\?|\&)(?:key|token|secret|password|data)="
+    ),
+    r"<img\s+[^>]*src\s*=\s*['\"]https?://",
+    r"document\.location\s*=\s*['\"]https?://",
+    r"window\.location\s*=\s*['\"]https?://",
+]
+
+# --- Broad exfiltration patterns: HTTP-client calls and base64 helpers ---
+BROAD_EXFILTRATION_PATTERN_STRINGS: list[str] = [
+    *STRICT_EXFILTRATION_PATTERN_STRINGS,
+    r"new\s+Image\(\s*['\"]https?://",
+    r"fetch\s*\(\s*['\"]https?://[^\s]+['\"]",
+    r"requests\.get\s*\(\s*['\"]https?://",
+    r"axios\.get\s*\(\s*['\"]https?://",
+    r"\.send\s*\(\s*['\"]http",
+    r"base64\.encode\s*\(",
+    r"btoa\s*\(",
+    r"(?:atob|btoa)\s*\(",
+    r"String\.fromCharCode\s*\(",
+    r"encodeURIComponent\s*\(",
+]
+
+# --- Union compiled list — backward-compatible default ---
 _EXFILTRATION_PATTERNS = [
     re.compile(p, re.IGNORECASE)
-    for p in [
-        (
-            r"(?:fetch|curl|wget|request)\s+https?://[^\s]+"
-            r"(?:\?|\&)(?:key|token|secret|password|data)="
-        ),
-        r"<img\s+[^>]*src\s*=\s*['\"]https?://",
-        r"new\s+Image\(\s*['\"]https?://",
-        r"document\.location\s*=\s*['\"]https?://",
-        r"window\.location\s*=\s*['\"]https?://",
-        r"fetch\s*\(\s*['\"]https?://[^\s]+['\"]",
-        r"requests\.get\s*\(\s*['\"]https?://",
-        r"axios\.get\s*\(\s*['\"]https?://",
-        r"\.send\s*\(\s*['\"]http",
-        r"base64\.encode\s*\(",
-        r"btoa\s*\(",
-        r"(?:atob|btoa)\s*\(",
-        r"String\.fromCharCode\s*\(",
-        r"encodeURIComponent\s*\(",
-    ]
+    for p in BROAD_EXFILTRATION_PATTERN_STRINGS
 ]
 
 # --- Suspicious patterns (high entropy = likely encoded) ---

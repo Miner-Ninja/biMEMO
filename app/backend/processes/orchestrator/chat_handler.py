@@ -67,6 +67,15 @@ async def _forward_request_events_to_ipc(
         elif event_type_value == "tool_status":
             event_type = StreamEventType.TOOL_STATUS
             payload = event_data
+        elif event_type_value == "confirmation":
+            event_type = StreamEventType.CONFIRMATION
+            payload = event_data
+        elif event_type_value == "final":
+            event_type = StreamEventType.FINAL
+            payload = event_data
+        elif event_type_value == "error":
+            event_type = StreamEventType.ERROR
+            payload = event_data
         elif event_type_value == "conversation_updated":
             event_type = StreamEventType.CONVERSATION_UPDATED
             payload = event_data.get("data", {})
@@ -176,6 +185,7 @@ def _build_chat_response(
     request_id: str,
     response: AgentResponse,
     transcription: str | None,
+    pending_confirmations: list[dict[str, object]] | None = None,
 ) -> ChatResponse:
     """Convert one gateway response into the IPC chat response shape."""
     return ChatResponse(
@@ -185,6 +195,7 @@ def _build_chat_response(
         output_filtered=response.output_filtered,
         retrieved_memories=response.retrieved_memories or None,
         retrieved_messages=response.retrieved_messages or None,
+        pending_confirmations=pending_confirmations,
         transcription=transcription,
         stats=response.stats,
         stream_enabled=get_settings().llm_response_stream,
@@ -241,6 +252,62 @@ def _build_voice_transcription_failure_response(
         input_filtered=False,
         output_filtered=False,
         stream_enabled=get_settings().llm_response_stream,
+    )
+
+
+def _chat_response_final_event_data(
+    *,
+    conversation_id: str,
+    response: ChatResponse,
+) -> dict[str, object]:
+    """Build one stream-final payload from the IPC chat response."""
+    return {
+        "type": "final",
+        "conversation_id": conversation_id,
+        "input_filtered": response.input_filtered,
+        "output_filtered": response.output_filtered,
+        "pending_confirmations": response.pending_confirmations or [],
+        "retrieved_memories": response.retrieved_memories,
+        "retrieved_messages": response.retrieved_messages,
+        "transcription": response.transcription,
+        "stats": response.stats.model_dump(mode="json")
+        if response.stats is not None
+        else None,
+        "structured_content": response.structured_content.model_dump(
+            mode="json",
+        ),
+        "stream_enabled": response.stream_enabled,
+    }
+
+
+async def _publish_final_chat_event(
+    *,
+    request_sse_queue: asyncio.Queue,
+    conversation_id: str,
+    response: ChatResponse,
+) -> None:
+    """Publish the authoritative final assistant payload for one request."""
+    await request_sse_queue.put(
+        _chat_response_final_event_data(
+            conversation_id=conversation_id,
+            response=response,
+        )
+    )
+
+
+async def _publish_chat_error_event(
+    *,
+    request_sse_queue: asyncio.Queue,
+    conversation_id: str,
+    message: str,
+) -> None:
+    """Publish one terminal stream error for a failed started request."""
+    await request_sse_queue.put(
+        {
+            "type": "error",
+            "conversation_id": conversation_id,
+            "message": message,
+        }
     )
 
 
@@ -368,6 +435,7 @@ async def _run_prepared_chat_request(
     llm_call: Callable,
     message: str,
     transcription: str | None,
+    agent_run_id: str = "",
 ) -> ChatResponse:
     """Run one already-prepared chat message through the orchestrator."""
     request_meta = {"source": "voice"} if transcription else None
@@ -381,12 +449,31 @@ async def _run_prepared_chat_request(
         images=request.images,
         attached_files=request.attached_files or None,
         meta=request_meta,
+        agent_run_id=agent_run_id,
     )
     return _build_chat_response(
         request_id=request.request_id,
         response=response,
         transcription=transcription,
+        pending_confirmations=_pending_confirmations_from_orchestrator(orch),
     )
+
+
+def _pending_confirmations_from_orchestrator(
+    orch: object,
+) -> list[dict[str, object]] | None:
+    """Return pending confirmation payloads for the HTTP response."""
+    pending = getattr(orch, "pending_red_calls", [])
+    if not pending:
+        return None
+    return [
+        {
+            "action_id": action.action_id,
+            "tool_name": action.tool_name,
+            "parameters": action.parameters,
+        }
+        for action in pending
+    ]
 
 
 async def _run_chat_request(
@@ -406,7 +493,7 @@ async def _run_chat_request(
         orch=orch,
     )
     try:
-        return await _run_with_processing_state(
+        response = await _run_with_processing_state(
             db_client=db_client,
             orch=orch,
             conversation_id=request.conversation_id,
@@ -414,11 +501,26 @@ async def _run_chat_request(
             runner=lambda: _run_chat_request_with_prepared_message(
                 request=request,
                 orch=orch,
+                db_client=db_client,
                 broker=broker,
                 llm_call=llm_call,
                 stt_client=stt_client,
             ),
         )
+        await _publish_final_chat_event(
+            request_sse_queue=request_sse_queue,
+            conversation_id=request.conversation_id,
+            response=response,
+        )
+        return response
+    except Exception:
+        logger.exception("Chat request failed after stream start")
+        await _publish_chat_error_event(
+            request_sse_queue=request_sse_queue,
+            conversation_id=request.conversation_id,
+            message="Internal error while processing the chat request.",
+        )
+        raise
     finally:
         await _finish_request_event_forwarding(
             request_sse_queue=request_sse_queue,
@@ -431,6 +533,7 @@ async def _run_chat_request_with_prepared_message(
     *,
     request: ChatRequest,
     orch: object,
+    db_client: DBProxyClient,
     broker: object,
     llm_call: Callable,
     stt_client: object | None,
@@ -447,13 +550,38 @@ async def _run_chat_request_with_prepared_message(
         return _build_voice_transcription_failure_response(
             request.request_id,
         )
-    return await _run_prepared_chat_request(
-        request=request,
-        orch=orch,
-        llm_call=llm_call,
-        message=message,
-        transcription=transcription,
+    agent_run = await db_client.create_agent_run(
+        conversation_id=request.conversation_id,
+        session_id=request.session_id,
+        channel=request.channel,
+        request_id=request.request_id,
     )
+    agent_run_id = str((agent_run or {}).get("id", ""))
+    try:
+        response = await _run_prepared_chat_request(
+            request=request,
+            orch=orch,
+            llm_call=llm_call,
+            message=message,
+            transcription=transcription,
+            agent_run_id=agent_run_id,
+        )
+    except Exception:
+        if agent_run_id:
+            await db_client.update_agent_run_status(
+                run_id=agent_run_id,
+                status="failed",
+                current_step="exception",
+            )
+        raise
+    if agent_run_id:
+        pending = getattr(orch, "pending_red_calls", [])
+        await db_client.update_agent_run_status(
+            run_id=agent_run_id,
+            status="waiting" if pending else "completed",
+            current_step="pending_action" if pending else "completed",
+        )
+    return response
 
 
 def _start_request_event_forwarding(
@@ -486,6 +614,7 @@ async def _run_orchestrator_message(
     images: list[str] | None = None,
     attached_files: list[str] | None = None,
     meta: dict | None = None,
+    agent_run_id: str = "",
 ) -> AgentResponse:
     """Run one message through the shared orchestrator chat path."""
     return await orch.process_message(
@@ -497,6 +626,7 @@ async def _run_orchestrator_message(
         images=images,
         attached_files=attached_files,
         meta=meta,
+        agent_run_id=agent_run_id,
     )
 
 
@@ -515,7 +645,25 @@ def _build_orchestrator_request_handler(
         """Run one chat request through the orchestrator process entrypoint."""
         llm_call = get_llm_call()
         if llm_call is None:
-            return _build_missing_llm_response(request.request_id)
+            request_sse_queue, event_forwarder = _start_request_event_forwarding(
+                request_id=request.request_id,
+                ipc_server=ipc_server_ref(),
+                orch=orch,
+            )
+            try:
+                response = _build_missing_llm_response(request.request_id)
+                await _publish_final_chat_event(
+                    request_sse_queue=request_sse_queue,
+                    conversation_id=request.conversation_id,
+                    response=response,
+                )
+                return response
+            finally:
+                await _finish_request_event_forwarding(
+                    request_sse_queue=request_sse_queue,
+                    event_forwarder=event_forwarder,
+                    orch=orch,
+                )
         return await _run_chat_request(
             request=request,
             orch=orch,

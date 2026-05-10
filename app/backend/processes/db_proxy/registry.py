@@ -1,11 +1,12 @@
 """Channel constants, operation sets, and registry/allowlist builders."""
 
+from typing import TYPE_CHECKING
+
 from backend.ipc.db_proxy import (
     ChannelAllowlist,
     OperationRegistry,
     create_health_handler,
 )
-from backend.security.database import DatabaseManager
 
 from .handlers.admin import (
     make_count_memory_entries_handler,
@@ -111,6 +112,29 @@ from .handlers.memory_debug import (
     make_get_memory_quality_report_handler,
     make_get_memory_timeline_handler,
 )
+from .handlers.permissions import (
+    make_add_project_root_handler,
+    make_complete_pending_action_handler,
+    make_create_agent_run_handler,
+    make_create_capability_grant_handler,
+    make_create_pending_action_handler,
+    make_decide_pending_action_handler,
+    make_expire_capability_grants_handler,
+    make_expire_pending_actions_handler,
+    make_get_agent_run_handler,
+    make_get_pending_action_handler,
+    make_get_resume_snapshot_handler,
+    make_list_capability_grants_handler,
+    make_list_pending_actions_handler,
+    make_list_project_roots_handler,
+    make_lookup_capability_grant_handler,
+    make_prune_runtime_state_handler,
+    make_remove_project_root_handler,
+    make_rename_project_root_handler,
+    make_resolve_project_root_handler,
+    make_revoke_capability_grant_handler,
+    make_update_agent_run_status_handler,
+)
 from .handlers.scheduler import (
     make_advance_task_next_run_handler,
     make_create_scheduled_task_handler,
@@ -133,6 +157,10 @@ from .handlers.skill import (
     make_skill_usage_log_list_handler,
     make_skill_use_handler,
 )
+
+
+if TYPE_CHECKING:
+    from backend.security.database import DatabaseManager
 
 
 # --- Channel identifiers ---
@@ -217,6 +245,27 @@ SOCKET_A_OPERATIONS = {
     "skill_usage_log_list",
     "list_chat_settings",
     "upsert_chat_settings",
+    "list_project_roots",
+    "add_project_root",
+    "remove_project_root",
+    "rename_project_root",
+    "resolve_project_root",
+    "list_capability_grants",
+    "create_capability_grant",
+    "lookup_capability_grant",
+    "revoke_capability_grant",
+    "expire_capability_grants",
+    "create_agent_run",
+    "get_agent_run",
+    "update_agent_run_status",
+    "create_pending_action",
+    "get_pending_action",
+    "get_resume_snapshot",
+    "list_pending_actions",
+    "decide_pending_action",
+    "complete_pending_action",
+    "expire_pending_actions",
+    "prune_runtime_state",
 }
 
 # Socket B adds admin, auth, schema (no credentials — those go via Socket C)
@@ -260,6 +309,27 @@ SOCKET_B_ONLY_OPERATIONS = {
     "skill_usage_log_list",
     "list_chat_settings",
     "upsert_chat_settings",
+    "list_project_roots",
+    "add_project_root",
+    "remove_project_root",
+    "rename_project_root",
+    "resolve_project_root",
+    "list_capability_grants",
+    "create_capability_grant",
+    "lookup_capability_grant",
+    "revoke_capability_grant",
+    "expire_capability_grants",
+    "create_agent_run",
+    "get_agent_run",
+    "update_agent_run_status",
+    "create_pending_action",
+    "get_pending_action",
+    "get_resume_snapshot",
+    "list_pending_actions",
+    "decide_pending_action",
+    "complete_pending_action",
+    "expire_pending_actions",
+    "prune_runtime_state",
 }
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
@@ -495,6 +565,80 @@ def _register_conversation_and_bridge_operations(
     )
 
 
+def _register_permission_operations(
+    registry: OperationRegistry,
+    core_db: DatabaseManager,
+    runtime_db: DatabaseManager,
+) -> None:
+    """Register project root, grant, and action lifecycle operations."""
+    registry.register("list_project_roots", make_list_project_roots_handler(core_db))
+    registry.register("add_project_root", make_add_project_root_handler(core_db))
+    registry.register("remove_project_root", make_remove_project_root_handler(core_db))
+    registry.register("rename_project_root", make_rename_project_root_handler(core_db))
+    registry.register(
+        "resolve_project_root",
+        make_resolve_project_root_handler(core_db),
+    )
+    registry.register(
+        "list_capability_grants",
+        make_list_capability_grants_handler(core_db),
+    )
+    registry.register(
+        "create_capability_grant",
+        make_create_capability_grant_handler(core_db),
+    )
+    registry.register(
+        "lookup_capability_grant",
+        make_lookup_capability_grant_handler(core_db),
+    )
+    registry.register(
+        "revoke_capability_grant",
+        make_revoke_capability_grant_handler(core_db),
+    )
+    registry.register(
+        "expire_capability_grants",
+        make_expire_capability_grants_handler(core_db),
+    )
+    registry.register("create_agent_run", make_create_agent_run_handler(runtime_db))
+    registry.register("get_agent_run", make_get_agent_run_handler(runtime_db))
+    registry.register(
+        "update_agent_run_status",
+        make_update_agent_run_status_handler(runtime_db),
+    )
+    registry.register(
+        "create_pending_action",
+        make_create_pending_action_handler(runtime_db),
+    )
+    registry.register(
+        "get_pending_action",
+        make_get_pending_action_handler(runtime_db),
+    )
+    registry.register(
+        "get_resume_snapshot",
+        make_get_resume_snapshot_handler(runtime_db),
+    )
+    registry.register(
+        "list_pending_actions",
+        make_list_pending_actions_handler(runtime_db),
+    )
+    registry.register(
+        "decide_pending_action",
+        make_decide_pending_action_handler(runtime_db),
+    )
+    registry.register(
+        "complete_pending_action",
+        make_complete_pending_action_handler(runtime_db),
+    )
+    registry.register(
+        "expire_pending_actions",
+        make_expire_pending_actions_handler(runtime_db),
+    )
+    registry.register(
+        "prune_runtime_state",
+        make_prune_runtime_state_handler(runtime_db),
+    )
+
+
 def _register_integration_operations(
     registry: OperationRegistry,
     db: DatabaseManager,
@@ -590,13 +734,20 @@ def _register_auth_and_schema_operations(
 
 def _register_health_check(
     registry: OperationRegistry,
-    db: DatabaseManager,
+    core_db: DatabaseManager,
+    runtime_db: DatabaseManager | None = None,
+    diagnostics_db: DatabaseManager | None = None,
 ) -> None:
     """Register the shared DB health check operation."""
 
     async def db_health_check() -> bool:
         """Check if DB connection is alive."""
-        return db.is_open
+        databases = [core_db]
+        if runtime_db is not None:
+            databases.append(runtime_db)
+        if diagnostics_db is not None:
+            databases.append(diagnostics_db)
+        return all(db.is_open for db in databases)
 
     registry.register(
         "_health_check",
@@ -605,18 +756,20 @@ def _register_health_check(
 
 
 def build_registry(
-    db: DatabaseManager,
+    core_db: DatabaseManager,
     database_path: str,
     master_key: bytes,
+    runtime_db: DatabaseManager | None = None,
     diagnostics_db: DatabaseManager | None = None,
     diagnostics_retention_days: int = 14,
 ) -> OperationRegistry:
     """Build the complete operation registry for the DB Proxy.
 
     Args:
-        db: Open DatabaseManager instance.
+        core_db: Open primary/core DatabaseManager instance.
         database_path: Path to the database file (for backups).
         master_key: Raw 32-byte master key (for signing material).
+        runtime_db: Optional runtime DatabaseManager for agent lifecycle state.
         diagnostics_db: Optional diagnostics database for route snapshots.
         diagnostics_retention_days: Number of days to keep route diagnostics.
 
@@ -624,21 +777,23 @@ def build_registry(
         Configured OperationRegistry with all operations registered.
     """
     del database_path
+    runtime_db = runtime_db or core_db
     registry = OperationRegistry()
-    _register_message_operations(registry, db)
+    _register_message_operations(registry, core_db)
     _register_diagnostic_operations(
         registry,
-        db,
+        core_db,
         diagnostics_db,
         diagnostics_retention_days,
     )
-    _register_memory_debug_operations(registry, db)
-    _register_memory_operations(registry, db)
-    _register_conversation_and_bridge_operations(registry, db)
-    _register_integration_operations(registry, db)
-    _register_misc_db_operations(registry, db)
-    _register_auth_and_schema_operations(registry, db, master_key)
-    _register_health_check(registry, db)
+    _register_memory_debug_operations(registry, core_db)
+    _register_memory_operations(registry, core_db)
+    _register_conversation_and_bridge_operations(registry, core_db)
+    _register_permission_operations(registry, core_db, runtime_db)
+    _register_integration_operations(registry, core_db)
+    _register_misc_db_operations(registry, core_db)
+    _register_auth_and_schema_operations(registry, core_db, master_key)
+    _register_health_check(registry, core_db, runtime_db, diagnostics_db)
     return registry
 
 

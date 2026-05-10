@@ -3,7 +3,7 @@
 import json
 import sqlite3
 import uuid
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from backend.memory.dialog_recorder import trace as dialog_recorder_trace
@@ -16,6 +16,10 @@ from backend.processes.db_proxy.handlers.admin import (
     make_list_summaries_full_handler,
 )
 from backend.processes.db_proxy.handlers.memory_debug import _build_quality_report
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # --- Helpers ---

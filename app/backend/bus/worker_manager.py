@@ -12,12 +12,16 @@ import multiprocessing
 import os
 import secrets
 import tempfile
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import psutil
 
 from backend.ipc.protocol import ToolRequest, ToolResponse
 from backend.ipc.socket import WorkerSocketServer
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 logger = logging.getLogger(__name__)

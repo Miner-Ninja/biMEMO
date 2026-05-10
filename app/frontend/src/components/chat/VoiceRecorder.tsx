@@ -71,7 +71,7 @@ export function VoiceRecorder({
     return `oklch(${destructiveColor})`
   }, [])
 
-  const drawWaveform = useCallback(() => {
+  const drawWaveform = useCallback(function drawWaveform() {
     const analyser = analyserRef.current
     const canvas = canvasRef.current
     if (!analyser || !canvas) return

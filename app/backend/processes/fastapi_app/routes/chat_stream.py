@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from backend.channels.jwt_auth import SessionManager
-    from backend.channels.sse import SSEManager
+    from backend.channels.sse import SSEConnection, SSEManager
     from backend.models.responses import ConversationItem as HTTPConversationItem
 
     from ..clients import OrchestratorClient
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SSE_KEEPALIVE_INTERVAL = 15
+SSE_KEEPALIVE_INTERVAL = 5
 
 
 def build_stream_headers() -> dict[str, str]:
@@ -36,6 +36,7 @@ def build_stream_headers() -> dict[str, str]:
     return {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
     }
 
 
@@ -91,16 +92,17 @@ def connect_stream_session(
     orchestrator_client: OrchestratorClient,
     sse_manager: SSEManager,
     session_manager: SessionManager,
-) -> None:
+) -> SSEConnection:
     """Register one stream queue and enforce the active-session limit."""
     orchestrator_client.register_session_queue(
         session_id,
         queue,
         conversation_id=conversation_id,
     )
-    if sse_manager.connect(session_id, session_exp, session_manager) is not None:
-        return
-    orchestrator_client.unregister_session_queue(session_id)
+    connection = sse_manager.connect(session_id, session_exp, session_manager)
+    if connection is not None:
+        return connection
+    orchestrator_client.unregister_session_queue(session_id, queue)
     raise HTTPException(
         status_code=429,
         detail="Too many active sessions",
@@ -110,21 +112,24 @@ def connect_stream_session(
 def disconnect_stream_session(
     *,
     session_id: str,
+    queue: asyncio.Queue,
+    connection: SSEConnection,
     orchestrator_client: OrchestratorClient,
     sse_manager: SSEManager,
 ) -> None:
     """Unregister one browser stream session from IPC and SSE tracking."""
-    orchestrator_client.unregister_session_queue(session_id)
-    sse_manager.disconnect(session_id)
+    orchestrator_client.unregister_session_queue(session_id, queue)
+    sse_manager.disconnect(session_id, connection)
 
 
 async def stream_events(
     *,
     queue: asyncio.Queue,
+    connection: SSEConnection,
     session_id: str,
     orchestrator_client: OrchestratorClient,
     sse_manager: SSEManager,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Yield SSE frames for one connected browser session."""
     try:
         while sse_manager.is_valid(session_id):
@@ -143,6 +148,8 @@ async def stream_events(
     finally:
         disconnect_stream_session(
             session_id=session_id,
+            queue=queue,
+            connection=connection,
             orchestrator_client=orchestrator_client,
             sse_manager=sse_manager,
         )

@@ -6,13 +6,18 @@ shutdown. Each bot type is started independently based on stored credentials.
 """
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from backend.config import parse_configured_id_list
 
 from .bridge_handler import _build_internal_bridge_inbound_url
-from .client import DBProxyClient
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)

@@ -7,10 +7,11 @@ previously discussed topics. Works on any language.
 
 from __future__ import annotations
 
-import logging
+from backend.agent.yes_no_classifier import (
+    YesNoClassifierSpec,
+    run_yes_no_classifier,
+)
 
-
-logger = logging.getLogger(__name__)
 
 CLASSIFIER_SYSTEM_PROMPT = (
     "You are a classifier. Decide whether the user message asks about "
@@ -18,9 +19,11 @@ CLASSIFIER_SYSTEM_PROMPT = (
     "or anything that was said in earlier chats.\n"
     "Answer ONLY 'yes' or 'no'. Nothing else."
 )
-CLASSIFIER_MAX_TOKENS = 5
-CLASSIFIER_TEMPERATURE = 0.0
-POSITIVE_RESPONSE = "yes"
+CLASSIFIER_SPEC = YesNoClassifierSpec(
+    system_prompt=CLASSIFIER_SYSTEM_PROMPT,
+    debug_label="Memory recall",
+    failure_label="Memory recall",
+)
 
 
 async def classify_requires_memory_recall(
@@ -36,36 +39,8 @@ async def classify_requires_memory_recall(
     Returns:
         True if memory recall should be forced.
     """
-    if not message.strip() or provider is None:
-        return False
-    model = getattr(provider, "dialog_recorder_model", None)
-    if not model:
-        return False
-    try:
-        from backend.llm.ollama.models import ChatMessage
-
-        messages = [
-            ChatMessage(role="system", content=CLASSIFIER_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=message),
-        ]
-        response = await provider.chat(
-            messages,
-            model=model,
-            max_tokens=CLASSIFIER_MAX_TOKENS,
-            temperature=CLASSIFIER_TEMPERATURE,
-            enable_thinking=False,
-        )
-        answer = (response.content or "").strip().lower()
-        result = answer.startswith(POSITIVE_RESPONSE)
-        logger.debug(
-            "Memory recall classifier: %r → %s",
-            message[:80],
-            result,
-        )
-        return result
-    except Exception:
-        logger.warning(
-            "Memory recall classification failed, skipping",
-            exc_info=True,
-        )
-        return False
+    return await run_yes_no_classifier(
+        message=message,
+        provider=provider,
+        spec=CLASSIFIER_SPEC,
+    )

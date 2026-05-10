@@ -7,9 +7,13 @@ or Net Worker via WorkerManager IPC.
 import asyncio
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
-from backend.bus.worker_manager import WorkerManager
 from backend.ipc.protocol import ToolRequest, ToolResponse
+
+
+if TYPE_CHECKING:
+    from backend.bus.worker_manager import WorkerManager
 
 
 logger = logging.getLogger(__name__)
@@ -90,7 +94,7 @@ def _email_parameters(params: object, smtp_config: dict) -> dict:
 def make_worker_proxy(
     worker_manager: WorkerManager,
     tool_name: str,
-) -> "callable":
+) -> callable:
     """Create an async proxy handler for a worker-routed tool.
 
     Args:
@@ -126,7 +130,7 @@ def make_worker_proxy(
 def make_email_proxy(
     worker_manager: WorkerManager,
     smtp_config: dict | None,
-) -> "callable":
+) -> callable:
     """Create a proxy handler for email_send that injects SMTP config.
 
     Args:

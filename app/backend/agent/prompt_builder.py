@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from backend.agent.agent_loop_helpers import (
     context_contains_active_long_term_preference,
+    message_allows_file_read_tools,
     message_allows_file_write_tool,
 )
 from backend.memory.evidence_recall import (
@@ -23,6 +24,15 @@ from backend.memory.evidence_recall import (
     is_evidence_recall_question,
 )
 from backend.processes.orchestrator.client import DBProxyError
+from backend.security.policy import get_policy
+
+
+_KEY_SYSTEM_PROMPT_ADDONS = "llm.system_prompt_addons"
+
+
+def _policy_system_prompt_addons() -> str:
+    """Return the assistant-policy system prompt addon text or empty."""
+    return get_policy().get_str(_KEY_SYSTEM_PROMPT_ADDONS).strip()
 
 
 if TYPE_CHECKING:
@@ -37,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 FILE_WRITE_TOOL_NAME = "file_write"
+FILE_READ_TOOL_NAMES = frozenset({"file_read", "file_search"})
 MEMORY_META_GUARDRAIL = (
     "Memory-answer rule: if retrieved memory already shows an active long-term "
     "preference, do not claim that no durable preference exists, that nothing "
@@ -118,10 +129,11 @@ class PromptBuilder:
             "```\n"
             "- Each suggestion must be written as if the user is typing it — "
             "a direct request from user to assistant, e.g. "
-            "'Найди прогноз курса на неделю', 'Создай напоминание о проверке курса', "
+            "'Find the weekly exchange-rate forecast', "
+            "'Create a reminder to check the exchange rate', "
             "'Search for ETH price history'\n"
-            "- Never write suggestions addressed to the user (no 'Посетите', "
-            "'Проверьте', 'Откройте'); always address the assistant\n"
+            "- Never write suggestions addressed to the user; always address "
+            "the assistant\n"
             "- Suggestions must only propose actions the assistant can perform "
             "using its available tools: web search, file operations, email, "
             "reminders, memory recall, URL fetch, and system status\n"
@@ -165,6 +177,12 @@ class PromptBuilder:
                 + self.active_skill_context
                 + "\n</matched_skills>"
             )
+
+        # Append profile-driven addons last so they cannot be hidden
+        # behind earlier content.
+        addons = _policy_system_prompt_addons()
+        if addons:
+            prompt += "\n\n" + addons
 
         return prompt
 
@@ -424,15 +442,24 @@ class PromptBuilder:
         )
         messages.append({"role": "user", "content": user_content})
 
-    def select_openai_tools(self, message: str) -> list[dict] | None:
+    def select_openai_tools(
+        self,
+        message: str,
+        *,
+        attached_files: list[str] | None = None,
+    ) -> list[dict] | None:
         """Return the tool schemas that should be exposed for this message."""
         tool_names = getattr(self.broker.registry, "tool_names", None)
         if tool_names is None:
             return self.broker.list_openai_schemas()
 
         allowed_names = set(tool_names)
+        if not message_allows_file_read_tools(message):
+            allowed_names -= FILE_READ_TOOL_NAMES
         if not message_allows_file_write_tool(message):
             allowed_names.discard(FILE_WRITE_TOOL_NAME)
+        if attached_files:
+            allowed_names -= FILE_READ_TOOL_NAMES
         # Per-call allowlist restriction (used by scheduler for cron tasks)
         if self.allowed_tool_names is not None:
             allowed_names &= self.allowed_tool_names
