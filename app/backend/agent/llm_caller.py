@@ -9,6 +9,7 @@ for LLM capability detection.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
@@ -18,6 +19,7 @@ from backend.agent.agent_loop_helpers import (
     message_may_need_forced_web_search_classifier,
     message_may_need_memory_recall,
     message_requires_forced_web_search,
+    request_missing_suggestions,
     request_non_empty_final_answer,
 )
 from backend.agent.agent_loop_models import ModelLoopResult
@@ -362,6 +364,36 @@ class LLMCaller:
                 structured_content = recovered_response
 
         if raw_final_text.strip():
+            if (
+                structured_content is not None
+                and len(structured_content.suggestions) < 3
+            ):
+                try:
+                    suggestions = await request_missing_suggestions(
+                        llm_call=llm_call,
+                        messages=messages,
+                        answer_text=structured_content.answer or raw_final_text,
+                        call_usages=call_usages,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Missing suggestions recovery failed",
+                        exc_info=True,
+                    )
+                    suggestions = []
+                if suggestions:
+                    merged_suggestions = [
+                        *structured_content.suggestions,
+                        *[
+                            suggestion
+                            for suggestion in suggestions
+                            if suggestion not in structured_content.suggestions
+                        ],
+                    ][:3]
+                    structured_content = replace(
+                        structured_content,
+                        suggestions=merged_suggestions,
+                    )
             return ModelLoopResult(
                 raw_final_text=raw_final_text,
                 structured_content=structured_content,

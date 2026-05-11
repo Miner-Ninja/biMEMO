@@ -11,10 +11,15 @@ they only inspect and transform their inputs.
 from __future__ import annotations
 
 import inspect
+import json
 import re
 from typing import TYPE_CHECKING
 
-from backend.llm.structured_response import normalize_legacy_response_text
+from backend.llm.structured_response import (
+    MAX_STRUCTURED_SUGGESTIONS,
+    StructuredAssistantContent,
+    normalize_legacy_response_text,
+)
 from backend.trust.zones import TrustZone, get_zone
 
 
@@ -22,7 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.agent_loop_models import ToolCall
-    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolResult
 
@@ -183,6 +187,15 @@ EMPTY_FINAL_ANSWER_RECOVERY_PROMPT = (
     "Provide the final user-facing answer now in plain text. "
     "Do not call tools again. Do not return an empty reply."
 )
+MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
+    "Generate follow-up suggestions for the already completed assistant answer. "
+    "Return only one JSON object with this exact shape: "
+    '{"suggestions":["first","second","third"]}. '
+    "Do not use markdown. Do not call tools. Do not rewrite the answer. "
+    "Each suggestion must be written as a direct request from the user to the "
+    "assistant, in the same language as the user's message. Suggestions must be "
+    "specific to the topic and must only ask for actions the assistant can do."
+)
 MESSAGE_META_STATS_KEY = "stats"
 MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
 
@@ -241,6 +254,82 @@ async def request_non_empty_final_answer(
     if not recovery_response.text.strip():
         return None
     return normalize_legacy_response_text(recovery_response.text)
+
+
+def extract_recovered_suggestions(response: object) -> list[str]:
+    """Extract suggestions from a lightweight recovery response."""
+    structured_content = getattr(response, "structured_content", None)
+    if structured_content is not None and structured_content.suggestions:
+        return structured_content.suggestions[:MAX_STRUCTURED_SUGGESTIONS]
+
+    response_text = str(getattr(response, "text", "") or "").strip()
+    if not response_text:
+        return []
+    try:
+        raw_data = json.loads(response_text)
+    except json.JSONDecodeError:
+        return normalize_legacy_response_text(response_text).suggestions[
+            :MAX_STRUCTURED_SUGGESTIONS
+        ]
+    if not isinstance(raw_data, dict):
+        return []
+    raw_suggestions = raw_data.get("suggestions", [])
+    if not isinstance(raw_suggestions, list):
+        return []
+    suggestions = [
+        str(suggestion).strip()
+        for suggestion in raw_suggestions
+        if str(suggestion).strip()
+    ]
+    return suggestions[:MAX_STRUCTURED_SUGGESTIONS]
+
+
+def latest_user_message_text(messages: list[dict]) -> str:
+    """Return the latest user message text from one prompt message list."""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return str(message.get("content", ""))
+    return ""
+
+
+async def request_missing_suggestions(
+    *,
+    llm_call: Callable,
+    messages: list[dict],
+    answer_text: str,
+    call_usages: list[LLMCallUsage],
+) -> list[str]:
+    """Ask the model once for suggestions when the final answer omitted them."""
+    recovery_messages = [
+        {
+            "role": "system",
+            "content": MISSING_SUGGESTIONS_RECOVERY_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Latest user message:\n{latest_user_message_text(messages)}\n\n"
+                f"Completed assistant answer:\n{answer_text}\n\n"
+                "Generate exactly three suggestions."
+            ),
+        },
+    ]
+    if llm_accepts_sse_queue(llm_call):
+        recovery_response = await llm_call(
+            recovery_messages,
+            sse_queue_override=None,
+            tools_override=[],
+        )
+    elif llm_accepts_tools_override(llm_call):
+        recovery_response = await llm_call(
+            recovery_messages,
+            tools_override=[],
+        )
+    else:
+        recovery_response = await llm_call(recovery_messages)
+    if recovery_response.usage is not None:
+        call_usages.append(recovery_response.usage)
+    return extract_recovered_suggestions(recovery_response)
 
 
 def build_dialog_step_record_input(

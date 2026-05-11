@@ -332,6 +332,119 @@ class TestFinalAnswerRecovery:
             suggestions=["Next step"],
         )
 
+    @pytest.mark.asyncio
+    async def test_run_model_loop_recovers_missing_suggestions(self):
+        """Ask the model for suggestions when the final answer omitted them."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        loop.check_limits.return_value = LoopState.RUNNING
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            return_value=MagicMock(
+                raw_final_text="Visible answer",
+                structured_content=StructuredAssistantContent(
+                    answer="Visible answer",
+                    suggestions=[],
+                ),
+                executed_immediate_tools=False,
+                should_continue=False,
+            )
+        )
+        llm_call = AsyncMock(
+            side_effect=[
+                LLMResponse(
+                    text="Visible answer",
+                    raw_message={"role": "assistant", "content": "Visible answer"},
+                    structured_content=StructuredAssistantContent(
+                        answer="Visible answer",
+                        suggestions=[],
+                    ),
+                ),
+                _text_response(
+                    '{"suggestions":["Check current GRAM news",'
+                    '"Compare GRAM and TON","Find the official GRAM website"]}'
+                ),
+            ]
+        )
+        call_usages: list[LLMCallUsage] = []
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "How is GRAM related to Durov?"}],
+            openai_tools=[],
+            call_usages=call_usages,
+            channel="chat",
+            tool_executor=tool_executor,
+        )
+
+        assert result.raw_final_text == "Visible answer"
+        assert result.structured_content == StructuredAssistantContent(
+            answer="Visible answer",
+            suggestions=[
+                "Check current GRAM news",
+                "Compare GRAM and TON",
+                "Find the official GRAM website",
+            ],
+        )
+        assert llm_call.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_does_not_recover_complete_suggestions(self):
+        """Do not spend another LLM call when three suggestions already exist."""
+        complete_suggestions = ["First step", "Second step", "Third step"]
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        loop.check_limits.return_value = LoopState.RUNNING
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            return_value=MagicMock(
+                raw_final_text="Visible answer",
+                structured_content=StructuredAssistantContent(
+                    answer="Visible answer",
+                    suggestions=complete_suggestions,
+                ),
+                executed_immediate_tools=False,
+                should_continue=False,
+            )
+        )
+        llm_call = AsyncMock(
+            return_value=LLMResponse(
+                text="Visible answer",
+                raw_message={"role": "assistant", "content": "Visible answer"},
+                structured_content=StructuredAssistantContent(
+                    answer="Visible answer",
+                    suggestions=complete_suggestions,
+                ),
+            )
+        )
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "Hi"}],
+            openai_tools=[],
+            call_usages=[],
+            channel="chat",
+            tool_executor=tool_executor,
+        )
+
+        assert result.structured_content == StructuredAssistantContent(
+            answer="Visible answer",
+            suggestions=complete_suggestions,
+        )
+        assert llm_call.await_count == 1
+
 
 def _make_orchestrator(
     broker: object | None = None,
@@ -666,12 +779,24 @@ class TestAgentOrchestrator:
                 return _tool_response([("call_1", "file_read", {"path": "/tmp/x"})])
             if call_count == 2:
                 return _text_response("")
+            if call_count == 4:
+                assert any(
+                    message["role"] == "system"
+                    and "Generate follow-up suggestions" in message["content"]
+                    for message in messages
+                )
+                return _text_response(
+                    '{"suggestions":["Inspect the file again",'
+                    '"Summarize the file content","Search related documentation"]}'
+                )
             assert any(
                 message["role"] == "system"
                 and "Do not return an empty reply." in message["content"]
                 for message in messages
             )
-            return _text_response("Recovered final answer.")
+            if call_count == 3:
+                return _text_response("Recovered final answer.")
+            raise AssertionError(f"Unexpected LLM call {call_count}")
 
         resp = await orchestrator.process_message(
             message="read the file and answer",
@@ -681,8 +806,13 @@ class TestAgentOrchestrator:
         )
 
         assert resp.structured_content.answer == "Recovered final answer."
+        assert resp.structured_content.suggestions == [
+            "Inspect the file again",
+            "Summarize the file content",
+            "Search related documentation",
+        ]
         assert broker.execute.call_count == 1
-        assert call_count == 3
+        assert call_count == 4
 
     async def test_red_zone_deferred(self):
         """Verify RED zone calls are deferred."""
