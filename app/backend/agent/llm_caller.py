@@ -13,6 +13,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
+    is_placeholder_final_answer,
     llm_accepts_sse_queue,
     llm_accepts_tools_override,
     llm_requires_forced_web_search,
@@ -353,7 +354,13 @@ class LLMCaller:
 
             loop.advance()
 
-        if not raw_final_text.strip() and executed_immediate_tools:
+        if (
+            executed_immediate_tools
+            and (
+                not raw_final_text.strip()
+                or is_placeholder_final_answer(raw_final_text)
+            )
+        ):
             recovered_response = await request_non_empty_final_answer(
                 llm_call=llm_call,
                 messages=messages,

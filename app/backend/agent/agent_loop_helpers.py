@@ -185,7 +185,9 @@ MEMORY_NEGATION_MARKERS = (
 # --- Empty final answer recovery ---
 EMPTY_FINAL_ANSWER_RECOVERY_PROMPT = (
     "Provide the final user-facing answer now in plain text. "
-    "Do not call tools again. Do not return an empty reply."
+    "Do not call tools again. Do not return an empty reply. "
+    "Do not say that you are searching, checking, preparing, or looking things up; "
+    "use the available context and give the substantive answer."
 )
 MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
     "Generate follow-up suggestions for the already completed assistant answer. "
@@ -198,6 +200,22 @@ MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
 )
 MESSAGE_META_STATS_KEY = "stats"
 MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
+PLACEHOLDER_FINAL_ANSWER_PREFIXES = (
+    "ищу ",
+    "ищу информацию",
+    "ищу инструкции",
+    "поищу ",
+    "найду ",
+    "проверяю ",
+    "сейчас проверю",
+    "сейчас поищу",
+    "searching ",
+    "looking up ",
+    "checking ",
+    "i am searching",
+    "i'm searching",
+    "i will search",
+)
 
 
 def build_assistant_message_meta(
@@ -221,6 +239,19 @@ def build_assistant_message_meta(
     if not message_meta:
         return None
     return message_meta
+
+
+def is_placeholder_final_answer(response_text: str) -> bool:
+    """Return True when a model returned a status phrase instead of an answer."""
+    normalized = " ".join(response_text.strip().lower().split())
+    if not normalized:
+        return False
+    if len(normalized) > 220:
+        return False
+    return any(
+        normalized.startswith(prefix)
+        for prefix in PLACEHOLDER_FINAL_ANSWER_PREFIXES
+    )
 
 
 async def request_non_empty_final_answer(

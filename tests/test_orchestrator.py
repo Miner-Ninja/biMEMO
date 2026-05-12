@@ -18,6 +18,7 @@ from backend.agent.agent_loop import (
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
     build_tool_result_messages,
+    is_placeholder_final_answer,
     message_allows_file_read_tools,
     message_allows_file_write_tool,
     message_may_need_forced_web_search_classifier,
@@ -245,6 +246,16 @@ class TestBuildToolResultMessages:
 class TestFinalAnswerRecovery:
     """Tests for one extra final-answer request after tool execution."""
 
+    def test_placeholder_final_answer_detection(self):
+        """Treat short status phrases as placeholders, not final answers."""
+        assert is_placeholder_final_answer(
+            "Ищу инструкции по настройке MPT для ускорения генерации."
+        )
+        assert is_placeholder_final_answer("Looking up the latest information.")
+        assert not is_placeholder_final_answer(
+            "Я нашел инструкции и вот краткая выжимка: настройте параметр X."
+        )
+
     @pytest.mark.asyncio
     async def test_request_non_empty_final_answer_keeps_structured_sections(self):
         """Keep the ready sections when the recovery call already returned them."""
@@ -330,6 +341,93 @@ class TestFinalAnswerRecovery:
         assert result.structured_content == StructuredAssistantContent(
             answer="Visible answer",
             suggestions=["Next step"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_recovers_placeholder_after_tools(self):
+        """Recover when the model returns a searching status after tool results."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    raw_final_text="",
+                    structured_content=None,
+                    executed_immediate_tools=True,
+                    should_continue=True,
+                ),
+                MagicMock(
+                    raw_final_text="Ищу инструкции по настройке MPT.",
+                    structured_content=StructuredAssistantContent(
+                        answer="Ищу инструкции по настройке MPT.",
+                        suggestions=[],
+                    ),
+                    executed_immediate_tools=False,
+                    should_continue=False,
+                ),
+            ]
+        )
+        llm_call = AsyncMock(
+            side_effect=[
+                _tool_response([("call-1", "web_search", {"query": "qwen mpt"})]),
+                LLMResponse(
+                    text="Ищу инструкции по настройке MPT.",
+                    raw_message={
+                        "role": "assistant",
+                        "content": "Ищу инструкции по настройке MPT.",
+                    },
+                    structured_content=StructuredAssistantContent(
+                        answer="Ищу инструкции по настройке MPT.",
+                        suggestions=[],
+                    ),
+                ),
+                LLMResponse(
+                    text="Настройка MPT выполняется через параметры сервера.",
+                    raw_message={
+                        "role": "assistant",
+                        "content": "Настройка MPT выполняется через параметры сервера.",
+                    },
+                    structured_content=StructuredAssistantContent(
+                        answer="Настройка MPT выполняется через параметры сервера.",
+                        suggestions=[
+                            "Show an MPT configuration example",
+                            "Compare speed with and without MPT",
+                            "Find Qwen MPT documentation",
+                        ],
+                    ),
+                ),
+            ]
+        )
+        call_usages: list[LLMCallUsage] = []
+        loop.check_limits.side_effect = [LoopState.RUNNING, LoopState.RUNNING]
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "Найди инструкции по MPT"}],
+            openai_tools=[],
+            call_usages=call_usages,
+            channel="chat",
+            tool_executor=tool_executor,
+        )
+
+        assert (
+            result.raw_final_text
+            == "Настройка MPT выполняется через параметры сервера."
+        )
+        assert result.structured_content == StructuredAssistantContent(
+            answer="Настройка MPT выполняется через параметры сервера.",
+            suggestions=[
+                "Show an MPT configuration example",
+                "Compare speed with and without MPT",
+                "Find Qwen MPT documentation",
+            ],
         )
 
     @pytest.mark.asyncio
