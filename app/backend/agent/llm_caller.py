@@ -13,7 +13,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
-    is_placeholder_final_answer,
     llm_accepts_sse_queue,
     llm_accepts_tools_override,
     llm_requires_forced_web_search,
@@ -24,6 +23,11 @@ from backend.agent.agent_loop_helpers import (
     request_non_empty_final_answer,
 )
 from backend.agent.agent_loop_models import ModelLoopResult
+from backend.agent.finalization import (
+    RequirementSatisfaction,
+    TurnRequirements,
+    validate_final_answer,
+)
 from backend.agent.loop import (
     AgenticLoop,
     LoopState,
@@ -203,7 +207,7 @@ class LLMCaller:
         messages: list[dict[str, object]],
         llm_call: object,
         call_usages: list[LLMCallUsage],
-    ) -> None:
+    ) -> bool:
         """Run web_search early for explicit online-search requests."""
         try:
             should_force = await self.should_force_web_search(
@@ -216,9 +220,9 @@ class LLMCaller:
                 "Forced web_search classification failed",
                 exc_info=True,
             )
-            return
+            return False
         if not should_force:
-            return
+            return False
         try:
             search_result = await self.broker.execute(
                 "web_search",
@@ -229,13 +233,13 @@ class LLMCaller:
                 "Forced web_search preflight failed",
                 exc_info=True,
             )
-            return
+            return False
         if not search_result.success:
             logger.warning(
                 "Forced web_search preflight returned an error: %s",
                 search_result.result,
             )
-            return
+            return False
         messages.append(
             {
                 "role": "system",
@@ -246,6 +250,53 @@ class LLMCaller:
                 ),
             }
         )
+        return True
+
+    async def append_required_tool_context(
+        self,
+        *,
+        filtered_message: str,
+        messages: list[dict[str, object]],
+        requirements: TurnRequirements,
+    ) -> RequirementSatisfaction:
+        """Execute deterministic mandatory tools before answer synthesis."""
+        satisfaction = RequirementSatisfaction()
+        if "web_search" in requirements.required_tools:
+            try:
+                search_result = await self.broker.execute(
+                    "web_search",
+                    {"query": filtered_message},
+                )
+            except Exception as exc:
+                logger.warning("Required web_search failed", exc_info=True)
+                return satisfaction.with_failure("web_search", str(exc))
+            if search_result.success:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "Required web_search evidence was fetched before "
+                            "answer synthesis because the request needs current "
+                            "data.\n"
+                            f"{search_result.result}"
+                        ),
+                    }
+                )
+                satisfaction = satisfaction.with_success("web_search")
+            else:
+                failure_text = str(search_result.result)
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "Required web_search failed before answer synthesis. "
+                            "If answering, clearly report that current data could "
+                            f"not be fetched.\n{failure_text}"
+                        ),
+                    }
+                )
+                satisfaction = satisfaction.with_failure("web_search", failure_text)
+        return satisfaction
 
     async def append_forced_memory_recall_context(
         self,
@@ -311,11 +362,15 @@ class LLMCaller:
         tool_executor: ToolExecutor,
         user_intent_tools: set[str] | None = None,
         force_web_search: bool = False,
+        requirements: TurnRequirements | None = None,
+        satisfaction: RequirementSatisfaction | None = None,
     ) -> ModelLoopResult:
         """Run the model/tool loop until a final answer is available."""
         raw_final_text = ""
         structured_content = None
         executed_immediate_tools = False
+        requirements = requirements or TurnRequirements()
+        satisfaction = satisfaction or RequirementSatisfaction()
         first_iteration = True
         while True:
             state = loop.check_limits()
@@ -354,9 +409,14 @@ class LLMCaller:
 
             loop.advance()
 
-        if (
-            (executed_immediate_tools and not raw_final_text.strip())
-            or is_placeholder_final_answer(raw_final_text)
+        decision = validate_final_answer(
+            raw_final_text=raw_final_text,
+            structured_content=structured_content,
+            requirements=requirements,
+            satisfaction=satisfaction,
+        )
+        if decision.requires_recovery or (
+            executed_immediate_tools and not raw_final_text.strip()
         ):
             recovered_response = await request_non_empty_final_answer(
                 llm_call=llm_call,
@@ -366,8 +426,25 @@ class LLMCaller:
             if recovered_response is not None and recovered_response.answer.strip():
                 raw_final_text = recovered_response.answer
                 structured_content = recovered_response
+                decision = validate_final_answer(
+                    raw_final_text=raw_final_text,
+                    structured_content=structured_content,
+                    requirements=requirements,
+                    satisfaction=satisfaction,
+                )
 
         if raw_final_text.strip():
+            if not decision.accepted:
+                logger.warning(
+                    "Final answer rejected after recovery: %s",
+                    decision.reason,
+                )
+                return ModelLoopResult(
+                    raw_final_text=(
+                        "I could not produce a complete final answer for that "
+                        "request. Please try again."
+                    ),
+                )
             if (
                 structured_content is not None
                 and len(structured_content.suggestions) < 3

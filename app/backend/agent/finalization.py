@@ -1,0 +1,183 @@
+"""Turn requirements and final-answer acceptance for chat orchestration."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from backend.llm.structured_response import StructuredAssistantContent
+
+
+CURRENT_DATA_MARKERS = (
+    "актуальн",
+    "данный момент",
+    "сейчас",
+    "сегодня",
+    "текущ",
+    "курс",
+    "курсы",
+    "цена",
+    "цены",
+    "новост",
+    "current",
+    "latest",
+    "now",
+    "today",
+    "price",
+    "prices",
+    "news",
+)
+URL_MARKERS = ("http://", "https://")
+STATUS_INTENT_MARKERS = (
+    "search",
+    "look up",
+    "check",
+    "find",
+    "fetch",
+    "поищ",
+    "ищу",
+    "найд",
+    "провер",
+    "посмотр",
+    "узна",
+)
+RESULT_MARKERS = (
+    "$",
+    "€",
+    "₽",
+    "%",
+    ":",
+    "-",
+    "—",
+    "is ",
+    "are ",
+    "состав",
+    "рав",
+    "найден",
+    "данн",
+)
+
+
+@dataclass(frozen=True)
+class TurnRequirements:
+    """Internal requirements that must be satisfied before final answer."""
+
+    needs_current_data: bool = False
+    needs_url_fetch: bool = False
+    needs_file_context: bool = False
+    needs_memory_recall: bool = False
+    required_tools: tuple[str, ...] = ()
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class RequirementSatisfaction:
+    """Tools/evidence already satisfied for one turn."""
+
+    satisfied_tools: frozenset[str] = frozenset()
+    failed_tools: dict[str, str] = field(default_factory=dict)
+
+    def with_success(self, tool_name: str) -> RequirementSatisfaction:
+        """Return a copy with one tool marked successful."""
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools | {tool_name},
+            failed_tools=dict(self.failed_tools),
+        )
+
+    def with_failure(self, tool_name: str, reason: str) -> RequirementSatisfaction:
+        """Return a copy with one tool failure recorded."""
+        failed_tools = dict(self.failed_tools)
+        failed_tools[tool_name] = reason
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools,
+            failed_tools=failed_tools,
+        )
+
+
+@dataclass(frozen=True)
+class FinalAnswerDecision:
+    """Decision made by the backend finalization gate."""
+
+    accepted: bool
+    reason: str
+    requires_recovery: bool = False
+
+
+def detect_turn_requirements(message: str) -> TurnRequirements:
+    """Detect mandatory evidence requirements for one user message."""
+    normalized = " ".join(message.casefold().split())
+    needs_current_data = any(marker in normalized for marker in CURRENT_DATA_MARKERS)
+    needs_url_fetch = any(marker in normalized for marker in URL_MARKERS)
+    required_tools: list[str] = []
+    reasons: list[str] = []
+    if needs_current_data:
+        required_tools.append("web_search")
+        reasons.append("current-data")
+    if needs_url_fetch:
+        required_tools.append("http_fetch")
+        reasons.append("url-fetch")
+    return TurnRequirements(
+        needs_current_data=needs_current_data,
+        needs_url_fetch=needs_url_fetch,
+        required_tools=tuple(dict.fromkeys(required_tools)),
+        reason=",".join(reasons),
+    )
+
+
+def _answer_text(
+    raw_final_text: str,
+    structured_content: StructuredAssistantContent | None,
+) -> str:
+    if structured_content is not None and structured_content.answer.strip():
+        return structured_content.answer
+    return raw_final_text
+
+
+def looks_like_status_only_answer(answer_text: str) -> bool:
+    """Return True when text describes future work instead of a result."""
+    normalized = " ".join(answer_text.casefold().split())
+    if not normalized or len(normalized) > 260:
+        return False
+    has_status_intent = any(marker in normalized for marker in STATUS_INTENT_MARKERS)
+    if not has_status_intent:
+        return False
+    has_result_marker = any(marker in normalized for marker in RESULT_MARKERS)
+    return not has_result_marker
+
+
+def validate_final_answer(
+    *,
+    raw_final_text: str,
+    structured_content: StructuredAssistantContent | None,
+    requirements: TurnRequirements,
+    satisfaction: RequirementSatisfaction,
+) -> FinalAnswerDecision:
+    """Decide whether one model output is acceptable as final."""
+    answer_text = _answer_text(raw_final_text, structured_content).strip()
+    if not answer_text:
+        return FinalAnswerDecision(
+            accepted=False,
+            reason="empty-answer",
+            requires_recovery=True,
+        )
+    if looks_like_status_only_answer(answer_text):
+        return FinalAnswerDecision(
+            accepted=False,
+            reason="status-only-answer",
+            requires_recovery=True,
+        )
+    missing_tools = [
+        tool
+        for tool in requirements.required_tools
+        if tool not in satisfaction.satisfied_tools
+        and tool not in satisfaction.failed_tools
+    ]
+    if missing_tools:
+        return FinalAnswerDecision(
+            accepted=False,
+            reason=f"missing-required-tools:{','.join(missing_tools)}",
+            requires_recovery=True,
+        )
+    return FinalAnswerDecision(accepted=True, reason="accepted")

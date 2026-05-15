@@ -26,6 +26,7 @@ from backend.agent.agent_loop_models import (
     TurnInputState,
     TurnPreparation,
 )
+from backend.agent.finalization import detect_turn_requirements
 from backend.agent.llm_caller import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
     LLMCaller,
@@ -784,12 +785,23 @@ class AgentOrchestrator:
             attached_files=attached_files or [],
             meta=meta,
         )
-        await self.llm_caller.append_forced_web_search_context(
+        requirements = detect_turn_requirements(turn_input.filtered_message)
+        satisfaction = await self.llm_caller.append_required_tool_context(
             filtered_message=turn_input.filtered_message,
             messages=messages,
-            llm_call=llm_call,
-            call_usages=call_usages,
+            requirements=requirements,
         )
+        if "web_search" not in requirements.required_tools:
+            web_search_satisfied = (
+                await self.llm_caller.append_forced_web_search_context(
+                    filtered_message=turn_input.filtered_message,
+                    messages=messages,
+                    llm_call=llm_call,
+                    call_usages=call_usages,
+                )
+            )
+            if web_search_satisfied:
+                satisfaction = satisfaction.with_success("web_search")
         forced_recall_tokens = (
             await self.llm_caller.append_forced_memory_recall_context(
                 filtered_message=turn_input.filtered_message,
@@ -826,6 +838,8 @@ class AgentOrchestrator:
                 attached_files=attached_files or [],
             ),
             question_route=question_route,
+            requirements=requirements,
+            satisfaction=satisfaction,
         )
 
     async def process_message(
@@ -1040,6 +1054,8 @@ class AgentOrchestrator:
             channel=channel,
             tool_executor=self.tool_executor,
             user_intent_tools=user_intent or None,
+            requirements=prepared_turn.requirements,
+            satisfaction=prepared_turn.satisfaction,
         )
 
         return await self._complete_prepared_turn(

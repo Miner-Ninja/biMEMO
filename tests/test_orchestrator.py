@@ -33,6 +33,12 @@ from backend.agent.agent_loop_models import (
 from backend.agent.concurrency import (
     AgentConcurrency,
 )
+from backend.agent.finalization import (
+    RequirementSatisfaction,
+    TurnRequirements,
+    detect_turn_requirements,
+    validate_final_answer,
+)
 from backend.agent.llm_caller import LLMCaller
 from backend.agent.loop import LoopState
 from backend.llm.call_factory import LLMResponse, LLMToolCall
@@ -261,6 +267,51 @@ class TestFinalAnswerRecovery:
         assert not is_placeholder_final_answer(
             "Я нашел инструкции и вот краткая выжимка: настройте параметр X."
         )
+
+    def test_current_data_requirement_detection(self):
+        """Detect realtime price questions as mandatory web-search turns."""
+        requirements = detect_turn_requirements(
+            "какой курс биткойна, эфириума и соланы на данный момент?"
+        )
+        english_requirements = detect_turn_requirements(
+            "What is the current BTC price now?"
+        )
+
+        assert requirements.needs_current_data
+        assert requirements.required_tools == ("web_search",)
+        assert english_requirements.needs_current_data
+        assert english_requirements.required_tools == ("web_search",)
+
+    def test_finalization_rejects_unsatisfied_current_data(self):
+        """Do not accept answers when mandatory evidence is missing."""
+        decision = validate_final_answer(
+            raw_final_text="Bitcoin is trading near 100.",
+            structured_content=None,
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(),
+        )
+
+        assert not decision.accepted
+        assert decision.requires_recovery
+
+    def test_finalization_accepts_satisfied_current_data(self):
+        """Accept non-placeholder answers after mandatory evidence exists."""
+        decision = validate_final_answer(
+            raw_final_text="Bitcoin is trading near 100.",
+            structured_content=None,
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                satisfied_tools=frozenset({"web_search"}),
+            ),
+        )
+
+        assert decision.accepted
 
     @pytest.mark.asyncio
     async def test_request_non_empty_final_answer_keeps_structured_sections(self):
@@ -924,8 +975,12 @@ class TestAgentOrchestrator:
         )
         assert any(
             message["role"] == "system"
-            and "Web search results were fetched before the first answer"
-            in str(message["content"])
+            and (
+                "Required web_search evidence was fetched before answer synthesis"
+                in str(message["content"])
+                or "Web search results were fetched before the first answer"
+                in str(message["content"])
+            )
             for message in seen_messages
         )
 
