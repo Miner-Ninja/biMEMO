@@ -105,6 +105,39 @@ class FinalAnswerDecision:
     requires_recovery: bool = False
 
 
+def build_required_tool_failure_answer(
+    *,
+    requirements: TurnRequirements,
+    satisfaction: RequirementSatisfaction,
+) -> str:
+    """Build a deterministic terminal answer for failed mandatory evidence."""
+    failed_required_tools = [
+        tool
+        for tool in requirements.required_tools
+        if tool in satisfaction.failed_tools
+    ]
+    if not failed_required_tools:
+        return ""
+
+    if "web_search" in failed_required_tools and requirements.needs_current_data:
+        detail = satisfaction.failed_tools.get("web_search", "").strip()
+        if detail:
+            return (
+                "I could not fetch current data through web_search, so I cannot "
+                f"answer this request reliably. Reason: {detail}"
+            )
+        return (
+            "I could not fetch current data through web_search, so I cannot "
+            "answer this request reliably."
+        )
+
+    tool_names = ", ".join(failed_required_tools)
+    return (
+        "I could not fetch required evidence for this answer through: "
+        f"{tool_names}."
+    )
+
+
 def detect_turn_requirements(message: str) -> TurnRequirements:
     """Detect mandatory evidence requirements for one user message."""
     normalized = " ".join(message.casefold().split())

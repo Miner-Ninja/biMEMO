@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import (
     ChatRequest,
@@ -33,6 +32,7 @@ from backend.processes.orchestrator.chat_handler import (
     _mark_conversation_processing_idle,
     _pending_confirmations_from_orchestrator,
     _push_conversation_updated_event,
+    _run_chat_request,
 )
 from backend.trust.confirmation import PendingAction
 
@@ -604,6 +604,46 @@ def test_orchestrator_handler_streams_missing_llm_final_response() -> None:
         "No LLM provider configured"
         in ipc_server.events[0].data["structured_content"]["answer"]
     )
+
+
+def test_chat_request_failure_streams_error_and_done() -> None:
+    """A failed chat turn must terminate the browser stream."""
+    ipc_server = _FakeIPCServer()
+    orch = SimpleNamespace(
+        sse_queue=None,
+        process_message=AsyncMock(side_effect=TimeoutError("llm timeout")),
+        pending_red_calls=[],
+    )
+    db_client = SimpleNamespace(
+        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
+        update_agent_run_status=AsyncMock(),
+        update_conversation_processing_state=AsyncMock(),
+    )
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(
+            _run_chat_request(
+                request=ChatRequest(
+                    request_id="req-timeout",
+                    message="hello",
+                    channel="web",
+                    session_id="session-1",
+                    conversation_id="conv-1",
+                ),
+                orch=orch,
+                ipc_server=ipc_server,
+                db_client=db_client,
+                broker=SimpleNamespace(),
+                llm_call=AsyncMock(),
+                stt_client=None,
+            )
+        )
+
+    assert [event.event_type for event in ipc_server.events][-2:] == [
+        StreamEventType.ERROR,
+        StreamEventType.DONE,
+    ]
+    assert ipc_server.events[-2].data["type"] == "error"
 
 
 def test_forwarder_skips_unknown_event_types() -> None:

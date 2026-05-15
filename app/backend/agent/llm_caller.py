@@ -9,6 +9,7 @@ for LLM capability detection.
 from __future__ import annotations
 
 import logging
+from ast import literal_eval
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -26,6 +27,7 @@ from backend.agent.agent_loop_models import ModelLoopResult
 from backend.agent.finalization import (
     RequirementSatisfaction,
     TurnRequirements,
+    build_required_tool_failure_answer,
     validate_final_answer,
 )
 from backend.agent.loop import (
@@ -43,6 +45,10 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+MAX_REQUIRED_SEARCH_RESULTS = 5
+MAX_REQUIRED_SEARCH_FIELD_CHARS = 420
+MAX_REQUIRED_TOOL_CONTEXT_CHARS = 4000
 
 # --- Forced web search classifier prompt ---
 FORCED_WEB_SEARCH_CLASSIFIER_PROMPT = (
@@ -278,7 +284,7 @@ class LLMCaller:
                             "Required web_search evidence was fetched before "
                             "answer synthesis because the request needs current "
                             "data.\n"
-                            f"{search_result.result}"
+                            f"{self._required_tool_context(search_result.result)}"
                         ),
                     }
                 )
@@ -297,6 +303,43 @@ class LLMCaller:
                 )
                 satisfaction = satisfaction.with_failure("web_search", failure_text)
         return satisfaction
+
+    def _required_tool_context(self, result: object) -> str:
+        """Return compact prompt context for mandatory tool evidence."""
+        parsed_result = result
+        if isinstance(result, str):
+            try:
+                parsed_result = literal_eval(result)
+            except (SyntaxError, ValueError):
+                return result[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
+        if not isinstance(parsed_result, dict):
+            return str(parsed_result)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
+        raw_results = parsed_result.get("results")
+        if not isinstance(raw_results, list):
+            return str(parsed_result)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
+        lines = ["Search results:"]
+        for index, item in enumerate(
+            raw_results[:MAX_REQUIRED_SEARCH_RESULTS],
+            start=1,
+        ):
+            if not isinstance(item, dict):
+                continue
+            title = self._compact_search_field(item.get("title", ""))
+            url = self._compact_search_field(item.get("url", ""))
+            snippet = self._compact_search_field(item.get("snippet", ""))
+            lines.append(f"{index}. {title}")
+            if url:
+                lines.append(f"   URL: {url}")
+            if snippet:
+                lines.append(f"   Snippet: {snippet}")
+        return "\n".join(lines)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
+
+    def _compact_search_field(self, value: object) -> str:
+        """Normalize one search-result field for prompt context."""
+        text = " ".join(str(value or "").split())
+        if len(text) <= MAX_REQUIRED_SEARCH_FIELD_CHARS:
+            return text
+        return f"{text[:MAX_REQUIRED_SEARCH_FIELD_CHARS].rstrip()}..."
 
     async def append_forced_memory_recall_context(
         self,
@@ -371,6 +414,13 @@ class LLMCaller:
         executed_immediate_tools = False
         requirements = requirements or TurnRequirements()
         satisfaction = satisfaction or RequirementSatisfaction()
+        required_tool_failure_answer = build_required_tool_failure_answer(
+            requirements=requirements,
+            satisfaction=satisfaction,
+        )
+        if required_tool_failure_answer:
+            return ModelLoopResult(raw_final_text=required_tool_failure_answer)
+
         first_iteration = True
         while True:
             state = loop.check_limits()

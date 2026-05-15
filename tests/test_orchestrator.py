@@ -36,6 +36,7 @@ from backend.agent.concurrency import (
 from backend.agent.finalization import (
     RequirementSatisfaction,
     TurnRequirements,
+    build_required_tool_failure_answer,
     detect_turn_requirements,
     validate_final_answer,
 )
@@ -312,6 +313,127 @@ class TestFinalAnswerRecovery:
         )
 
         assert decision.accepted
+
+    def test_required_tool_failure_answer_is_clear(self):
+        """Return a deterministic answer when mandatory evidence failed."""
+        answer = build_required_tool_failure_answer(
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                failed_tools={"web_search": "timeout"},
+            ),
+        )
+
+        assert "could not fetch current data" in answer
+        assert "timeout" in answer
+
+    @pytest.mark.asyncio
+    async def test_required_web_search_context_tracks_success(self):
+        """Record mandatory web_search success before answer synthesis."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="web_search",
+                success=True,
+                result="BTC: 100",
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+        )
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=broker,
+        )
+        messages: list[dict[str, object]] = []
+
+        satisfaction = await llm_caller.append_required_tool_context(
+            filtered_message="current BTC price?",
+            messages=messages,
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+        )
+
+        assert "web_search" in satisfaction.satisfied_tools
+        assert not satisfaction.failed_tools
+        assert "BTC: 100" in str(messages[-1]["content"])
+
+    @pytest.mark.asyncio
+    async def test_required_web_search_context_tracks_failure(self):
+        """Record mandatory web_search failure without marking it satisfied."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="web_search",
+                success=False,
+                result="search backend unavailable",
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+        )
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=broker,
+        )
+        messages: list[dict[str, object]] = []
+
+        satisfaction = await llm_caller.append_required_tool_context(
+            filtered_message="current BTC price?",
+            messages=messages,
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+        )
+
+        assert "web_search" not in satisfaction.satisfied_tools
+        assert satisfaction.failed_tools == {
+            "web_search": "search backend unavailable",
+        }
+        assert "Required web_search failed" in str(messages[-1]["content"])
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_returns_failure_when_required_web_search_failed(
+        self,
+    ):
+        """Do not call the LLM when mandatory evidence already failed."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        tool_executor = MagicMock()
+        llm_call = AsyncMock()
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "current BTC price?"}],
+            openai_tools=[],
+            call_usages=[],
+            channel="chat",
+            tool_executor=tool_executor,
+            requirements=TurnRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                failed_tools={"web_search": "timeout"},
+            ),
+        )
+
+        assert "could not fetch current data" in result.raw_final_text
+        llm_call.assert_not_awaited()
+        tool_executor.run_one_tool_round.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_request_non_empty_final_answer_keeps_structured_sections(self):
@@ -983,6 +1105,36 @@ class TestAgentOrchestrator:
             )
             for message in seen_messages
         )
+
+    async def test_required_web_search_failure_finishes_without_llm_call(self):
+        """Return a terminal answer when mandatory current-data evidence fails."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="web_search",
+                success=False,
+                result="search backend unavailable",
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+        )
+        broker.list_openai_schemas = MagicMock(return_value=[])
+        orchestrator = _make_orchestrator(broker=broker)
+        llm_call = AsyncMock()
+
+        resp = await orchestrator.process_message(
+            message="какой курс биткойна на данный момент?",
+            channel="web",
+            llm_call=llm_call,
+            conversation_id="test-conv",
+        )
+
+        assert "could not fetch current data" in resp.structured_content.answer
+        broker.execute.assert_awaited_once_with(
+            "web_search",
+            {"query": "какой курс биткойна на данный момент?"},
+        )
+        llm_call.assert_not_awaited()
 
     async def test_empty_final_answer_after_tool_use_triggers_recovery(self):
         """Recover with one final plain-text answer when tool flow ends blank."""

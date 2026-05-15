@@ -706,8 +706,8 @@ class TestMakeLlmCall:
         await client.close()
 
     def test_timeout_constant(self):
-        """Verify LLM call timeout is 5 minutes."""
-        assert LLM_CALL_TIMEOUT == 300.0
+        """Verify LLM call timeout is bounded for chat responsiveness."""
+        assert LLM_CALL_TIMEOUT == 120.0
 
 
 # --- Per-call LLMCallOptions overrides ---
