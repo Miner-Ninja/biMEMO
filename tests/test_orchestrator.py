@@ -18,7 +18,6 @@ from backend.agent.agent_loop import (
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
     build_tool_result_messages,
-    is_placeholder_final_answer,
     message_allows_file_read_tools,
     message_allows_file_write_tool,
     message_may_need_forced_web_search_classifier,
@@ -38,6 +37,7 @@ from backend.agent.finalization import (
     TurnRequirements,
     build_required_tool_failure_answer,
     detect_turn_requirements,
+    looks_like_status_only_answer,
     validate_final_answer,
 )
 from backend.agent.llm_caller import LLMCaller
@@ -255,17 +255,17 @@ class TestFinalAnswerRecovery:
 
     def test_placeholder_final_answer_detection(self):
         """Treat short status phrases as placeholders, not final answers."""
-        assert is_placeholder_final_answer(
+        assert looks_like_status_only_answer(
             "Ищу инструкции по настройке MPT для ускорения генерации."
         )
-        assert is_placeholder_final_answer("Looking up the latest information.")
-        assert is_placeholder_final_answer(
+        assert looks_like_status_only_answer("Looking up the latest information.")
+        assert looks_like_status_only_answer(
             "I'll search for the current prices of Bitcoin."
         )
-        assert is_placeholder_final_answer(
+        assert looks_like_status_only_answer(
             "I need to search for the current crypto prices first."
         )
-        assert not is_placeholder_final_answer(
+        assert not looks_like_status_only_answer(
             "Я нашел инструкции и вот краткая выжимка: настройте параметр X."
         )
 
@@ -282,6 +282,40 @@ class TestFinalAnswerRecovery:
         assert requirements.required_tools == ("web_search",)
         assert english_requirements.needs_current_data
         assert english_requirements.required_tools == ("web_search",)
+
+    def test_url_file_and_memory_requirement_detection(self):
+        """Detect non-current evidence requirements without user-facing modes."""
+        url_requirements = detect_turn_requirements(
+            "Summarize https://example.com/docs, please."
+        )
+        file_requirements = detect_turn_requirements(
+            "Проанализируй файл sandbox/CODE_RULES.md"
+        )
+        memory_requirements = detect_turn_requirements(
+            "Помнишь, что мы обсуждали в прошлом разговоре?"
+        )
+
+        assert url_requirements.needs_url_fetch
+        assert url_requirements.urls == ("https://example.com/docs",)
+        assert "http_fetch" in url_requirements.required_tools
+        assert file_requirements.needs_file_context
+        assert "file-context" in file_requirements.reason
+        assert memory_requirements.needs_memory_recall
+        assert "memory_recall" not in memory_requirements.required_tools
+        assert "memory-recall" in memory_requirements.reason
+
+    def test_requirement_detection_does_not_treat_pasted_code_as_file_context(self):
+        """Pasted code analysis must not expose file-context requirements."""
+        requirements = detect_turn_requirements(
+            "Проанализируй этот код:\n"
+            "```python\n"
+            "def hello():\n"
+            "    return 'world'\n"
+            "```"
+        )
+
+        assert not requirements.needs_file_context
+        assert "file-context" not in requirements.reason
 
     def test_finalization_rejects_unsatisfied_current_data(self):
         """Do not accept answers when mandatory evidence is missing."""
@@ -398,6 +432,44 @@ class TestFinalAnswerRecovery:
             "web_search": "search backend unavailable",
         }
         assert "Required web_search failed" in str(messages[-1]["content"])
+
+    @pytest.mark.asyncio
+    async def test_required_url_fetch_context_tracks_success(self):
+        """Record mandatory http_fetch success before answer synthesis."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="http_fetch",
+                success=True,
+                result="Example Domain page text",
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+        )
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=broker,
+        )
+        messages: list[dict[str, object]] = []
+
+        satisfaction = await llm_caller.append_required_tool_context(
+            filtered_message="Summarize https://example.com",
+            messages=messages,
+            requirements=TurnRequirements(
+                needs_url_fetch=True,
+                required_tools=("http_fetch",),
+                urls=("https://example.com",),
+            ),
+        )
+
+        assert "http_fetch" in satisfaction.satisfied_tools
+        assert "Example Domain" in str(messages[-1]["content"])
+        broker.execute.assert_awaited_once_with(
+            "http_fetch",
+            {"url": "https://example.com"},
+        )
 
     @pytest.mark.asyncio
     async def test_run_model_loop_returns_failure_when_required_web_search_failed(
@@ -879,11 +951,11 @@ class TestAgentOrchestrator:
         assert message_may_need_forced_web_search_classifier(
             "Can you check online what the latest BTC price is?"
         )
-        assert message_may_need_forced_web_search_classifier(
-            "какой курс биткойна, эфириума и соланы на данный момент?"
-        )
         assert not message_may_need_forced_web_search_classifier(
             "Объясни, что такое биткойн"
+        )
+        assert not message_may_need_forced_web_search_classifier(
+            "какой курс биткойна, эфириума и соланы на данный момент?"
         )
 
     async def test_non_english_online_search_uses_classifier_and_runs_web_search(

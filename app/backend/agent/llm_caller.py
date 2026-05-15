@@ -302,6 +302,52 @@ class LLMCaller:
                     }
                 )
                 satisfaction = satisfaction.with_failure("web_search", failure_text)
+        if "http_fetch" in requirements.required_tools:
+            url = requirements.urls[0] if requirements.urls else ""
+            if not url:
+                satisfaction = satisfaction.with_failure(
+                    "http_fetch",
+                    "No URL found in request",
+                )
+            else:
+                try:
+                    fetch_result = await self.broker.execute(
+                        "http_fetch",
+                        {"url": url},
+                    )
+                except Exception as exc:
+                    logger.warning("Required http_fetch failed", exc_info=True)
+                    satisfaction = satisfaction.with_failure("http_fetch", str(exc))
+                else:
+                    if fetch_result.success:
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Required http_fetch evidence was fetched "
+                                    "before answer synthesis because the request "
+                                    f"contains an explicit URL.\n{fetch_result.result}"
+                                ),
+                            }
+                        )
+                        satisfaction = satisfaction.with_success("http_fetch")
+                    else:
+                        failure_text = str(fetch_result.result)
+                        messages.append(
+                            {
+                                "role": "system",
+                            "content": (
+                                "Required http_fetch failed before answer "
+                                "synthesis. If answering, clearly report "
+                                "that the URL could not be fetched.\n"
+                                f"{failure_text}"
+                            ),
+                            }
+                        )
+                        satisfaction = satisfaction.with_failure(
+                            "http_fetch",
+                            failure_text,
+                        )
         return satisfaction
 
     def _required_tool_context(self, result: object) -> str:

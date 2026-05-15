@@ -802,12 +802,14 @@ class AgentOrchestrator:
             )
             if web_search_satisfied:
                 satisfaction = satisfaction.with_success("web_search")
-        forced_recall_tokens = (
-            await self.llm_caller.append_forced_memory_recall_context(
-                filtered_message=turn_input.filtered_message,
-                messages=messages,
+        forced_recall_tokens = 0
+        if "memory_recall" not in requirements.required_tools:
+            forced_recall_tokens = (
+                await self.llm_caller.append_forced_memory_recall_context(
+                    filtered_message=turn_input.filtered_message,
+                    messages=messages,
+                )
             )
-        )
         if forced_recall_tokens > 0 and prepared_context.zone_usage is not None:
             prepared_context.zone_usage["recall_results"] = (
                 prepared_context.zone_usage.get("recall_results", 0)

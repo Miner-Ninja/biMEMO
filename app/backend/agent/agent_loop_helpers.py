@@ -170,19 +170,6 @@ FORCED_WEB_SEARCH_HINT_MARKERS = (
     "посмотри",
     "интернет",
     "сети",
-    "актуальн",
-    "данный момент",
-    "курс",
-    "курсы",
-    "цена",
-    "цены",
-    "сейчас",
-    "текущ",
-    "current",
-    "latest",
-    "now",
-    "price",
-    "prices",
 )
 
 # --- Memory negation ---
@@ -213,28 +200,6 @@ MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
 )
 MESSAGE_META_STATS_KEY = "stats"
 MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
-PLACEHOLDER_FINAL_ANSWER_PREFIXES = (
-    "ищу ",
-    "ищу информацию",
-    "ищу инструкции",
-    "поищу ",
-    "найду ",
-    "проверяю ",
-    "сейчас проверю",
-    "сейчас поищу",
-    "searching ",
-    "looking up ",
-    "checking ",
-    "i am searching",
-    "i'm searching",
-    "i'll search",
-    "i will look",
-    "i will search",
-    "i need to search",
-    "i need to look",
-)
-
-
 def build_assistant_message_meta(
     stats: object | None,
     structured_content: StructuredAssistantContent | None,
@@ -256,19 +221,6 @@ def build_assistant_message_meta(
     if not message_meta:
         return None
     return message_meta
-
-
-def is_placeholder_final_answer(response_text: str) -> bool:
-    """Return True when a model returned a status phrase instead of an answer."""
-    normalized = " ".join(response_text.strip().lower().split())
-    if not normalized:
-        return False
-    if len(normalized) > 220:
-        return False
-    return any(
-        normalized.startswith(prefix)
-        for prefix in PLACEHOLDER_FINAL_ANSWER_PREFIXES
-    )
 
 
 async def request_non_empty_final_answer(
