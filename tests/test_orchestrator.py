@@ -252,6 +252,12 @@ class TestFinalAnswerRecovery:
             "Ищу инструкции по настройке MPT для ускорения генерации."
         )
         assert is_placeholder_final_answer("Looking up the latest information.")
+        assert is_placeholder_final_answer(
+            "I'll search for the current prices of Bitcoin."
+        )
+        assert is_placeholder_final_answer(
+            "I need to search for the current crypto prices first."
+        )
         assert not is_placeholder_final_answer(
             "Я нашел инструкции и вот краткая выжимка: настройте параметр X."
         )
@@ -428,6 +434,72 @@ class TestFinalAnswerRecovery:
                 "Compare speed with and without MPT",
                 "Find Qwen MPT documentation",
             ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_recovers_placeholder_without_tools(self):
+        """Recover when the model returns a status phrase without tool calls."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        loop = MagicMock()
+        loop.check_limits.return_value = LoopState.RUNNING
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            return_value=MagicMock(
+                raw_final_text="I'll search for the current prices of Bitcoin.",
+                structured_content=StructuredAssistantContent(
+                    answer="I'll search for the current prices of Bitcoin.",
+                    suggestions=[],
+                ),
+                executed_immediate_tools=False,
+                should_continue=False,
+            )
+        )
+        llm_call = AsyncMock(
+            side_effect=[
+                LLMResponse(
+                    text="I'll search for the current prices of Bitcoin.",
+                    raw_message={
+                        "role": "assistant",
+                        "content": "I'll search for the current prices of Bitcoin.",
+                    },
+                    structured_content=StructuredAssistantContent(
+                        answer="I'll search for the current prices of Bitcoin.",
+                        suggestions=[],
+                    ),
+                ),
+                LLMResponse(
+                    text="Bitcoin is trading near 100.",
+                    raw_message={
+                        "role": "assistant",
+                        "content": "Bitcoin is trading near 100.",
+                    },
+                    structured_content=StructuredAssistantContent(
+                        answer="Bitcoin is trading near 100.",
+                        suggestions=["Check ETH", "Check SOL", "Compare all three"],
+                    ),
+                ),
+            ]
+        )
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "Current BTC price?"}],
+            openai_tools=[],
+            call_usages=[],
+            channel="chat",
+            tool_executor=tool_executor,
+        )
+
+        assert result.raw_final_text == "Bitcoin is trading near 100."
+        assert result.structured_content == StructuredAssistantContent(
+            answer="Bitcoin is trading near 100.",
+            suggestions=["Check ETH", "Check SOL", "Compare all three"],
         )
 
     @pytest.mark.asyncio
@@ -633,6 +705,9 @@ class TestAgentOrchestrator:
         )
         assert message_may_need_forced_web_search_classifier(
             "Can you check online what the latest BTC price is?"
+        )
+        assert message_may_need_forced_web_search_classifier(
+            "какой курс биткойна, эфириума и соланы на данный момент?"
         )
         assert not message_may_need_forced_web_search_classifier(
             "Объясни, что такое биткойн"

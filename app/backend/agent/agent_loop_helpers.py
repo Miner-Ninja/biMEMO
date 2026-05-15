@@ -170,6 +170,19 @@ FORCED_WEB_SEARCH_HINT_MARKERS = (
     "посмотри",
     "интернет",
     "сети",
+    "актуальн",
+    "данный момент",
+    "курс",
+    "курсы",
+    "цена",
+    "цены",
+    "сейчас",
+    "текущ",
+    "current",
+    "latest",
+    "now",
+    "price",
+    "prices",
 )
 
 # --- Memory negation ---
@@ -214,7 +227,11 @@ PLACEHOLDER_FINAL_ANSWER_PREFIXES = (
     "checking ",
     "i am searching",
     "i'm searching",
+    "i'll search",
+    "i will look",
     "i will search",
+    "i need to search",
+    "i need to look",
 )
 
 

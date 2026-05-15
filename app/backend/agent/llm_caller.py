@@ -355,11 +355,8 @@ class LLMCaller:
             loop.advance()
 
         if (
-            executed_immediate_tools
-            and (
-                not raw_final_text.strip()
-                or is_placeholder_final_answer(raw_final_text)
-            )
+            (executed_immediate_tools and not raw_final_text.strip())
+            or is_placeholder_final_answer(raw_final_text)
         ):
             recovered_response = await request_non_empty_final_answer(
                 llm_call=llm_call,
