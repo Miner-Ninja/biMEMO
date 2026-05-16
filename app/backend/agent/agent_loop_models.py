@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from backend.agent.finalization import RequirementSatisfaction, TurnRequirements
+    from backend.agent.finalization import RequirementSatisfaction, ResponseRequirements
     from backend.agent.loop import LoopResult
     from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
@@ -109,7 +109,7 @@ class TurnPreparation:
     messages: list[dict[str, object]]
     openai_tools: list[dict] | None
     question_route: MemoryQuestionRoute
-    requirements: TurnRequirements
+    requirements: ResponseRequirements
     satisfaction: RequirementSatisfaction
 
 

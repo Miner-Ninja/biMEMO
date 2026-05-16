@@ -26,7 +26,7 @@ from backend.agent.agent_loop_helpers import (
 from backend.agent.agent_loop_models import ModelLoopResult
 from backend.agent.finalization import (
     RequirementSatisfaction,
-    TurnRequirements,
+    ResponseRequirements,
     build_required_tool_failure_answer,
     validate_final_answer,
 )
@@ -263,7 +263,7 @@ class LLMCaller:
         *,
         filtered_message: str,
         messages: list[dict[str, object]],
-        requirements: TurnRequirements,
+        requirements: ResponseRequirements,
     ) -> RequirementSatisfaction:
         """Execute deterministic mandatory tools before answer synthesis."""
         satisfaction = RequirementSatisfaction()
@@ -451,14 +451,14 @@ class LLMCaller:
         tool_executor: ToolExecutor,
         user_intent_tools: set[str] | None = None,
         force_web_search: bool = False,
-        requirements: TurnRequirements | None = None,
+        requirements: ResponseRequirements | None = None,
         satisfaction: RequirementSatisfaction | None = None,
     ) -> ModelLoopResult:
         """Run the model/tool loop until a final answer is available."""
         raw_final_text = ""
         structured_content = None
         executed_immediate_tools = False
-        requirements = requirements or TurnRequirements()
+        requirements = requirements or ResponseRequirements()
         satisfaction = satisfaction or RequirementSatisfaction()
         required_tool_failure_answer = build_required_tool_failure_answer(
             requirements=requirements,

@@ -34,7 +34,7 @@ from backend.agent.concurrency import (
 )
 from backend.agent.finalization import (
     RequirementSatisfaction,
-    TurnRequirements,
+    ResponseRequirements,
     build_required_tool_failure_answer,
     detect_turn_requirements,
     looks_like_status_only_answer,
@@ -322,7 +322,7 @@ class TestFinalAnswerRecovery:
         decision = validate_final_answer(
             raw_final_text="Bitcoin is trading near 100.",
             structured_content=None,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),
@@ -337,7 +337,7 @@ class TestFinalAnswerRecovery:
         decision = validate_final_answer(
             raw_final_text="Bitcoin is trading near 100.",
             structured_content=None,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),
@@ -351,7 +351,7 @@ class TestFinalAnswerRecovery:
     def test_required_tool_failure_answer_is_clear(self):
         """Return a deterministic answer when mandatory evidence failed."""
         answer = build_required_tool_failure_answer(
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),
@@ -387,7 +387,7 @@ class TestFinalAnswerRecovery:
         satisfaction = await llm_caller.append_required_tool_context(
             filtered_message="current BTC price?",
             messages=messages,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),
@@ -421,7 +421,7 @@ class TestFinalAnswerRecovery:
         satisfaction = await llm_caller.append_required_tool_context(
             filtered_message="current BTC price?",
             messages=messages,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),
@@ -457,7 +457,7 @@ class TestFinalAnswerRecovery:
         satisfaction = await llm_caller.append_required_tool_context(
             filtered_message="Summarize https://example.com",
             messages=messages,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_url_fetch=True,
                 required_tools=("http_fetch",),
                 urls=("https://example.com",),
@@ -494,7 +494,7 @@ class TestFinalAnswerRecovery:
             call_usages=[],
             channel="chat",
             tool_executor=tool_executor,
-            requirements=TurnRequirements(
+            requirements=ResponseRequirements(
                 needs_current_data=True,
                 required_tools=("web_search",),
             ),

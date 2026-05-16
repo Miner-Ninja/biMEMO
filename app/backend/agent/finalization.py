@@ -1,4 +1,4 @@
-"""Turn requirements and final-answer acceptance for chat orchestration."""
+"""Response requirements and final-answer acceptance for chat orchestration."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ RESULT_MARKERS = (
 
 
 @dataclass(frozen=True)
-class TurnRequirements:
+class ResponseRequirements:
     """Internal requirements that must be satisfied before final answer."""
 
     needs_current_data: bool = False
@@ -117,7 +117,7 @@ class FinalAnswerDecision:
 
 def build_required_tool_failure_answer(
     *,
-    requirements: TurnRequirements,
+    requirements: ResponseRequirements,
     satisfaction: RequirementSatisfaction,
 ) -> str:
     """Build a deterministic terminal answer for failed mandatory evidence."""
@@ -148,7 +148,7 @@ def build_required_tool_failure_answer(
     )
 
 
-def detect_turn_requirements(message: str) -> TurnRequirements:
+def detect_turn_requirements(message: str) -> ResponseRequirements:
     """Detect mandatory evidence requirements for one user message."""
     normalized = " ".join(message.casefold().split())
     urls = tuple(_extract_urls(message))
@@ -168,7 +168,7 @@ def detect_turn_requirements(message: str) -> TurnRequirements:
         reasons.append("file-context")
     if needs_memory_recall:
         reasons.append("memory-recall")
-    return TurnRequirements(
+    return ResponseRequirements(
         needs_current_data=needs_current_data,
         needs_url_fetch=needs_url_fetch,
         needs_file_context=needs_file_context,
@@ -214,7 +214,7 @@ def validate_final_answer(
     *,
     raw_final_text: str,
     structured_content: StructuredAssistantContent | None,
-    requirements: TurnRequirements,
+    requirements: ResponseRequirements,
     satisfaction: RequirementSatisfaction,
 ) -> FinalAnswerDecision:
     """Decide whether one model output is acceptable as final."""
