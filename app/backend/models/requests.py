@@ -75,6 +75,7 @@ class StopRequest(StrictRequestModel):
     """Stop an in-progress chat request."""
 
     request_id: str = Field(default="", max_length=200)
+    run_id: str = Field(default="", max_length=200)
 
 
 class IntegrationCreateRequest(StrictRequestModel):

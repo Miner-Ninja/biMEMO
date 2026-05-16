@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,12 @@ from backend.ipc.models import (
 )
 from backend.ipc.models import (
     ConfirmResponse as IPCConfirmResponse,
+)
+from backend.ipc.models import (
+    ListAgentRunEventsRequest as IPCListAgentRunEventsRequest,
+)
+from backend.ipc.models import (
+    ListAgentRunEventsResponse as IPCListAgentRunEventsResponse,
 )
 from backend.ipc.models import (
     ReloadLLMRequest as IPCReloadLLMRequest,
@@ -68,6 +75,7 @@ logger = logging.getLogger(__name__)
 ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "BridgeInboundSyncResponse": IPCBridgeInboundSyncResponse,
     "ChatResponse": IPCChatResponse,
+    "ListAgentRunEventsResponse": IPCListAgentRunEventsResponse,
     "ReloadLLMResponse": IPCReloadLLMResponse,
     "StopResponse": IPCStopResponse,
     "ConfirmResponse": IPCConfirmResponse,
@@ -251,6 +259,7 @@ class OrchestratorClient:
                     (
                         IPCBridgeInboundSyncResponse,
                         IPCChatResponse,
+                        IPCListAgentRunEventsResponse,
                         IPCReloadLLMResponse,
                         IPCStopResponse,
                         IPCConfirmResponse,
@@ -334,6 +343,29 @@ class OrchestratorClient:
             )
         except TimeoutError:
             raise
+
+    async def list_agent_run_events(
+        self,
+        *,
+        conversation_id: str = "",
+        run_id: str = "",
+        after_sequence: int = 0,
+        limit: int = 200,
+        timeout: float = 10.0,
+    ) -> IPCListAgentRunEventsResponse:
+        """Request persisted runtime events from the orchestrator process."""
+        self._require_connected()
+        request = IPCListAgentRunEventsRequest(
+            request_id=str(uuid.uuid4()),
+            run_id=run_id,
+            conversation_id=conversation_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+        return await self._send_request_and_wait(
+            request=request,
+            timeout=timeout,
+        )
 
     async def send_stop(
         self,

@@ -1,6 +1,6 @@
 """Chat request handling for the orchestrator process.
 
-Handles incoming chat requests: voice transcription, SSE event forwarding,
+Handles incoming chat requests: voice transcription, stream event forwarding,
 conversation processing state management, and message preparation. Bridges
 the IPC layer with the gateway orchestrator for individual chat exchanges.
 """
@@ -20,6 +20,11 @@ from backend.ipc.models import (
     StreamEvent,
     StreamEventType,
     StructuredAssistantContent,
+)
+from backend.processes.orchestrator.run_event_recorder import (
+    AgentRunEventType,
+    RunEventContext,
+    RunEventRecorder,
 )
 
 
@@ -43,6 +48,17 @@ RECOVERABLE_TRANSCRIPTION_ERRORS = (
 RECOVERABLE_AUDIT_ERRORS = (RuntimeError, IPCChannelError, TypeError, ValueError)
 DEFAULT_CONVERSATION_PROCESSING_STAGE = "Processing..."
 
+STREAM_EVENT_TYPE_BY_VALUE = {
+    "token": StreamEventType.TOKEN,
+    "thinking": StreamEventType.THINKING,
+    "tool_status": StreamEventType.TOOL_STATUS,
+    "confirmation": StreamEventType.CONFIRMATION,
+    "final": StreamEventType.FINAL,
+    "error": StreamEventType.ERROR,
+    "conversation_updated": StreamEventType.CONVERSATION_UPDATED,
+    "done": StreamEventType.DONE,
+}
+
 
 class VoiceTranscriptionError(RuntimeError):
     """Raised when an incoming voice payload cannot be transcribed."""
@@ -51,43 +67,21 @@ class VoiceTranscriptionError(RuntimeError):
 async def _forward_request_events_to_ipc(
     *,
     request_id: str,
-    request_sse_queue: asyncio.Queue,
+    request_stream_queue: asyncio.Queue,
     ipc_server: OrchestratorIPCServer,
+    run_event_recorder: RunEventRecorder | None = None,
 ) -> None:
-    """Forward per-request SSE events from the orchestrator queue into IPC."""
+    """Forward per-request stream events from the orchestrator queue into IPC."""
     while True:
-        event_data = await request_sse_queue.get()
-        event_type_value = event_data.get("type")
-        if event_type_value == "token":
-            event_type = StreamEventType.TOKEN
-            payload = event_data
-        elif event_type_value == "thinking":
-            event_type = StreamEventType.THINKING
-            payload = event_data
-        elif event_type_value == "tool_status":
-            event_type = StreamEventType.TOOL_STATUS
-            payload = event_data
-        elif event_type_value == "confirmation":
-            event_type = StreamEventType.CONFIRMATION
-            payload = event_data
-        elif event_type_value == "final":
-            event_type = StreamEventType.FINAL
-            payload = event_data
-        elif event_type_value == "error":
-            event_type = StreamEventType.ERROR
-            payload = event_data
-        elif event_type_value == "conversation_updated":
-            event_type = StreamEventType.CONVERSATION_UPDATED
-            payload = event_data.get("data", {})
-        elif event_type_value == "done":
-            event_type = StreamEventType.DONE
-            payload = event_data
-        else:
+        event_data = await request_stream_queue.get()
+        event_type = _stream_event_type_from_payload(event_data)
+        if event_type is None:
             logger.debug(
-                "Skipping unsupported SSE event type %r",
-                event_type_value,
+                "Skipping unsupported stream event type %r",
+                event_data.get("type"),
             )
             continue
+        payload = _ipc_payload_from_stream_payload(event_data, event_type)
         await ipc_server.push_event(
             StreamEvent(
                 request_id=request_id,
@@ -95,8 +89,28 @@ async def _forward_request_events_to_ipc(
                 data=payload,
             )
         )
+        if run_event_recorder is not None:
+            await run_event_recorder.record_stream_event(payload)
         if event_type is StreamEventType.DONE:
             break
+
+
+def _stream_event_type_from_payload(
+    event_data: dict[str, object],
+) -> StreamEventType | None:
+    """Resolve one internal stream payload to its IPC event type."""
+    return STREAM_EVENT_TYPE_BY_VALUE.get(str(event_data.get("type", "")))
+
+
+def _ipc_payload_from_stream_payload(
+    event_data: dict[str, object],
+    event_type: StreamEventType,
+) -> dict[str, object]:
+    """Return the browser-facing IPC payload for one internal stream event."""
+    if event_type is StreamEventType.CONVERSATION_UPDATED:
+        data = event_data.get("data", {})
+        return data if isinstance(data, dict) else {}
+    return event_data
 
 
 async def _transcribe_voice_request(
@@ -280,14 +294,51 @@ def _chat_response_final_event_data(
     }
 
 
+def _chat_error_event_data(
+    *,
+    conversation_id: str,
+    message: str,
+) -> dict[str, object]:
+    """Build one stream-error payload for a failed request."""
+    return {
+        "type": "error",
+        "conversation_id": conversation_id,
+        "message": message,
+    }
+
+
+def _conversation_updated_event_data(
+    *,
+    conversation_id: str,
+    processing_status: str,
+    processing_stage: str,
+    processing_started_at: str | None,
+) -> dict[str, object]:
+    """Build one conversation processing-state stream payload."""
+    return {
+        "type": "conversation_updated",
+        "data": {
+            "conversation_id": conversation_id,
+            "processing_status": processing_status,
+            "processing_stage": processing_stage,
+            "processing_started_at": processing_started_at,
+        },
+    }
+
+
+def _done_event_data() -> dict[str, object]:
+    """Build one terminal stream completion payload."""
+    return {"type": "done"}
+
+
 async def _publish_final_chat_event(
     *,
-    request_sse_queue: asyncio.Queue,
+    request_stream_queue: asyncio.Queue,
     conversation_id: str,
     response: ChatResponse,
 ) -> None:
     """Publish the authoritative final assistant payload for one request."""
-    await request_sse_queue.put(
+    await request_stream_queue.put(
         _chat_response_final_event_data(
             conversation_id=conversation_id,
             response=response,
@@ -297,17 +348,16 @@ async def _publish_final_chat_event(
 
 async def _publish_chat_error_event(
     *,
-    request_sse_queue: asyncio.Queue,
+    request_stream_queue: asyncio.Queue,
     conversation_id: str,
     message: str,
 ) -> None:
     """Publish one terminal stream error for a failed started request."""
-    await request_sse_queue.put(
-        {
-            "type": "error",
-            "conversation_id": conversation_id,
-            "message": message,
-        }
+    await request_stream_queue.put(
+        _chat_error_event_data(
+            conversation_id=conversation_id,
+            message=message,
+        )
     )
 
 
@@ -326,20 +376,17 @@ async def _push_conversation_updated_event(
     processing_stage: str,
     processing_started_at: str | None,
 ) -> None:
-    """Push a conversation_updated event onto the bound request SSE queue."""
+    """Push a conversation_updated event onto the bound request stream queue."""
     sse_queue = getattr(orch, "sse_queue", None)
     if sse_queue is None:
         return
     await sse_queue.put(
-        {
-            "type": "conversation_updated",
-            "data": {
-                "conversation_id": conversation_id,
-                "processing_status": processing_status,
-                "processing_stage": processing_stage,
-                "processing_started_at": processing_started_at,
-            },
-        }
+        _conversation_updated_event_data(
+            conversation_id=conversation_id,
+            processing_status=processing_status,
+            processing_stage=processing_stage,
+            processing_started_at=processing_started_at,
+        )
     )
 
 
@@ -418,12 +465,12 @@ async def _run_with_processing_state[T](
 
 async def _finish_request_event_forwarding(
     *,
-    request_sse_queue: asyncio.Queue,
+    request_stream_queue: asyncio.Queue,
     event_forwarder: asyncio.Task,
     orch: object,
 ) -> None:
-    """Finish SSE forwarding for one chat request and clear the runtime queue."""
-    await request_sse_queue.put({"type": "done"})
+    """Finish stream forwarding for one chat request and clear the runtime queue."""
+    await request_stream_queue.put(_done_event_data())
     await event_forwarder
     orch.sse_queue = None
 
@@ -487,10 +534,19 @@ async def _run_chat_request(
     stt_client: object | None,
 ) -> ChatResponse:
     """Run one chat request through the orchestrator and IPC event bridge."""
-    request_sse_queue, event_forwarder = _start_request_event_forwarding(
+    run_event_context = RunEventContext(
+        request_id=request.request_id,
+        conversation_id=request.conversation_id,
+    )
+    run_event_recorder = RunEventRecorder(
+        db_client=db_client,
+        context=run_event_context,
+    )
+    request_stream_queue, event_forwarder = _start_request_event_forwarding(
         request_id=request.request_id,
         ipc_server=ipc_server,
         orch=orch,
+        run_event_recorder=run_event_recorder,
     )
     try:
         response = await _run_with_processing_state(
@@ -505,10 +561,12 @@ async def _run_chat_request(
                 broker=broker,
                 llm_call=llm_call,
                 stt_client=stt_client,
+                run_event_context=run_event_context,
+                run_event_recorder=run_event_recorder,
             ),
         )
         await _publish_final_chat_event(
-            request_sse_queue=request_sse_queue,
+            request_stream_queue=request_stream_queue,
             conversation_id=request.conversation_id,
             response=response,
         )
@@ -516,14 +574,14 @@ async def _run_chat_request(
     except Exception:
         logger.exception("Chat request failed after stream start")
         await _publish_chat_error_event(
-            request_sse_queue=request_sse_queue,
+            request_stream_queue=request_stream_queue,
             conversation_id=request.conversation_id,
             message="Internal error while processing the chat request.",
         )
         raise
     finally:
         await _finish_request_event_forwarding(
-            request_sse_queue=request_sse_queue,
+            request_stream_queue=request_stream_queue,
             event_forwarder=event_forwarder,
             orch=orch,
         )
@@ -537,27 +595,47 @@ async def _run_chat_request_with_prepared_message(
     broker: object,
     llm_call: Callable,
     stt_client: object | None,
+    run_event_context: RunEventContext | None = None,
+    run_event_recorder: RunEventRecorder | None = None,
 ) -> ChatResponse:
     """Prepare one chat request message and run it through the orchestrator."""
-    try:
-        message, transcription = await _prepare_request_message(
-            request=request,
-            stt_client=stt_client,
-            broker=broker,
-        )
-    except VoiceTranscriptionError:
-        logger.error("Voice transcription failed", exc_info=True)
-        return _build_voice_transcription_failure_response(
-            request.request_id,
-        )
     agent_run = await db_client.create_agent_run(
         conversation_id=request.conversation_id,
+        run_id=request.run_id or None,
         session_id=request.session_id,
         channel=request.channel,
         request_id=request.request_id,
     )
     agent_run_id = str((agent_run or {}).get("id", ""))
+    if run_event_context is not None:
+        run_event_context.run_id = agent_run_id
+    if run_event_recorder is not None:
+        await run_event_recorder.record(
+            AgentRunEventType.RUN_STARTED,
+            {"channel": request.channel},
+        )
     try:
+        try:
+            message, transcription = await _prepare_request_message(
+                request=request,
+                stt_client=stt_client,
+                broker=broker,
+            )
+        except VoiceTranscriptionError:
+            logger.error("Voice transcription failed", exc_info=True)
+            await db_client.update_agent_run_status(
+                run_id=agent_run_id,
+                status="failed",
+                current_step="voice_transcription",
+            )
+            if run_event_recorder is not None:
+                await run_event_recorder.record(
+                    AgentRunEventType.RUN_FAILED,
+                    {"current_step": "voice_transcription"},
+                )
+            return _build_voice_transcription_failure_response(
+                request.request_id,
+            )
         response = await _run_prepared_chat_request(
             request=request,
             orch=orch,
@@ -566,6 +644,19 @@ async def _run_chat_request_with_prepared_message(
             transcription=transcription,
             agent_run_id=agent_run_id,
         )
+    except asyncio.CancelledError:
+        if agent_run_id:
+            await db_client.update_agent_run_status(
+                run_id=agent_run_id,
+                status="stopped",
+                current_step="stopped",
+            )
+        if run_event_recorder is not None:
+            await run_event_recorder.record(
+                AgentRunEventType.RUN_STOPPED,
+                {"current_step": "stopped"},
+            )
+        raise
     except Exception:
         if agent_run_id:
             await db_client.update_agent_run_status(
@@ -573,14 +664,26 @@ async def _run_chat_request_with_prepared_message(
                 status="failed",
                 current_step="exception",
             )
+        if run_event_recorder is not None:
+            await run_event_recorder.record(
+                AgentRunEventType.RUN_FAILED,
+                {"current_step": "exception"},
+            )
         raise
     if agent_run_id:
         pending = getattr(orch, "pending_red_calls", [])
+        status = "waiting" if pending else "completed"
+        current_step = "pending_action" if pending else "completed"
         await db_client.update_agent_run_status(
             run_id=agent_run_id,
-            status="waiting" if pending else "completed",
-            current_step="pending_action" if pending else "completed",
+            status=status,
+            current_step=current_step,
         )
+        if run_event_recorder is not None and not pending:
+            await run_event_recorder.record(
+                AgentRunEventType.RUN_COMPLETED,
+                {"current_step": current_step},
+            )
     return response
 
 
@@ -589,18 +692,20 @@ def _start_request_event_forwarding(
     request_id: str,
     ipc_server: OrchestratorIPCServer,
     orch: object,
+    run_event_recorder: RunEventRecorder | None = None,
 ) -> tuple[asyncio.Queue, asyncio.Task]:
     """Create the per-request queue, start forwarding, and bind it to the runtime."""
-    request_sse_queue: asyncio.Queue = asyncio.Queue()
+    request_stream_queue: asyncio.Queue = asyncio.Queue()
     event_forwarder = asyncio.create_task(
         _forward_request_events_to_ipc(
             request_id=request_id,
-            request_sse_queue=request_sse_queue,
+            request_stream_queue=request_stream_queue,
             ipc_server=ipc_server,
+            run_event_recorder=run_event_recorder,
         )
     )
-    orch.sse_queue = request_sse_queue
-    return request_sse_queue, event_forwarder
+    orch.sse_queue = request_stream_queue
+    return request_stream_queue, event_forwarder
 
 
 async def _run_orchestrator_message(
@@ -645,7 +750,7 @@ def _build_orchestrator_request_handler(
         """Run one chat request through the orchestrator process entrypoint."""
         llm_call = get_llm_call()
         if llm_call is None:
-            request_sse_queue, event_forwarder = _start_request_event_forwarding(
+            request_stream_queue, event_forwarder = _start_request_event_forwarding(
                 request_id=request.request_id,
                 ipc_server=ipc_server_ref(),
                 orch=orch,
@@ -653,14 +758,14 @@ def _build_orchestrator_request_handler(
             try:
                 response = _build_missing_llm_response(request.request_id)
                 await _publish_final_chat_event(
-                    request_sse_queue=request_sse_queue,
+                    request_stream_queue=request_stream_queue,
                     conversation_id=request.conversation_id,
                     response=response,
                 )
                 return response
             finally:
                 await _finish_request_event_forwarding(
-                    request_sse_queue=request_sse_queue,
+                    request_stream_queue=request_stream_queue,
                     event_forwarder=event_forwarder,
                     orch=orch,
                 )

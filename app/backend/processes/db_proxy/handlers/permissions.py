@@ -19,6 +19,7 @@ from ..common import OperationHandler, validate_params
 from ..params import (
     AddProjectRootParams,
     CompletePendingActionParams,
+    CreateAgentRunEventParams,
     CreateAgentRunParams,
     CreateCapabilityGrantParams,
     CreatePendingActionParams,
@@ -28,6 +29,7 @@ from ..params import (
     GetAgentRunParams,
     GetPendingActionParams,
     GetResumeSnapshotParams,
+    ListAgentRunEventsParams,
     ListCapabilityGrantsParams,
     ListPendingActionsParams,
     ListProjectRootsParams,
@@ -41,7 +43,8 @@ from ..params import (
 )
 
 
-_RUN_TERMINAL_STATUSES = frozenset({"completed", "failed", "stopped"})
+_RUN_TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed", "stopped"})
+
 
 def _new_id() -> str:
     """Return a new stable row identifier."""
@@ -102,6 +105,21 @@ def _run_record(row: tuple[Any, ...]) -> dict[str, Any]:
         "created_at": row[8],
         "updated_at": row[9],
         "completed_at": row[10],
+    }
+
+
+def _run_event_record(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Convert one agent_run_events row into API shape."""
+    return {
+        "id": row[0],
+        "run_id": row[1],
+        "request_id": row[2],
+        "conversation_id": row[3],
+        "sequence": row[4],
+        "event_type": row[5],
+        "payload": _json_load(row[6]),
+        "created_at": row[7],
+        "delivered_at": row[8],
     }
 
 
@@ -362,7 +380,7 @@ def make_create_agent_run_handler(db: DatabaseManager) -> OperationHandler:
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, CreateAgentRunParams)
-        run_id = _new_id()
+        run_id = p.run_id or _new_id()
         completed_expr = (
             "strftime('%Y-%m-%dT%H:%M:%f', 'now')"
             if p.status in _RUN_TERMINAL_STATUSES
@@ -398,6 +416,77 @@ def make_get_agent_run_handler(db: DatabaseManager) -> OperationHandler:
         p = validate_params(params, GetAgentRunParams)
         row = _fetch_agent_run(db, p.run_id)
         return {"agent_run": _run_record(row) if row else None}
+
+    return handle
+
+
+def _next_run_event_sequence(db: DatabaseManager, run_id: str) -> int:
+    """Return the next sequence number for one run event."""
+    row = db.execute(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM agent_run_events WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    return int(row[0]) if row else 1
+
+
+def make_create_agent_run_event_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for create_agent_run_event operation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, CreateAgentRunEventParams)
+        event_id = _new_id()
+        sequence = _next_run_event_sequence(db, p.run_id)
+        db.execute(
+            "INSERT INTO agent_run_events "
+            "(id, run_id, request_id, conversation_id, sequence, event_type, "
+            "payload_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                p.run_id,
+                p.request_id,
+                p.conversation_id,
+                sequence,
+                p.event_type,
+                _json_dump(p.payload),
+            ),
+        )
+        db.commit()
+        row = db.execute(
+            "SELECT id, run_id, request_id, conversation_id, sequence, event_type, "
+            "payload_json, created_at, delivered_at FROM agent_run_events "
+            "WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        return {"event": _run_event_record(row)}
+
+    return handle
+
+
+def make_list_agent_run_events_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_agent_run_events operation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, ListAgentRunEventsParams)
+        filters = ["sequence > ?"]
+        values: list[Any] = [p.after_sequence]
+        if p.run_id:
+            filters.append("run_id = ?")
+            values.append(p.run_id)
+        if p.request_id:
+            filters.append("request_id = ?")
+            values.append(p.request_id)
+        if p.conversation_id:
+            filters.append("conversation_id = ?")
+            values.append(p.conversation_id)
+        values.append(p.limit)
+        rows = db.execute(
+            "SELECT id, run_id, request_id, conversation_id, sequence, event_type, "
+            "payload_json, created_at, delivered_at FROM agent_run_events "
+            f"WHERE {' AND '.join(filters)} "
+            "ORDER BY created_at ASC, sequence ASC LIMIT ?",
+            tuple(values),
+        ).fetchall()
+        return {"events": [_run_event_record(row) for row in rows]}
 
     return handle
 

@@ -883,6 +883,7 @@ class ExpireCapabilityGrantsParams(ForbidExtraParams):
 class CreateAgentRunParams(ForbidExtraParams):
     """Parameters for create_agent_run operation."""
 
+    run_id: str | None = Field(default=None, max_length=128)
     conversation_id: str = Field(min_length=1, max_length=128)
     session_id: str = Field(default="", max_length=128)
     channel: str = Field(default="", max_length=128)
@@ -900,6 +901,25 @@ class AgentRunIdParams(ForbidExtraParams):
 
 class GetAgentRunParams(AgentRunIdParams):
     """Parameters for get_agent_run operation."""
+
+
+class CreateAgentRunEventParams(AgentRunIdParams):
+    """Parameters for create_agent_run_event operation."""
+
+    request_id: str = Field(default="", max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)
+    event_type: str = Field(min_length=1, max_length=64)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ListAgentRunEventsParams(ForbidExtraParams):
+    """Parameters for list_agent_run_events operation."""
+
+    run_id: str | None = Field(default=None, max_length=128)
+    request_id: str | None = Field(default=None, max_length=128)
+    conversation_id: str | None = Field(default=None, max_length=128)
+    after_sequence: int = Field(default=0, ge=0)
+    limit: int = Field(default=200, ge=1, le=1000)
 
 
 class UpdateAgentRunStatusParams(AgentRunIdParams):

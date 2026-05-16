@@ -85,6 +85,7 @@ class ChatStartResponse(StrictResponseModel):
 
     conversation_id: str
     request_id: str
+    run_id: str = ""
     stream_started: bool = True
 
 
@@ -96,6 +97,7 @@ class StopResponse(StrictResponseModel):
     """
 
     stopped: bool
+    run_id: str = ""
 
 
 class IntegrationListItem(StrictResponseModel):

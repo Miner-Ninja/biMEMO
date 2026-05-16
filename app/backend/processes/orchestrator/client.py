@@ -1007,6 +1007,7 @@ class DBProxyClient:
         self,
         *,
         conversation_id: str,
+        run_id: str | None = None,
         session_id: str = "",
         channel: str = "",
         request_id: str = "",
@@ -1019,6 +1020,7 @@ class DBProxyClient:
             "create_agent_run",
             {
                 "conversation_id": conversation_id,
+                "run_id": run_id,
                 "session_id": session_id,
                 "channel": channel,
                 "request_id": request_id,
@@ -1033,6 +1035,51 @@ class DBProxyClient:
         """Return one persisted assistant run."""
         result = await self.send_operation("get_agent_run", {"run_id": run_id})
         return result.get("agent_run")
+
+    async def create_agent_run_event(
+        self,
+        *,
+        run_id: str,
+        conversation_id: str,
+        event_type: str,
+        request_id: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Append one runtime event for an assistant run."""
+        result = await self.send_operation(
+            "create_agent_run_event",
+            {
+                "run_id": run_id,
+                "request_id": request_id,
+                "conversation_id": conversation_id,
+                "event_type": event_type,
+                "payload": payload or {},
+            },
+        )
+        return result.get("event")
+
+    async def list_agent_run_events(
+        self,
+        *,
+        run_id: str | None = None,
+        request_id: str | None = None,
+        conversation_id: str | None = None,
+        after_sequence: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Return persisted runtime events for a run or conversation."""
+        result = await self.send_operation(
+            "list_agent_run_events",
+            {
+                "run_id": run_id,
+                "request_id": request_id,
+                "conversation_id": conversation_id,
+                "after_sequence": after_sequence,
+                "limit": limit,
+            },
+        )
+        events = result.get("events", [])
+        return events if isinstance(events, list) else []
 
     async def update_agent_run_status(
         self,

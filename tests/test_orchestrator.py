@@ -307,11 +307,7 @@ class TestFinalAnswerRecovery:
     def test_requirement_detection_does_not_treat_pasted_code_as_file_context(self):
         """Pasted code analysis must not expose file-context requirements."""
         requirements = detect_turn_requirements(
-            "Проанализируй этот код:\n"
-            "```python\n"
-            "def hello():\n"
-            "    return 'world'\n"
-            "```"
+            "Проанализируй этот код:\n```python\ndef hello():\n    return 'world'\n```"
         )
 
         assert not requirements.needs_file_context
@@ -506,6 +502,63 @@ class TestFinalAnswerRecovery:
         assert "could not fetch current data" in result.raw_final_text
         llm_call.assert_not_awaited()
         tool_executor.run_one_tool_round.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_model_loop_buffers_tokens_for_required_tool_turns(self):
+        """Buffer answer tokens while still streaming model reasoning."""
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=MagicMock(),
+        )
+        llm_caller.sse_queue = asyncio.Queue()
+        loop = MagicMock()
+        loop.check_limits.return_value = LoopState.RUNNING
+        tool_executor = MagicMock()
+        tool_executor.run_one_tool_round = AsyncMock(
+            return_value=MagicMock(
+                raw_final_text="BTC is 100.",
+                structured_content=None,
+                executed_immediate_tools=False,
+                should_continue=False,
+            )
+        )
+        captured_kwargs = {}
+
+        async def llm_call(messages, **kwargs):
+            """Capture LLM call kwargs and return one text response."""
+            del messages
+            captured_kwargs.update(kwargs)
+            stream_queue = kwargs.get("sse_queue_override")
+            await stream_queue.put({"type": "token", "content": "draft"})
+            await stream_queue.put({"type": "thinking", "content": "checking"})
+            return _text_response("BTC is 100.")
+
+        result = await llm_caller.run_model_loop(
+            loop=loop,
+            llm_call=llm_call,
+            messages=[{"role": "user", "content": "current BTC price?"}],
+            openai_tools=[],
+            call_usages=[],
+            channel="chat",
+            tool_executor=tool_executor,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                satisfied_tools=frozenset({"web_search"}),
+            ),
+        )
+
+        assert result.raw_final_text == "BTC is 100."
+        assert captured_kwargs["sse_queue_override"] is not llm_caller.sse_queue
+        assert await llm_caller.sse_queue.get() == {
+            "type": "thinking",
+            "content": "checking",
+        }
+        assert llm_caller.sse_queue.empty()
 
     @pytest.mark.asyncio
     async def test_request_non_empty_final_answer_keeps_structured_sections(self):
@@ -919,11 +972,7 @@ class TestAgentOrchestrator:
     def test_file_read_tools_require_explicit_file_intent(self):
         """Do not expose file_read/file_search for pasted code analysis."""
         pasted_code = (
-            "Проанализируй этот код:\n"
-            "```python\n"
-            "def hello():\n"
-            "    return 'world'\n"
-            "```"
+            "Проанализируй этот код:\n```python\ndef hello():\n    return 'world'\n```"
         )
         assert not message_allows_file_read_tools(pasted_code)
         assert message_allows_file_read_tools(

@@ -192,6 +192,7 @@ def build_ipc_chat_request(
     """Build one orchestrator IPC chat request from prepared web-chat input."""
     return IPCChatRequest(
         request_id=str(uuid.uuid4()),
+        run_id=str(uuid.uuid4()),
         message=chat_input_context.message,
         channel="web",
         session_id=claims.jti,
@@ -532,6 +533,7 @@ async def start_web_chat_request(
     return HTTPChatStartResponse(
         conversation_id=prepared_request.conversation_id,
         request_id=prepared_request.ipc_request.request_id,
+        run_id=prepared_request.ipc_request.run_id,
     )
 
 

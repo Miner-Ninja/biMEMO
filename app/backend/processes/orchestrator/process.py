@@ -21,6 +21,7 @@ from backend.ipc.models import (
     ConfirmRequest,
     ConfirmResponse,
     DBResult,
+    ListAgentRunEventsRequest,
     ReloadLLMResponse,
     StreamEvent,
     StreamEventType,
@@ -208,7 +209,27 @@ def _build_runtime_ipc_server(
         ),
         save_error_response_fn=make_save_fn(db_client),
         reload_llm_fn=reload_llm_fn,
+        list_run_events_fn=_build_list_run_events_handler(db_client),
     )
+
+
+def _build_list_run_events_handler(
+    db_client: DBProxyClient,
+) -> Callable[[ListAgentRunEventsRequest], Awaitable[list[dict[str, object]]]]:
+    """Build the handler used by FastAPI to replay runtime journal events."""
+
+    async def list_run_events(
+        request: ListAgentRunEventsRequest,
+    ) -> list[dict[str, object]]:
+        """Return runtime events for one reconnect request."""
+        return await db_client.list_agent_run_events(
+            run_id=request.run_id or None,
+            conversation_id=request.conversation_id or None,
+            after_sequence=request.after_sequence,
+            limit=request.limit,
+        )
+
+    return list_run_events
 
 
 def _build_confirm_handler(
@@ -509,8 +530,7 @@ async def _save_confirmed_action_message(
     tool_name = str(stored_action.get("tool_name", ""))
     visible_status = "completed" if status == "completed" else "failed"
     content = (
-        f"Approved action `{tool_name}` {visible_status}.\n\n"
-        f"{result_summary[:2000]}"
+        f"Approved action `{tool_name}` {visible_status}.\n\n{result_summary[:2000]}"
     ).strip()
     meta = json.dumps(
         {
@@ -886,6 +906,7 @@ async def _prepare_runtime_core_services(
         active_service_type,
         llm_client,
     )
+
 
 async def _prepare_runtime_support_services(
     *,

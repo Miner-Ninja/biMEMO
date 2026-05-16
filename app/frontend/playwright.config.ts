@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
+const shouldStartWebServer = process.env.PLAYWRIGHT_SKIP_WEBSERVER !== '1'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -27,11 +28,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command:
-      'npx vite build --outDir .playwright-dist && npx vite preview --host 127.0.0.1 --port 4173 --outDir .playwright-dist',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
+  webServer: shouldStartWebServer
+    ? {
+        command:
+          'npx vite build --outDir .playwright-dist && npx vite preview --host 127.0.0.1 --port 4173 --outDir .playwright-dist',
+        url: 'http://127.0.0.1:4173',
+        reuseExistingServer: !process.env.CI,
+        timeout: 180_000,
+      }
+    : undefined,
 })

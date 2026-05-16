@@ -145,6 +145,58 @@ async def test_prune_runtime_state_expires_actions_and_removes_snapshots() -> No
     assert snapshot_count == (0,)
 
 
+@pytest.mark.asyncio
+async def test_agent_run_events_are_ordered_runtime_rows() -> None:
+    """Run event handlers append ordered journal rows in runtime storage."""
+    handlers = _load_runtime_permissions_module()
+    db = RuntimeDB()
+    create_run = handlers.make_create_agent_run_handler(db)
+    create_event = handlers.make_create_agent_run_event_handler(db)
+    list_events = handlers.make_list_agent_run_events_handler(db)
+
+    run = await create_run(
+        {
+            "run_id": "run-explicit",
+            "conversation_id": "conv-1",
+            "session_id": "session-1",
+            "channel": "web",
+            "request_id": "req-1",
+        }
+    )
+    run_id = run["agent_run"]["id"]
+
+    assert run_id == "run-explicit"
+
+    first = await create_event(
+        {
+            "run_id": run_id,
+            "request_id": "req-1",
+            "conversation_id": "conv-1",
+            "event_type": "run_started",
+            "payload": {"stage": "started"},
+        }
+    )
+    second = await create_event(
+        {
+            "run_id": run_id,
+            "request_id": "req-1",
+            "conversation_id": "conv-1",
+            "event_type": "run_completed",
+            "payload": {"stage": "completed"},
+        }
+    )
+
+    events = await list_events({"run_id": run_id})
+
+    assert first["event"]["sequence"] == 1
+    assert second["event"]["sequence"] == 2
+    assert [event["event_type"] for event in events["events"]] == [
+        "run_started",
+        "run_completed",
+    ]
+    assert events["events"][1]["payload"] == {"stage": "completed"}
+
+
 def test_registry_routes_runtime_operations_to_runtime_db() -> None:
     """Registry source keeps durable policy rows in core and lifecycle in runtime."""
     registry_source = (DB_PROXY_ROOT / "registry.py").read_text()
@@ -152,6 +204,8 @@ def test_registry_routes_runtime_operations_to_runtime_db() -> None:
     assert "make_create_capability_grant_handler(core_db)" in registry_source
     assert "make_list_project_roots_handler(core_db)" in registry_source
     assert "make_create_agent_run_handler(runtime_db)" in registry_source
+    assert "make_create_agent_run_event_handler(runtime_db)" in registry_source
+    assert "make_list_agent_run_events_handler(runtime_db)" in registry_source
     assert "make_create_pending_action_handler(runtime_db)" in registry_source
     assert "make_get_resume_snapshot_handler(runtime_db)" in registry_source
     assert "make_prune_runtime_state_handler(runtime_db)" in registry_source
@@ -176,7 +230,7 @@ def test_approve_flow_fails_visibly_when_resume_snapshot_missing() -> None:
     missing_check = process_source.index('if resume_context == "missing":')
     tool_execution = process_source.index("broker.set_context(context)")
     assert missing_check < tool_execution
-    assert "status=\"failed\"" in process_source
+    assert 'status="failed"' in process_source
     assert "resume snapshot is no longer available" in process_source
 
 

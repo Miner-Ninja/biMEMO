@@ -48,10 +48,13 @@ import { generateId } from "@/lib/utils";
 import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
 import { shouldKeepStreamedAssistantResponseAfterRequestError } from "@/lib/chat-request-errors";
 import {
+  chatInputIsDisabled,
   markStreamTerminalError,
   resolveStreamErrorMessage,
+  runtimeBootstrapHasTerminalEvent,
   shouldApplyHttpChatResponse,
   type ActiveAssistantStreamState,
+  type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
 import { loadCommandHistory, saveCommandHistory } from "@/lib/storage";
 import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
@@ -62,6 +65,7 @@ import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
 type ChatResponsePayload = {
   conversation_id?: string;
   request_id?: string;
+  run_id?: string;
   stream_started?: boolean;
   retrieved_memories?: { summary: string; date: string }[];
   transcription?: string;
@@ -408,6 +412,7 @@ export function ChatPage() {
     assistantMessageId: null,
     conversationId: null,
     requestId: null,
+    runId: null,
     voiceUserMessageId: null,
     httpCompleted: false,
     finalReceived: false,
@@ -472,6 +477,7 @@ export function ChatPage() {
       assistantMessageId,
       conversationId: options?.conversationId ?? null,
       requestId: null,
+      runId: null,
       voiceUserMessageId: options?.voiceUserMessageId ?? null,
       httpCompleted: false,
       finalReceived: false,
@@ -488,6 +494,7 @@ export function ChatPage() {
       assistantMessageId: null,
       conversationId: null,
       requestId: null,
+      runId: null,
       voiceUserMessageId: null,
       httpCompleted: false,
       finalReceived: false,
@@ -855,7 +862,26 @@ export function ChatPage() {
           ? (event.data as Record<string, unknown>)
           : null;
 
-      if (event.type === "token" && assistantMessageIdRef.current) {
+      if (event.type === "runtime_bootstrap") {
+        const bootstrap = eventPayload as RuntimeBootstrapPayload | null;
+        const conversationId = bootstrap?.conversation_id || "";
+        if (!runtimeBootstrapHasTerminalEvent(bootstrap)) {
+          return;
+        }
+        updateConversation(conversationId, {
+          processingStatus: "idle",
+          processingStage: "",
+          processingStartedAt: undefined,
+        });
+        setIsLoading(false);
+        clearStages();
+        void refreshConversationMessages(conversationId).finally(() => {
+          const activeStream = activeAssistantStreamRef.current;
+          if (activeStream.conversationId === conversationId) {
+            clearAssistantStream();
+          }
+        });
+      } else if (event.type === "token" && assistantMessageIdRef.current) {
         const tokenEvent = eventPayload as TokenEventPayload | null;
         streamedContentRef.current +=
           tokenEvent?.content || event.content || "";
@@ -1289,6 +1315,7 @@ export function ChatPage() {
       if (response.stream_started) {
         streamStarted = true;
         activeAssistantStreamRef.current.requestId = response.request_id || null;
+        activeAssistantStreamRef.current.runId = response.run_id || null;
         activeAssistantStreamRef.current.httpCompleted = true;
         finalizeAssistantStreamIfReady();
         return;
@@ -1519,6 +1546,7 @@ export function ChatPage() {
       if (response.stream_started) {
         streamStarted = true;
         activeAssistantStreamRef.current.requestId = response.request_id || null;
+        activeAssistantStreamRef.current.runId = response.run_id || null;
         activeAssistantStreamRef.current.httpCompleted = true;
         finalizeAssistantStreamIfReady();
         return;
@@ -1612,6 +1640,7 @@ export function ChatPage() {
   const handleStop = async () => {
     const activeStream = activeAssistantStreamRef.current;
     const requestId = activeStream.requestId;
+    const runId = activeStream.runId;
     if (activeStream.assistantMessageId) {
       stoppedAssistantMessageIdsRef.current.add(activeStream.assistantMessageId);
       updateMessage(activeStream.assistantMessageId, {
@@ -1632,7 +1661,7 @@ export function ChatPage() {
     try {
       await apiRequest("/stop", {
         method: "POST",
-        body: JSON.stringify({ request_id: requestId || "" }),
+        body: JSON.stringify({ request_id: requestId || "", run_id: runId || "" }),
       });
     } catch {
       /* stop is best-effort */
@@ -1942,7 +1971,12 @@ export function ChatPage() {
   ]);
 
   const isUploading = uploadProgress !== null;
-  const isDisabled = isLoading || isUploading;
+  const backendRunActive = activeChat?.processingStatus === "active";
+  const isDisabled = chatInputIsDisabled({
+    backendRunActive,
+    localRequestActive: isLoading,
+    uploadActive: isUploading,
+  });
   const serverProcessingStages =
     !isLoading && activeChat?.processingStatus === "active"
       ? buildServerProcessingStage(

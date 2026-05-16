@@ -23,6 +23,7 @@ WS_KEEPALIVE_INTERVAL = 5
 WS_POLICY_VIOLATION_CLOSE_CODE = 1008
 WS_SERVICE_RESTART_CLOSE_CODE = 1012
 WS_TRY_AGAIN_LATER_CLOSE_CODE = 1013
+WS_BOOTSTRAP_EVENT_LIMIT = 100
 
 
 def build_websocket_payload(event: StreamEvent) -> dict[str, object]:
@@ -97,9 +98,15 @@ async def websocket_events(
     session_id: str,
     orchestrator_client: OrchestratorClient,
     realtime_manager: RealtimeConnectionManager,
+    conversation_id: str = "",
 ) -> None:
     """Send queued stream events to one connected WebSocket client."""
     try:
+        await _send_runtime_bootstrap(
+            websocket=websocket,
+            conversation_id=conversation_id,
+            orchestrator_client=orchestrator_client,
+        )
         while realtime_manager.is_valid(session_id):
             try:
                 event = await asyncio.wait_for(
@@ -125,3 +132,37 @@ async def websocket_events(
             orchestrator_client=orchestrator_client,
             realtime_manager=realtime_manager,
         )
+
+
+async def _send_runtime_bootstrap(
+    *,
+    websocket: WebSocket,
+    conversation_id: str,
+    orchestrator_client: OrchestratorClient,
+) -> None:
+    """Send recent runtime journal events for reconnect recovery."""
+    normalized_conversation_id = conversation_id.strip()
+    if not normalized_conversation_id:
+        return
+    try:
+        response = await orchestrator_client.list_agent_run_events(
+            conversation_id=normalized_conversation_id,
+            limit=WS_BOOTSTRAP_EVENT_LIMIT,
+        )
+    except Exception:
+        logger.debug(
+            "Failed to load runtime bootstrap for conversation %s",
+            normalized_conversation_id,
+            exc_info=True,
+        )
+        return
+    await websocket.send_json(
+        {
+            "type": "runtime_bootstrap",
+            "data": {
+                "conversation_id": normalized_conversation_id,
+                "events": response.events,
+            },
+            "request_id": response.request_id,
+        }
+    )

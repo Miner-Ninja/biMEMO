@@ -12,11 +12,9 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 
-RUNTIME_SCHEMA_VERSION = 1
-RUN_TERMINAL_STATUSES = frozenset({"completed", "failed", "stopped"})
-ACTION_TERMINAL_STATUSES = frozenset(
-    {"completed", "failed", "denied", "expired"}
-)
+RUNTIME_SCHEMA_VERSION = 2
+RUN_TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed", "stopped"})
+ACTION_TERMINAL_STATUSES = frozenset({"completed", "failed", "denied", "expired"})
 
 CREATE_RUNTIME_SCHEMA_VERSION_TABLE = """
 CREATE TABLE IF NOT EXISTS runtime_schema_version (
@@ -43,6 +41,37 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 CREATE_AGENT_RUNS_CONVERSATION_IDX = """
 CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation
 ON agent_runs(conversation_id, created_at DESC)
+"""
+
+CREATE_AGENT_RUN_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_run_events (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    request_id TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    delivered_at TEXT,
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
+    UNIQUE(run_id, sequence)
+)
+"""
+
+CREATE_AGENT_RUN_EVENTS_CONVERSATION_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_run_events_conversation
+ON agent_run_events(conversation_id, created_at DESC)
+"""
+
+CREATE_AGENT_RUN_EVENTS_REQUEST_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_run_events_request
+ON agent_run_events(request_id, sequence)
+"""
+
+CREATE_AGENT_RUN_EVENTS_RUN_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_run_events_run
+ON agent_run_events(run_id, sequence)
 """
 
 CREATE_PENDING_ACTIONS_TABLE = """
@@ -105,6 +134,10 @@ RUNTIME_SCHEMA_STATEMENTS = [
     CREATE_RUNTIME_SCHEMA_VERSION_TABLE,
     CREATE_AGENT_RUNS_TABLE,
     CREATE_AGENT_RUNS_CONVERSATION_IDX,
+    CREATE_AGENT_RUN_EVENTS_TABLE,
+    CREATE_AGENT_RUN_EVENTS_CONVERSATION_IDX,
+    CREATE_AGENT_RUN_EVENTS_REQUEST_IDX,
+    CREATE_AGENT_RUN_EVENTS_RUN_IDX,
     CREATE_PENDING_ACTIONS_TABLE,
     CREATE_PENDING_ACTIONS_RUN_IDX,
     CREATE_PENDING_ACTIONS_STATUS_IDX,
@@ -176,6 +209,14 @@ def prune_runtime_state(
         "OR (consumed_at IS NOT NULL AND consumed_at <= ?)",
         (current_time, snapshot_cutoff),
     ).rowcount
+    db.execute(
+        "DELETE FROM agent_run_events WHERE run_id IN ("
+        "SELECT id FROM agent_runs WHERE "
+        f"status IN ({_status_placeholders(RUN_TERMINAL_STATUSES)}) "
+        "AND completed_at IS NOT NULL AND completed_at <= ?"
+        ")",
+        (*tuple(sorted(RUN_TERMINAL_STATUSES)), run_cutoff),
+    )
     deleted_runs = db.execute(
         "DELETE FROM agent_runs WHERE "
         f"status IN ({_status_placeholders(RUN_TERMINAL_STATUSES)}) "

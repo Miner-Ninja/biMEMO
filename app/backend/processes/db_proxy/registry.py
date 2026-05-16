@@ -115,6 +115,7 @@ from .handlers.memory_debug import (
 from .handlers.permissions import (
     make_add_project_root_handler,
     make_complete_pending_action_handler,
+    make_create_agent_run_event_handler,
     make_create_agent_run_handler,
     make_create_capability_grant_handler,
     make_create_pending_action_handler,
@@ -124,6 +125,7 @@ from .handlers.permissions import (
     make_get_agent_run_handler,
     make_get_pending_action_handler,
     make_get_resume_snapshot_handler,
+    make_list_agent_run_events_handler,
     make_list_capability_grants_handler,
     make_list_pending_actions_handler,
     make_list_project_roots_handler,
@@ -257,6 +259,8 @@ SOCKET_A_OPERATIONS = {
     "expire_capability_grants",
     "create_agent_run",
     "get_agent_run",
+    "create_agent_run_event",
+    "list_agent_run_events",
     "update_agent_run_status",
     "create_pending_action",
     "get_pending_action",
@@ -321,6 +325,8 @@ SOCKET_B_ONLY_OPERATIONS = {
     "expire_capability_grants",
     "create_agent_run",
     "get_agent_run",
+    "create_agent_run_event",
+    "list_agent_run_events",
     "update_agent_run_status",
     "create_pending_action",
     "get_pending_action",
@@ -601,6 +607,14 @@ def _register_permission_operations(
     )
     registry.register("create_agent_run", make_create_agent_run_handler(runtime_db))
     registry.register("get_agent_run", make_get_agent_run_handler(runtime_db))
+    registry.register(
+        "create_agent_run_event",
+        make_create_agent_run_event_handler(runtime_db),
+    )
+    registry.register(
+        "list_agent_run_events",
+        make_list_agent_run_events_handler(runtime_db),
+    )
     registry.register(
         "update_agent_run_status",
         make_update_agent_run_status_handler(runtime_db),

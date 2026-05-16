@@ -86,9 +86,7 @@ async def chat(
     request: Request,
     background_tasks: BackgroundTasks,
     claims: TokenClaims = Depends(_require_auth),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
     admin_client: AdminDBClient = Depends(_get_admin_client),
     chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
@@ -130,9 +128,7 @@ async def create_conversation(
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
     chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
     ),
@@ -188,9 +184,7 @@ async def update_conversation(
     body: HTTPConversationUpdateRequest,
     _claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> HTTPConversationItem:
     """Update one persisted conversation title."""
     conversation = await update_conversation_item(
@@ -212,9 +206,7 @@ async def update_conversation_settings(
     body: ChatSettingsUpdateRequest,
     _claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> ChatSettingsResponse:
     """Update per-conversation display settings."""
     entries: list[dict[str, str]] = []
@@ -242,9 +234,7 @@ async def delete_conversation(
     conversation_id: str,
     _claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> HTTPConversationDeleteResponse:
     """Delete one persisted conversation and related data."""
     response = await delete_conversation_item(
@@ -307,6 +297,7 @@ async def websocket_stream(
         session_id=claims.jti,
         orchestrator_client=orchestrator_client,
         realtime_manager=realtime_manager,
+        conversation_id=conversation_id,
     )
 
 
@@ -315,9 +306,7 @@ async def stop(
     request: Request,
     body: HTTPStopRequest | None = Body(default=None),
     claims: TokenClaims = Depends(_require_auth),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> HTTPStopResponse:
     """Stop the active agentic loop via Orchestrator IPC.
 
@@ -331,15 +320,16 @@ async def stop(
         StopResponse indicating whether a loop was stopped.
     """
     request_id = body.request_id.strip() if body is not None else ""
+    run_id = body.run_id.strip() if body is not None else ""
     if not request_id:
         request_id = str(uuid.uuid4())
-    ipc_request = IPCStopRequest(request_id=request_id)
+    ipc_request = IPCStopRequest(request_id=request_id, run_id=run_id)
     ipc_response = await send_ipc_control_request(
         send_fn=orchestrator_client.send_stop,
         ipc_request=ipc_request,
     )
 
-    return HTTPStopResponse(stopped=ipc_response.stopped)
+    return HTTPStopResponse(stopped=ipc_response.stopped, run_id=ipc_response.run_id)
 
 
 @chat_router.post("/confirm")
@@ -347,9 +337,7 @@ async def confirm(
     body: HTTPConfirmRequest,
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict:
     """Process trust confirmation decision via Orchestrator IPC.
 

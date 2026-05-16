@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from ast import literal_eval
 from dataclasses import replace
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
@@ -49,6 +50,31 @@ logger = logging.getLogger(__name__)
 MAX_REQUIRED_SEARCH_RESULTS = 5
 MAX_REQUIRED_SEARCH_FIELD_CHARS = 420
 MAX_REQUIRED_TOOL_CONTEXT_CHARS = 4000
+
+
+class LLMStreamMode(StrEnum):
+    """Controls which LLM stream events may reach the UI."""
+
+    ALL = "all"
+    THINKING_ONLY = "thinking_only"
+    DISABLED = "disabled"
+
+
+class ThinkingOnlyStreamQueue:
+    """Forward only model reasoning events while buffering visible answer text."""
+
+    def __init__(self, target_queue: object | None) -> None:
+        """Initialize the queue wrapper."""
+        self.target_queue = target_queue
+
+    async def put(self, item: object) -> None:
+        """Forward reasoning events to the wrapped queue."""
+        if not isinstance(item, dict):
+            return
+        if item.get("type") != "thinking" or self.target_queue is None:
+            return
+        await self.target_queue.put(item)
+
 
 # --- Forced web search classifier prompt ---
 FORCED_WEB_SEARCH_CLASSIFIER_PROMPT = (
@@ -103,6 +129,7 @@ class LLMCaller:
         openai_tools: list[dict] | None,
         call_usages: list[LLMCallUsage],
         tool_choice: object | None = None,
+        stream_mode: LLMStreamMode = LLMStreamMode.ALL,
     ) -> object:
         """Call the LLM once with the currently prepared prompt messages."""
         llm_response = await self.invoke(
@@ -110,6 +137,7 @@ class LLMCaller:
             messages=messages,
             openai_tools=openai_tools,
             tool_choice=tool_choice,
+            stream_mode=stream_mode,
         )
         if llm_response.usage is not None:
             call_usages.append(llm_response.usage)
@@ -121,16 +149,19 @@ class LLMCaller:
         llm_call: object,
         messages: list[dict[str, object]],
         openai_tools: list[dict] | None,
-        use_sse: bool = True,
+        stream_mode: LLMStreamMode = LLMStreamMode.ALL,
         tool_choice: object | None = None,
     ) -> object:
         """Invoke the configured LLM with the supported optional arguments."""
-        if use_sse and llm_accepts_sse_queue(llm_call):
+        if stream_mode is not LLMStreamMode.DISABLED and llm_accepts_sse_queue(
+            llm_call
+        ):
             return await self.invoke_with_sse(
                 llm_call=llm_call,
                 messages=messages,
                 openai_tools=openai_tools,
                 tool_choice=tool_choice,
+                stream_mode=stream_mode,
             )
         if llm_accepts_tools_override(llm_call):
             return await llm_call(
@@ -146,11 +177,13 @@ class LLMCaller:
         messages: list[dict[str, object]],
         openai_tools: list[dict] | None,
         tool_choice: object | None = None,
+        stream_mode: LLMStreamMode = LLMStreamMode.ALL,
     ) -> object:
         """Invoke the configured LLM while forwarding tokens into the SSE queue."""
+        stream_queue = self._stream_queue_for_mode(stream_mode)
         if llm_accepts_tools_override(llm_call):
             kwargs: dict[str, object] = {
-                "sse_queue_override": self.sse_queue,
+                "sse_queue_override": stream_queue,
                 "tools_override": openai_tools,
             }
             if tool_choice is not None:
@@ -158,8 +191,16 @@ class LLMCaller:
             return await llm_call(messages, **kwargs)
         return await llm_call(
             messages,
-            self.sse_queue,
+            stream_queue,
         )
+
+    def _stream_queue_for_mode(self, stream_mode: LLMStreamMode) -> object | None:
+        """Return the queue object that implements the requested stream policy."""
+        if stream_mode is LLMStreamMode.ALL:
+            return self.sse_queue
+        if stream_mode is LLMStreamMode.THINKING_ONLY:
+            return ThinkingOnlyStreamQueue(self.sse_queue)
+        return None
 
     async def should_force_web_search(
         self,
@@ -182,7 +223,7 @@ class LLMCaller:
                 {"role": "user", "content": filtered_message},
             ],
             openai_tools=None,
-            use_sse=False,
+            stream_mode=LLMStreamMode.DISABLED,
         )
         if classifier_response.usage is not None:
             call_usages.append(classifier_response.usage)
@@ -336,12 +377,12 @@ class LLMCaller:
                         messages.append(
                             {
                                 "role": "system",
-                            "content": (
-                                "Required http_fetch failed before answer "
-                                "synthesis. If answering, clearly report "
-                                "that the URL could not be fetched.\n"
-                                f"{failure_text}"
-                            ),
+                                "content": (
+                                    "Required http_fetch failed before answer "
+                                    "synthesis. If answering, clearly report "
+                                    "that the URL could not be fetched.\n"
+                                    f"{failure_text}"
+                                ),
                             }
                         )
                         satisfaction = satisfaction.with_failure(
@@ -356,7 +397,7 @@ class LLMCaller:
         if isinstance(result, str):
             try:
                 parsed_result = literal_eval(result)
-            except (SyntaxError, ValueError):
+            except SyntaxError, ValueError:
                 return result[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
         if not isinstance(parsed_result, dict):
             return str(parsed_result)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
@@ -486,6 +527,11 @@ class LLMCaller:
                 openai_tools=openai_tools,
                 call_usages=call_usages,
                 tool_choice=forced_choice,
+                stream_mode=(
+                    LLMStreamMode.THINKING_ONLY
+                    if requirements.required_tools
+                    else LLMStreamMode.ALL
+                ),
             )
             first_iteration = False
             round_result = await tool_executor.run_one_tool_round(

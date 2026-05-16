@@ -2,12 +2,14 @@
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from backend.channels.jwt_auth_models import TokenClaims
 from backend.channels.realtime import RealtimeConnectionManager
 from backend.ipc.models import StreamEvent, StreamEventType
 from backend.processes.fastapi_app.routes.chat import chat_router
 from backend.processes.fastapi_app.routes.chat_websocket import (
+    _send_runtime_bootstrap,
     authenticate_websocket,
     build_websocket_payload,
     disconnect_websocket_session,
@@ -62,6 +64,17 @@ class _FakeSessionManager:
         return self.claims
 
 
+class _FakeWebSocket:
+    """Minimal websocket stand-in that records JSON payloads."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    async def send_json(self, payload: dict) -> None:
+        """Record one JSON payload sent to the browser."""
+        self.payloads.append(payload)
+
+
 def test_build_websocket_payload_matches_realtime_envelope() -> None:
     """WebSocket payloads use the same event envelope as browser realtime events."""
     event = StreamEvent(
@@ -75,6 +88,52 @@ def test_build_websocket_payload_matches_realtime_envelope() -> None:
         "request_id": "request-1",
         "data": {"structured_content": {"answer": "Done"}},
     }
+
+
+def test_send_runtime_bootstrap_replays_conversation_events() -> None:
+    """WebSocket bootstrap sends recent runtime journal events for recovery."""
+    websocket = _FakeWebSocket()
+    orchestrator_client = SimpleNamespace(
+        list_agent_run_events=AsyncMock(
+            return_value=SimpleNamespace(
+                request_id="bootstrap-request-1",
+                events=[
+                    {
+                        "event_type": "run_completed",
+                        "payload": {"current_step": "completed"},
+                    }
+                ],
+            )
+        )
+    )
+
+    asyncio.run(
+        _send_runtime_bootstrap(
+            websocket=websocket,
+            conversation_id=" conversation-1 ",
+            orchestrator_client=orchestrator_client,
+        )
+    )
+
+    orchestrator_client.list_agent_run_events.assert_awaited_once_with(
+        conversation_id="conversation-1",
+        limit=100,
+    )
+    assert websocket.payloads == [
+        {
+            "type": "runtime_bootstrap",
+            "data": {
+                "conversation_id": "conversation-1",
+                "events": [
+                    {
+                        "event_type": "run_completed",
+                        "payload": {"current_step": "completed"},
+                    }
+                ],
+            },
+            "request_id": "bootstrap-request-1",
+        }
+    ]
 
 
 def test_chat_router_does_not_expose_stream_endpoint() -> None:
@@ -118,6 +177,44 @@ def test_register_and_disconnect_websocket_session() -> None:
 
     assert "session-1" not in orchestrator_client.queues
     assert realtime_manager.is_valid("session-1") is False
+
+
+def test_stale_websocket_disconnect_does_not_unregister_new_session() -> None:
+    """A reconnect keeps the newer subscriber registered after stale cleanup."""
+    orchestrator_client = _FakeOrchestratorClient()
+    realtime_manager = RealtimeConnectionManager()
+    session_manager = SimpleNamespace(
+        register_session=lambda _jti, _exp: True,
+        unregister_session=lambda _jti: True,
+    )
+
+    old_queue, old_connection = register_websocket_session(
+        session_id="session-1",
+        session_exp=9_999_999_999,
+        conversation_id="conversation-1",
+        orchestrator_client=orchestrator_client,
+        realtime_manager=realtime_manager,
+        session_manager=session_manager,
+    )
+    new_queue, _new_connection = register_websocket_session(
+        session_id="session-1",
+        session_exp=9_999_999_999,
+        conversation_id="conversation-1",
+        orchestrator_client=orchestrator_client,
+        realtime_manager=realtime_manager,
+        session_manager=session_manager,
+    )
+
+    disconnect_websocket_session(
+        session_id="session-1",
+        queue=old_queue,
+        connection=old_connection,
+        orchestrator_client=orchestrator_client,
+        realtime_manager=realtime_manager,
+    )
+
+    assert orchestrator_client.queues["session-1"] is new_queue
+    assert realtime_manager.is_valid("session-1") is True
 
 
 def test_authenticate_websocket_uses_existing_access_cookie() -> None:

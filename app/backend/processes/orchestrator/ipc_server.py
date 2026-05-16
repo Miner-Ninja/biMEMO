@@ -16,6 +16,8 @@ from backend.ipc.models import (
     ChatResponse,
     ConfirmRequest,
     ConfirmResponse,
+    ListAgentRunEventsRequest,
+    ListAgentRunEventsResponse,
     ReloadLLMRequest,
     ReloadLLMResponse,
     StopRequest,
@@ -36,6 +38,7 @@ logger = logging.getLogger(__name__)
 FRONTEND_TYPE_MAP = {
     "BridgeInboundSyncRequest": BridgeInboundSyncRequest,
     "ChatRequest": ChatRequest,
+    "ListAgentRunEventsRequest": ListAgentRunEventsRequest,
     "ReloadLLMRequest": ReloadLLMRequest,
     "StopRequest": StopRequest,
     "ConfirmRequest": ConfirmRequest,
@@ -63,6 +66,7 @@ class OrchestratorIPCServer:
         bridge_inbound_fn: Callable | None = None,
         save_error_response_fn: Callable | None = None,
         reload_llm_fn: Callable | None = None,
+        list_run_events_fn: Callable | None = None,
     ) -> None:
         """Initialize the orchestrator IPC server.
 
@@ -77,12 +81,15 @@ class OrchestratorIPCServer:
                 assistant error responses when orchestration fails.
             reload_llm_fn: Optional async callable that reloads the active
                 LLM runtime from the latest saved configuration.
+            list_run_events_fn: Optional async callable that returns runtime
+                journal events for reconnect recovery.
         """
         self._orchestrator_fn = orchestrator_fn
         self._confirm_fn = confirm_fn
         self._bridge_inbound_fn = bridge_inbound_fn
         self._save_error_response_fn = save_error_response_fn
         self._reload_llm_fn = reload_llm_fn
+        self._list_run_events_fn = list_run_events_fn
         self._active_task: asyncio.Task | None = None
 
         self._server = IPCSocketServer(
@@ -147,6 +154,7 @@ class OrchestratorIPCServer:
         """Return the per-type handler map for incoming IPC messages."""
         return {
             "ChatRequest": self._handle_chat,
+            "ListAgentRunEventsRequest": self._handle_list_run_events,
             "ReloadLLMRequest": self._handle_reload_llm,
             "StopRequest": self._handle_stop,
             "ConfirmRequest": self._handle_confirm,
@@ -159,11 +167,17 @@ class OrchestratorIPCServer:
         return f"Internal error: {str(error)[:200]}"
 
     @staticmethod
-    def _stop_response(request_id: str, *, stopped: bool) -> StopResponse:
+    def _stop_response(
+        request_id: str,
+        *,
+        stopped: bool,
+        run_id: str = "",
+    ) -> StopResponse:
         """Build one stop response."""
         return StopResponse(
             request_id=request_id,
             stopped=stopped,
+            run_id=run_id,
         )
 
     @staticmethod
@@ -223,6 +237,19 @@ class OrchestratorIPCServer:
             )
         response = await self._reload_llm_fn()
         return response.model_copy(update={"request_id": request.request_id})
+
+    async def _handle_list_run_events(
+        self,
+        request: ListAgentRunEventsRequest,
+    ) -> ListAgentRunEventsResponse:
+        """Return runtime journal events for reconnect recovery."""
+        if self._list_run_events_fn is None:
+            return ListAgentRunEventsResponse(request_id=request.request_id)
+        events = await self._list_run_events_fn(request)
+        return ListAgentRunEventsResponse(
+            request_id=request.request_id,
+            events=events if isinstance(events, list) else [],
+        )
 
     async def _handle_chat(self, request: ChatRequest) -> ChatResponse | None:
         """Process a chat request through the orchestrator.
@@ -342,8 +369,16 @@ class OrchestratorIPCServer:
                     data={"status": "stopped"},
                 )
             )
-            return self._stop_response(request.request_id, stopped=True)
-        return self._stop_response(request.request_id, stopped=False)
+            return self._stop_response(
+                request.request_id,
+                stopped=True,
+                run_id=request.run_id,
+            )
+        return self._stop_response(
+            request.request_id,
+            stopped=False,
+            run_id=request.run_id,
+        )
 
     async def _handle_reload_llm(
         self,

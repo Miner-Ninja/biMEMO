@@ -41,6 +41,7 @@ class ChatRequest(IPCModel):
     """
 
     request_id: str
+    run_id: str = ""
     message: str
     channel: str
     session_id: str
@@ -58,6 +59,7 @@ class StopRequest(IPCModel):
     """
 
     request_id: str
+    run_id: str = ""
 
 
 class ConfirmRequest(IPCModel):
@@ -108,6 +110,16 @@ class ReloadLLMRequest(IPCModel):
     """
 
     request_id: str
+
+
+class ListAgentRunEventsRequest(IPCModel):
+    """Request recent runtime journal events for a chat conversation or run."""
+
+    request_id: str
+    run_id: str = ""
+    conversation_id: str = ""
+    after_sequence: int = 0
+    limit: int = 200
 
 
 # --- Orchestrator → Frontend messages ---
@@ -176,6 +188,7 @@ class StopResponse(IPCModel):
 
     request_id: str
     stopped: bool
+    run_id: str = ""
 
 
 class ConfirmResponse(IPCModel):
@@ -230,6 +243,13 @@ class ReloadLLMResponse(IPCModel):
     active_provider: str | None = None
     model: str | None = None
     error: str | None = None
+
+
+class ListAgentRunEventsResponse(IPCModel):
+    """Response containing runtime journal events for reconnect recovery."""
+
+    request_id: str
+    events: list[dict[str, Any]] = []
 
 
 class StreamEvent(IPCModel):

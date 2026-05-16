@@ -328,7 +328,7 @@ class _FakeIPCServer:
 
 
 def test_push_conversation_updated_event_with_bound_queue() -> None:
-    """The helper pushes a formatted dict onto the bound SSE queue."""
+    """The helper pushes a formatted dict onto the bound stream queue."""
     queue: asyncio.Queue = asyncio.Queue()
     orch = SimpleNamespace(sse_queue=queue)
 
@@ -356,7 +356,7 @@ def test_push_conversation_updated_event_with_bound_queue() -> None:
 
 
 def test_push_conversation_updated_event_no_queue_is_noop() -> None:
-    """Helper returns silently when orch has no bound SSE queue."""
+    """Helper returns silently when orch has no bound stream queue."""
     orch = SimpleNamespace(sse_queue=None)
 
     asyncio.run(
@@ -443,7 +443,7 @@ def test_mark_conversation_processing_active_emits_sse_event(
 
 
 def test_forwarder_maps_conversation_updated_to_stream_event_type() -> None:
-    """The forwarder turns a conversation_updated dict into an SSE frame."""
+    """The forwarder turns a conversation_updated dict into a stream event."""
     queue: asyncio.Queue = asyncio.Queue()
     queue.put_nowait(
         {
@@ -462,7 +462,7 @@ def test_forwarder_maps_conversation_updated_to_stream_event_type() -> None:
     asyncio.run(
         _forward_request_events_to_ipc(
             request_id="req-1",
-            request_sse_queue=queue,
+            request_stream_queue=queue,
             ipc_server=ipc_server,
         )
     )
@@ -497,7 +497,7 @@ def test_forwarder_maps_confirmation_to_stream_event_type() -> None:
     asyncio.run(
         _forward_request_events_to_ipc(
             request_id="req-3",
-            request_sse_queue=queue,
+            request_stream_queue=queue,
             ipc_server=ipc_server,
         )
     )
@@ -527,7 +527,7 @@ def test_forwarder_maps_final_to_stream_event_type() -> None:
     asyncio.run(
         _forward_request_events_to_ipc(
             request_id="req-final",
-            request_sse_queue=queue,
+            request_stream_queue=queue,
             ipc_server=ipc_server,
         )
     )
@@ -556,7 +556,7 @@ def test_forwarder_maps_error_to_stream_event_type() -> None:
     asyncio.run(
         _forward_request_events_to_ipc(
             request_id="req-error",
-            request_sse_queue=queue,
+            request_stream_queue=queue,
             ipc_server=ipc_server,
         )
     )
@@ -616,6 +616,7 @@ def test_chat_request_failure_streams_error_and_done() -> None:
     )
     db_client = SimpleNamespace(
         create_agent_run=AsyncMock(return_value={"id": "run-1"}),
+        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
         update_agent_run_status=AsyncMock(),
         update_conversation_processing_state=AsyncMock(),
     )
@@ -644,6 +645,142 @@ def test_chat_request_failure_streams_error_and_done() -> None:
         StreamEventType.DONE,
     ]
     assert ipc_server.events[-2].data["type"] == "error"
+    recorded_event_types = [
+        call.kwargs["event_type"]
+        for call in db_client.create_agent_run_event.await_args_list
+    ]
+    assert "run_started" in recorded_event_types
+    assert "run_failed" in recorded_event_types
+    assert "run_completed" not in recorded_event_types
+    assert (
+        db_client.update_conversation_processing_state.await_args_list[-1].args[1]
+        == "idle"
+    )
+
+
+def test_chat_request_success_records_completed_runtime_event() -> None:
+    """A successful chat turn records started and completed runtime events."""
+    ipc_server = _FakeIPCServer()
+    orch = SimpleNamespace(
+        sse_queue=None,
+        process_message=AsyncMock(
+            return_value=AgentResponse(
+                structured_content=normalize_legacy_response_text("Done."),
+                loop_result=object(),
+            )
+        ),
+        pending_red_calls=[],
+    )
+    db_client = SimpleNamespace(
+        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
+        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
+        update_agent_run_status=AsyncMock(),
+        update_conversation_processing_state=AsyncMock(),
+    )
+
+    response = asyncio.run(
+        _run_chat_request(
+            request=ChatRequest(
+                request_id="req-success",
+                message="hello",
+                channel="web",
+                session_id="session-1",
+                conversation_id="conv-1",
+            ),
+            orch=orch,
+            ipc_server=ipc_server,
+            db_client=db_client,
+            broker=SimpleNamespace(),
+            llm_call=AsyncMock(),
+            stt_client=None,
+        )
+    )
+
+    recorded_event_types = [
+        call.kwargs["event_type"]
+        for call in db_client.create_agent_run_event.await_args_list
+    ]
+    assert response.structured_content.answer == "Done."
+    assert "run_started" in recorded_event_types
+    assert "final_accepted" in recorded_event_types
+    assert "run_completed" in recorded_event_types
+    assert (
+        db_client.update_conversation_processing_state.await_args_list[-1].args[1]
+        == "idle"
+    )
+
+
+def test_chat_request_cancellation_records_stopped_runtime_event() -> None:
+    """Cancelling a chat turn marks the runtime run as stopped."""
+    ipc_server = _FakeIPCServer()
+    started = asyncio.Event()
+
+    async def slow_process_message(**kwargs):
+        """Block until the test cancels the chat request."""
+        del kwargs
+        started.set()
+        await asyncio.sleep(60)
+
+    orch = SimpleNamespace(
+        sse_queue=None,
+        process_message=slow_process_message,
+        pending_red_calls=[],
+    )
+    db_client = SimpleNamespace(
+        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
+        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
+        update_agent_run_status=AsyncMock(),
+        update_conversation_processing_state=AsyncMock(),
+    )
+
+    async def run_and_cancel() -> None:
+        """Start the chat task and cancel it after processing begins."""
+        task = asyncio.create_task(
+            _run_chat_request(
+                request=ChatRequest(
+                    request_id="req-cancel",
+                    run_id="run-1",
+                    message="hello",
+                    channel="web",
+                    session_id="session-1",
+                    conversation_id="conv-1",
+                ),
+                orch=orch,
+                ipc_server=ipc_server,
+                db_client=db_client,
+                broker=SimpleNamespace(),
+                llm_call=AsyncMock(),
+                stt_client=None,
+            )
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+
+    status_updates = [
+        call.kwargs
+        for call in db_client.update_agent_run_status.await_args_list
+        if call.kwargs.get("run_id") == "run-1"
+    ]
+    recorded_event_types = [
+        call.kwargs["event_type"]
+        for call in db_client.create_agent_run_event.await_args_list
+    ]
+    assert {"status": "stopped", "current_step": "stopped"} in [
+        {
+            "status": update["status"],
+            "current_step": update["current_step"],
+        }
+        for update in status_updates
+    ]
+    assert "run_stopped" in recorded_event_types
+    assert (
+        db_client.update_conversation_processing_state.await_args_list[-1].args[1]
+        == "idle"
+    )
 
 
 def test_forwarder_skips_unknown_event_types() -> None:
@@ -656,7 +793,7 @@ def test_forwarder_skips_unknown_event_types() -> None:
     asyncio.run(
         _forward_request_events_to_ipc(
             request_id="req-2",
-            request_sse_queue=queue,
+            request_stream_queue=queue,
             ipc_server=ipc_server,
         )
     )

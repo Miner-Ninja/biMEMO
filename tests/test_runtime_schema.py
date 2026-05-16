@@ -48,6 +48,7 @@ def test_runtime_schema_creates_lifecycle_tables() -> None:
     assert {
         "runtime_schema_version",
         "agent_runs",
+        "agent_run_events",
         "pending_actions",
         "resume_snapshots",
     } <= tables
@@ -55,4 +56,4 @@ def test_runtime_schema_creates_lifecycle_tables() -> None:
     version = db.execute(
         "SELECT version FROM runtime_schema_version LIMIT 1"
     ).fetchone()
-    assert version == (1,)
+    assert version == (2,)
