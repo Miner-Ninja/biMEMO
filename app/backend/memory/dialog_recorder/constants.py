@@ -154,6 +154,7 @@ DIALOG_RECORDER_TRACE_DECISIONS = {
     "not_memory_worthy": "record_skipped_by_llm_not_memory_worthy_judgment",
     "duplicate_memory": "record_rejected_by_duplicate_check",
     "unsafe_output": "record_rejected_by_output_filter",
+    "deleted_conversation": "record_skipped_by_deleted_conversation",
 }
 TRACE_DECISION_STORED = DIALOG_RECORDER_TRACE_DECISIONS["stored"]
 TRACE_DECISION_RATE_LIMITED = DIALOG_RECORDER_TRACE_DECISIONS["rate_limited"]
@@ -162,6 +163,9 @@ TRACE_DECISION_PARSE_FAILED = DIALOG_RECORDER_TRACE_DECISIONS["parse_failed"]
 TRACE_DECISION_NOT_MEMORY_WORTHY = DIALOG_RECORDER_TRACE_DECISIONS["not_memory_worthy"]
 TRACE_DECISION_DUPLICATE_MEMORY = DIALOG_RECORDER_TRACE_DECISIONS["duplicate_memory"]
 TRACE_DECISION_UNSAFE_OUTPUT = DIALOG_RECORDER_TRACE_DECISIONS["unsafe_output"]
+TRACE_DECISION_DELETED_CONVERSATION = DIALOG_RECORDER_TRACE_DECISIONS[
+    "deleted_conversation"
+]
 MAX_SYNTHETIC_ACTION_ITEMS = 2
 CYRILLIC_CODEPOINT_START = ord("\u0430")
 CYRILLIC_CODEPOINT_END = ord("\u044f")

@@ -9,8 +9,9 @@ for LLM capability detection.
 from __future__ import annotations
 
 import logging
+import re
 from ast import literal_eval
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -47,9 +48,94 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAX_REQUIRED_SEARCH_RESULTS = 5
+MAX_REQUIRED_SEARCH_RESULTS = 10
+MAX_REQUIRED_SEARCH_RESULTS_PER_QUERY = 2
 MAX_REQUIRED_SEARCH_FIELD_CHARS = 420
 MAX_REQUIRED_TOOL_CONTEXT_CHARS = 4000
+MAX_REQUIRED_WEB_SEARCH_QUERIES = 4
+MIN_GENERIC_TARGET_CHARS = 2
+
+PRICE_SEARCH_MARKERS = frozenset(
+    {
+        "price",
+        "rate",
+        "quote",
+        "курс",
+        "цена",
+        "котировка",
+        "стоимость",
+    }
+)
+
+MARKET_TARGET_ALIAS_HINTS = (
+    ("Bitcoin", "BTC", ("bitcoin", "btc", "биткоин", "биткойн")),
+    ("Ethereum", "ETH", ("ethereum", "eth", "эфириум", "эфир")),
+    ("Solana", "SOL", ("solana", "sol", "солана")),
+)
+
+CURRENT_DATA_FILLER_PATTERN = re.compile(
+    r"\b("
+    r"current|latest|today|now|price|prices|rate|rates|quote|quotes|show|find|"
+    r"search|look|up|data|for|the|and|or|"
+    r"текущий|текущие|актуальный|актуальные|сейчас|сегодня|курс|курсы|цена|"
+    r"цены|найди|покажи|посмотри|в|интернете|и|или|на|данный|момент"
+    r")\b",
+    re.IGNORECASE,
+)
+TARGET_SPLIT_PATTERN = re.compile(r"\s*(?:,|;|/|\band\b|\bor\b|\bи\b|\bили\b)\s*")
+TARGET_LIST_SEPARATOR_PATTERN = re.compile(r"(,|;|/|\band\b|\bor\b|\bи\b|\bили\b)")
+
+
+@dataclass(frozen=True)
+class CurrentDataTarget:
+    """One requested current-data target."""
+
+    label: str
+    aliases: tuple[str, ...] = ()
+    kind: str = "general"
+
+
+@dataclass(frozen=True)
+class CurrentDataEvidencePlan:
+    """Search plan for one current-data turn."""
+
+    original_query: str
+    targets: tuple[CurrentDataTarget, ...]
+    query_plan: tuple[str, ...]
+    freshness_required: bool = True
+
+
+@dataclass(frozen=True)
+class CurrentDataTargetEvidence:
+    """Evidence status for one current-data target."""
+
+    target: CurrentDataTarget
+    found: bool
+    sources: tuple[str, ...] = ()
+    snippets: tuple[str, ...] = ()
+    failure_reason: str = ""
+
+
+@dataclass(frozen=True)
+class CurrentDataEvidenceReport:
+    """Evidence coverage report for one current-data turn."""
+
+    plan: CurrentDataEvidencePlan
+    target_evidence: tuple[CurrentDataTargetEvidence, ...]
+
+    @property
+    def target_labels(self) -> tuple[str, ...]:
+        """Return labels for all planned targets."""
+        return tuple(evidence.target.label for evidence in self.target_evidence)
+
+    @property
+    def missing_labels(self) -> tuple[str, ...]:
+        """Return labels for targets without usable evidence."""
+        return tuple(
+            evidence.target.label
+            for evidence in self.target_evidence
+            if not evidence.found
+        )
 
 
 class LLMStreamMode(StrEnum):
@@ -309,29 +395,77 @@ class LLMCaller:
         """Execute deterministic mandatory tools before answer synthesis."""
         satisfaction = RequirementSatisfaction()
         if "web_search" in requirements.required_tools:
-            try:
-                search_result = await self.broker.execute(
-                    "web_search",
-                    {"query": filtered_message},
+            evidence_plan = self._current_data_evidence_plan(
+                filtered_message,
+                requirements,
+            )
+            search_queries = list(evidence_plan.query_plan)
+            search_results: list[tuple[str, object]] = []
+            search_failures: dict[str, str] = {}
+            for query in search_queries:
+                try:
+                    search_result = await self.broker.execute(
+                        "web_search",
+                        {"query": query},
+                    )
+                except Exception as exc:
+                    logger.warning("Required web_search failed", exc_info=True)
+                    search_failures[query] = str(exc)
+                    continue
+                if search_result.success:
+                    search_results.append((query, search_result.result))
+                else:
+                    search_failures[query] = str(search_result.result)
+            evidence_report = self._current_data_evidence_report(
+                evidence_plan,
+                search_results,
+                search_failures,
+            )
+            if search_results:
+                if len(search_results) == 1:
+                    search_context = self._required_tool_context(search_results[0][1])
+                else:
+                    search_context = self._required_tool_context(
+                        self._combined_required_search_result(search_results),
+                    )
+                if search_failures:
+                    failures = "\n".join(
+                        f"- {query}: {failure}"
+                        for query, failure in search_failures.items()
+                    )
+                    search_context = (
+                        f"{search_context}\n\nSearch failures:\n{failures}"
+                    )
+                search_context = (
+                    f"{search_context}\n\n"
+                    f"{self._current_data_evidence_context(evidence_report)}"
                 )
-            except Exception as exc:
-                logger.warning("Required web_search failed", exc_info=True)
-                return satisfaction.with_failure("web_search", str(exc))
-            if search_result.success:
                 messages.append(
                     {
                         "role": "system",
                         "content": (
                             "Required web_search evidence was fetched before "
                             "answer synthesis because the request needs current "
-                            "data.\n"
-                            f"{self._required_tool_context(search_result.result)}"
+                            "data. Use only this evidence for current values; "
+                            "do not fill missing prices from memory.\n"
+                            f"{search_context}"
                         ),
                     }
                 )
-                satisfaction = satisfaction.with_success("web_search")
+                satisfaction = satisfaction.with_success(
+                    "web_search"
+                ).with_current_data_targets(
+                    targets=evidence_report.target_labels,
+                    missing_targets=evidence_report.missing_labels,
+                )
             else:
-                failure_text = str(search_result.result)
+                if len(search_failures) == 1:
+                    failure_text = next(iter(search_failures.values()))
+                else:
+                    failure_text = "; ".join(
+                        f"{query}: {failure}"
+                        for query, failure in search_failures.items()
+                    ) or "search returned no usable results"
                 messages.append(
                     {
                         "role": "system",
@@ -391,6 +525,246 @@ class LLMCaller:
                         )
         return satisfaction
 
+    def _current_data_evidence_plan(
+        self,
+        message: str,
+        requirements: ResponseRequirements,
+    ) -> CurrentDataEvidencePlan:
+        """Build deterministic search plan for mandatory current-data evidence."""
+        normalized = message.casefold()
+        targets = self._current_data_targets(message)
+        if not requirements.needs_current_data:
+            return CurrentDataEvidencePlan(message, (), (message,))
+        if not any(marker in normalized for marker in PRICE_SEARCH_MARKERS):
+            return CurrentDataEvidencePlan(message, targets, (message,))
+        targeted_queries = [
+            self._current_data_target_query(target)
+            for target in targets
+        ]
+        queries: list[str] = []
+        if len(targeted_queries) < 2:
+            return CurrentDataEvidencePlan(message, targets, (message,))
+        for query in targeted_queries:
+            if query and query not in queries:
+                queries.append(query)
+        if message not in queries:
+            queries.append(message)
+        return CurrentDataEvidencePlan(
+            original_query=message,
+            targets=targets,
+            query_plan=tuple(queries[:MAX_REQUIRED_WEB_SEARCH_QUERIES]),
+        )
+
+    def _required_web_search_queries(
+        self,
+        message: str,
+        requirements: ResponseRequirements,
+    ) -> list[str]:
+        """Build deterministic search queries for mandatory current-data evidence."""
+        return list(self._current_data_evidence_plan(message, requirements).query_plan)
+
+    def _current_data_targets(self, message: str) -> tuple[CurrentDataTarget, ...]:
+        """Extract requested current-data targets without user-facing modes."""
+        normalized = message.casefold()
+        targets: list[CurrentDataTarget] = []
+        seen_labels: set[str] = set()
+        seen_aliases: set[str] = set()
+        for name, symbol, aliases in MARKET_TARGET_ALIAS_HINTS:
+            if any(alias in normalized for alias in aliases):
+                target = CurrentDataTarget(
+                    label=name,
+                    aliases=(symbol, *aliases),
+                    kind="market",
+                )
+                targets.append(target)
+                seen_labels.add(target.label.casefold())
+                seen_aliases.update(alias.casefold() for alias in target.aliases)
+
+        if targets and not TARGET_LIST_SEPARATOR_PATTERN.search(message):
+            return tuple(targets)
+
+        generic_text = CURRENT_DATA_FILLER_PATTERN.sub(" ", message)
+        for part in TARGET_SPLIT_PATTERN.split(generic_text):
+            label = self._normalize_current_data_target_label(part)
+            normalized_label = label.casefold()
+            if (
+                not label
+                or normalized_label in seen_labels
+                or normalized_label in seen_aliases
+            ):
+                continue
+            targets.append(CurrentDataTarget(label=label, aliases=(label,)))
+            seen_labels.add(normalized_label)
+        return tuple(targets[: MAX_REQUIRED_WEB_SEARCH_QUERIES - 1])
+
+    def _normalize_current_data_target_label(self, value: str) -> str:
+        """Normalize one candidate current-data target label."""
+        label = " ".join(value.strip(" ?!:.()[]{}\"'`").split())
+        if len(label) < MIN_GENERIC_TARGET_CHARS:
+            return ""
+        if not any(character.isalnum() for character in label):
+            return ""
+        return label
+
+    def _current_data_target_query(self, target: CurrentDataTarget) -> str:
+        """Build one bounded current-data search query for a target."""
+        primary_alias = target.aliases[0] if target.aliases else ""
+        label = target.label
+        if primary_alias and primary_alias.casefold() != label.casefold():
+            label = f"{label} {primary_alias}"
+        return f"current {label} price USD today"
+
+    def _current_data_evidence_report(
+        self,
+        plan: CurrentDataEvidencePlan,
+        search_results: list[tuple[str, object]],
+        search_failures: dict[str, str],
+    ) -> CurrentDataEvidenceReport:
+        """Build target-level evidence coverage from search results."""
+        evidence: list[CurrentDataTargetEvidence] = []
+        if not plan.targets:
+            return CurrentDataEvidenceReport(plan=plan, target_evidence=())
+        for target in plan.targets:
+            query = self._current_data_target_query(target)
+            result = next(
+                (
+                    result
+                    for result_query, result in search_results
+                    if result_query == query
+                ),
+                None,
+            )
+            if result is None and len(plan.targets) == 1:
+                result = next(
+                    (
+                        result
+                        for result_query, result in search_results
+                        if result_query == plan.original_query
+                    ),
+                    None,
+                )
+            failure_reason = search_failures.get(query, "")
+            found = self._search_result_has_evidence(result)
+            sources, snippets = self._search_result_source_summary(result)
+            evidence.append(
+                CurrentDataTargetEvidence(
+                    target=target,
+                    found=found,
+                    sources=sources,
+                    snippets=snippets,
+                    failure_reason=failure_reason,
+                )
+            )
+        return CurrentDataEvidenceReport(
+            plan=plan,
+            target_evidence=tuple(evidence),
+        )
+
+    def _current_data_evidence_context(
+        self,
+        report: CurrentDataEvidenceReport,
+    ) -> str:
+        """Format target-level evidence coverage for answer synthesis."""
+        if not report.target_evidence:
+            return "Current-data evidence coverage: no explicit targets detected."
+        lines = ["Current-data evidence coverage:"]
+        for evidence in report.target_evidence:
+            status = "found" if evidence.found else "missing"
+            lines.append(f"- {evidence.target.label}: {status}")
+            if evidence.sources:
+                lines.append(f"  Sources: {', '.join(evidence.sources[:2])}")
+            if evidence.failure_reason:
+                lines.append(f"  Failure: {evidence.failure_reason}")
+        missing_labels = report.missing_labels
+        if missing_labels:
+            lines.append(
+                "Missing targets must be reported explicitly in the final answer: "
+                f"{', '.join(missing_labels)}."
+            )
+        return "\n".join(lines)
+
+    def _search_result_has_evidence(self, result: object | None) -> bool:
+        """Return whether a tool result contains usable current-data evidence."""
+        if result is None:
+            return False
+        parsed_result = result
+        if isinstance(result, str):
+            if not result.strip():
+                return False
+            try:
+                parsed_result = literal_eval(result)
+            except (SyntaxError, ValueError):
+                return bool(result.strip())
+        if not isinstance(parsed_result, dict):
+            return bool(str(parsed_result).strip())
+        raw_results = parsed_result.get("results")
+        if isinstance(raw_results, list):
+            return any(isinstance(item, dict) and bool(item) for item in raw_results)
+        return bool(str(parsed_result).strip())
+
+    def _search_result_source_summary(
+        self,
+        result: object | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Extract compact source names and snippets from one search result."""
+        if result is None:
+            return (), ()
+        parsed_result = result
+        if isinstance(result, str):
+            try:
+                parsed_result = literal_eval(result)
+            except (SyntaxError, ValueError):
+                return (), (self._compact_search_field(result),)
+        if not isinstance(parsed_result, dict):
+            return (), (self._compact_search_field(parsed_result),)
+        raw_results = parsed_result.get("results")
+        if not isinstance(raw_results, list):
+            return (), (self._compact_search_field(parsed_result),)
+        sources: list[str] = []
+        snippets: list[str] = []
+        for item in raw_results[:MAX_REQUIRED_SEARCH_RESULTS_PER_QUERY]:
+            if not isinstance(item, dict):
+                continue
+            title = self._compact_search_field(item.get("title", ""))
+            url = self._compact_search_field(item.get("url", ""))
+            snippet = self._compact_search_field(item.get("snippet", ""))
+            if title or url:
+                sources.append(title or url)
+            if snippet:
+                snippets.append(snippet)
+        return tuple(sources), tuple(snippets)
+
+    def _combined_required_search_result(
+        self,
+        search_results: list[tuple[str, object]],
+    ) -> dict[str, object]:
+        """Combine one or more web_search results into one prompt payload."""
+        combined_results: list[dict[str, object]] = []
+        text_blocks: list[str] = []
+        for query, result in search_results:
+            parsed_result = result
+            if isinstance(result, str):
+                try:
+                    parsed_result = literal_eval(result)
+                except (SyntaxError, ValueError):
+                    text_blocks.append(f"Query: {query}\n{result}")
+                    continue
+            if not isinstance(parsed_result, dict):
+                text_blocks.append(f"Query: {query}\n{parsed_result}")
+                continue
+            raw_results = parsed_result.get("results")
+            if not isinstance(raw_results, list):
+                text_blocks.append(f"Query: {query}\n{parsed_result}")
+                continue
+            for item in raw_results[:MAX_REQUIRED_SEARCH_RESULTS_PER_QUERY]:
+                if not isinstance(item, dict):
+                    continue
+                combined_results.append({"query": query, **item})
+        return {
+            "results": combined_results,
+            "text_blocks": text_blocks,
+        }
+
     def _required_tool_context(self, result: object) -> str:
         """Return compact prompt context for mandatory tool evidence."""
         parsed_result = result
@@ -401,10 +775,16 @@ class LLMCaller:
                 return result[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
         if not isinstance(parsed_result, dict):
             return str(parsed_result)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
+        raw_text_blocks = parsed_result.get("text_blocks")
         raw_results = parsed_result.get("results")
         if not isinstance(raw_results, list):
             return str(parsed_result)[:MAX_REQUIRED_TOOL_CONTEXT_CHARS]
         lines = ["Search results:"]
+        if isinstance(raw_text_blocks, list):
+            for text_block in raw_text_blocks:
+                block = self._compact_search_field(text_block)
+                if block:
+                    lines.append(f"Text: {block}")
         for index, item in enumerate(
             raw_results[:MAX_REQUIRED_SEARCH_RESULTS],
             start=1,
@@ -414,7 +794,10 @@ class LLMCaller:
             title = self._compact_search_field(item.get("title", ""))
             url = self._compact_search_field(item.get("url", ""))
             snippet = self._compact_search_field(item.get("snippet", ""))
+            query = self._compact_search_field(item.get("query", ""))
             lines.append(f"{index}. {title}")
+            if query:
+                lines.append(f"   Query: {query}")
             if url:
                 lines.append(f"   URL: {url}")
             if snippet:

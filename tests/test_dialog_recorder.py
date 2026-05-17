@@ -314,6 +314,51 @@ class TestProcessRecord:
         mock_db_client.store_embedding.assert_awaited_once()
 
     @patch(
+        "backend.memory.dialog_recorder.runtime.filter_output",
+        side_effect=_passthrough_filter_result,
+    )
+    @patch(
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        new_callable=AsyncMock,
+        return_value=(_make_observation(), {}),
+    )
+    @patch(
+        "backend.memory.dialog_recorder.runtime.filter_input",
+        return_value=_clean_filter_result(),
+    )
+    async def test_deleted_conversation_save_skip_stops_side_effects(
+        self,
+        mock_fi,
+        mock_compress,
+        mock_fo,
+        mock_provider,
+        mock_db_client,
+        rate_limiter,
+    ):
+        """A deleted parent conversation skips recorder side effects cleanly."""
+        mock_db_client.save_record.return_value = ""
+
+        result = await process_record(
+            provider=mock_provider,
+            db_client=mock_db_client,
+            messages=["hello", "world"],
+            conversation_id="deleted-conv",
+            session_id="sess-1",
+            source_message_ids=["m-user-1"],
+            rate_limiter=rate_limiter,
+            embed_fn=mock_provider.embed,
+        )
+
+        assert result is None
+        mock_fi.assert_called_once()
+        mock_compress.assert_called_once()
+        assert mock_fo.call_count == 3
+        mock_db_client.save_record.assert_awaited_once()
+        mock_db_client.mark_tainted_record.assert_not_awaited()
+        mock_provider.embed.assert_not_awaited()
+        mock_db_client.store_embedding.assert_not_awaited()
+
+    @patch(
         "backend.memory.dialog_recorder.runtime.filter_input",
         return_value=_clean_filter_result(),
     )

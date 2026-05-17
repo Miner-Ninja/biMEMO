@@ -55,9 +55,9 @@ from backend.security.diagnostics_schema import (
 from pydantic import ValidationError
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 93
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 60
-EXPECTED_SOCKET_B_OPERATION_COUNT = 85
+EXPECTED_SOCKET_A_OPERATION_COUNT = 95
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 62
+EXPECTED_SOCKET_B_OPERATION_COUNT = 87
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -1164,6 +1164,30 @@ class TestRecordOperations:
         assert row is not None
         assert row[0] == '["preference"]'
         assert row[1] == '["m1", "m2"]'
+
+    @pytest.mark.asyncio
+    async def test_save_record_skips_deleted_conversation(self, db: FakeDB) -> None:
+        """Missing parent conversation turns memory write into a skipped side effect."""
+        handler = make_save_record_handler(db)
+
+        result = await handler(
+            {
+                "conversation_id": "deleted-conv",
+                "session_id": "s1",
+                "summary": "test summary",
+            }
+        )
+
+        assert result == {
+            "record_id": "",
+            "skipped": True,
+            "reason": "conversation_deleted",
+        }
+        row = db.execute(
+            "SELECT id FROM records WHERE conversation_id = ?",
+            ("deleted-conv",),
+        ).fetchone()
+        assert row is None
 
     @pytest.mark.asyncio
     async def test_mark_tainted(self, db: FakeDB) -> None:

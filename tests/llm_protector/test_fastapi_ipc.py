@@ -275,6 +275,61 @@ class TestOrchestratorClient:
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_stream_event_fans_out_to_parallel_same_chat_connections(
+        self,
+    ) -> None:
+        """Parallel browser connections for one chat both receive stream events."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        first_queue: asyncio.Queue = asyncio.Queue()
+        second_queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("session-1", first_queue, conversation_id="c1")
+        client.register_session_queue("session-1", second_queue, conversation_id="c1")
+        client.register_chat_request("chat-1", "session-1", "c1")
+
+        event = StreamEvent(
+            request_id="chat-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        first_event = await asyncio.wait_for(first_queue.get(), timeout=1.0)
+        second_event = await asyncio.wait_for(second_queue.get(), timeout=1.0)
+        assert first_event is event
+        assert second_event is event
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_stream_event_does_not_fall_back_to_wrong_chat_in_session(
+        self,
+    ) -> None:
+        """A conversation-scoped event must not leak into another chat."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        wrong_chat_queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue(
+            "session-1",
+            wrong_chat_queue,
+            conversation_id="c2",
+        )
+        client.register_chat_request("chat-1", "session-1", "c1")
+
+        event = StreamEvent(
+            request_id="chat-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        assert wrong_chat_queue.empty()
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_send_confirm_returns_response(self) -> None:
         """Sends ``ConfirmRequest`` and returns ``ConfirmResponse``."""
         fake_ipc = FakeOrchestratorIPC()

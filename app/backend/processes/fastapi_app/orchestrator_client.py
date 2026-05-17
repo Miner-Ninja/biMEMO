@@ -14,6 +14,7 @@ import asyncio
 import logging
 import uuid
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from backend.ipc.ipc_channel import (
@@ -83,6 +84,14 @@ ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
 }
 
 
+@dataclass(frozen=True)
+class RealtimeSubscriber:
+    """One browser realtime subscriber bound to an optional conversation."""
+
+    queue: asyncio.Queue
+    conversation_id: str = ""
+
+
 class OrchestratorClient:
     """Multiplexing IPC client for the Orchestrator process.
 
@@ -103,9 +112,7 @@ class OrchestratorClient:
         """
         self._ipc = ipc_client
         self._response_futures: dict[str, asyncio.Future] = {}
-        self._session_queues: dict[str, asyncio.Queue] = {}
-        self._session_to_conversation: dict[str, str] = {}
-        self._conversation_to_session: dict[str, str] = {}
+        self._session_queues: dict[str, list[RealtimeSubscriber]] = {}
         self._request_to_session: dict[str, str] = {}
         self._request_to_conversation: dict[str, str] = {}
         self._active_chat_request_id = ""
@@ -165,8 +172,11 @@ class OrchestratorClient:
             queue: Queue to receive StreamEvent messages.
             conversation_id: Currently open chat id for direct chat events.
         """
-        self._session_queues[session_id] = queue
-        self._bind_session_conversation(session_id, conversation_id)
+        subscriber = RealtimeSubscriber(
+            queue=queue,
+            conversation_id=conversation_id.strip(),
+        )
+        self._session_queues.setdefault(session_id, []).append(subscriber)
 
     def unregister_session_queue(
         self,
@@ -179,32 +189,21 @@ class OrchestratorClient:
             session_id: Session identifier.
             queue: Optional queue that must still be current.
         """
-        current_queue = self._session_queues.get(session_id)
-        if queue is not None and current_queue is not queue:
+        subscribers = self._session_queues.get(session_id)
+        if not subscribers:
+            return
+        if queue is None:
+            self._session_queues.pop(session_id, None)
+            return
+        remaining = [
+            subscriber
+            for subscriber in subscribers
+            if subscriber.queue is not queue
+        ]
+        if remaining:
+            self._session_queues[session_id] = remaining
             return
         self._session_queues.pop(session_id, None)
-        self._unbind_session_conversation(session_id)
-
-    def _bind_session_conversation(
-        self,
-        session_id: str,
-        conversation_id: str,
-    ) -> None:
-        """Bind one browser stream session to its active chat."""
-        self._unbind_session_conversation(session_id)
-        normalized_conversation_id = conversation_id.strip()
-        if not normalized_conversation_id:
-            return
-        self._session_to_conversation[session_id] = normalized_conversation_id
-        self._conversation_to_session[normalized_conversation_id] = session_id
-
-    def _unbind_session_conversation(self, session_id: str) -> None:
-        """Remove one browser session to chat binding."""
-        conversation_id = self._session_to_conversation.pop(session_id, "")
-        if not conversation_id:
-            return
-        if self._conversation_to_session.get(conversation_id) == session_id:
-            self._conversation_to_session.pop(conversation_id, None)
 
     async def publish_conversation_event(
         self,
@@ -214,19 +213,14 @@ class OrchestratorClient:
         data: dict[str, Any],
     ) -> None:
         """Push one realtime event into the browser that currently shows this chat."""
-        session_id = self._conversation_to_session.get(conversation_id)
-        if session_id is None:
-            return
-        session_queue = self._session_queues.get(session_id)
-        if session_queue is None:
-            return
-        await session_queue.put(
-            StreamEvent(
-                request_id="",
-                event_type=event_type,
-                data=data,
-            )
+        subscribers = self._subscribers_for_conversation(conversation_id)
+        event = StreamEvent(
+            request_id="",
+            event_type=event_type,
+            data=data,
         )
+        for subscriber in subscribers:
+            await subscriber.queue.put(event)
 
     def subscribe_memory_events(self) -> asyncio.Queue:
         """Subscribe to memory pipeline events.
@@ -512,9 +506,15 @@ class OrchestratorClient:
         if message.event_type == "scheduled_task_result":
             await self._broadcast_to_all_sessions(message)
             return
-        session_queue = self._resolve_session_queue(message.request_id)
-        if session_queue is not None:
-            await session_queue.put(message)
+        subscribers = self._resolve_session_subscribers(message.request_id)
+        logger.debug(
+            "Routing realtime event type=%s request_id=%s subscribers=%s",
+            message.event_type,
+            message.request_id,
+            len(subscribers),
+        )
+        for subscriber in subscribers:
+            await subscriber.queue.put(message)
 
     async def _broadcast_to_all_sessions(self, message: StreamEvent) -> None:
         """Fan out one stream event to every active realtime session queue.
@@ -524,9 +524,10 @@ class OrchestratorClient:
         that is currently connected, regardless of which conversation
         is open.
         """
-        for queue in self._session_queues.values():
-            with suppress(asyncio.QueueFull):
-                queue.put_nowait(message)
+        for subscribers in self._session_queues.values():
+            for subscriber in subscribers:
+                with suppress(asyncio.QueueFull):
+                    subscriber.queue.put_nowait(message)
 
     def _publish_memory_event(self, data: dict[str, Any]) -> None:
         """Fan out one memory event to admin subscribers."""
@@ -534,23 +535,55 @@ class OrchestratorClient:
             with suppress(asyncio.QueueFull):
                 memory_queue.put_nowait(data)
 
-    def _resolve_session_queue(
+    def _resolve_session_subscribers(
         self,
         request_id: str,
-    ) -> asyncio.Queue | None:
-        """Return the realtime queue bound to one request id."""
+    ) -> list[RealtimeSubscriber]:
+        """Return realtime subscribers bound to one request id."""
         session_id = self._request_to_session.get(request_id)
-        if session_id is not None:
-            session_queue = self._session_queues.get(session_id)
-            if session_queue is not None:
-                return session_queue
         conversation_id = self._request_to_conversation.get(request_id, "")
+        if session_id is not None:
+            subscribers = self._subscribers_for_session(
+                session_id,
+                conversation_id=conversation_id,
+            )
+            if subscribers:
+                return subscribers
         if not conversation_id:
-            return None
-        active_session_id = self._conversation_to_session.get(conversation_id)
-        if active_session_id is None:
-            return None
-        return self._session_queues.get(active_session_id)
+            return []
+        return self._subscribers_for_conversation(conversation_id)
+
+    def _subscribers_for_session(
+        self,
+        session_id: str,
+        *,
+        conversation_id: str = "",
+    ) -> list[RealtimeSubscriber]:
+        """Return subscribers for one session, optionally scoped to a conversation."""
+        subscribers = self._session_queues.get(session_id, [])
+        normalized_conversation_id = conversation_id.strip()
+        if not normalized_conversation_id:
+            return list(subscribers)
+        return [
+            subscriber
+            for subscriber in subscribers
+            if subscriber.conversation_id in ("", normalized_conversation_id)
+        ]
+
+    def _subscribers_for_conversation(
+        self,
+        conversation_id: str,
+    ) -> list[RealtimeSubscriber]:
+        """Return every active subscriber currently viewing one conversation."""
+        normalized_conversation_id = conversation_id.strip()
+        if not normalized_conversation_id:
+            return []
+        return [
+            subscriber
+            for subscribers in self._session_queues.values()
+            for subscriber in subscribers
+            if subscriber.conversation_id == normalized_conversation_id
+        ]
 
     def _resolve_response_future(self, message: BaseModel) -> None:
         """Resolve one pending response future from an incoming message."""

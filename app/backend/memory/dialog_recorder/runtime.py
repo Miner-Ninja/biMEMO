@@ -22,6 +22,7 @@ from backend.memory.dialog_recorder.constants import (
     MAX_FILTERED_FIELD_ITEMS,
     RECENT_OBSERVATION_DEDUP_LIMIT,
     RECENT_REFLECTION_DEDUP_LIMIT,
+    TRACE_DECISION_DELETED_CONVERSATION,
     TRACE_DECISION_DUPLICATE_MEMORY,
     TRACE_DECISION_LLM_ERROR,
     TRACE_DECISION_NOT_MEMORY_WORTHY,
@@ -567,6 +568,23 @@ async def process_record(
         ],
         source_message_ids=source_message_ids,
     )
+    if not record_id:
+        logger.info(
+            "Dialog Recorder skipped memory write for deleted conversation_id=%s",
+            conversation_id,
+        )
+        await _write_dialog_recorder_trace(
+            TRACE_DECISION_DELETED_CONVERSATION,
+            db_client,
+            text_messages,
+            conversation_id,
+            session_id,
+            source_message_ids,
+            trace_context=trace_context,
+            record=filtered_observation,
+            injection_flagged=injection_flagged,
+        )
+        return None
     rate_limiter.record()
 
     if event_bus is not None:

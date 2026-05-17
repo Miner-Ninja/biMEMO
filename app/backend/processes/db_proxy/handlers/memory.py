@@ -77,6 +77,21 @@ def make_save_record_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Save an record to the database."""
         p = _validate_params(params, SaveRecordParams)
+        if p.conversation_id and _table_exists(db, "conversations"):
+            row = db.execute(
+                "SELECT 1 FROM conversations WHERE id = ?",
+                (p.conversation_id,),
+            ).fetchone()
+            if row is None:
+                logger.info(
+                    "Skipping save_record for deleted conversation_id=%s",
+                    p.conversation_id,
+                )
+                return {
+                    "record_id": "",
+                    "skipped": True,
+                    "reason": "conversation_deleted",
+                }
         record_id = str(uuid.uuid4())
         key_facts_json = json.dumps(p.key_facts)
         memory_kinds_json = json.dumps(p.memory_kinds)

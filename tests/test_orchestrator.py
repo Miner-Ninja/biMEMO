@@ -344,6 +344,46 @@ class TestFinalAnswerRecovery:
 
         assert decision.accepted
 
+    def test_finalization_rejects_missing_current_data_target_without_notice(self):
+        """Missing target evidence must be explicit in current-data answers."""
+        decision = validate_final_answer(
+            raw_final_text="Bitcoin is 100. Ethereum is 200.",
+            structured_content=None,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                satisfied_tools=frozenset({"web_search"}),
+                current_data_targets=("Bitcoin", "Ethereum", "Solana"),
+                missing_current_data_targets=("Solana",),
+            ),
+        )
+
+        assert not decision.accepted
+        assert decision.requires_recovery
+
+    def test_finalization_accepts_missing_current_data_target_with_notice(self):
+        """An answer can finish when it clearly reports missing evidence."""
+        decision = validate_final_answer(
+            raw_final_text=(
+                "Bitcoin is 100. Ethereum is 200. Solana data was not found "
+                "in the available sources."
+            ),
+            structured_content=None,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=RequirementSatisfaction(
+                satisfied_tools=frozenset({"web_search"}),
+                current_data_targets=("Bitcoin", "Ethereum", "Solana"),
+                missing_current_data_targets=("Solana",),
+            ),
+        )
+
+        assert decision.accepted
+
     def test_required_tool_failure_answer_is_clear(self):
         """Return a deterministic answer when mandatory evidence failed."""
         answer = build_required_tool_failure_answer(
@@ -392,6 +432,114 @@ class TestFinalAnswerRecovery:
         assert "web_search" in satisfaction.satisfied_tools
         assert not satisfaction.failed_tools
         assert "BTC: 100" in str(messages[-1]["content"])
+
+    @pytest.mark.asyncio
+    async def test_required_web_search_expands_crypto_price_queries(self):
+        """Fetch targeted evidence for each requested crypto price."""
+        broker = MagicMock()
+
+        async def execute(tool_name: str, params: dict) -> ToolResult:
+            query = params["query"]
+            return ToolResult(
+                tool_name=tool_name,
+                success=True,
+                result={
+                    "results": [
+                        {
+                            "title": f"{query} result",
+                            "url": f"https://example.test/{query}",
+                            "snippet": f"Live data for {query}",
+                        }
+                    ]
+                },
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+
+        broker.execute = AsyncMock(side_effect=execute)
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=broker,
+        )
+        messages: list[dict[str, object]] = []
+
+        satisfaction = await llm_caller.append_required_tool_context(
+            filtered_message="Покажи текущий курс Bitcoin, Ethereum и Solana",
+            messages=messages,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+        )
+
+        queries = [
+            call.args[1]["query"]
+            for call in broker.execute.await_args_list
+            if call.args[0] == "web_search"
+        ]
+        assert queries[:3] == [
+            "current Bitcoin BTC price USD today",
+            "current Ethereum ETH price USD today",
+            "current Solana SOL price USD today",
+        ]
+        assert "web_search" in satisfaction.satisfied_tools
+        content = str(messages[-1]["content"])
+        assert "current Bitcoin BTC price USD today" in content
+        assert "current Ethereum ETH price USD today" in content
+        assert "current Solana SOL price USD today" in content
+
+    @pytest.mark.asyncio
+    async def test_required_web_search_tracks_missing_target_evidence(self):
+        """Partial current-data evidence is tracked at target level."""
+        broker = MagicMock()
+
+        async def execute(tool_name: str, params: dict) -> ToolResult:
+            query = params["query"]
+            results = []
+            if "Solana" not in query:
+                results = [
+                    {
+                        "title": f"{query} result",
+                        "url": f"https://example.test/{query}",
+                        "snippet": f"Live data for {query}",
+                    }
+                ]
+            return ToolResult(
+                tool_name=tool_name,
+                success=True,
+                result={"results": results},
+                zone=TrustZone.YELLOW,
+                duration_ms=1.0,
+            )
+
+        broker.execute = AsyncMock(side_effect=execute)
+        llm_caller = LLMCaller(
+            model_name="qwen3.5:9b",
+            web_search_classifier_fn=None,
+            memory_recall_classifier_fn=None,
+            broker=broker,
+        )
+        messages: list[dict[str, object]] = []
+
+        satisfaction = await llm_caller.append_required_tool_context(
+            filtered_message="Покажи текущий курс Bitcoin, Ethereum и Solana",
+            messages=messages,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+        )
+
+        assert "web_search" in satisfaction.satisfied_tools
+        assert satisfaction.current_data_targets == (
+            "Bitcoin",
+            "Ethereum",
+            "Solana",
+        )
+        assert satisfaction.missing_current_data_targets == ("Solana",)
+        assert "Solana: missing" in str(messages[-1]["content"])
 
     @pytest.mark.asyncio
     async def test_required_web_search_context_tracks_failure(self):

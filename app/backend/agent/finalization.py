@@ -88,12 +88,16 @@ class RequirementSatisfaction:
 
     satisfied_tools: frozenset[str] = frozenset()
     failed_tools: dict[str, str] = field(default_factory=dict)
+    current_data_targets: tuple[str, ...] = ()
+    missing_current_data_targets: tuple[str, ...] = ()
 
     def with_success(self, tool_name: str) -> RequirementSatisfaction:
         """Return a copy with one tool marked successful."""
         return RequirementSatisfaction(
             satisfied_tools=self.satisfied_tools | {tool_name},
             failed_tools=dict(self.failed_tools),
+            current_data_targets=self.current_data_targets,
+            missing_current_data_targets=self.missing_current_data_targets,
         )
 
     def with_failure(self, tool_name: str, reason: str) -> RequirementSatisfaction:
@@ -103,6 +107,22 @@ class RequirementSatisfaction:
         return RequirementSatisfaction(
             satisfied_tools=self.satisfied_tools,
             failed_tools=failed_tools,
+            current_data_targets=self.current_data_targets,
+            missing_current_data_targets=self.missing_current_data_targets,
+        )
+
+    def with_current_data_targets(
+        self,
+        *,
+        targets: tuple[str, ...],
+        missing_targets: tuple[str, ...] = (),
+    ) -> RequirementSatisfaction:
+        """Return a copy with current-data evidence coverage details."""
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools,
+            failed_tools=dict(self.failed_tools),
+            current_data_targets=targets,
+            missing_current_data_targets=missing_targets,
         )
 
 
@@ -243,4 +263,31 @@ def validate_final_answer(
             reason=f"missing-required-tools:{','.join(missing_tools)}",
             requires_recovery=True,
         )
+    if requirements.needs_current_data and satisfaction.missing_current_data_targets:
+        normalized_answer = " ".join(answer_text.casefold().split())
+        missing_markers = (
+            "not found",
+            "could not find",
+            "not available",
+            "no evidence",
+            "не найден",
+            "не удалось",
+            "нет данных",
+            "данные отсутств",
+        )
+        missing_targets_without_notice = [
+            target
+            for target in satisfaction.missing_current_data_targets
+            if target.casefold() not in normalized_answer
+            or not any(marker in normalized_answer for marker in missing_markers)
+        ]
+        if missing_targets_without_notice:
+            return FinalAnswerDecision(
+                accepted=False,
+                reason=(
+                    "missing-current-data-targets:"
+                    f"{','.join(missing_targets_without_notice)}"
+                ),
+                requires_recovery=True,
+            )
     return FinalAnswerDecision(accepted=True, reason="accepted")
