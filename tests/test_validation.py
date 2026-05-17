@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 from backend.tools.validation import (
     ValidationError,
+    _dns_lookup,
     check_numeric_ip,
     check_path_traversal,
     check_sensitive_path,
@@ -155,6 +156,35 @@ class TestResolveAndCheck:
         mock_dns.return_value = []
         with pytest.raises(ValidationError, match="No DNS"):
             resolve_and_check("example.com")
+
+    @patch("backend.tools.validation.socket.getaddrinfo")
+    def test_dns_lookup_restores_default_timeout_on_success(self, mock_dns):
+        """Verify DNS lookup does not leak global socket timeout state."""
+        import socket
+
+        previous_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(123.0)
+        mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        try:
+            assert _dns_lookup("example.com") == mock_dns.return_value
+            assert socket.getdefaulttimeout() == 123.0
+        finally:
+            socket.setdefaulttimeout(previous_timeout)
+
+    @patch("backend.tools.validation.socket.getaddrinfo")
+    def test_dns_lookup_restores_default_timeout_on_failure(self, mock_dns):
+        """Verify DNS lookup restores timeout even when resolution fails."""
+        import socket
+
+        previous_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(123.0)
+        mock_dns.side_effect = socket.gaierror("fail")
+        try:
+            with pytest.raises(ValidationError, match="DNS"):
+                _dns_lookup("missing.invalid")
+            assert socket.getdefaulttimeout() == 123.0
+        finally:
+            socket.setdefaulttimeout(previous_timeout)
 
 
 class TestValidateUrl:

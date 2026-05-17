@@ -226,11 +226,14 @@ def check_numeric_ip(hostname: str) -> None:
 
 def _dns_lookup(hostname: str) -> list[tuple]:
     """Resolve one hostname with the active DNS timeout."""
+    previous_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(_dns_timeout_seconds())
     try:
         return socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
     except socket.gaierror as error:
         raise _validation_error(f"DNS resolution failed: {hostname}") from error
+    finally:
+        socket.setdefaulttimeout(previous_timeout)
 
 
 def _first_dns_ip(hostname: str, results: list[tuple]) -> str:

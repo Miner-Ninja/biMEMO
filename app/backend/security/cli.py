@@ -14,6 +14,7 @@ import sys
 
 import sqlcipher3
 
+from backend.security.database import DatabaseManager
 from backend.security.encrypted_key_file import (
     decrypt_master_key,
     encrypt_master_key,
@@ -52,7 +53,7 @@ def _current_and_new_passwords() -> tuple[str, str]:
 
 def _open_cipher_connection(db_path: str, master_key: bytes) -> sqlcipher3.Connection:
     """Open one SQLCipher connection with the given key."""
-    hex_key = master_key.hex()
+    hex_key = DatabaseManager._raw_key_hex(master_key)
     conn = sqlcipher3.connect(db_path)
     conn.execute(f"PRAGMA key = \"x'{hex_key}'\"")
     return conn

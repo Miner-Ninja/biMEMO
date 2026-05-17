@@ -8,13 +8,16 @@ import os
 from pathlib import Path
 
 import pytest
+from backend.ipc.protocol import ToolRequest
 from backend.tools.validation import ValidationError
 from backend.workers.fs_worker import (
     _has_symlink_component,
+    _open_for_no_symlink_write,
     _resolve_and_check,
     execute_file_read,
     execute_file_search,
     execute_file_write,
+    make_fs_dispatch,
 )
 
 
@@ -215,3 +218,64 @@ class TestSymlinkWriteBlocked:
         target = tmp_path / "output.txt"
         result = execute_file_write(str(target), "hello", [str(tmp_path)])
         assert result.get("bytes_written") == 5
+
+    def test_no_symlink_open_rejects_final_symlink(self, tmp_path):
+        """Verify open-time symlink rejection closes the TOCTOU gap."""
+        real = tmp_path / "real.txt"
+        real.write_text("original")
+        link = tmp_path / "link.txt"
+        link.symlink_to(real)
+
+        with pytest.raises(ValidationError, match="symlink"), (
+            _open_for_no_symlink_write(link)
+        ):
+            pass
+
+
+class TestFsDispatchValidation:
+    """Tests for raw FS worker parameter validation."""
+
+    @pytest.mark.asyncio
+    async def test_file_read_rejects_non_string_path(self, tmp_path):
+        """Verify malformed file_read params return a worker error."""
+        handler = make_fs_dispatch([str(tmp_path)])
+        request = ToolRequest(
+            request_id="req-1",
+            tool_name="file_read",
+            parameters={"path": 123},
+        )
+
+        response = await handler(request)
+
+        assert response.status == "error"
+        assert "'path' must be a string" in (response.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_file_write_rejects_non_string_content(self, tmp_path):
+        """Verify malformed file_write params return a worker error."""
+        handler = make_fs_dispatch([str(tmp_path)])
+        request = ToolRequest(
+            request_id="req-1",
+            tool_name="file_write",
+            parameters={"path": str(tmp_path / "out.txt"), "content": ["bad"]},
+        )
+
+        response = await handler(request)
+
+        assert response.status == "error"
+        assert "'content' must be a string" in (response.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_file_search_rejects_missing_pattern(self, tmp_path):
+        """Verify malformed file_search params return a worker error."""
+        handler = make_fs_dispatch([str(tmp_path)])
+        request = ToolRequest(
+            request_id="req-1",
+            tool_name="file_search",
+            parameters={"directory": str(tmp_path)},
+        )
+
+        response = await handler(request)
+
+        assert response.status == "error"
+        assert "'pattern' must be a string" in (response.error_message or "")

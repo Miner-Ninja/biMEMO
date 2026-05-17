@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # --- Protocol constants ---
 HMAC_TAG_LEN = 32
 LENGTH_PREFIX_LEN = 4
-MAX_MESSAGE_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_MESSAGE_SIZE = 2 * 1024 * 1024  # 2 MB
 
 
 class AuthenticationError(Exception):

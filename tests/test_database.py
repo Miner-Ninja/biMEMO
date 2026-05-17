@@ -67,6 +67,25 @@ class TestDatabaseCreation:
         manager.close()
         assert manager.is_open is False
 
+    def test_rejects_short_master_key_before_open(self, db_path):
+        """Verify malformed raw keys are rejected before opening SQLCipher."""
+        manager = DatabaseManager(db_path)
+
+        with pytest.raises(DatabaseError, match="32 bytes"):
+            manager.open(bytearray(b"short"))
+
+    def test_raw_key_hex_accepts_bytes_and_bytearray(self):
+        """Verify the raw key helper accepts both supported bytes-like types."""
+        raw = b"x" * 32
+
+        assert DatabaseManager._raw_key_hex(raw) == raw.hex()
+        assert DatabaseManager._raw_key_hex(bytearray(raw)) == raw.hex()
+
+    def test_raw_key_hex_rejects_non_bytes(self):
+        """Verify the raw key helper rejects non bytes-like input."""
+        with pytest.raises(DatabaseError, match="bytes-like"):
+            DatabaseManager._raw_key_hex("not-bytes")  # type: ignore[arg-type]
+
 
 class TestDatabaseEncryption:
     """Tests for database encryption with wrong keys."""

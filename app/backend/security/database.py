@@ -7,6 +7,7 @@ database connection used by all Core process components.
 """
 
 import logging
+import re
 
 import sqlcipher3
 
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 # --- Sentinel validation ---
 SENTINEL_QUERY = "SELECT count(*) FROM sqlite_master"
+RAW_KEY_BYTES = 32
+RAW_KEY_HEX_CHARS = RAW_KEY_BYTES * 2
+RAW_KEY_HEX_RE = re.compile(r"^[0-9a-f]+$")
 
 
 class DatabaseError(Exception):
@@ -55,7 +59,7 @@ class DatabaseManager:
             DatabaseKeyError: If the key cannot decrypt the database.
             DatabaseError: If the database cannot be opened.
         """
-        hex_key = master_key.hex()
+        hex_key = self._raw_key_hex(master_key)
         try:
             conn = self._open_connection(hex_key)
             self._validate_sentinel(conn)
@@ -67,6 +71,21 @@ class DatabaseManager:
             if self._looks_like_key_error(e):
                 raise DatabaseKeyError("Master key cannot decrypt the database") from e
             raise DatabaseError(f"Failed to open database: {e}") from e
+
+    @staticmethod
+    def _raw_key_hex(master_key: bytes | bytearray) -> str:
+        """Return validated SQLCipher raw key hex."""
+        if not isinstance(master_key, (bytes, bytearray)):
+            raise DatabaseError("Master key must be bytes-like")
+        if len(master_key) != RAW_KEY_BYTES:
+            raise DatabaseError("Master key must be 32 bytes")
+        hex_key = master_key.hex()
+        if (
+            len(hex_key) != RAW_KEY_HEX_CHARS
+            or RAW_KEY_HEX_RE.fullmatch(hex_key) is None
+        ):
+            raise DatabaseError("Master key hex shape is invalid")
+        return hex_key
 
     def _open_connection(self, hex_key: str) -> sqlcipher3.Connection:
         """Open one SQLCipher connection and apply required pragmas."""

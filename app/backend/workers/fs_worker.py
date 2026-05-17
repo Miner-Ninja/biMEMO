@@ -10,11 +10,12 @@ Core-side dispatch handler factory (make_fs_dispatch).
 
 from __future__ import annotations
 
+import errno
 import glob
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO
 
 from backend.tools.validation import (
     ValidationError,
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 MAX_READ_SIZE = 1_048_576  # 1 MB
 MAX_SEARCH_RESULTS = 100
+FILE_WRITE_MODE = 0o644
 
 if TYPE_CHECKING:
     import multiprocessing.connection
@@ -111,6 +113,53 @@ def _has_symlink_component(path: str) -> bool:
     return False
 
 
+def _required_string_param(params: dict, name: str) -> str:
+    """Return a required string parameter from raw worker params."""
+    value = params.get(name)
+    if not isinstance(value, str):
+        raise ValidationError(f"'{name}' must be a string")
+    return value
+
+
+def _file_read_params(params: dict) -> tuple[str]:
+    """Validate raw file_read worker params."""
+    return (_required_string_param(params, "path"),)
+
+
+def _file_write_params(params: dict) -> tuple[str, str]:
+    """Validate raw file_write worker params."""
+    return (
+        _required_string_param(params, "path"),
+        _required_string_param(params, "content"),
+    )
+
+
+def _file_search_params(params: dict) -> tuple[str, str]:
+    """Validate raw file_search worker params."""
+    return (
+        _required_string_param(params, "directory"),
+        _required_string_param(params, "pattern"),
+    )
+
+
+def _open_for_no_symlink_write(path: Path) -> BinaryIO:
+    """Open a file for writing while atomically rejecting symlink targets."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, FILE_WRITE_MODE)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ValidationError("Write through symlink is not allowed") from error
+        raise
+    try:
+        return os.fdopen(fd, "wb")
+    except Exception:
+        os.close(fd)
+        raise
+
+
 def execute_file_read(path: str, allowed_dirs: list[str]) -> dict:
     """Read a file within allowed directories.
 
@@ -161,7 +210,7 @@ def execute_file_write(
     os.makedirs(resolved.parent, exist_ok=True)
 
     encoded = content.encode("utf-8")
-    with open(resolved, "wb") as f:
+    with _open_for_no_symlink_write(resolved) as f:
         written = f.write(encoded)
     return {"bytes_written": written}
 
@@ -224,12 +273,14 @@ def make_fs_dispatch(allowed_dirs: list[str]) -> callable:
         Async handler function for ToolRequest dispatch.
     """
     _dispatch = {
-        "file_read": lambda p: execute_file_read(p["path"], allowed_dirs),
+        "file_read": lambda p: execute_file_read(*_file_read_params(p), allowed_dirs),
         "file_write": lambda p: execute_file_write(
-            p["path"], p["content"], allowed_dirs
+            *_file_write_params(p),
+            allowed_dirs,
         ),
         "file_search": lambda p: execute_file_search(
-            p["directory"], p["pattern"], allowed_dirs
+            *_file_search_params(p),
+            allowed_dirs,
         ),
     }
 

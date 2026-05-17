@@ -126,6 +126,14 @@ class TestClientErrors:
         await client.close()
 
 
+class TestMessageSizeLimit:
+    """Tests for bounded IPC frame size."""
+
+    def test_ipc_message_size_limit_is_bounded(self):
+        """Verify generic worker IPC frames are limited to 2 MB."""
+        assert MAX_MESSAGE_SIZE == 2 * 1024 * 1024
+
+
 class TestRequestIdBinding:
     """Tests for request_id verification."""
 
