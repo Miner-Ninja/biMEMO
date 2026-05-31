@@ -11,18 +11,29 @@ from typing import TYPE_CHECKING
 from backend.memory.evidence_chain import load_evidence_bundle_for_query
 from backend.memory.evidence_recall import is_evidence_recall_question
 from backend.tools.builtin import (
+    CodeSearchInput,
     EmailSendInput,
+    ExecuteCommandInput,
+    ExecuteCommandStreamInput,
     FileReadInput,
     FileSearchInput,
     FileWriteInput,
+    GitCommitInput,
+    GitDiffInput,
+    GitLogInput,
+    GitPushInput,
+    GitStatusInput,
     HttpFetchInput,
     MemoryRecallInput,
     ScheduleTaskInput,
+    SetWorkspaceInput,
     SkillCreateInput,
     SkillLoadInput,
     SkillSearchInput,
     SystemStatusInput,
     WebSearchInput,
+    WorkspaceHistoryInput,
+    WorkspaceNoteInput,
 )
 from backend.tools.handlers.schedule import make_schedule_task_handler
 from backend.tools.handlers.skill import (
@@ -152,6 +163,110 @@ TOOL_DEFINITIONS = (
         description="Load the full procedure of a saved skill by name",
         input_model=SkillLoadInput,
         zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="set_workspace",
+        description=(
+            "Manage workspace directories. "
+            "Actions: add (path), remove (path), list. "
+            "Add a directory to allow file operations there. "
+            "Remove to revoke access. List to see current allowed dirs."
+        ),
+        input_model=SetWorkspaceInput,
+        zone=TrustZone.YELLOW,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="workspace_history",
+        description=(
+            "Get or clear workspace action history. "
+            "Use 'get' to see recent file/command actions. "
+            "Use 'clear' to reset history."
+        ),
+        input_model=WorkspaceHistoryInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="workspace_note",
+        description=(
+            "Add semantic notes to workspace history. "
+            "Include progress updates, decisions made, or blockers. "
+            "Optional fields: user_intent, progress, decisions (JSON), blockers (JSON)."
+        ),
+        input_model=WorkspaceNoteInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="git_status",
+        description="Show git working tree status (branch, staged, unstaged, untracked).",
+        input_model=GitStatusInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="git_diff",
+        description="Show git diff (unstaged or staged changes).",
+        input_model=GitDiffInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="git_log",
+        description="Show git commit history (last N commits).",
+        input_model=GitLogInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="git_commit",
+        description="Commit changes with message. RED zone — requires confirmation.",
+        input_model=GitCommitInput,
+        zone=TrustZone.RED,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="git_push",
+        description="Push to remote. RED zone — requires confirmation.",
+        input_model=GitPushInput,
+        zone=TrustZone.RED,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="code_search",
+        description=(
+            "Search for text or regex patterns across workspace files. "
+            "Returns matching files with line numbers and context."
+        ),
+        input_model=CodeSearchInput,
+        zone=TrustZone.GREEN,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="execute_command",
+        description=(
+            "Execute a shell command with allowlist security. "
+            "Only whitelisted commands are allowed. "
+            "Returns stdout, stderr, exit_code. "
+            "Timeout defaults to 30s. "
+            "RED zone — requires user confirmation."
+        ),
+        input_model=ExecuteCommandInput,
+        zone=TrustZone.RED,
+        worker=WorkerTarget.CORE,
+    ),
+    ToolDefinition(
+        name="execute_command_stream",
+        description=(
+            "Execute a shell command with streaming output. "
+            "Same as execute_command but for long-running processes. "
+            "Output is collected and returned when done. "
+            "RED zone — requires user confirmation."
+        ),
+        input_model=ExecuteCommandStreamInput,
+        zone=TrustZone.RED,
         worker=WorkerTarget.CORE,
     ),
 )
@@ -391,6 +506,246 @@ def _make_memory_recall_handler(db_client: object) -> callable:
     return handler
 
 
+def _make_set_workspace_handler(workspace: object) -> callable:
+    """Build an async handler for the set_workspace tool."""
+    async def handler(params: object) -> dict:
+        """Manage workspace directories."""
+        action = getattr(params, "action", "") or ""
+        path = getattr(params, "path", "") or ""
+
+        if action == "list":
+            return {"directories": workspace.get()}
+
+        if action == "add":
+            if not path:
+                return {"error": "path is required for add action"}
+            try:
+                from pathlib import Path
+                resolved = Path(path).resolve()
+                if not resolved.is_dir():
+                    return {"error": f"Directory does not exist: {path}"}
+                workspace.add(str(resolved))
+                return {
+                    "status": "added",
+                    "directory": str(resolved),
+                    "all_directories": workspace.get(),
+                }
+            except Exception as e:
+                return {"error": str(e)}
+
+        if action == "remove":
+            if not path:
+                return {"error": "path is required for remove action"}
+            removed = workspace.remove(path)
+            if removed:
+                return {
+                    "status": "removed",
+                    "directory": path,
+                    "all_directories": workspace.get(),
+                }
+            return {"error": f"Directory not found in workspace: {path}"}
+
+        return {"error": f"Unknown action: {action}. Use: add, remove, list"}
+
+    return handler
+
+
+def _make_workspace_history_handler(store: object) -> callable:
+    """Build an async handler for the workspace_history tool."""
+    async def handler(params: object) -> dict:
+        """Get or clear workspace history."""
+        action = getattr(params, "action", "") or ""
+        # Get conversation_id from broker context
+        conversation_id = "default"
+
+        if action == "get":
+            entries = await store.get_latest(conversation_id, last_n=10)
+            return {
+                "entries": [e.to_dict() for e in entries],
+                "count": len(entries),
+            }
+
+        if action == "clear":
+            await store.clear(conversation_id)
+            return {"status": "cleared"}
+
+        return {"error": f"Unknown action: {action}. Use: get, clear"}
+
+    return handler
+
+
+def _make_workspace_note_handler(
+    tracker: object,
+    store: object,
+) -> callable:
+    """Build an async handler for the workspace_note tool."""
+    import json as _json
+
+    async def handler(params: object) -> dict:
+        """Add semantic notes to workspace history."""
+        user_intent = getattr(params, "user_intent", "") or ""
+        progress = getattr(params, "progress", "") or ""
+        decisions_raw = getattr(params, "decisions", "[]") or "[]"
+        blockers_raw = getattr(params, "blockers", "[]") or "[]"
+
+        try:
+            decisions = _json.loads(decisions_raw) if decisions_raw else []
+        except Exception:
+            decisions = [decisions_raw]
+        try:
+            blockers = _json.loads(blockers_raw) if blockers_raw else []
+        except Exception:
+            blockers = [blockers_raw]
+
+        tracker.add_note(
+            user_intent=user_intent,
+            progress=progress,
+            decisions=decisions if isinstance(decisions, list) else [decisions],
+            blockers=blockers if isinstance(blockers, list) else [blockers],
+        )
+
+        return {"status": "note added"}
+
+    return handler
+
+
+def _make_execute_command_handler() -> callable:
+    """Build an async handler for the execute_command tool."""
+    async def handler(params: object) -> dict:
+        """Execute a shell command and return output."""
+        from backend.workers.cmd_worker import execute_command
+
+        command = getattr(params, "command", "") or ""
+        cwd = getattr(params, "cwd", "") or None
+        timeout = getattr(params, "timeout", 30.0) or 30.0
+
+        if not command:
+            return {"error": "command is required"}
+
+        result = await execute_command(
+            command=command,
+            cwd=cwd,
+            timeout=timeout,
+        )
+
+        response: dict = {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "timed_out": result.timed_out,
+        }
+        if result.error:
+            response["error"] = result.error
+        return response
+
+    return handler
+
+
+def _make_execute_command_stream_handler() -> callable:
+    """Build an async handler for the execute_command_stream tool.
+
+    Runs the command and returns output in chunks. For the MVP,
+    this collects all output and returns it at once (true streaming
+    requires WebSocket integration which is deferred).
+    """
+    async def handler(params: object) -> dict:
+        """Execute a command with streaming output."""
+        from backend.workers.cmd_worker import execute_command
+
+        command = getattr(params, "command", "") or ""
+        cwd = getattr(params, "cwd", "") or None
+        timeout = getattr(params, "timeout", 30.0) or 30.0
+
+        if not command:
+            return {"error": "command is required"}
+
+        result = await execute_command(
+            command=command,
+            cwd=cwd,
+            timeout=timeout,
+        )
+
+        response: dict = {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "timed_out": result.timed_out,
+        }
+        if result.error:
+            response["error"] = result.error
+        return response
+
+    return handler
+
+
+def _make_git_status_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.git_ops import git_status
+        cwd = getattr(params, "cwd", "") or None
+        return await git_status(cwd=cwd)
+    return handler
+
+
+def _make_git_diff_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.git_ops import git_diff
+        cwd = getattr(params, "cwd", "") or None
+        staged = getattr(params, "staged", False) or False
+        return await git_diff(cwd=cwd, staged=staged)
+    return handler
+
+
+def _make_git_log_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.git_ops import git_log
+        cwd = getattr(params, "cwd", "") or None
+        count = getattr(params, "count", 10) or 10
+        return await git_log(cwd=cwd, count=count)
+    return handler
+
+
+def _make_git_commit_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.git_ops import git_commit
+        message = getattr(params, "message", "") or ""
+        cwd = getattr(params, "cwd", "") or None
+        all_files = getattr(params, "all_files", False) or False
+        if not message:
+            return {"error": "message is required"}
+        return await git_commit(message=message, cwd=cwd, all_files=all_files)
+    return handler
+
+
+def _make_git_push_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.git_ops import git_push
+        cwd = getattr(params, "cwd", "") or None
+        remote = getattr(params, "remote", "origin") or "origin"
+        branch = getattr(params, "branch", "") or None
+        return await git_push(cwd=cwd, remote=remote, branch=branch)
+    return handler
+
+
+def _make_code_search_handler() -> callable:
+    async def handler(params: object) -> dict:
+        from backend.tools.handlers.code_search import code_search
+        pattern = getattr(params, "pattern", "") or ""
+        cwd = getattr(params, "cwd", "") or None
+        file_pattern = getattr(params, "file_pattern", "**/*") or "**/*"
+        max_results = getattr(params, "max_results", 50) or 50
+        context_lines = getattr(params, "context_lines", 2) or 2
+        use_regex = getattr(params, "use_regex", False) or False
+        return await code_search(
+            pattern=pattern,
+            cwd=cwd,
+            file_pattern=file_pattern,
+            max_results=max_results,
+            context_lines=context_lines,
+            use_regex=use_regex,
+        )
+    return handler
+
+
 def _register_worker_proxy_group(
     broker: ToolBroker,
     worker: WorkerManager,
@@ -417,6 +772,9 @@ def register_all_handlers(
     db_client: object,
     fs_worker: WorkerManager,
     net_worker: WorkerManager,
+    workspace: object,
+    history_tracker: object,
+    history_store: object,
     data_dir: str,
     ready_since: float,
     get_ollama_status: callable,
@@ -424,13 +782,16 @@ def register_all_handlers(
     db_path: str | None = None,
     smtp_config: dict | None = None,
 ) -> None:
-    """Register all 12 tool handlers with the broker.
+    """Register all 15 tool handlers with the broker.
 
     Args:
         broker: Tool broker to register handlers with.
         db_client: DBProxyClient for core handlers (IPC-based).
         fs_worker: FS Worker manager for file operations.
         net_worker: Net Worker manager for network operations.
+        workspace: Mutable workspace dirs container.
+        history_tracker: Workspace history tracker.
+        history_store: Workspace history store.
         data_dir: Data directory path for system_status.
         ready_since: Timestamp for uptime calculation.
         get_ollama_status: Callable returning Ollama status.
@@ -471,7 +832,40 @@ def register_all_handlers(
         make_skill_load_handler(db_client),
     )
 
-    logger.info("All 11 tool handlers registered")
+    broker.set_handler(
+        "set_workspace",
+        _make_set_workspace_handler(workspace),
+    )
+
+    broker.set_handler(
+        "workspace_history",
+        _make_workspace_history_handler(history_store),
+    )
+    broker.set_handler(
+        "workspace_note",
+        _make_workspace_note_handler(history_tracker, history_store),
+    )
+
+    broker.set_handler(
+        "execute_command",
+        _make_execute_command_handler(),
+    )
+    broker.set_handler(
+        "execute_command_stream",
+        _make_execute_command_stream_handler(),
+    )
+
+    # Git tools
+    broker.set_handler("git_status", _make_git_status_handler())
+    broker.set_handler("git_diff", _make_git_diff_handler())
+    broker.set_handler("git_log", _make_git_log_handler())
+    broker.set_handler("git_commit", _make_git_commit_handler())
+    broker.set_handler("git_push", _make_git_push_handler())
+
+    # Code search
+    broker.set_handler("code_search", _make_code_search_handler())
+
+    logger.info("All 22 tool handlers registered")
 
 
 EXPECTED_TOOLS = frozenset(
@@ -487,6 +881,17 @@ EXPECTED_TOOLS = frozenset(
         "skill_create",
         "skill_search",
         "skill_load",
+        "set_workspace",
+        "workspace_history",
+        "workspace_note",
+        "execute_command",
+        "execute_command_stream",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_commit",
+        "git_push",
+        "code_search",
     }
 )
 

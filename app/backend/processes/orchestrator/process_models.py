@@ -53,6 +53,8 @@ class RuntimeServices:
     broker: object
     fs_worker: object
     net_worker: object
+    history_tracker: object
+    history_store: object
     orch: object
     scheduler_orch: object | None
     llm_call: Callable | None

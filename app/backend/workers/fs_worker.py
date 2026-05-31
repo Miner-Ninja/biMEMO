@@ -15,7 +15,7 @@ import glob
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING, BinaryIO, Callable
 
 from backend.tools.validation import (
     ValidationError,
@@ -29,6 +29,35 @@ logger = logging.getLogger(__name__)
 MAX_READ_SIZE = 1_048_576  # 1 MB
 MAX_SEARCH_RESULTS = 100
 FILE_WRITE_MODE = 0o644
+
+
+class WorkspaceDirs:
+    """Mutable container for allowed directories.
+
+    Allows runtime modification of allowed dirs without
+    recreating the dispatch handler.
+    """
+
+    def __init__(self, initial: list[str]) -> None:
+        self._dirs: list[str] = [str(Path(d).resolve()) for d in initial]
+
+    def get(self) -> list[str]:
+        """Return a copy of current allowed directories."""
+        return list(self._dirs)
+
+    def add(self, directory: str) -> None:
+        """Add a directory if not already present."""
+        resolved = str(Path(directory).resolve())
+        if resolved not in self._dirs:
+            self._dirs.append(resolved)
+
+    def remove(self, directory: str) -> bool:
+        """Remove a directory. Returns True if found and removed."""
+        resolved = str(Path(directory).resolve())
+        if resolved in self._dirs:
+            self._dirs.remove(resolved)
+            return True
+        return False
 
 if TYPE_CHECKING:
     import multiprocessing.connection
@@ -63,7 +92,7 @@ def _unknown_tool_response(request_id: str, tool_name: str) -> ToolResponse:
     return _tool_error_response(request_id, f"Unknown tool: {tool_name}")
 
 
-def _resolve_and_check(path: str, allowed_dirs: list[str]) -> Path:
+def _resolve_and_check(path: str, workspace: WorkspaceDirs) -> Path:
     """Resolve a path and verify it stays within allowed dirs.
 
     Uses Path.relative_to() to prevent prefix-match false positives
@@ -71,7 +100,7 @@ def _resolve_and_check(path: str, allowed_dirs: list[str]) -> Path:
 
     Args:
         path: File path to resolve.
-        allowed_dirs: List of allowed parent directories.
+        workspace: Mutable workspace dirs container.
 
     Returns:
         Resolved absolute Path object.
@@ -81,7 +110,7 @@ def _resolve_and_check(path: str, allowed_dirs: list[str]) -> Path:
     """
     check_path_traversal(path)
     resolved = Path(path).resolve()
-    for allowed in allowed_dirs:
+    for allowed in workspace.get():
         allowed_resolved = Path(allowed).resolve()
         try:
             resolved.relative_to(allowed_resolved)
@@ -160,12 +189,12 @@ def _open_for_no_symlink_write(path: Path) -> BinaryIO:
         raise
 
 
-def execute_file_read(path: str, allowed_dirs: list[str]) -> dict:
+def execute_file_read(path: str, workspace: WorkspaceDirs) -> dict:
     """Read a file within allowed directories.
 
     Args:
         path: File path to read.
-        allowed_dirs: List of allowed parent directories.
+        workspace: Mutable workspace dirs container.
 
     Returns:
         Dict with content string.
@@ -173,8 +202,7 @@ def execute_file_read(path: str, allowed_dirs: list[str]) -> dict:
     Raises:
         ValidationError: If path is invalid.
     """
-    resolved = _resolve_and_check(path, allowed_dirs)
-
+    resolved = _resolve_and_check(path, workspace)
     size = os.path.getsize(resolved)
     if size > MAX_READ_SIZE:
         return {"error": (f"File too large: {size} bytes (max {MAX_READ_SIZE})")}
@@ -187,14 +215,14 @@ def execute_file_read(path: str, allowed_dirs: list[str]) -> dict:
 def execute_file_write(
     path: str,
     content: str,
-    allowed_dirs: list[str],
+    workspace: WorkspaceDirs,
 ) -> dict:
     """Write content to a file within allowed directories.
 
     Args:
         path: File path to write.
         content: Content to write.
-        allowed_dirs: List of allowed parent directories.
+        workspace: Mutable workspace dirs container.
 
     Returns:
         Dict with bytes_written count.
@@ -205,7 +233,7 @@ def execute_file_write(
     check_sensitive_path(path)
     if _has_symlink_component(path):
         raise ValidationError("Write through symlink is not allowed")
-    resolved = _resolve_and_check(path, allowed_dirs)
+    resolved = _resolve_and_check(path, workspace)
 
     os.makedirs(resolved.parent, exist_ok=True)
 
@@ -218,14 +246,14 @@ def execute_file_write(
 def execute_file_search(
     directory: str,
     pattern: str,
-    allowed_dirs: list[str],
+    workspace: WorkspaceDirs,
 ) -> dict:
     """Search for files matching a glob pattern.
 
     Args:
         directory: Directory to search in.
         pattern: Glob pattern to match.
-        allowed_dirs: List of allowed parent directories.
+        workspace: Mutable workspace dirs container.
 
     Returns:
         Dict with list of matching paths.
@@ -233,7 +261,7 @@ def execute_file_search(
     Raises:
         ValidationError: If directory is outside allowed dirs.
     """
-    resolved_dir = _resolve_and_check(directory, allowed_dirs)
+    resolved_dir = _resolve_and_check(directory, workspace)
 
     check_path_traversal(pattern)
     full_pattern = str(resolved_dir / pattern)
@@ -260,27 +288,27 @@ def fs_worker_main(
     worker_main(conn)
 
 
-def make_fs_dispatch(allowed_dirs: list[str]) -> callable:
+def make_fs_dispatch(workspace: WorkspaceDirs) -> Callable[..., object]:
     """Create a dispatch handler for FS Worker tool requests.
 
     Returns an async handler that routes ToolRequest messages
     to the appropriate file operation handler.
 
     Args:
-        allowed_dirs: List of allowed parent directories.
+        workspace: Mutable workspace dirs container.
 
     Returns:
         Async handler function for ToolRequest dispatch.
     """
     _dispatch = {
-        "file_read": lambda p: execute_file_read(*_file_read_params(p), allowed_dirs),
+        "file_read": lambda p: execute_file_read(*_file_read_params(p), workspace),
         "file_write": lambda p: execute_file_write(
             *_file_write_params(p),
-            allowed_dirs,
+            workspace,
         ),
         "file_search": lambda p: execute_file_search(
             *_file_search_params(p),
-            allowed_dirs,
+            workspace,
         ),
     }
 

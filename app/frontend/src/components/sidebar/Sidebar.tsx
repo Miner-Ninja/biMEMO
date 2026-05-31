@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import { Shield, MessageSquare, FileText } from 'lucide-react'
+import { Shield, MessageSquare, FileText, FolderTree } from 'lucide-react'
 import { NewChatButton } from './NewChatButton'
 import { ChatList } from './ChatList'
 import { ChatSearch } from './ChatSearch'
 import { FileList } from './FileList'
+import { WorkspaceFileTree } from './WorkspaceFileTree'
 import { UserMenu } from './UserMenu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Chat } from '@/types/chat'
 import { SidebarPanel, SidebarShell } from './sidebar-chrome'
+
+type TabKey = 'chats' | 'files' | 'workspace'
 
 interface SidebarProps {
   chats: Chat[]
@@ -48,9 +51,9 @@ export function Sidebar({
   onToggleVoiceMode,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<'chats' | 'files'>('chats')
+  const [activeTab, setActiveTab] = useState<TabKey>('chats')
 
-  const switchTab = (tab: 'chats' | 'files') => {
+  const switchTab = (tab: TabKey) => {
     setActiveTab(tab)
     setSearchQuery('')
   }
@@ -62,8 +65,8 @@ export function Sidebar({
       subtitle="Workspace"
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
-          <Tabs value={activeTab} onValueChange={(value) => switchTab(value as 'chats' | 'files')}>
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-2 border-sidebar-border bg-sidebar-accent/30 p-1">
+          <Tabs value={activeTab} onValueChange={(value) => switchTab(value as TabKey)}>
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-2 border-sidebar-border bg-sidebar-accent/30 p-1">
               <TabsTrigger
                 value="chats"
                 className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
@@ -78,14 +81,26 @@ export function Sidebar({
                 <FileText className="h-4 w-4" />
                 Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
               </TabsTrigger>
+              <TabsTrigger
+                value="workspace"
+                className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
+              >
+                <FolderTree className="h-4 w-4" />
+                Workspace
+              </TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <ChatSearch
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder={activeTab === 'chats' ? 'Search chats...' : 'Search files...'}
-          />
+          {activeTab !== 'workspace' && (
+            <ChatSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={
+                activeTab === 'chats' ? 'Search chats...'
+                  : 'Search files...'
+              }
+            />
+          )}
         </SidebarPanel>
       }
       content={
@@ -100,7 +115,7 @@ export function Sidebar({
               onDeleteChat={onDeleteChat}
               onRenameChat={onRenameChat}
             />
-          ) : (
+          ) : activeTab === 'files' ? (
             <FileList
               activeFiles={activeFiles}
               onActiveFilesChange={onActiveFilesChange}
@@ -108,6 +123,8 @@ export function Sidebar({
               refreshKey={fileRefreshKey}
               searchQuery={searchQuery}
             />
+          ) : (
+            <WorkspaceFileTree />
           )}
         </div>
       }

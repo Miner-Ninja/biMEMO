@@ -57,7 +57,7 @@ class _InProcessWorker:
 async def _setup_tools(
     db_client: DBProxyClient,
     settings: Settings,
-) -> tuple[object, _InProcessWorker, _InProcessWorker]:
+) -> tuple[object, _InProcessWorker, _InProcessWorker, object, object]:
     """Create broker, registry, in-process workers, register tools.
 
     Args:
@@ -83,11 +83,16 @@ async def _setup_tools(
         registry=registry,
         tool_broker_cls=ToolBroker,
     )
-    fs_worker, net_worker, data_dir = _build_runtime_tool_workers(
+    fs_worker, net_worker, workspace, data_dir = _build_runtime_tool_workers(
         settings=settings,
         make_fs_dispatch_fn=make_fs_dispatch,
         make_net_dispatch_fn=make_net_dispatch,
     )
+    from backend.workspace.history_store import WorkspaceHistoryStore
+    from backend.workspace.history_tracker import WorkspaceHistoryTracker
+
+    history_tracker = WorkspaceHistoryTracker()
+    history_store = WorkspaceHistoryStore()
     register_tool_definitions(registry)
     _register_runtime_tool_handlers(
         register_all_handlers_fn=register_all_handlers,
@@ -95,11 +100,14 @@ async def _setup_tools(
         db_client=db_client,
         fs_worker=fs_worker,
         net_worker=net_worker,
+        workspace=workspace,
+        history_tracker=history_tracker,
+        history_store=history_store,
         data_dir=data_dir,
     )
     validate_all_registered(broker)
 
-    return broker, fs_worker, net_worker
+    return broker, fs_worker, net_worker, history_tracker, history_store
 
 
 async def _build_runtime_tool_broker(
@@ -122,14 +130,19 @@ def _build_runtime_tool_workers(
     settings: Settings,
     make_fs_dispatch_fn: object,
     make_net_dispatch_fn: object,
-) -> tuple[_InProcessWorker, _InProcessWorker, str]:
+) -> tuple[_InProcessWorker, _InProcessWorker, object, str]:
     """Build the in-process filesystem and network tool workers."""
+    from backend.workers.fs_worker import WorkspaceDirs
+
     data_dir = str(Path(settings.database_path).parent)
-    fs_dispatch = make_fs_dispatch_fn(_build_fs_allowed_dirs(data_dir))
+    initial_dirs = _build_fs_allowed_dirs(data_dir)
+    workspace = WorkspaceDirs(initial_dirs)
+    fs_dispatch = make_fs_dispatch_fn(workspace)
     net_dispatch = make_net_dispatch_fn(settings.searxng_url)
     return (
         _InProcessWorker("fs-worker", fs_dispatch),
         _InProcessWorker("net-worker", net_dispatch),
+        workspace,
         data_dir,
     )
 
@@ -148,6 +161,9 @@ def _register_runtime_tool_handlers(
     db_client: DBProxyClient,
     fs_worker: _InProcessWorker,
     net_worker: _InProcessWorker,
+    workspace: object,
+    history_tracker: object,
+    history_store: object,
     data_dir: str,
 ) -> None:
     """Register all tool handlers for the runtime broker."""
@@ -171,6 +187,9 @@ def _register_runtime_tool_handlers(
         db_client=db_client,
         fs_worker=fs_worker,
         net_worker=net_worker,
+        workspace=workspace,
+        history_tracker=history_tracker,
+        history_store=history_store,
         data_dir=data_dir,
         ready_since=ready_since,
         get_ollama_status=get_ollama_status,

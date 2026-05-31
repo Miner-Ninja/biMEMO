@@ -821,12 +821,14 @@ async def _prepare_runtime_services(
         broker=core[0],
         fs_worker=core[1],
         net_worker=core[2],
-        orch=core[3],
-        scheduler_orch=core[4],
-        llm_call=core[5],
-        llm_config=core[6],
-        active_service_type=core[7],
-        llm_client=core[8],
+        history_tracker=core[3],
+        history_store=core[4],
+        orch=core[5],
+        scheduler_orch=core[6],
+        llm_call=core[7],
+        llm_config=core[8],
+        active_service_type=core[9],
+        llm_client=core[10],
         stt_client=support[0],
         tts_client=support[1],
         memory_event_bus=support[2],
@@ -851,7 +853,7 @@ async def _prepare_runtime_core_services(
     )
     from .tool_setup import _setup_tools
 
-    broker, fs_worker, net_worker = await _setup_tools(
+    broker, fs_worker, net_worker, history_tracker, history_store = await _setup_tools(
         db_client,
         settings,
     )
@@ -899,6 +901,8 @@ async def _prepare_runtime_core_services(
         broker,
         fs_worker,
         net_worker,
+        history_tracker,
+        history_store,
         orch,
         scheduler_orch,
         llm_call,
