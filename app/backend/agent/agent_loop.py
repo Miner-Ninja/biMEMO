@@ -390,7 +390,7 @@ class AgentOrchestrator:
                 if not isinstance(appraisal.get(axis), int):
                     return None
             return _appraise_skill_quality(appraisal)
-        except json.JSONDecodeError, Exception:
+        except Exception:
             logger.warning(
                 "Skill quality appraiser did not return a usable verdict",
                 exc_info=True,
@@ -554,6 +554,7 @@ class AgentOrchestrator:
             skill_errors = "[]"
             skill_verification = ""
 
+            parse_ok = True
             try:
                 parsed = json.loads(raw_text)
                 skill_title = parsed.get("title", skill_title)
@@ -575,27 +576,28 @@ class AgentOrchestrator:
                     "storing raw text as trigger",
                 )
                 skill_trigger = raw_text
+                parse_ok = False
 
-            # --- Quality appraisal gate ---
-            appraisal_verdict = await self._run_skill_quality_appraisal(
-                title=skill_title,
-                description=skill_description,
-                trigger=skill_trigger,
-                procedure=skill_procedure,
-                errors=skill_errors,
-                verification=skill_verification,
-                llm_call=llm_call,
-            )
-            if appraisal_verdict is not None and not appraisal_verdict.accepted:
-                logger.info(
-                    "Discarding skill '%s' — quality gate failed "
-                    "(total=%d, weakest=%s)",
-                    name,
-                    appraisal_verdict.total,
-                    appraisal_verdict.weakest_axis,
+            # Quality appraisal gate — only for conforming drafts
+            if parse_ok:
+                appraisal_verdict = await self._run_skill_quality_appraisal(
+                    title=skill_title,
+                    description=skill_description,
+                    trigger=skill_trigger,
+                    procedure=skill_procedure,
+                    errors=skill_errors,
+                    verification=skill_verification,
+                    llm_call=llm_call,
                 )
-                return
-            # --- End quality gate ---
+                if appraisal_verdict is not None and not appraisal_verdict.accepted:
+                    logger.info(
+                        "Discarding skill '%s' — quality gate failed "
+                        "(total=%d, weakest=%s)",
+                        name,
+                        appraisal_verdict.total,
+                        appraisal_verdict.weakest_axis,
+                    )
+                    return
 
             result = self.create_skill_fn(
                 name=name,
