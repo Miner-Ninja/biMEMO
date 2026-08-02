@@ -55,16 +55,14 @@ describe("useChat", () => {
       conversation("chat-1", "Chat 1"),
       conversation("chat-2", "Chat 2"),
     ]);
-    fetchConversationMessages.mockImplementation(
-      async (conversationId: string) => {
-        await Promise.resolve();
-        return [message(`msg-${conversationId}`, conversationId, conversationId)];
-      },
-    );
+    fetchConversationMessages.mockImplementation(async (conversationId: string) => {
+      await Promise.resolve();
+      return [message(`msg-${conversationId}`, conversationId, conversationId)];
+    });
     createConversation.mockResolvedValue({ conversation_id: "chat-3" });
     deleteConversation.mockResolvedValue({ ok: true });
     updateConversationTitle.mockImplementation(async (id: string, title: string) =>
-      conversation(id, title),
+      conversation(id, title)
     );
   });
 
@@ -73,7 +71,7 @@ describe("useChat", () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200),
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
 
     fetchConversationMessages.mockClear();
@@ -83,7 +81,7 @@ describe("useChat", () => {
     });
 
     await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-2", 200),
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-2", 200)
     );
     expect(fetchConversationMessages).toHaveBeenCalledTimes(1);
   });
@@ -109,7 +107,7 @@ describe("useChat", () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200),
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
 
     await act(async () => {
@@ -132,7 +130,7 @@ describe("useChat", () => {
 
     expect(result.current.activeChat?.messages[1].content).toBe("final answer");
     expect(result.current.activeChat?.messages[1].thinking).toBe(
-      "temporary visible reasoning",
+      "temporary visible reasoning"
     );
   });
 
@@ -159,21 +157,15 @@ describe("useChat", () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200),
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
 
     expect(result.current.activeChat?.messages[0].content).toBe("final answer");
-    expect(result.current.activeChat?.messages[0].thinking).toBe(
-      "stored reasoning",
-    );
+    expect(result.current.activeChat?.messages[0].thinking).toBe("stored reasoning");
     expect(result.current.activeChat?.messages[0].sql).toBe("SELECT 1");
-    expect(result.current.activeChat?.messages[0].suggestions).toEqual([
-      "Next step",
-    ]);
+    expect(result.current.activeChat?.messages[0].suggestions).toEqual(["Next step"]);
     expect(result.current.activeChat?.messages[0].stats?.prompt_tokens).toBe(10);
-    expect(result.current.activeChat?.messages[0].stats?.completion_tokens).toBe(
-      5,
-    );
+    expect(result.current.activeChat?.messages[0].stats?.completion_tokens).toBe(5);
   });
 
   it("adds an inbound bridge message to the chosen chat without reloading history", async () => {
@@ -181,7 +173,7 @@ describe("useChat", () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200),
+      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
 
     await act(async () => {

@@ -308,24 +308,28 @@ class TestTaskRunHistory:
         record = make_record_task_run_handler(fake_db)
         list_runs = make_list_task_runs_handler(fake_db)
 
-        await record({
-            "task_id": "task-1",
-            "started_at": "2026-04-06T10:00:00",
-            "finished_at": "2026-04-06T10:00:05",
-            "status": "ok",
-            "result_text": "Done",
-            "error_message": "",
-            "duration_ms": 5000,
-        })
-        await record({
-            "task_id": "task-1",
-            "started_at": "2026-04-06T11:00:00",
-            "finished_at": "2026-04-06T11:00:02",
-            "status": "error",
-            "result_text": "",
-            "error_message": "Network error",
-            "duration_ms": 2000,
-        })
+        await record(
+            {
+                "task_id": "task-1",
+                "started_at": "2026-04-06T10:00:00",
+                "finished_at": "2026-04-06T10:00:05",
+                "status": "ok",
+                "result_text": "Done",
+                "error_message": "",
+                "duration_ms": 5000,
+            }
+        )
+        await record(
+            {
+                "task_id": "task-1",
+                "started_at": "2026-04-06T11:00:00",
+                "finished_at": "2026-04-06T11:00:02",
+                "status": "error",
+                "result_text": "",
+                "error_message": "Network error",
+                "duration_ms": 2000,
+            }
+        )
 
         result = await list_runs({"task_id": "task-1", "limit": 20})
         assert len(result["runs"]) == 2
@@ -341,18 +345,22 @@ class TestTaskRunHistory:
         record = make_record_task_run_handler(fake_db)
         list_runs = make_list_task_runs_handler(fake_db)
 
-        await record({
-            "task_id": "task-A",
-            "started_at": "2026-04-06T10:00:00",
-            "finished_at": "2026-04-06T10:00:01",
-            "status": "ok",
-        })
-        await record({
-            "task_id": "task-B",
-            "started_at": "2026-04-06T10:00:00",
-            "finished_at": "2026-04-06T10:00:01",
-            "status": "ok",
-        })
+        await record(
+            {
+                "task_id": "task-A",
+                "started_at": "2026-04-06T10:00:00",
+                "finished_at": "2026-04-06T10:00:01",
+                "status": "ok",
+            }
+        )
+        await record(
+            {
+                "task_id": "task-B",
+                "started_at": "2026-04-06T10:00:00",
+                "finished_at": "2026-04-06T10:00:01",
+                "status": "ok",
+            }
+        )
 
         result_a = await list_runs({"task_id": "task-A", "limit": 10})
         result_b = await list_runs({"task_id": "task-B", "limit": 10})
@@ -372,12 +380,14 @@ class TestTaskRunHistory:
 
         # Insert one more than the limit
         for i in range(TASK_RUN_HISTORY_LIMIT + 5):
-            await record({
-                "task_id": "noisy",
-                "started_at": f"2026-04-06T10:{i:02d}:00",
-                "finished_at": f"2026-04-06T10:{i:02d}:01",
-                "status": "ok",
-            })
+            await record(
+                {
+                    "task_id": "noisy",
+                    "started_at": f"2026-04-06T10:{i:02d}:00",
+                    "finished_at": f"2026-04-06T10:{i:02d}:01",
+                    "status": "ok",
+                }
+            )
 
         count = fake_db.execute(
             "SELECT COUNT(*) FROM scheduled_task_runs WHERE task_id = ?",
@@ -838,7 +848,8 @@ class TestToolBrokerContextPropagation:
         mock_db = AsyncMock()
         mock_db.get_user_profile.return_value = {"profile": {"timezone": "UTC"}}
         mock_db.create_scheduled_task.return_value = {
-            "task_id": "x", "next_run_at": "2026-04-06T11:00:00",
+            "task_id": "x",
+            "next_run_at": "2026-04-06T11:00:00",
         }
         broker = MagicMock()
         broker.current_context = {"conversation_id": "from-context"}
@@ -866,7 +877,8 @@ class TestToolBrokerContextPropagation:
         mock_db = AsyncMock()
         mock_db.get_user_profile.return_value = {"profile": {"timezone": "UTC"}}
         mock_db.create_scheduled_task.return_value = {
-            "task_id": "x", "next_run_at": "2026-04-06T11:00:00",
+            "task_id": "x",
+            "next_run_at": "2026-04-06T11:00:00",
         }
         handler = make_schedule_task_handler(mock_db, broker=None)
         await handler(

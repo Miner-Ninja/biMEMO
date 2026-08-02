@@ -1,22 +1,22 @@
-import { Info } from 'lucide-react'
-import { BridgeProviderIcon } from '@/components/icons/BridgeProviderIcon'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ThemeToggle } from './ThemeToggle'
-import { cn } from '@/lib/utils'
+import { Info } from "lucide-react";
+import { BridgeProviderIcon } from "@/components/icons/BridgeProviderIcon";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "./ThemeToggle";
+import { cn } from "@/lib/utils";
 
 interface HeaderProps {
-  title?: string
-  bridgeProvider?: string | null
-  onOpenBridgeDetails?: () => void
-  className?: string
+  title?: string;
+  bridgeProvider?: string | null;
+  onOpenBridgeDetails?: () => void;
+  className?: string;
 }
 
 /**
  * Application header with title and actions
  */
 function bridgeProviderLabel(provider: string): string {
-  return provider.charAt(0).toUpperCase() + provider.slice(1)
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 export function Header({
@@ -26,11 +26,16 @@ export function Header({
   className,
 }: HeaderProps) {
   return (
-    <header className={cn('flex h-11 items-center justify-between gap-1.5 border-b border-border/70 bg-card/80 px-2 sm:h-14 sm:gap-3 sm:px-4', className)}>
+    <header
+      className={cn(
+        "flex h-11 items-center justify-between gap-1.5 border-b border-border/70 bg-card/80 px-2 sm:h-14 sm:gap-3 sm:px-4",
+        className
+      )}
+    >
       <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
           <h1 className="truncate text-[15px] font-semibold tracking-tight sm:text-lg">
-            {title || 'CEO AI Assistant'}
+            {title || "CEO AI Assistant"}
           </h1>
           {bridgeProvider ? (
             <Badge
@@ -39,7 +44,9 @@ export function Header({
               title={`${bridgeProviderLabel(bridgeProvider)} bridge connected`}
             >
               <BridgeProviderIcon provider={bridgeProvider} className="h-3 w-3" />
-              <span className="hidden sm:inline">{bridgeProviderLabel(bridgeProvider)}</span>
+              <span className="hidden sm:inline">
+                {bridgeProviderLabel(bridgeProvider)}
+              </span>
               <Badge variant="success" className="h-2 w-2 rounded-full border-0 p-0" />
             </Badge>
           ) : null}
@@ -59,5 +66,5 @@ export function Header({
         <ThemeToggle />
       </div>
     </header>
-  )
+  );
 }

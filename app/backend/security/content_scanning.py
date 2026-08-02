@@ -158,8 +158,7 @@ DANGEROUS_SHELL_PATTERN_STRINGS: list[str] = [
 
 # --- Union compiled list — backward-compatible default ---
 _CODE_EXECUTION_PATTERNS = [
-    re.compile(p, re.IGNORECASE)
-    for p in BROAD_CODE_EXECUTION_PATTERN_STRINGS
+    re.compile(p, re.IGNORECASE) for p in BROAD_CODE_EXECUTION_PATTERN_STRINGS
 ]
 
 # --- Strict exfiltration patterns: explicit URL-with-secret + img beacon ---
@@ -190,8 +189,7 @@ BROAD_EXFILTRATION_PATTERN_STRINGS: list[str] = [
 
 # --- Union compiled list — backward-compatible default ---
 _EXFILTRATION_PATTERNS = [
-    re.compile(p, re.IGNORECASE)
-    for p in BROAD_EXFILTRATION_PATTERN_STRINGS
+    re.compile(p, re.IGNORECASE) for p in BROAD_EXFILTRATION_PATTERN_STRINGS
 ]
 
 # --- Suspicious patterns (high entropy = likely encoded) ---

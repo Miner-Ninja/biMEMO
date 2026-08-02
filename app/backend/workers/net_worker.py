@@ -36,9 +36,7 @@ MAX_RESPONSE_SIZE = 5_242_880  # 5 MB
 MAX_REDIRECTS = 3
 MAX_EXTRACTED_TEXT_LENGTH = 6000
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
-_HTTP_FETCH_USER_AGENT = (
-    "Mozilla/5.0 (compatible; biMEMO/1.0; +https://bimemo.app)"
-)
+_HTTP_FETCH_USER_AGENT = "Mozilla/5.0 (compatible; biMEMO/1.0; +https://bimemo.app)"
 _HTML_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 

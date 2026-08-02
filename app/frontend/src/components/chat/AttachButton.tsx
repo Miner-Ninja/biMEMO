@@ -1,61 +1,61 @@
-import { useRef, useState, useEffect } from 'react'
-import { Paperclip, AlertCircle } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from '@/lib/file-upload-contract'
+import { useRef, useState, useEffect } from "react";
+import { Paperclip, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from "@/lib/file-upload-contract";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 interface AttachButtonProps {
-  onFileSelect: (files: File[]) => void
-  disabled?: boolean
-  className?: string
+  onFileSelect: (files: File[]) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
 /**
  * Button to trigger file attachment
  */
 export function AttachButton({ onFileSelect, disabled, className }: AttachButtonProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Auto-clear error after 3 seconds
   useEffect(() => {
     if (error) {
-      const timer = setTimeout(() => setError(null), 3000)
-      return () => clearTimeout(timer)
+      const timer = setTimeout(() => setError(null), 3000);
+      return () => clearTimeout(timer);
     }
-  }, [error])
+  }, [error]);
 
   const handleClick = () => {
-    inputRef.current?.click()
-  }
+    inputRef.current?.click();
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files
-    if (!fileList || fileList.length === 0) return
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    const validFiles: File[] = []
+    const validFiles: File[] = [];
     for (const file of Array.from(fileList)) {
       if (!isAllowedUploadFilename(file.name)) {
-        setError('This file type is not supported.')
-        e.target.value = ''
-        return
+        setError("This file type is not supported.");
+        e.target.value = "";
+        return;
       }
       if (file.size > MAX_FILE_SIZE) {
-        setError('File size must be less than 10MB.')
-        e.target.value = ''
-        return
+        setError("File size must be less than 10MB.");
+        e.target.value = "";
+        return;
       }
-      validFiles.push(file)
+      validFiles.push(file);
     }
 
-    setError(null)
-    onFileSelect(validFiles)
+    setError(null);
+    onFileSelect(validFiles);
     // Reset input so same files can be selected again
-    e.target.value = ''
-  }
+    e.target.value = "";
+  };
 
   return (
     <div className="relative">
@@ -88,5 +88,5 @@ export function AttachButton({ onFileSelect, disabled, className }: AttachButton
         </Badge>
       )}
     </div>
-  )
+  );
 }

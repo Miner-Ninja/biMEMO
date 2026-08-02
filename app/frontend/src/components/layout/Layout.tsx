@@ -1,34 +1,37 @@
-import { useState, type ReactNode } from 'react'
-import { PanelLeft } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useState, type ReactNode } from "react";
+import { PanelLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
+} from "@/components/ui/sheet";
 
 interface LayoutProps {
-  sidebar?: ReactNode
-  header?: ReactNode
-  children: ReactNode
+  sidebar?: ReactNode;
+  header?: ReactNode;
+  children: ReactNode;
 }
 
 /**
  * Main layout with sidebar and main content area
  */
 export function Layout({ sidebar, header, children }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const toggleSidebar = () => setSidebarOpen((prev) => !prev)
+  const toggleSidebar = () => setSidebarOpen((prev) => !prev);
 
   return (
     <div className="flex h-dvh min-h-0 w-full overflow-hidden bg-background">
       {sidebar && (
         <>
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="w-[85vw] max-w-80 border-sidebar-border p-0 md:hidden">
+            <SheetContent
+              side="left"
+              className="w-[85vw] max-w-80 border-sidebar-border p-0 md:hidden"
+            >
               <SheetHeader className="sr-only">
                 <SheetTitle>Navigation sidebar</SheetTitle>
                 <SheetDescription>Open the main navigation panel.</SheetDescription>
@@ -60,8 +63,10 @@ export function Layout({ sidebar, header, children }: LayoutProps) {
           </div>
         )}
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </main>
     </div>
-  )
+  );
 }

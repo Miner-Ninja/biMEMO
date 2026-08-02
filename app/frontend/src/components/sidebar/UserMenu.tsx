@@ -1,46 +1,51 @@
-import { useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
-import { User, LogOut, Settings, Shield, AudioLines } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { getSidebarActionButtonClassName } from './sidebar-chrome'
+import { useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import { User, LogOut, Settings, Shield, AudioLines } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSidebarActionButtonClassName } from "./sidebar-chrome";
 
 interface UserMenuProps {
-  userName?: string
-  onLogout?: () => void
-  voiceMode?: boolean
-  onToggleVoiceMode?: () => void
+  userName?: string;
+  onLogout?: () => void;
+  voiceMode?: boolean;
+  onToggleVoiceMode?: () => void;
 }
 
 const ITEM_CLASS =
-  'relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground disabled:pointer-events-none disabled:opacity-50'
+  "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground disabled:pointer-events-none disabled:opacity-50";
 
 const ITEM_DESTRUCTIVE_CLASS =
-  'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive'
+  "text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive";
 
-const SEPARATOR_CLASS = 'my-1 h-px bg-border'
+const SEPARATOR_CLASS = "my-1 h-px bg-border";
 
 /**
  * User menu with avatar, decorative settings gear, and cursor-anchored popover.
  */
-export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoiceMode }: UserMenuProps) {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const isAdmin = location.pathname.startsWith('/admin')
-  const [open, setOpen] = useState(false)
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
-  const pendingMousePosRef = useRef<{ x: number; y: number } | null>(null)
+export function UserMenu({
+  userName = "User",
+  onLogout,
+  voiceMode,
+  onToggleVoiceMode,
+}: UserMenuProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isAdmin = location.pathname.startsWith("/admin");
+  const [open, setOpen] = useState(false);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const pendingMousePosRef = useRef<{ x: number; y: number } | null>(null);
   const initials = userName
-    .split(' ')
+    .split(" ")
     .map((n) => n[0])
-    .join('')
+    .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2);
 
   const anchor = useMemo(() => {
-    if (!mousePos) return undefined
+    if (!mousePos) return undefined;
     return {
       getBoundingClientRect: () =>
         DOMRect.fromRect({
@@ -49,11 +54,11 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
           width: 0,
           height: 0,
         }),
-    }
-  }, [mousePos])
+    };
+  }, [mousePos]);
 
-  const MOUSE_POS_CLEAR_DELAY_MS = 200
-  const REOPEN_DELAY_MS = 120
+  const MOUSE_POS_CLEAR_DELAY_MS = 200;
+  const REOPEN_DELAY_MS = 120;
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (nextOpen) {
@@ -61,39 +66,39 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
       // captured at the most recent mousedown, if any. Keyboard activations
       // leave the pending ref at null so the popup anchors to the trigger
       // by default.
-      setOpen(true)
+      setOpen(true);
       if (pendingMousePosRef.current) {
-        setMousePos(pendingMousePosRef.current)
-        pendingMousePosRef.current = null
+        setMousePos(pendingMousePosRef.current);
+        pendingMousePosRef.current = null;
       }
-      return
+      return;
     }
 
     // Closing. If a new pointer click is pending (user clicked the trigger
     // again at a different location), animate close and reopen at the new
     // location. Otherwise just close.
     if (pendingMousePosRef.current) {
-      const nextPos = pendingMousePosRef.current
-      pendingMousePosRef.current = null
-      setOpen(false)
+      const nextPos = pendingMousePosRef.current;
+      pendingMousePosRef.current = null;
+      setOpen(false);
       setTimeout(() => {
-        setMousePos(nextPos)
-        setOpen(true)
-      }, REOPEN_DELAY_MS)
-      return
+        setMousePos(nextPos);
+        setOpen(true);
+      }, REOPEN_DELAY_MS);
+      return;
     }
 
-    setOpen(false)
+    setOpen(false);
     // Defer clearing until the close animation (duration-100) finishes,
     // so the popup animates out at the click point instead of jumping
     // to the trigger anchor mid-animation.
-    setTimeout(() => setMousePos(null), MOUSE_POS_CLEAR_DELAY_MS)
-  }
+    setTimeout(() => setMousePos(null), MOUSE_POS_CLEAR_DELAY_MS);
+  };
 
   const handleSelect = (action: () => void) => {
-    action()
-    handleOpenChange(false)
-  }
+    action();
+    handleOpenChange(false);
+  };
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
@@ -103,7 +108,7 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
             variant="outline"
             className={getSidebarActionButtonClassName()}
             onMouseDown={(e) => {
-              pendingMousePosRef.current = { x: e.clientX, y: e.clientY }
+              pendingMousePosRef.current = { x: e.clientX, y: e.clientY };
             }}
           />
         }
@@ -137,18 +142,18 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
             <button
               type="button"
               className={ITEM_CLASS}
-              onClick={() => handleSelect(() => navigate(isAdmin ? '/' : '/admin'))}
+              onClick={() => handleSelect(() => navigate(isAdmin ? "/" : "/admin"))}
             >
               <Shield className="size-4" />
-              {isAdmin ? 'Back to Chat' : 'App Settings'}
+              {isAdmin ? "Back to Chat" : "App Settings"}
             </button>
             {onToggleVoiceMode && (
               <button
                 type="button"
                 className={ITEM_CLASS}
                 onClick={(e) => {
-                  e.preventDefault()
-                  onToggleVoiceMode()
+                  e.preventDefault();
+                  onToggleVoiceMode();
                 }}
               >
                 <AudioLines className="size-4" />
@@ -173,5 +178,5 @@ export function UserMenu({ userName = 'User', onLogout, voiceMode, onToggleVoice
         </PopoverPrimitive.Positioner>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
-  )
+  );
 }

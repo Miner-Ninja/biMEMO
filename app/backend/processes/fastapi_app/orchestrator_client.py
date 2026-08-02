@@ -196,9 +196,7 @@ class OrchestratorClient:
             self._session_queues.pop(session_id, None)
             return
         remaining = [
-            subscriber
-            for subscriber in subscribers
-            if subscriber.queue is not queue
+            subscriber for subscriber in subscribers if subscriber.queue is not queue
         ]
         if remaining:
             self._session_queues[session_id] = remaining

@@ -1,56 +1,56 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { AdminCardSkeleton } from '@/components/ui/skeletons'
-import { ErrorAlert } from '@/components/ui/error-alert'
-import { apiRequest } from '@/lib/bimemo-api'
+import { useCallback, useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AdminCardSkeleton } from "@/components/ui/skeletons";
+import { ErrorAlert } from "@/components/ui/error-alert";
+import { apiRequest } from "@/lib/bimemo-api";
 
 interface Summary {
-  main_point: string
-  trust_level: string
-  based_on_count: number
-  created_at: string
+  main_point: string;
+  trust_level: string;
+  based_on_count: number;
+  created_at: string;
 }
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 20;
 
 function trustLevelColor(trustLevel: string): string {
-  if (trustLevel === 'high') return 'text-green-600 dark:text-green-400'
-  if (trustLevel === 'medium') return 'text-amber-600 dark:text-amber-400'
-  return 'text-muted-foreground'
+  if (trustLevel === "high") return "text-green-600 dark:text-green-400";
+  if (trustLevel === "medium") return "text-amber-600 dark:text-amber-400";
+  return "text-muted-foreground";
 }
 
 export function SummariesViewPanel({ refreshToken }: { refreshToken: number }) {
-  const [summaries, setSummaries] = useState<Summary[]>([])
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [summaries, setSummaries] = useState<Summary[]>([]);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const hasNextPage = summaries.length === PAGE_SIZE
+  const hasNextPage = summaries.length === PAGE_SIZE;
 
   const fetchSummaries = useCallback(async (p: number) => {
-    setLoading(true)
+    setLoading(true);
     try {
       const data = await apiRequest<Summary[]>(
         `/admin/summaries?page=${p}&per_page=${PAGE_SIZE}`
-      )
-      setSummaries(data)
-      setError('')
+      );
+      setSummaries(data);
+      setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load summaries')
+      setError(err instanceof Error ? err.message : "Failed to load summaries");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    setPage(1)
-    fetchSummaries(1)
-  }, [refreshToken, fetchSummaries])
+    setPage(1);
+    fetchSummaries(1);
+  }, [refreshToken, fetchSummaries]);
 
   useEffect(() => {
-    fetchSummaries(page)
-  }, [page, fetchSummaries])
+    fetchSummaries(page);
+  }, [page, fetchSummaries]);
 
   return (
     <div className="space-y-4">
@@ -95,9 +95,7 @@ export function SummariesViewPanel({ refreshToken }: { refreshToken: number }) {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {page}
-              </span>
+              <span className="text-sm text-muted-foreground">Page {page}</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -112,5 +110,5 @@ export function SummariesViewPanel({ refreshToken }: { refreshToken: number }) {
         </>
       )}
     </div>
-  )
+  );
 }

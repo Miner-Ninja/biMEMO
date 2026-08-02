@@ -86,6 +86,5 @@ def build_history_context(
 
     return (
         "Workspace history (recent turns):\n"
-        "Actions from earlier turns that were compressed.\n\n"
-        + "\n---\n".join(blocks)
+        "Actions from earlier turns that were compressed.\n\n" + "\n---\n".join(blocks)
     )

@@ -1,36 +1,36 @@
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { apiRequest } from '@/lib/bimemo-api'
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/bimemo-api";
 
 interface ReauthModalProps {
-  onSuccess: (token?: string) => void
-  onClose: () => void
+  onSuccess: (token?: string) => void;
+  onClose: () => void;
 }
 
 export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!password || loading) return
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    if (!password || loading) return;
+    setError("");
+    setLoading(true);
 
     try {
-      const data = await apiRequest<{ reauth_token: string }>('/admin/reauth', {
-        method: 'POST',
+      const data = await apiRequest<{ reauth_token: string }>("/admin/reauth", {
+        method: "POST",
         body: JSON.stringify({ password }),
-      })
-      onSuccess(data.reauth_token)
+      });
+      onSuccess(data.reauth_token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+      setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -53,20 +53,18 @@ export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
             required
           />
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={!password || loading}>
-              {loading ? 'Verifying...' : 'Confirm'}
+              {loading ? "Verifying..." : "Confirm"}
             </Button>
           </div>
         </form>
       </div>
     </div>
-  )
+  );
 }

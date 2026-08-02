@@ -147,9 +147,7 @@ def list_tools_by_zone(
     zones = _zone_mapping(custom_zones)
     explicit = [name for name, z in zones.items() if z == zone]
     if zone is TrustZone.GREEN:
-        explicit.extend(
-            tool for tool in _KNOWN_GREEN_TOOLS if zones.get(tool) is None
-        )
+        explicit.extend(tool for tool in _KNOWN_GREEN_TOOLS if zones.get(tool) is None)
     return explicit
 
 

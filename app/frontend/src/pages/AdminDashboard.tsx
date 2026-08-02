@@ -1,45 +1,45 @@
-import { Link } from 'react-router-dom'
-import { Settings, Database, Cpu, User, Bug, Sparkles } from 'lucide-react'
-import { AdminLayout } from '@/components/layout/AdminLayout'
+import { Link } from "react-router-dom";
+import { Settings, Database, Cpu, User, Bug, Sparkles } from "lucide-react";
+import { AdminLayout } from "@/components/layout/AdminLayout";
 
 const adminLinks = [
   {
-    to: '/admin/llm',
+    to: "/admin/llm",
     icon: Cpu,
-    title: 'LLM Configuration',
-    description: 'Configure AI provider, model, and credentials',
+    title: "LLM Configuration",
+    description: "Configure AI provider, model, and credentials",
   },
   {
-    to: '/admin/profile',
+    to: "/admin/profile",
     icon: User,
-    title: 'User Profile',
-    description: 'Set your name, timezone, language, and instructions',
+    title: "User Profile",
+    description: "Set your name, timezone, language, and instructions",
   },
   {
-    to: '/admin/integrations',
+    to: "/admin/integrations",
     icon: Settings,
-    title: 'Integrations',
-    description: 'Manage external service connections',
+    title: "Integrations",
+    description: "Manage external service connections",
   },
   {
-    to: '/admin/backups',
+    to: "/admin/backups",
     icon: Database,
-    title: 'Backups',
-    description: 'Temporarily unavailable in the active backend stack',
+    title: "Backups",
+    description: "Temporarily unavailable in the active backend stack",
   },
   {
-    to: '/admin/memory-debug',
+    to: "/admin/memory-debug",
     icon: Bug,
-    title: 'Memory Debug',
-    description: 'Inspect memory pipeline, context, timeline, and live events',
+    title: "Memory Debug",
+    description: "Inspect memory pipeline, context, timeline, and live events",
   },
   {
-    to: '/admin/skills',
+    to: "/admin/skills",
     icon: Sparkles,
-    title: 'Skills',
-    description: 'View, edit, and manage agent learned skills',
+    title: "Skills",
+    description: "View, edit, and manage agent learned skills",
   },
-]
+];
 
 export function AdminDashboard() {
   return (
@@ -61,5 +61,5 @@ export function AdminDashboard() {
         </div>
       </div>
     </AdminLayout>
-  )
+  );
 }

@@ -100,7 +100,7 @@ def convert_utc_timestamp(utc_str: str, user_tz: ZoneInfo) -> str:
     try:
         dt = datetime.fromisoformat(utc_str).replace(tzinfo=UTC)
         return dt.astimezone(user_tz).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return utc_str[:19].replace("T", " ")
 
 

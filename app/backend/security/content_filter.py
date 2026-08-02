@@ -77,7 +77,9 @@ def _build_input_filter(resolver: AssistantPolicy) -> ContentFilter:
     if resolver.get_bool(_KEY_BLOCK_CREDENTIALS_GENERIC):
         credential_patterns.extend(GENERIC_CREDENTIAL_PATTERNS)
     credential_patterns.extend(
-        _custom_credential_pairs(resolver.get_list_str(_KEY_CUSTOM_CREDENTIAL_PATTERNS)),
+        _custom_credential_pairs(
+            resolver.get_list_str(_KEY_CUSTOM_CREDENTIAL_PATTERNS)
+        ),
     )
 
     injection_patterns: list[str] = []

@@ -1,53 +1,51 @@
-import { useEffect, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { ThemeProvider } from '@/components/layout/ThemeProvider'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { AuthContext, useAuthState, useAuth } from '@/hooks/useAuth'
-import { AppSkeleton } from '@/components/ui/skeletons'
-import { ChatPage } from '@/pages/ChatPage'
-import { LoginPage } from '@/pages/LoginPage'
-import { SetupPage } from '@/pages/SetupPage'
-import { AdminDashboard } from '@/pages/AdminDashboard'
-import { IntegrationsPage } from '@/pages/IntegrationsPage'
-import { BackupsPage } from '@/pages/BackupsPage'
-import { LLMConfigPage } from '@/pages/admin/LLMConfigPage'
-import { MemoryDebugPage } from '@/pages/admin/MemoryDebugPage'
-import { ProfilePage } from '@/pages/admin/ProfilePage'
-import { ScheduledTasksPage } from '@/pages/admin/ScheduledTasksPage'
-import { SkillsPage } from '@/pages/admin/SkillsPage'
-import { SkillDetailPage } from '@/pages/admin/SkillDetailPage'
+import { useEffect, type ReactNode } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AuthContext, useAuthState, useAuth } from "@/hooks/useAuth";
+import { AppSkeleton } from "@/components/ui/skeletons";
+import { ChatPage } from "@/pages/ChatPage";
+import { LoginPage } from "@/pages/LoginPage";
+import { SetupPage } from "@/pages/SetupPage";
+import { AdminDashboard } from "@/pages/AdminDashboard";
+import { IntegrationsPage } from "@/pages/IntegrationsPage";
+import { BackupsPage } from "@/pages/BackupsPage";
+import { LLMConfigPage } from "@/pages/admin/LLMConfigPage";
+import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
+import { ProfilePage } from "@/pages/admin/ProfilePage";
+import { ScheduledTasksPage } from "@/pages/admin/ScheduledTasksPage";
+import { SkillsPage } from "@/pages/admin/SkillsPage";
+import { SkillDetailPage } from "@/pages/admin/SkillDetailPage";
 
 function AuthProvider({ children }: { children: ReactNode }) {
-  const authState = useAuthState()
-  return (
-    <AuthContext.Provider value={authState}>{children}</AuthContext.Provider>
-  )
+  const authState = useAuthState();
+  return <AuthContext.Provider value={authState}>{children}</AuthContext.Provider>;
 }
 
 function AppRoutes() {
-  const { authenticated, loading, checkStatus } = useAuth()
-  const navigate = useNavigate()
+  const { authenticated, loading, checkStatus } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     void checkStatus()
       .then((status) => {
         if (!cancelled && status.needs_setup) {
-          navigate('/setup', { replace: true })
+          navigate("/setup", { replace: true });
         }
       })
       .catch((error) => {
-        console.error('Initial auth check failed:', error)
-      })
+        console.error("Initial auth check failed:", error);
+      });
 
     return () => {
-      cancelled = true
-    }
-  }, [checkStatus, navigate])
+      cancelled = true;
+    };
+  }, [checkStatus, navigate]);
 
   if (loading) {
-    return <AppSkeleton />
+    return <AppSkeleton />;
   }
 
   if (!authenticated) {
@@ -57,7 +55,7 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    )
+    );
   }
 
   return (
@@ -74,7 +72,7 @@ function AppRoutes() {
       <Route path="/admin/skills/:name" element={<SkillDetailPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  )
+  );
 }
 
 function App() {
@@ -86,7 +84,7 @@ function App() {
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
-  )
+  );
 }
 
-export default App
+export default App;

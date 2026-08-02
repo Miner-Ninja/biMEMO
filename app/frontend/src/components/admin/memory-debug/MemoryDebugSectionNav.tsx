@@ -1,13 +1,13 @@
-import { MEMORY_DEBUG_SECTIONS } from "@/components/admin/memory-debug/constants"
-import type { MemoryDebugSection } from "@/components/admin/memory-debug/types"
-import { cn } from "@/lib/utils"
+import { MEMORY_DEBUG_SECTIONS } from "@/components/admin/memory-debug/constants";
+import type { MemoryDebugSection } from "@/components/admin/memory-debug/types";
+import { cn } from "@/lib/utils";
 
 export function MemoryDebugSectionNav({
   activeSection,
   onSectionChange,
 }: {
-  activeSection: MemoryDebugSection
-  onSectionChange: (section: MemoryDebugSection) => void
+  activeSection: MemoryDebugSection;
+  onSectionChange: (section: MemoryDebugSection) => void;
 }) {
   return (
     <div
@@ -26,14 +26,16 @@ export function MemoryDebugSectionNav({
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             section.id === activeSection
               ? "border-primary/50 bg-primary/8 shadow-sm"
-              : "border-border bg-background hover:border-primary/40 hover:bg-muted/40",
+              : "border-border bg-background hover:border-primary/40 hover:bg-muted/40"
           )}
         >
           <div className="text-lg font-semibold tracking-tight">{section.label}</div>
           <div
             className={cn(
               "mt-1 text-sm leading-5",
-              section.id === activeSection ? "text-foreground/75" : "text-muted-foreground",
+              section.id === activeSection
+                ? "text-foreground/75"
+                : "text-muted-foreground"
             )}
           >
             {section.description}
@@ -41,5 +43,5 @@ export function MemoryDebugSectionNav({
         </button>
       ))}
     </div>
-  )
+  );
 }

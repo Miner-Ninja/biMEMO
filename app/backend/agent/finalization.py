@@ -162,10 +162,7 @@ def build_required_tool_failure_answer(
         )
 
     tool_names = ", ".join(failed_required_tools)
-    return (
-        "I could not fetch required evidence for this answer through: "
-        f"{tool_names}."
-    )
+    return f"I could not fetch required evidence for this answer through: {tool_names}."
 
 
 def detect_turn_requirements(message: str) -> ResponseRequirements:

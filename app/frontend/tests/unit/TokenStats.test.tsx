@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-import { TokenStats } from '@/components/chat/TokenStats'
+import { TokenStats } from "@/components/chat/TokenStats";
 
-describe('TokenStats', () => {
-  it('renders token, timing, and context details when context usage exists', () => {
+describe("TokenStats", () => {
+  it("renders token, timing, and context details when context usage exists", () => {
     render(
       <TokenStats
         stats={{
@@ -22,20 +22,20 @@ describe('TokenStats', () => {
             generation_ms: 1600,
             total_ms: 2200,
           },
-          model: 'qwen3.5:35b',
+          model: "qwen3.5:35b",
           iterations: 2,
         }}
       />
-    )
+    );
 
-    expect(screen.getByText('321 in / 54 out')).toBeInTheDocument()
-    expect(screen.getByText('2.2s')).toBeInTheDocument()
-    expect(screen.getByText('33.8 tok/s')).toBeInTheDocument()
-    expect(screen.getByText('4.1K / 32.8K ctx (13%)')).toBeInTheDocument()
-    expect(screen.getByText('(2 iter)')).toBeInTheDocument()
-  })
+    expect(screen.getByText("321 in / 54 out")).toBeInTheDocument();
+    expect(screen.getByText("2.2s")).toBeInTheDocument();
+    expect(screen.getByText("33.8 tok/s")).toBeInTheDocument();
+    expect(screen.getByText("4.1K / 32.8K ctx (13%)")).toBeInTheDocument();
+    expect(screen.getByText("(2 iter)")).toBeInTheDocument();
+  });
 
-  it('hides the context segment when provider does not expose context usage', () => {
+  it("hides the context segment when provider does not expose context usage", () => {
     render(
       <TokenStats
         stats={{
@@ -47,15 +47,15 @@ describe('TokenStats', () => {
             generation_ms: 800,
             total_ms: 1000,
           },
-          model: 'qwen3:8b',
+          model: "qwen3:8b",
           iterations: 1,
         }}
       />
-    )
+    );
 
-    expect(screen.getByText('100 in / 25 out')).toBeInTheDocument()
-    expect(screen.getByText('1.0s')).toBeInTheDocument()
-    expect(screen.getByText('31.3 tok/s')).toBeInTheDocument()
-    expect(screen.queryByText(/ctx \(/)).not.toBeInTheDocument()
-  })
-})
+    expect(screen.getByText("100 in / 25 out")).toBeInTheDocument();
+    expect(screen.getByText("1.0s")).toBeInTheDocument();
+    expect(screen.getByText("31.3 tok/s")).toBeInTheDocument();
+    expect(screen.queryByText(/ctx \(/)).not.toBeInTheDocument();
+  });
+});

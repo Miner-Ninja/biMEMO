@@ -200,6 +200,8 @@ MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
 )
 MESSAGE_META_STATS_KEY = "stats"
 MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
+
+
 def build_assistant_message_meta(
     stats: object | None,
     structured_content: StructuredAssistantContent | None,
@@ -419,7 +421,7 @@ def llm_accepts_sse_queue(llm_call: object) -> bool:
     """Check whether the LLM callable accepts an SSE queue argument."""
     try:
         return len(inspect.signature(llm_call).parameters) >= 2
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return True
 
 
@@ -427,7 +429,7 @@ def llm_accepts_tools_override(llm_call: object) -> bool:
     """Check whether the LLM callable accepts a tools override keyword."""
     try:
         parameters = inspect.signature(llm_call).parameters
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
 
     if "tools_override" in parameters:

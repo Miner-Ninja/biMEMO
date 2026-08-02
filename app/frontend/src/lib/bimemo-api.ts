@@ -65,8 +65,7 @@ export interface AuthActionResult {
 /** Check auth status: needs_setup and authenticated flags. */
 export async function authStatus(): Promise<AuthStatus> {
   const response = await fetch("/auth/status", { credentials: "include" });
-  if (!response.ok)
-    throw new ApiError(response.status, "Failed to check auth status");
+  if (!response.ok) throw new ApiError(response.status, "Failed to check auth status");
   return response.json();
 }
 
@@ -79,9 +78,7 @@ export async function authSetup(password: string): Promise<AuthActionResult> {
     credentials: "include",
   });
   if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
     throw new ApiError(response.status, body.detail || response.statusText);
   }
   return response.json().catch(() => ({}));
@@ -96,13 +93,8 @@ export async function authLogin(password: string): Promise<AuthActionResult> {
     credentials: "include",
   });
   if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
-    const apiError = new ApiError(
-      response.status,
-      body.detail || response.statusText,
-    );
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    const apiError = new ApiError(response.status, body.detail || response.statusText);
     apiError.retryAfter = response.headers.get("Retry-After");
     throw apiError;
   }
@@ -115,7 +107,7 @@ export async function waitForApplicationReady(): Promise<void> {
 
   while (Date.now() - startedAt < STARTUP_READY_TIMEOUT_MS) {
     const response = await fetch("/health", { credentials: "include" }).catch(
-      () => null,
+      () => null
     );
     if (response?.ok) {
       const body = await response.json().catch(() => ({}));
@@ -123,9 +115,7 @@ export async function waitForApplicationReady(): Promise<void> {
         return;
       }
     }
-    await new Promise((resolve) =>
-      window.setTimeout(resolve, STARTUP_READY_POLL_MS),
-    );
+    await new Promise((resolve) => window.setTimeout(resolve, STARTUP_READY_POLL_MS));
   }
 
   throw new Error("Application did not finish starting in time");
@@ -144,7 +134,7 @@ export async function waitForApplicationReady(): Promise<void> {
  */
 export async function apiRequest<T>(
   url: string,
-  options: RequestInit = {},
+  options: RequestInit = {}
 ): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers);
@@ -188,13 +178,9 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 403 && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
     const detail =
-      typeof body.detail === "string"
-        ? body.detail
-        : JSON.stringify(body.detail);
+      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     if (detail === CSRF_FAILURE_DETAIL) {
       clearCsrfToken();
       await fetchCsrfToken();
@@ -212,13 +198,9 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
     const detail =
-      typeof body.detail === "string"
-        ? body.detail
-        : JSON.stringify(body.detail);
+      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     throw new ApiError(response.status, detail || response.statusText);
   }
 
@@ -255,8 +237,7 @@ export interface StoredConversation {
 }
 
 type StoredMessageContentPart =
-  | { type: "text"; text?: string }
-  | { type: "image_url"; image_url?: { url?: string } };
+  { type: "text"; text?: string } | { type: "image_url"; image_url?: { url?: string } };
 
 export interface StoredConversationMessage {
   id: string;
@@ -312,7 +293,7 @@ export interface ChatBridgeMessageLink {
 
 /** Create one persisted conversation on the server. */
 export async function createConversation(
-  title = "",
+  title = ""
 ): Promise<ConversationCreateResponse> {
   return apiRequest<ConversationCreateResponse>("/chat/conversations", {
     method: "POST",
@@ -329,52 +310,52 @@ export async function fetchConversations(): Promise<StoredConversation[]> {
 export async function fetchConversationMessages(
   conversationId: string,
   limit = 200,
-  offset = 0,
+  offset = 0
 ): Promise<StoredConversationMessage[]> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   return apiRequest<StoredConversationMessage[]>(
-    `/chat/conversations/${encodePathSegment(conversationId)}/messages?${params.toString()}`,
+    `/chat/conversations/${encodePathSegment(conversationId)}/messages?${params.toString()}`
   );
 }
 
 /** Rename one persisted conversation on the server. */
 export async function updateConversationTitle(
   conversationId: string,
-  title: string,
+  title: string
 ): Promise<StoredConversation> {
   return apiRequest<StoredConversation>(
     `/chat/conversations/${encodePathSegment(conversationId)}`,
     {
       method: "PUT",
       body: JSON.stringify({ title }),
-    },
+    }
   );
 }
 
 /** Delete one persisted conversation on the server. */
 export async function deleteConversation(
-  conversationId: string,
+  conversationId: string
 ): Promise<ConversationDeleteResponse> {
   return apiRequest<ConversationDeleteResponse>(
     `/chat/conversations/${encodePathSegment(conversationId)}`,
-    { method: "DELETE" },
+    { method: "DELETE" }
   );
 }
 
 /** Update per-conversation display settings. */
 export async function updateChatSettings(
   conversationId: string,
-  settings: Partial<StoredChatSettings>,
+  settings: Partial<StoredChatSettings>
 ): Promise<StoredChatSettings> {
   return apiRequest<StoredChatSettings>(
     `/chat/conversations/${encodePathSegment(conversationId)}/settings`,
     {
       method: "PATCH",
       body: JSON.stringify(settings),
-    },
+    }
   );
 }
 
@@ -385,10 +366,10 @@ export async function fetchChatBridgeProviders(): Promise<ChatBridgeProviderItem
 
 /** Load the stored bridge link for one conversation, if it exists. */
 export async function fetchChatBridgeForConversation(
-  conversationId: string,
+  conversationId: string
 ): Promise<ChatBridgeLink | null> {
   const response = await apiRequest<ChatBridgeLink | { chat_bridge_link: null }>(
-    `/admin/chat-bridges/conversations/${encodePathSegment(conversationId)}`,
+    `/admin/chat-bridges/conversations/${encodePathSegment(conversationId)}`
   );
   if ("chat_bridge_link" in response) {
     return null;
@@ -398,7 +379,7 @@ export async function fetchChatBridgeForConversation(
 
 /** Load stored bridge links, optionally limited to one conversation. */
 export async function fetchChatBridgeLinks(
-  conversationId?: string,
+  conversationId?: string
 ): Promise<ChatBridgeLink[]> {
   const params = new URLSearchParams();
   if (conversationId) {
@@ -414,7 +395,7 @@ export async function fetchChatBridgeLinks(
 /** Load stored bridge message mappings for one bridge link. */
 export async function fetchChatBridgeMessageLinks(
   bridgeLinkId: string,
-  direction?: string,
+  direction?: string
 ): Promise<ChatBridgeMessageLink[]> {
   const params = new URLSearchParams();
   if (direction) {
@@ -448,7 +429,7 @@ export async function createChatBridgeLink(
   conversationId: string,
   provider: string,
   options: ChatBridgeCreateOptions,
-  title = "",
+  title = ""
 ): Promise<ChatBridgeLink> {
   return apiRequest<ChatBridgeLink>("/admin/chat-bridges", {
     method: "POST",
@@ -467,14 +448,14 @@ export async function createChatBridgeLink(
 /** Disable one existing bridge link. */
 export async function disableChatBridgeLink(
   bridgeLinkId: string,
-  options: ChatBridgeMutationOptions,
+  options: ChatBridgeMutationOptions
 ): Promise<boolean> {
   const response = await apiRequest<{ updated: boolean }>(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/disable`,
     {
       method: "POST",
       headers: { "X-Reauth-Token": options.reauthToken },
-    },
+    }
   );
   return response.updated;
 }
@@ -482,14 +463,14 @@ export async function disableChatBridgeLink(
 /** Enable one existing bridge link again. */
 export async function enableChatBridgeLink(
   bridgeLinkId: string,
-  options: ChatBridgeMutationOptions,
+  options: ChatBridgeMutationOptions
 ): Promise<boolean> {
   const response = await apiRequest<{ updated: boolean }>(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/enable`,
     {
       method: "POST",
       headers: { "X-Reauth-Token": options.reauthToken },
-    },
+    }
   );
   return response.updated;
 }
@@ -497,7 +478,7 @@ export async function enableChatBridgeLink(
 /** Update one existing bridge link presentation mode. */
 export async function updateChatBridgeLinkSettings(
   bridgeLinkId: string,
-  options: ChatBridgeUpdateOptions,
+  options: ChatBridgeUpdateOptions
 ): Promise<ChatBridgeLink | null> {
   const response = await apiRequest<ChatBridgeLink | { chat_bridge_link: null }>(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/settings`,
@@ -509,7 +490,7 @@ export async function updateChatBridgeLinkSettings(
         persona_mode: options.personaMode,
         persona_user_id: options.personaUserId,
       }),
-    },
+    }
   );
   if ("chat_bridge_link" in response) {
     return null;
@@ -560,9 +541,7 @@ export async function uploadFile(file: File): Promise<FileUploadResponse> {
 
 /** Fetch list of uploaded files. */
 export async function fetchFiles(): Promise<IndexedFile[]> {
-  const data = await apiRequest<{ files: Array<Record<string, unknown>> }>(
-    "/files",
-  );
+  const data = await apiRequest<{ files: Array<Record<string, unknown>> }>("/files");
   return (data.files || []).map((f) => ({
     file_id: f.id as string,
     filename: f.original_name as string,
@@ -582,31 +561,31 @@ export async function deleteFileById(fileId: string): Promise<void> {
 // ============================================================
 
 export interface WorkspaceItem {
-  name: string
-  type: "file" | "directory"
-  path: string
-  size?: number
+  name: string;
+  type: "file" | "directory";
+  path: string;
+  size?: number;
 }
 
 export interface WorkspaceTreeResponse {
-  items: WorkspaceItem[]
-  path: string
-  parent: string | null
-  workspace: string
+  items: WorkspaceItem[];
+  path: string;
+  parent: string | null;
+  workspace: string;
 }
 
 /** Fetch workspace directory tree. */
 export async function fetchWorkspaceTree(
-  path: string = "",
+  path: string = ""
 ): Promise<WorkspaceTreeResponse> {
-  const params = path ? `?path=${encodeURIComponent(path)}` : ""
-  return apiRequest<WorkspaceTreeResponse>(`/workspace/tree${params}`)
+  const params = path ? `?path=${encodeURIComponent(path)}` : "";
+  return apiRequest<WorkspaceTreeResponse>(`/workspace/tree${params}`);
 }
 
 /** Fetch configured workspace directories. */
 export async function fetchWorkspaceDirs(): Promise<string[]> {
-  const data = await apiRequest<{ directories: string[] }>("/workspace/dirs")
-  return data.directories || []
+  const data = await apiRequest<{ directories: string[] }>("/workspace/dirs");
+  return data.directories || [];
 }
 
 // ============================================================
@@ -659,13 +638,9 @@ export async function synthesizeSpeech(text: string): Promise<string> {
   }
 
   if (response.status === 403) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
     const detail =
-      typeof body.detail === "string"
-        ? body.detail
-        : JSON.stringify(body.detail);
+      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     if (detail === CSRF_FAILURE_DETAIL) {
       clearCsrfToken();
       await fetchCsrfToken();
@@ -682,9 +657,7 @@ export async function synthesizeSpeech(text: string): Promise<string> {
   }
 
   if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({ detail: response.statusText }));
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
     throw new ApiError(response.status, body.detail || response.statusText);
   }
 
@@ -740,9 +713,7 @@ export interface ConfirmResponse {
 }
 
 /** Approve a pending RED zone tool action. */
-export async function confirmAction(
-  actionId: string,
-): Promise<ConfirmResponse> {
+export async function confirmAction(actionId: string): Promise<ConfirmResponse> {
   return apiRequest<ConfirmResponse>("/chat/confirm", {
     method: "POST",
     body: JSON.stringify({
@@ -753,9 +724,7 @@ export async function confirmAction(
 }
 
 /** Deny a pending RED zone tool action. */
-export async function denyAction(
-  actionId: string,
-): Promise<ConfirmResponse> {
+export async function denyAction(actionId: string): Promise<ConfirmResponse> {
   return apiRequest<ConfirmResponse>("/chat/confirm", {
     method: "POST",
     body: JSON.stringify({

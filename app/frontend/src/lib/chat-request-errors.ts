@@ -14,14 +14,14 @@ export function isBrowserNetworkFetchError(error: unknown): boolean {
   }
   const message = error.message.toLowerCase();
   return NETWORK_FETCH_ERROR_MESSAGES.some((expectedMessage) =>
-    message.includes(expectedMessage),
+    message.includes(expectedMessage)
   );
 }
 
 export function shouldKeepStreamedAssistantResponseAfterRequestError(
   error: unknown,
   streamedContent: string,
-  streamedThinking: string,
+  streamedThinking: string
 ): boolean {
   if (!streamedContent && !streamedThinking) {
     return false;

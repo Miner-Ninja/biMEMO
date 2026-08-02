@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react'
-import { Layout } from './Layout'
-import { AdminSidebar } from '@/components/sidebar/AdminSidebar'
+import type { ReactNode } from "react";
+import { Layout } from "./Layout";
+import { AdminSidebar } from "@/components/sidebar/AdminSidebar";
 
 interface AdminLayoutProps {
-  title: string
-  children: ReactNode
+  title: string;
+  children: ReactNode;
 }
 
 /**
@@ -24,5 +24,5 @@ export function AdminLayout({ title, children }: AdminLayoutProps) {
         {children}
       </div>
     </Layout>
-  )
+  );
 }

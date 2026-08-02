@@ -56,6 +56,7 @@ def _commit(repo: str, message: str) -> None:
 # git_status
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_git_status_clean():
     repo = _setup_git_repo()
@@ -91,6 +92,7 @@ async def test_git_status_with_changes():
 # ---------------------------------------------------------------------------
 # git_diff
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_git_diff_no_changes():
@@ -128,6 +130,7 @@ async def test_git_diff_with_changes():
 # git_log
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_git_log():
     repo = _setup_git_repo()
@@ -150,6 +153,7 @@ async def test_git_log():
 # ---------------------------------------------------------------------------
 # git_commit
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_git_commit():
@@ -183,6 +187,7 @@ async def test_git_commit_nothing_to_commit():
 # git_push (will fail without remote, but should not crash)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_git_push_no_remote():
     repo = _setup_git_repo()
@@ -197,6 +202,7 @@ async def test_git_push_no_remote():
 # ---------------------------------------------------------------------------
 # code_search
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_code_search_text():

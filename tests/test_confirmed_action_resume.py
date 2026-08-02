@@ -144,8 +144,7 @@ class FakeBroker:
 
 
 @pytest.mark.asyncio
-async def test_confirmed_action_executes_tool_and_resumes(
-) -> None:
+async def test_confirmed_action_executes_tool_and_resumes() -> None:
     """Approved action should execute, resume LLM, and save final message."""
     process = _load_orchestrator_process()
     db_client = FakeDBClient(

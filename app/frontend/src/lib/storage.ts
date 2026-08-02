@@ -2,42 +2,42 @@
  * localStorage keys for persistence
  */
 export const STORAGE_KEYS = {
-  THEME: 'theme',
-  AUTH_USER: 'authUser',
-  COMMAND_HISTORY: 'commandHistory',
-} as const
+  THEME: "theme",
+  AUTH_USER: "authUser",
+  COMMAND_HISTORY: "commandHistory",
+} as const;
 
 /**
  * Save theme to localStorage
  */
-export function saveTheme(theme: 'dark' | 'light'): void {
+export function saveTheme(theme: "dark" | "light"): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.THEME, theme)
+    localStorage.setItem(STORAGE_KEYS.THEME, theme);
   } catch (error) {
-    console.error('Failed to save theme:', error)
+    console.error("Failed to save theme:", error);
   }
 }
 
 /**
  * Load theme from localStorage
  */
-export function loadTheme(): 'dark' | 'light' | null {
+export function loadTheme(): "dark" | "light" | null {
   try {
-    const theme = localStorage.getItem(STORAGE_KEYS.THEME)
-    if (theme === 'dark' || theme === 'light') return theme
-    return null
+    const theme = localStorage.getItem(STORAGE_KEYS.THEME);
+    if (theme === "dark" || theme === "light") return theme;
+    return null;
   } catch {
-    return null
+    return null;
   }
 }
 
 /**
  * Get initial theme based on localStorage or system preference
  */
-export function getInitialTheme(): 'dark' | 'light' {
-  const stored = loadTheme()
-  if (stored) return stored
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+export function getInitialTheme(): "dark" | "light" {
+  const stored = loadTheme();
+  if (stored) return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 /**
@@ -45,9 +45,9 @@ export function getInitialTheme(): 'dark' | 'light' {
  */
 export function saveAuthUser(username: string): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.AUTH_USER, username)
+    localStorage.setItem(STORAGE_KEYS.AUTH_USER, username);
   } catch (error) {
-    console.error('Failed to save auth user:', error)
+    console.error("Failed to save auth user:", error);
   }
 }
 
@@ -56,9 +56,9 @@ export function saveAuthUser(username: string): void {
  */
 export function saveCommandHistory(history: string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.COMMAND_HISTORY, JSON.stringify(history))
+    localStorage.setItem(STORAGE_KEYS.COMMAND_HISTORY, JSON.stringify(history));
   } catch (error) {
-    console.error('Failed to save command history:', error)
+    console.error("Failed to save command history:", error);
   }
 }
 
@@ -67,12 +67,12 @@ export function saveCommandHistory(history: string[]): void {
  */
 export function loadCommandHistory(): string[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEYS.COMMAND_HISTORY)
-    if (!saved) return []
-    const parsed = JSON.parse(saved)
-    return Array.isArray(parsed) ? parsed : []
+    const saved = localStorage.getItem(STORAGE_KEYS.COMMAND_HISTORY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return []
+    return [];
   }
 }
 
@@ -81,8 +81,8 @@ export function loadCommandHistory(): string[] {
  */
 export function clearAuth(): void {
   try {
-    localStorage.removeItem(STORAGE_KEYS.AUTH_USER)
+    localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
   } catch (error) {
-    console.error('Failed to clear auth:', error)
+    console.error("Failed to clear auth:", error);
   }
 }

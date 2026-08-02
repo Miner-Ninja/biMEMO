@@ -1,9 +1,9 @@
-import { Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { getSidebarActionButtonClassName } from './sidebar-chrome'
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { getSidebarActionButtonClassName } from "./sidebar-chrome";
 
 interface NewChatButtonProps {
-  onClick: () => void
+  onClick: () => void;
 }
 
 /**
@@ -19,5 +19,5 @@ export function NewChatButton({ onClick }: NewChatButtonProps) {
       <Plus className="h-4 w-4" />
       New Chat
     </Button>
-  )
+  );
 }

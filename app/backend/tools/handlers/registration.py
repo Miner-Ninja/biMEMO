@@ -508,6 +508,7 @@ def _make_memory_recall_handler(db_client: object) -> callable:
 
 def _make_set_workspace_handler(workspace: object) -> callable:
     """Build an async handler for the set_workspace tool."""
+
     async def handler(params: object) -> dict:
         """Manage workspace directories."""
         action = getattr(params, "action", "") or ""
@@ -521,6 +522,7 @@ def _make_set_workspace_handler(workspace: object) -> callable:
                 return {"error": "path is required for add action"}
             try:
                 from pathlib import Path
+
                 resolved = Path(path).resolve()
                 if not resolved.is_dir():
                     return {"error": f"Directory does not exist: {path}"}
@@ -552,6 +554,7 @@ def _make_set_workspace_handler(workspace: object) -> callable:
 
 def _make_workspace_history_handler(store: object) -> callable:
     """Build an async handler for the workspace_history tool."""
+
     async def handler(params: object) -> dict:
         """Get or clear workspace history."""
         action = getattr(params, "action", "") or ""
@@ -611,6 +614,7 @@ def _make_workspace_note_handler(
 
 def _make_execute_command_handler() -> callable:
     """Build an async handler for the execute_command tool."""
+
     async def handler(params: object) -> dict:
         """Execute a shell command and return output."""
         from backend.workers.cmd_worker import execute_command
@@ -648,6 +652,7 @@ def _make_execute_command_stream_handler() -> callable:
     this collects all output and returns it at once (true streaming
     requires WebSocket integration which is deferred).
     """
+
     async def handler(params: object) -> dict:
         """Execute a command with streaming output."""
         from backend.workers.cmd_worker import execute_command
@@ -681,54 +686,65 @@ def _make_execute_command_stream_handler() -> callable:
 def _make_git_status_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.git_ops import git_status
+
         cwd = getattr(params, "cwd", "") or None
         return await git_status(cwd=cwd)
+
     return handler
 
 
 def _make_git_diff_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.git_ops import git_diff
+
         cwd = getattr(params, "cwd", "") or None
         staged = getattr(params, "staged", False) or False
         return await git_diff(cwd=cwd, staged=staged)
+
     return handler
 
 
 def _make_git_log_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.git_ops import git_log
+
         cwd = getattr(params, "cwd", "") or None
         count = getattr(params, "count", 10) or 10
         return await git_log(cwd=cwd, count=count)
+
     return handler
 
 
 def _make_git_commit_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.git_ops import git_commit
+
         message = getattr(params, "message", "") or ""
         cwd = getattr(params, "cwd", "") or None
         all_files = getattr(params, "all_files", False) or False
         if not message:
             return {"error": "message is required"}
         return await git_commit(message=message, cwd=cwd, all_files=all_files)
+
     return handler
 
 
 def _make_git_push_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.git_ops import git_push
+
         cwd = getattr(params, "cwd", "") or None
         remote = getattr(params, "remote", "origin") or "origin"
         branch = getattr(params, "branch", "") or None
         return await git_push(cwd=cwd, remote=remote, branch=branch)
+
     return handler
 
 
 def _make_code_search_handler() -> callable:
     async def handler(params: object) -> dict:
         from backend.tools.handlers.code_search import code_search
+
         pattern = getattr(params, "pattern", "") or ""
         cwd = getattr(params, "cwd", "") or None
         file_pattern = getattr(params, "file_pattern", "**/*") or "**/*"
@@ -743,6 +759,7 @@ def _make_code_search_handler() -> callable:
             context_lines=context_lines,
             use_regex=use_regex,
         )
+
     return handler
 
 

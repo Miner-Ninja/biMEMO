@@ -188,7 +188,7 @@ class WorkerManager:
         try:
             proc = psutil.Process(self._process.pid)
             return proc.memory_info().rss / (1024 * 1024)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except psutil.NoSuchProcess, psutil.AccessDenied:
             return None
 
     async def _health_loop(self) -> None:

@@ -33,6 +33,7 @@ async def _run_git(
 ) -> GitResult:
     """Run a git command and return structured result."""
     import shlex
+
     command = "git " + " ".join(shlex.quote(a) for a in args)
     result = await execute_command(
         command=command,
@@ -49,6 +50,7 @@ async def _run_git(
 # ---------------------------------------------------------------------------
 # Read-only tools
 # ---------------------------------------------------------------------------
+
 
 async def git_status(cwd: str | None = None) -> dict[str, Any]:
     """Show working tree status.
@@ -142,7 +144,10 @@ async def git_log(
         Dict with list of commits.
     """
     result = await _run_git(
-        "log", "--oneline", f"-{count}", "--format=%H|%an|%ad|%s",
+        "log",
+        "--oneline",
+        f"-{count}",
+        "--format=%H|%an|%ad|%s",
         "--date=short",
         cwd=cwd,
     )
@@ -156,12 +161,14 @@ async def git_log(
             continue
         parts = line.split("|", 3)
         if len(parts) == 4:
-            commits.append({
-                "hash": parts[0][:8],
-                "author": parts[1],
-                "date": parts[2],
-                "message": parts[3],
-            })
+            commits.append(
+                {
+                    "hash": parts[0][:8],
+                    "author": parts[1],
+                    "date": parts[2],
+                    "message": parts[3],
+                }
+            )
 
     return {
         "commits": commits,
@@ -172,6 +179,7 @@ async def git_log(
 # ---------------------------------------------------------------------------
 # Write tools (RED zone)
 # ---------------------------------------------------------------------------
+
 
 async def git_commit(
     message: str,

@@ -1,13 +1,13 @@
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 
 export function SubsectionNav<T extends string>({
   items,
   activeItem,
   onChange,
 }: {
-  items: Array<{ id: T; label: string; description: string }>
-  activeItem: T
-  onChange: (id: T) => void
+  items: Array<{ id: T; label: string; description: string }>;
+  activeItem: T;
+  onChange: (id: T) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -22,5 +22,5 @@ export function SubsectionNav<T extends string>({
         </Button>
       ))}
     </div>
-  )
+  );
 }

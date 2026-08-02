@@ -41,13 +41,13 @@ export function shouldApplyHttpChatResponse(streamFinalReceived: boolean): boole
 }
 
 export function runtimeBootstrapHasTerminalEvent(
-  payload: RuntimeBootstrapPayload | null | undefined,
+  payload: RuntimeBootstrapPayload | null | undefined
 ): boolean {
   return Boolean(
     payload?.conversation_id &&
-      payload.events?.some((event) =>
-        TERMINAL_RUNTIME_EVENT_TYPES.has(String(event.event_type || "")),
-      ),
+    payload.events?.some((event) =>
+      TERMINAL_RUNTIME_EVENT_TYPES.has(String(event.event_type || ""))
+    )
   );
 }
 
@@ -60,7 +60,7 @@ export function chatInputIsDisabled({
 }
 
 export function markStreamTerminalError(
-  stream: ActiveAssistantStreamState,
+  stream: ActiveAssistantStreamState
 ): ActiveAssistantStreamState {
   return {
     ...stream,

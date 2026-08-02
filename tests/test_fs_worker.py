@@ -226,8 +226,9 @@ class TestSymlinkWriteBlocked:
         link = tmp_path / "link.txt"
         link.symlink_to(real)
 
-        with pytest.raises(ValidationError, match="symlink"), (
-            _open_for_no_symlink_write(link)
+        with (
+            pytest.raises(ValidationError, match="symlink"),
+            _open_for_no_symlink_write(link),
         ):
             pass
 

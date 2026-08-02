@@ -204,8 +204,7 @@ class OpenAICompatibleProvider:
         Model availability is checked lazily by the provider.
         """
         logger.info(
-            "%s: models assumed available"
-            " (primary=%s, dialog_recorder=%s)",
+            "%s: models assumed available (primary=%s, dialog_recorder=%s)",
             self.provider_label,
             self.primary_model,
             self.dialog_recorder_model,

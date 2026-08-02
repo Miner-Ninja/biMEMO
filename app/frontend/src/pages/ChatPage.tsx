@@ -97,8 +97,7 @@ type ToolStatusEventPayload = {
 };
 
 type MultimodalContentPart =
-  | { type: "text"; text?: string }
-  | { type: "image_url"; image_url?: { url?: string } };
+  { type: "text"; text?: string } | { type: "image_url"; image_url?: { url?: string } };
 
 type BridgeInboundMessageEventPayload = {
   conversation_id?: string;
@@ -205,7 +204,7 @@ type ChatFinalEventPayload = ChatResponsePayload & {
 
 function buildServerProcessingStage(
   stageLabel: string,
-  startedAt?: Date,
+  startedAt?: Date
 ): ProcessingStage[] {
   const wallClockDelayMs = startedAt
     ? Math.max(0, Date.now() - startedAt.getTime())
@@ -222,7 +221,7 @@ function buildServerProcessingStage(
 
 function bridgeCreateSettings(
   provider: string,
-  defaultPersonaUserId: string,
+  defaultPersonaUserId: string
 ): {
   deliveryMode?: string;
   personaMode?: string;
@@ -233,16 +232,14 @@ function bridgeCreateSettings(
   }
   return {
     deliveryMode: PERSONA_DELIVERY_MODE,
-    personaMode: defaultPersonaUserId
-      ? "mapped_user"
-      : NEUTRAL_PERSONA_MODE,
+    personaMode: defaultPersonaUserId ? "mapped_user" : NEUTRAL_PERSONA_MODE,
     personaUserId: defaultPersonaUserId,
   };
 }
 
 function buildAssistantMessageUpdate(
   base: Partial<Message>,
-  thinking: string,
+  thinking: string
 ): Partial<Message> {
   // Never overwrite already received thinking with an empty value.
   if (!thinking) {
@@ -260,9 +257,7 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function pseudo_stream_tokens_per_second(
-  stats: ExtendedUsage | undefined,
-): number {
+function pseudo_stream_tokens_per_second(stats: ExtendedUsage | undefined): number {
   // Resolve the playback speed for one finished assistant response.
   const generationMilliseconds = stats?.timing?.generation_ms ?? 0;
   const completionTokens = stats?.completion_tokens ?? 0;
@@ -272,14 +267,12 @@ function pseudo_stream_tokens_per_second(
   return completionTokens / (generationMilliseconds / 1000);
 }
 
-function pseudo_stream_chunk_size(
-  stats: ExtendedUsage | undefined,
-): number {
+function pseudo_stream_chunk_size(stats: ExtendedUsage | undefined): number {
   // Calculate the visible chunk size for one pseudo-stream step.
   const charactersPerSecond =
     pseudo_stream_tokens_per_second(stats) * AVERAGE_CHARACTERS_PER_TOKEN;
   const chunkSize = Math.round(
-    charactersPerSecond * (PSEUDO_STREAM_INTERVAL_MS / 1000),
+    charactersPerSecond * (PSEUDO_STREAM_INTERVAL_MS / 1000)
   );
   return Math.max(MIN_PSEUDO_STREAM_CHUNK_SIZE, chunkSize);
 }
@@ -288,19 +281,19 @@ function should_use_structured_pseudo_stream(
   structuredContent: ChatResponsePayload["structured_content"] | undefined,
   streamedContent: string,
   streamedThinking: string,
-  streamEnabled: boolean | undefined,
+  streamEnabled: boolean | undefined
 ): structuredContent is NonNullable<ChatResponsePayload["structured_content"]> {
   return shouldUseStructuredPseudoStream(
     structuredContent ?? null,
     streamedContent,
     streamedThinking,
-    streamEnabled,
+    streamEnabled
   );
 }
 
 function visible_assistant_answer(
   structuredContent: ChatResponsePayload["structured_content"] | undefined,
-  streamedContent: string,
+  streamedContent: string
 ): string {
   // Resolve the final visible assistant answer from one response payload.
   if (structuredContent) {
@@ -311,7 +304,7 @@ function visible_assistant_answer(
 
 function nextConversationTitle(
   currentTitle: string | undefined,
-  messageContent: string,
+  messageContent: string
 ): string {
   const normalizedCurrentTitle = (currentTitle || "").trim();
   if (normalizedCurrentTitle && normalizedCurrentTitle !== DEFAULT_CHAT_TITLE) {
@@ -355,9 +348,7 @@ function bridgeProviderMap(chats: Chat[]): Record<string, string> {
   }, {});
 }
 
-function bridgeProviderFromLink(
-  bridgeLink: ChatBridgeLink | null,
-): string | null {
+function bridgeProviderFromLink(bridgeLink: ChatBridgeLink | null): string | null {
   if (!bridgeLink || bridgeLink.status !== "active") {
     return null;
   }
@@ -432,26 +423,25 @@ export function ChatPage() {
   const [activeFiles, setActiveFiles] = useState<string[]>([]);
   const [availableFiles, setAvailableFiles] = useState<IndexedFile[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
-  const [uploadProgress, setUploadProgress] =
-    useState<UploadProgressData | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressData | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>(() =>
-    loadCommandHistory(),
+    loadCommandHistory()
   );
   const [ttsAvailable, setTtsAvailable] = useState(false);
   const [voiceMode, setVoiceMode] = useState(
-    () => localStorage.getItem("bm-voice-mode") === "true",
+    () => localStorage.getItem("bm-voice-mode") === "true"
   );
-  const [bridgeProviders, setBridgeProviders] = useState<
-    ChatBridgeProviderItem[]
-  >([]);
+  const [bridgeProviders, setBridgeProviders] = useState<ChatBridgeProviderItem[]>([]);
   const [bridgeProvidersAutoAttempted, setBridgeProvidersAutoAttempted] =
     useState(false);
   const [bridgeProvidersLoaded, setBridgeProvidersLoaded] = useState(false);
   const [bridgeProvidersLoading, setBridgeProvidersLoading] = useState(false);
-  const [bridgeLinksByConversationId, setBridgeLinksByConversationId] =
-    useState<Record<string, ChatBridgeLink>>({});
-  const [bridgeActionLoadingProvider, setBridgeActionLoadingProvider] =
-    useState<string | null>(null);
+  const [bridgeLinksByConversationId, setBridgeLinksByConversationId] = useState<
+    Record<string, ChatBridgeLink>
+  >({});
+  const [bridgeActionLoadingProvider, setBridgeActionLoadingProvider] = useState<
+    string | null
+  >(null);
   const [showBridgeReauth, setShowBridgeReauth] = useState(false);
   const [pendingBridgeAction, setPendingBridgeAction] =
     useState<PendingBridgeAction | null>(null);
@@ -462,28 +452,31 @@ export function ChatPage() {
   const previousRealtimeStatusRef = useRef<ConnectionStatus>("disconnected");
   const { confirm, ConfirmDialog } = useConfirm();
 
-  const beginAssistantStream = useCallback((
-    assistantMessageId: string,
-    options?: {
-      conversationId?: string;
-      voiceUserMessageId?: string;
+  const beginAssistantStream = useCallback(
+    (
+      assistantMessageId: string,
+      options?: {
+        conversationId?: string;
+        voiceUserMessageId?: string;
+      }
+    ) => {
+      pseudoStreamRunIdRef.current += 1;
+      assistantMessageIdRef.current = assistantMessageId;
+      streamedContentRef.current = "";
+      streamedThinkingRef.current = "";
+      activeAssistantStreamRef.current = {
+        assistantMessageId,
+        conversationId: options?.conversationId ?? null,
+        requestId: null,
+        runId: null,
+        voiceUserMessageId: options?.voiceUserMessageId ?? null,
+        httpCompleted: false,
+        finalReceived: false,
+        realtimeCompleted: false,
+      };
     },
-  ) => {
-    pseudoStreamRunIdRef.current += 1;
-    assistantMessageIdRef.current = assistantMessageId;
-    streamedContentRef.current = "";
-    streamedThinkingRef.current = "";
-    activeAssistantStreamRef.current = {
-      assistantMessageId,
-      conversationId: options?.conversationId ?? null,
-      requestId: null,
-      runId: null,
-      voiceUserMessageId: options?.voiceUserMessageId ?? null,
-      httpCompleted: false,
-      finalReceived: false,
-      realtimeCompleted: false,
-    };
-  }, []);
+    []
+  );
 
   const clearAssistantStream = useCallback(() => {
     pseudoStreamRunIdRef.current += 1;
@@ -530,8 +523,7 @@ export function ChatPage() {
     if (!activeStream.assistantMessageId) {
       return false;
     }
-    const eventRequestId =
-      typeof event.request_id === "string" ? event.request_id : "";
+    const eventRequestId = typeof event.request_id === "string" ? event.request_id : "";
     return (
       !eventRequestId ||
       !activeStream.requestId ||
@@ -556,11 +548,7 @@ export function ChatPage() {
       }
       const chunkSize = pseudo_stream_chunk_size(stats);
       let visibleText = "";
-      for (
-        let offset = 0;
-        offset < text.length;
-        offset += chunkSize
-      ) {
+      for (let offset = 0; offset < text.length; offset += chunkSize) {
         if (pseudoStreamRunIdRef.current !== runId) {
           return;
         }
@@ -571,7 +559,7 @@ export function ChatPage() {
         }
       }
     },
-    [updateMessage],
+    [updateMessage]
   );
 
   const playStructuredAssistantResponse = useCallback(
@@ -630,7 +618,7 @@ export function ChatPage() {
       });
       return sections.answer;
     },
-    [pseudoStreamSection, updateMessage],
+    [pseudoStreamSection, updateMessage]
   );
 
   const applyAssistantResponsePayload = useCallback(
@@ -639,20 +627,21 @@ export function ChatPage() {
       response,
     }: ApplyAssistantResponseInput): Promise<string> => {
       const structuredContent = response.structured_content;
-      const pendingConfirmations = response.pending_confirmations?.map(
-        (c) => ({ ...c, status: "pending" as const }),
-      );
+      const pendingConfirmations = response.pending_confirmations?.map((c) => ({
+        ...c,
+        status: "pending" as const,
+      }));
       const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
         structuredContent,
         streamedContentRef.current,
         streamedThinkingRef.current,
-        response.stream_enabled,
+        response.stream_enabled
       )
         ? structuredContent
         : null;
       const visibleAnswer = visible_assistant_answer(
         structuredContent,
-        streamedContentRef.current,
+        streamedContentRef.current
       );
       const finalText = structuredContentForPseudoStream
         ? await playStructuredAssistantResponse({
@@ -687,13 +676,13 @@ export function ChatPage() {
                   : undefined,
               error: undefined,
             },
-            streamedThinkingRef.current || structuredContent?.thinking || "",
-          ),
+            streamedThinkingRef.current || structuredContent?.thinking || ""
+          )
         );
       }
       return finalText;
     },
-    [playStructuredAssistantResponse, updateMessage],
+    [playStructuredAssistantResponse, updateMessage]
   );
 
   // Load available file names for @mention autocomplete
@@ -711,25 +700,28 @@ export function ChatPage() {
     refreshAvailableFiles();
   }, [refreshAvailableFiles]);
 
-  const loadBridgeProvidersIfNeeded = useCallback(async (showError = true) => {
-    if (bridgeProvidersLoading || bridgeProvidersLoaded) {
-      return;
-    }
-    setBridgeProvidersLoading(true);
-    try {
-      setBridgeProviders(await fetchChatBridgeProviders());
-      setBridgeProvidersLoaded(true);
-    } catch {
-      if (showError) {
-        addToast({
-          type: "error",
-          message: "Failed to load bridge providers",
-        });
+  const loadBridgeProvidersIfNeeded = useCallback(
+    async (showError = true) => {
+      if (bridgeProvidersLoading || bridgeProvidersLoaded) {
+        return;
       }
-    } finally {
-      setBridgeProvidersLoading(false);
-    }
-  }, [addToast, bridgeProvidersLoaded, bridgeProvidersLoading]);
+      setBridgeProvidersLoading(true);
+      try {
+        setBridgeProviders(await fetchChatBridgeProviders());
+        setBridgeProvidersLoaded(true);
+      } catch {
+        if (showError) {
+          addToast({
+            type: "error",
+            message: "Failed to load bridge providers",
+          });
+        }
+      } finally {
+        setBridgeProvidersLoading(false);
+      }
+    },
+    [addToast, bridgeProvidersLoaded, bridgeProvidersLoading]
+  );
 
   useEffect(() => {
     if (!isReady || bridgeProvidersLoaded || bridgeProvidersAutoAttempted) {
@@ -749,10 +741,7 @@ export function ChatPage() {
 
   const availableFileNames = availableFiles.map((file) => file.filename);
   const activeFileNames = activeFiles
-    .map(
-      (fileId) =>
-        availableFiles.find((file) => file.file_id === fileId)?.filename,
-    )
+    .map((fileId) => availableFiles.find((file) => file.file_id === fileId)?.filename)
     .filter((name): name is string => Boolean(name));
 
   // Check TTS availability on mount
@@ -787,21 +776,21 @@ export function ChatPage() {
         bridgeProvider: bridgeProviderFromLink(bridgeLink),
       });
     },
-    [updateConversation],
+    [updateConversation]
   );
 
   const applyBridgeLinkStatus = useCallback(
     (
       conversationId: string,
       bridgeLink: ChatBridgeLink,
-      status: ChatBridgeLink["status"],
+      status: ChatBridgeLink["status"]
     ) => {
       applyBridgeLink(conversationId, {
         ...bridgeLink,
         status,
       });
     },
-    [applyBridgeLink],
+    [applyBridgeLink]
   );
 
   const removeStoredBridgeLink = useCallback((conversationId: string) => {
@@ -841,7 +830,7 @@ export function ChatPage() {
         // TTS failed — don't break the flow
       }
     },
-    [ttsAvailable],
+    [ttsAvailable]
   );
 
   const handleRealtimeEvent = useCallback(
@@ -883,8 +872,7 @@ export function ChatPage() {
         });
       } else if (event.type === "token" && assistantMessageIdRef.current) {
         const tokenEvent = eventPayload as TokenEventPayload | null;
-        streamedContentRef.current +=
-          tokenEvent?.content || event.content || "";
+        streamedContentRef.current += tokenEvent?.content || event.content || "";
         updateMessage(assistantMessageIdRef.current, {
           content: streamedContentRef.current,
         });
@@ -892,8 +880,7 @@ export function ChatPage() {
         const tokenEvent = eventPayload as TokenEventPayload | null;
         const thinkingChunk = tokenEvent?.content || event.content || "";
         const isFirstThinkingChunk = streamedThinkingRef.current.length === 0;
-        streamedThinkingRef.current +=
-          tokenEvent?.content || event.content || "";
+        streamedThinkingRef.current += tokenEvent?.content || event.content || "";
         if (isFirstThinkingChunk && streamedContentRef.current) {
           streamedContentRef.current = "";
           updateMessage(assistantMessageIdRef.current, {
@@ -942,7 +929,7 @@ export function ChatPage() {
             updateConversation(activeStream.conversationId, {
               title: nextConversationTitle(
                 activeChat?.title,
-                finalPayload.transcription,
+                finalPayload.transcription
               ),
             });
           }
@@ -980,7 +967,7 @@ export function ChatPage() {
           });
         }
         activeAssistantStreamRef.current = markStreamTerminalError(
-          activeAssistantStreamRef.current,
+          activeAssistantStreamRef.current
         );
         setIsLoading(false);
         clearStages();
@@ -1102,14 +1089,14 @@ export function ChatPage() {
         const resultText = String(eventPayload?.result_text || "");
         const status = String(eventPayload?.status || "ok");
         const isError = status === "error";
-        const summary = resultText.length > 200
-          ? resultText.slice(0, 200) + "..."
-          : resultText;
+        const summary =
+          resultText.length > 200 ? resultText.slice(0, 200) + "..." : resultText;
         addToast({
           type: isError ? "error" : "success",
-          message: taskType === "reminder"
-            ? `🔔 ${taskName}: ${summary}`
-            : `✅ ${taskName}: ${summary}`,
+          message:
+            taskType === "reminder"
+              ? `🔔 ${taskName}: ${summary}`
+              : `✅ ${taskName}: ${summary}`,
         });
       }
     },
@@ -1135,13 +1122,14 @@ export function ChatPage() {
       activeChat?.title,
       playTtsAndAutoRecord,
       updateConversationActivity,
-    ],
+    ]
   );
 
-  const { status: realtimeStatus, connect, disconnect } = useRealtimeStream(
-    handleRealtimeEvent,
-    activeChatId,
-  );
+  const {
+    status: realtimeStatus,
+    connect,
+    disconnect,
+  } = useRealtimeStream(handleRealtimeEvent, activeChatId);
 
   // Connect realtime on mount
   useEffect(() => {
@@ -1163,7 +1151,7 @@ export function ChatPage() {
       const filesToUpload: File[] = [];
       for (const file of documentFiles) {
         const fileAlreadyExists = availableFiles.some(
-          (item) => item.filename === file.name,
+          (item) => item.filename === file.name
         );
         if (!fileAlreadyExists) {
           filesToUpload.push(file);
@@ -1181,16 +1169,14 @@ export function ChatPage() {
       }
       return filesToUpload;
     },
-    [availableFiles, confirm],
+    [availableFiles, confirm]
   );
 
   const applyUploadedFileToActiveSelection = useCallback(
     (uploadedFileId: string, uploadedFilename: string) => {
       setActiveFiles((previousFileIds) => {
         const filteredFileIds = previousFileIds.filter((fileId) => {
-          const existingFile = availableFiles.find(
-            (item) => item.file_id === fileId,
-          );
+          const existingFile = availableFiles.find((item) => item.file_id === fileId);
           return existingFile?.filename !== uploadedFilename;
         });
         if (filteredFileIds.includes(uploadedFileId)) {
@@ -1199,14 +1185,11 @@ export function ChatPage() {
         return [...filteredFileIds, uploadedFileId];
       });
     },
-    [availableFiles],
+    [availableFiles]
   );
 
   const uploadDocumentFiles = useCallback(
-    async (
-      documentFiles: File[],
-      baseMessageContent: string,
-    ): Promise<string> => {
+    async (documentFiles: File[], baseMessageContent: string): Promise<string> => {
       const filesToUpload = await replaceableUploadFiles(documentFiles);
       if (filesToUpload.length === 0) {
         return baseMessageContent;
@@ -1233,12 +1216,11 @@ export function ChatPage() {
           results.push({ name: file.name, ok: true });
           applyUploadedFileToActiveSelection(
             uploadResult.file_id,
-            uploadResult.filename,
+            uploadResult.filename
           );
           addToast({ type: "success", message: `${file.name} uploaded` });
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
           results.push({ name: file.name, ok: false });
           addToast({
             type: "error",
@@ -1263,13 +1245,13 @@ export function ChatPage() {
       applyUploadedFileToActiveSelection,
       refreshAvailableFiles,
       replaceableUploadFiles,
-    ],
+    ]
   );
 
   const sendAndStream = async (
     messageContent: string,
     conversationId: string,
-    images?: string[],
+    images?: string[]
   ) => {
     const assistantMessageId = generateId();
     const assistantMessage: Message = {
@@ -1321,12 +1303,11 @@ export function ChatPage() {
         return;
       }
 
-      const streamFinalAlreadyApplied =
-        activeAssistantStreamRef.current.finalReceived;
+      const streamFinalAlreadyApplied = activeAssistantStreamRef.current.finalReceived;
       const finalText = !shouldApplyHttpChatResponse(streamFinalAlreadyApplied)
         ? visible_assistant_answer(
             response.structured_content,
-            streamedContentRef.current,
+            streamedContentRef.current
           )
         : await applyAssistantResponsePayload({
             assistantMessageId,
@@ -1355,12 +1336,11 @@ export function ChatPage() {
         });
         return;
       }
-      const keepStreamedResponse =
-        shouldKeepStreamedAssistantResponseAfterRequestError(
-          err,
-          streamedContentRef.current,
-          streamedThinkingRef.current,
-        );
+      const keepStreamedResponse = shouldKeepStreamedAssistantResponseAfterRequestError(
+        err,
+        streamedContentRef.current,
+        streamedThinkingRef.current
+      );
       updateMessage(
         assistantMessageId,
         buildAssistantMessageUpdate(
@@ -1372,8 +1352,8 @@ export function ChatPage() {
                 ? err.message
                 : "Failed to send message",
           },
-          streamedThinkingRef.current,
-        ),
+          streamedThinkingRef.current
+        )
       );
       if (keepStreamedResponse) {
         activeAssistantStreamRef.current.httpCompleted = true;
@@ -1409,7 +1389,7 @@ export function ChatPage() {
     const { imageFiles, documentFiles } = splitAttachedFiles(files || []);
 
     const imageDataUrls = await Promise.all(
-      imageFiles.map((file) => imageFileDataUrl(file)),
+      imageFiles.map((file) => imageFileDataUrl(file))
     );
 
     let messageContent = content;
@@ -1438,7 +1418,7 @@ export function ChatPage() {
     await sendAndStream(
       messageContent,
       currentChat.id,
-      imageDataUrls.length > 0 ? imageDataUrls : undefined,
+      imageDataUrls.length > 0 ? imageDataUrls : undefined
     );
   };
 
@@ -1446,21 +1426,17 @@ export function ChatPage() {
     (actionId: string, status: PendingConfirmation["status"]) => {
       const chat = activeChat;
       if (!chat) return;
-      const targetMessage = chat.messages.find(
-        (m) =>
-          m.pendingConfirmations?.some(
-            (c) => c.action_id === actionId,
-          ),
+      const targetMessage = chat.messages.find((m) =>
+        m.pendingConfirmations?.some((c) => c.action_id === actionId)
       );
       if (!targetMessage) return;
       updateMessage(targetMessage.id, {
-        pendingConfirmations: targetMessage.pendingConfirmations?.map(
-          (c) =>
-            c.action_id === actionId ? { ...c, status } : c,
+        pendingConfirmations: targetMessage.pendingConfirmations?.map((c) =>
+          c.action_id === actionId ? { ...c, status } : c
         ),
       });
     },
-    [activeChat, updateMessage],
+    [activeChat, updateMessage]
   );
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
@@ -1563,12 +1539,11 @@ export function ChatPage() {
         });
       }
 
-      const streamFinalAlreadyApplied =
-        activeAssistantStreamRef.current.finalReceived;
+      const streamFinalAlreadyApplied = activeAssistantStreamRef.current.finalReceived;
       const finalText = !shouldApplyHttpChatResponse(streamFinalAlreadyApplied)
         ? visible_assistant_answer(
             response.structured_content,
-            streamedContentRef.current,
+            streamedContentRef.current
           )
         : await applyAssistantResponsePayload({
             assistantMessageId,
@@ -1597,12 +1572,11 @@ export function ChatPage() {
         });
         return;
       }
-      const keepStreamedResponse =
-        shouldKeepStreamedAssistantResponseAfterRequestError(
-          err,
-          streamedContentRef.current,
-          streamedThinkingRef.current,
-        );
+      const keepStreamedResponse = shouldKeepStreamedAssistantResponseAfterRequestError(
+        err,
+        streamedContentRef.current,
+        streamedThinkingRef.current
+      );
       updateMessage(
         assistantMessageId,
         buildAssistantMessageUpdate(
@@ -1614,8 +1588,8 @@ export function ChatPage() {
                 ? err.message
                 : "Failed to send voice message",
           },
-          streamedThinkingRef.current,
-        ),
+          streamedThinkingRef.current
+        )
       );
       if (keepStreamedResponse) {
         activeAssistantStreamRef.current.httpCompleted = true;
@@ -1673,7 +1647,7 @@ export function ChatPage() {
   }, [createNewChat]);
 
   const activeBridgeLink = activeChatId
-    ? bridgeLinksByConversationId[activeChatId] ?? null
+    ? (bridgeLinksByConversationId[activeChatId] ?? null)
     : null;
 
   const activeBridgeProvider = activeChat?.bridgeProvider || null;
@@ -1752,7 +1726,7 @@ export function ChatPage() {
       });
       setShowBridgeReauth(true);
     },
-    [ensureActiveChat],
+    [ensureActiveChat]
   );
 
   const handleBridgeDetailsOpen = useCallback(() => {
@@ -1778,21 +1752,17 @@ export function ChatPage() {
       });
       setShowBridgeReauth(true);
     },
-    [activeBridgeLink, activeChatId],
+    [activeBridgeLink, activeChatId]
   );
 
   const enableStoredBridgeLink = useCallback(
-    async (
-      conversationId: string,
-      bridgeLink: ChatBridgeLink,
-      reauthToken: string,
-    ) => {
+    async (conversationId: string, bridgeLink: ChatBridgeLink, reauthToken: string) => {
       if (bridgeLink.status !== "active") {
         await enableChatBridgeLink(bridgeLink.id, { reauthToken });
       }
       applyBridgeLinkStatus(conversationId, bridgeLink, "active");
     },
-    [applyBridgeLinkStatus],
+    [applyBridgeLinkStatus]
   );
 
   const createBridgeLinkForConversation = useCallback(
@@ -1800,11 +1770,9 @@ export function ChatPage() {
       conversationId: string,
       provider: string,
       title: string,
-      reauthToken: string,
+      reauthToken: string
     ) => {
-      const providerItem = bridgeProviders.find(
-        (item) => item.provider === provider,
-      );
+      const providerItem = bridgeProviders.find((item) => item.provider === provider);
       const createdBridgeLink = await createChatBridgeLink(
         conversationId,
         provider,
@@ -1812,26 +1780,22 @@ export function ChatPage() {
           reauthToken,
           ...bridgeCreateSettings(
             provider,
-            providerItem?.default_persona_user_id || "",
+            providerItem?.default_persona_user_id || ""
           ),
         },
-        title,
+        title
       );
       applyBridgeLink(conversationId, createdBridgeLink);
     },
-    [applyBridgeLink, bridgeProviders],
+    [applyBridgeLink, bridgeProviders]
   );
 
   const disableStoredBridgeLink = useCallback(
-    async (
-      conversationId: string,
-      bridgeLink: ChatBridgeLink,
-      reauthToken: string,
-    ) => {
+    async (conversationId: string, bridgeLink: ChatBridgeLink, reauthToken: string) => {
       await disableChatBridgeLink(bridgeLink.id, { reauthToken });
       applyBridgeLinkStatus(conversationId, bridgeLink, "disabled");
     },
-    [applyBridgeLinkStatus],
+    [applyBridgeLinkStatus]
   );
 
   const handleBridgeReauthSuccess = useCallback(
@@ -1845,7 +1809,7 @@ export function ChatPage() {
         return;
       }
       setBridgeActionLoadingProvider(
-        bridgeAction?.provider || activeBridgeProvider || DISCORD_BRIDGE_PROVIDER,
+        bridgeAction?.provider || activeBridgeProvider || DISCORD_BRIDGE_PROVIDER
       );
       try {
         if (pendingSettingsSave) {
@@ -1856,13 +1820,10 @@ export function ChatPage() {
               deliveryMode: pendingSettingsSave.deliveryMode,
               personaMode: pendingSettingsSave.personaMode,
               personaUserId: pendingSettingsSave.personaUserId,
-            },
+            }
           );
           if (updatedBridgeLink) {
-            applyBridgeLink(
-              pendingSettingsSave.conversationId,
-              updatedBridgeLink,
-            );
+            applyBridgeLink(pendingSettingsSave.conversationId, updatedBridgeLink);
           }
           addToast({
             type: "success",
@@ -1870,7 +1831,7 @@ export function ChatPage() {
           });
         } else if (bridgeAction) {
           const currentBridgeLink = await fetchChatBridgeForConversation(
-            bridgeAction.conversationId,
+            bridgeAction.conversationId
           );
           if (bridgeAction.enabled) {
             if (
@@ -1880,7 +1841,7 @@ export function ChatPage() {
               await enableStoredBridgeLink(
                 bridgeAction.conversationId,
                 currentBridgeLink,
-                reauthToken,
+                reauthToken
               );
             } else {
               if (currentBridgeLink && currentBridgeLink.status === "active") {
@@ -1890,7 +1851,7 @@ export function ChatPage() {
                 bridgeAction.conversationId,
                 bridgeAction.provider,
                 activeChat?.title || bridgeAction.conversationId,
-                reauthToken,
+                reauthToken
               );
             }
             addToast({
@@ -1906,7 +1867,7 @@ export function ChatPage() {
               await disableStoredBridgeLink(
                 bridgeAction.conversationId,
                 currentBridgeLink,
-                reauthToken,
+                reauthToken
               );
               addToast({
                 type: "success",
@@ -1944,7 +1905,7 @@ export function ChatPage() {
       enableStoredBridgeLink,
       pendingBridgeAction,
       pendingBridgeSettingsSave,
-    ],
+    ]
   );
 
   useEffect(() => {
@@ -1981,7 +1942,7 @@ export function ChatPage() {
     !isLoading && activeChat?.processingStatus === "active"
       ? buildServerProcessingStage(
           activeChat.processingStage,
-          activeChat.processingStartedAt,
+          activeChat.processingStartedAt
         )
       : [];
   const displayedProcessingStages =
@@ -2041,7 +2002,10 @@ export function ChatPage() {
       />
       <div className="mx-auto w-full max-w-[1920px] min-h-[32px] px-2 sm:min-h-[40px] sm:px-4 2xl:px-[10%]">
         {displayedProcessingStages && displayedProcessingStages.length > 0 && (
-          <ProcessingStages stages={displayedProcessingStages} className="px-2 py-1.5 sm:px-4 sm:py-2" />
+          <ProcessingStages
+            stages={displayedProcessingStages}
+            className="px-2 py-1.5 sm:px-4 sm:py-2"
+          />
         )}
       </div>
       <ChatInput
@@ -2061,13 +2025,9 @@ export function ChatPage() {
         }
         activeFiles={activeFileNames}
         onDeactivateFile={(filename) => {
-          const match = availableFiles.find(
-            (file) => file.filename === filename,
-          );
+          const match = availableFiles.find((file) => file.filename === filename);
           if (!match) return;
-          setActiveFiles((prev) =>
-            prev.filter((fileId) => fileId !== match.file_id),
-          );
+          setActiveFiles((prev) => prev.filter((fileId) => fileId !== match.file_id));
         }}
         availableFiles={availableFileNames}
         commandHistory={commandHistory}

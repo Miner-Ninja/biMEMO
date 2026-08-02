@@ -243,7 +243,7 @@ class PromptBuilder:
         if tz_name:
             try:
                 tz = ZoneInfo(tz_name)
-            except (KeyError, ValueError):
+            except KeyError, ValueError:
                 logger.warning(
                     "Invalid timezone in user profile: %r, using UTC",
                     tz_name,

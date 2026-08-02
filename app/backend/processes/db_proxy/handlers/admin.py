@@ -172,7 +172,7 @@ def _json_metadata_profile(raw_value: object) -> dict[str, object]:
         return {}
     try:
         profile = json.loads(raw_value)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return {}
     return profile if isinstance(profile, dict) else {}
 

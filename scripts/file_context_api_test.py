@@ -406,9 +406,7 @@ def run_scenario(
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
-        description=(
-            "Run a live end-to-end file-context test through the biMEMO API."
-        ),
+        description=("Run a live end-to-end file-context test through the biMEMO API."),
     )
     parser.add_argument(
         "--base-url",

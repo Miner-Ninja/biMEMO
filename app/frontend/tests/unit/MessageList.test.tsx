@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { MessageList } from "@/components/chat/MessageList";
 import type { Message } from "@/types/chat";
 
-function buildMessage(id: string, role: "user" | "assistant", content: string): Message {
+function buildMessage(
+  id: string,
+  role: "user" | "assistant",
+  content: string
+): Message {
   return {
     id,
     role,
@@ -24,11 +28,11 @@ describe("MessageList", () => {
           buildMessage("user-1", "user", "hello"),
           buildMessage("assistant-1", "assistant", "world"),
         ]}
-      />,
+      />
     );
 
     const viewport = container.querySelector<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
+      '[data-slot="scroll-area-viewport"]'
     );
     expect(viewport).not.toBeNull();
 
@@ -58,7 +62,7 @@ describe("MessageList", () => {
           buildMessage("assistant-1", "assistant", "world"),
           buildMessage("assistant-2", "assistant", "next response"),
         ]}
-      />,
+      />
     );
 
     expect(scrollTo).toHaveBeenCalledWith({

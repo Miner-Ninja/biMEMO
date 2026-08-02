@@ -70,6 +70,7 @@ class TestActionDecisionService:
 
     def test_saved_allow_grant_overrides_red_zone_prompt(self):
         """Allow a red-zone call when a saved grant exists."""
+
         class Grants:
             """Fake grant cache."""
 

@@ -433,9 +433,7 @@ class LLMCaller:
                         f"- {query}: {failure}"
                         for query, failure in search_failures.items()
                     )
-                    search_context = (
-                        f"{search_context}\n\nSearch failures:\n{failures}"
-                    )
+                    search_context = f"{search_context}\n\nSearch failures:\n{failures}"
                 search_context = (
                     f"{search_context}\n\n"
                     f"{self._current_data_evidence_context(evidence_report)}"
@@ -462,10 +460,13 @@ class LLMCaller:
                 if len(search_failures) == 1:
                     failure_text = next(iter(search_failures.values()))
                 else:
-                    failure_text = "; ".join(
-                        f"{query}: {failure}"
-                        for query, failure in search_failures.items()
-                    ) or "search returned no usable results"
+                    failure_text = (
+                        "; ".join(
+                            f"{query}: {failure}"
+                            for query, failure in search_failures.items()
+                        )
+                        or "search returned no usable results"
+                    )
                 messages.append(
                     {
                         "role": "system",
@@ -538,8 +539,7 @@ class LLMCaller:
         if not any(marker in normalized for marker in PRICE_SEARCH_MARKERS):
             return CurrentDataEvidencePlan(message, targets, (message,))
         targeted_queries = [
-            self._current_data_target_query(target)
-            for target in targets
+            self._current_data_target_query(target) for target in targets
         ]
         queries: list[str] = []
         if len(targeted_queries) < 2:
@@ -693,7 +693,7 @@ class LLMCaller:
                 return False
             try:
                 parsed_result = literal_eval(result)
-            except (SyntaxError, ValueError):
+            except SyntaxError, ValueError:
                 return bool(result.strip())
         if not isinstance(parsed_result, dict):
             return bool(str(parsed_result).strip())
@@ -713,7 +713,7 @@ class LLMCaller:
         if isinstance(result, str):
             try:
                 parsed_result = literal_eval(result)
-            except (SyntaxError, ValueError):
+            except SyntaxError, ValueError:
                 return (), (self._compact_search_field(result),)
         if not isinstance(parsed_result, dict):
             return (), (self._compact_search_field(parsed_result),)
@@ -746,7 +746,7 @@ class LLMCaller:
             if isinstance(result, str):
                 try:
                     parsed_result = literal_eval(result)
-                except (SyntaxError, ValueError):
+                except SyntaxError, ValueError:
                     text_blocks.append(f"Query: {query}\n{result}")
                     continue
             if not isinstance(parsed_result, dict):

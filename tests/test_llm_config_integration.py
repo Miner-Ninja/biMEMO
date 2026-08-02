@@ -1529,10 +1529,7 @@ class TestLLMConfigCRUD:
         assert update_resp.status_code == 200
         assert update_resp.json()["detail"] == "Configuration updated and applied."
         assert update_resp.json()["reload"]["success"] is True
-        assert (
-            client.app.state.orchestrator_client.send_reload_llm.await_count
-            == 1
-        )
+        assert client.app.state.orchestrator_client.send_reload_llm.await_count == 1
 
         # Verify via in-memory store
         assert cred._configs[config_id]["credentials"]["model"] == "new-model"
@@ -1573,10 +1570,7 @@ class TestLLMConfigCRUD:
             == "Configuration deleted and runtime reloaded."
         )
         assert delete_resp.json()["reload"]["success"] is True
-        assert (
-            client.app.state.orchestrator_client.send_reload_llm.await_count
-            == 1
-        )
+        assert client.app.state.orchestrator_client.send_reload_llm.await_count == 1
 
         list_resp = client.get("/admin/llm/configs")
         assert len(list_resp.json()["configs"]) == 0
@@ -1609,10 +1603,7 @@ class TestLLMConfigCRUD:
         assert activate_resp.status_code == 200
         assert activate_resp.json()["detail"] == "Configuration applied."
         assert activate_resp.json()["reload"]["success"] is True
-        assert (
-            client.app.state.orchestrator_client.send_reload_llm.await_count
-            == 1
-        )
+        assert client.app.state.orchestrator_client.send_reload_llm.await_count == 1
 
         list_resp = client.get("/admin/llm/configs")
         configs = list_resp.json()["configs"]
@@ -2263,6 +2254,7 @@ class TestLLMConfigCRUD:
         real_async_client = httpx.AsyncClient
 
         with pytest.MonkeyPatch.context() as mp:
+
             def _mock_async_client(*args, **kwargs) -> httpx.AsyncClient:
                 return real_async_client(
                     transport=httpx.MockTransport(handler),

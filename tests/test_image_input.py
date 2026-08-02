@@ -178,7 +178,7 @@ class TestMessageStorageRoundtrip:
             parsed = json.loads(content)
             if not isinstance(parsed, list):
                 parsed = content
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             parsed = content
         assert parsed == content
 

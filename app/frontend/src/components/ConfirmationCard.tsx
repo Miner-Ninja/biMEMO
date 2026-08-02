@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useEffect, useState } from "react";
+import { ShieldAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ConfirmationCardProps {
-  actionId: string
-  toolName: string
-  parameters: Record<string, unknown>
-  timeoutSeconds: number
-  onConfirm: (actionId: string, approved: boolean) => void
+  actionId: string;
+  toolName: string;
+  parameters: Record<string, unknown>;
+  timeoutSeconds: number;
+  onConfirm: (actionId: string, approved: boolean) => void;
 }
 
 export function ConfirmationCard({
@@ -17,27 +17,27 @@ export function ConfirmationCard({
   timeoutSeconds,
   onConfirm,
 }: ConfirmationCardProps) {
-  const [remaining, setRemaining] = useState(timeoutSeconds)
-  const [decided, setDecided] = useState(false)
+  const [remaining, setRemaining] = useState(timeoutSeconds);
+  const [decided, setDecided] = useState(false);
 
   useEffect(() => {
-    if (decided || remaining <= 0) return
+    if (decided || remaining <= 0) return;
     const timer = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {
-          clearInterval(timer)
-          return 0
+          clearInterval(timer);
+          return 0;
         }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [decided, remaining])
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [decided, remaining]);
 
   const handleDecision = (approved: boolean) => {
-    setDecided(true)
-    onConfirm(actionId, approved)
-  }
+    setDecided(true);
+    onConfirm(actionId, approved);
+  };
 
   return (
     <div className="mx-4 my-2 rounded-lg border-2 border-amber-500 bg-amber-50 p-4 dark:border-amber-600 dark:bg-amber-950/30">
@@ -49,17 +49,17 @@ export function ConfirmationCard({
               Action Confirmation Required
             </h3>
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              <span className="font-mono font-medium">{toolName}</span> wants to
-              execute with these parameters:
+              <span className="font-mono font-medium">{toolName}</span> wants to execute
+              with these parameters:
             </p>
           </div>
 
           <div className="rounded bg-amber-100 p-3 font-mono text-sm dark:bg-amber-900/40">
             {Object.entries(parameters).map(([key, value]) => (
               <div key={key} className="break-all">
-                <span className="text-amber-700 dark:text-amber-400">{key}:</span>{' '}
+                <span className="text-amber-700 dark:text-amber-400">{key}:</span>{" "}
                 <span className="text-amber-900 dark:text-amber-200">
-                  {typeof value === 'string' ? value : JSON.stringify(value)}
+                  {typeof value === "string" ? value : JSON.stringify(value)}
                 </span>
               </div>
             ))}
@@ -96,5 +96,5 @@ export function ConfirmationCard({
         </div>
       </div>
     </div>
-  )
+  );
 }

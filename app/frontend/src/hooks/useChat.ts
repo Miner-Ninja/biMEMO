@@ -68,7 +68,7 @@ function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
 }
 
 function mapSettings(
-  raw: { show_sql?: boolean; show_thinking?: boolean } | undefined,
+  raw: { show_sql?: boolean; show_thinking?: boolean } | undefined
 ): ChatSettings {
   if (!raw) return { ...DEFAULT_CHAT_SETTINGS };
   return {
@@ -77,17 +77,13 @@ function mapSettings(
   };
 }
 
-function mapConversation(
-  conversation: StoredConversation,
-  existingChat?: Chat,
-): Chat {
+function mapConversation(conversation: StoredConversation, existingChat?: Chat): Chat {
   return {
     id: conversation.id,
     title: conversation.title || DEFAULT_CHAT_TITLE,
     bridgeProvider: conversation.bridge_provider ?? null,
     settings: mapSettings(conversation.settings),
-    processingStatus:
-      conversation.processing_status === "active" ? "active" : "idle",
+    processingStatus: conversation.processing_status === "active" ? "active" : "idle",
     processingStage: conversation.processing_stage || "",
     processingStartedAt: conversation.processing_started_at
       ? new Date(conversation.processing_started_at)
@@ -99,7 +95,7 @@ function mapConversation(
 }
 
 export function extractMessageText(
-  content: string | Array<{ type: string; text?: string }>,
+  content: string | Array<{ type: string; text?: string }>
 ): string {
   if (typeof content === "string") {
     return content;
@@ -111,7 +107,7 @@ export function extractMessageText(
 }
 
 export function extractMessageImages(
-  content: string | Array<{ type: string; image_url?: { url?: string } }>,
+  content: string | Array<{ type: string; image_url?: { url?: string } }>
 ): string[] | undefined {
   if (typeof content === "string") {
     return undefined;
@@ -124,11 +120,8 @@ export function extractMessageImages(
 }
 
 export function buildAssistantMessageFields(
-  input: AssistantMessageFieldsInput,
-): Pick<
-  Message,
-  "content" | "images" | "thinking" | "sql" | "suggestions" | "stats"
-> {
+  input: AssistantMessageFieldsInput
+): Pick<Message, "content" | "images" | "thinking" | "sql" | "suggestions" | "stats"> {
   const { fallbackContent, structuredContent, stats, images } = input;
   return {
     content: structuredContent?.answer ?? fallbackContent,
@@ -162,10 +155,10 @@ function transientMessageMatchKey(message: Message): string {
 
 function mergeTransientMessageFields(
   storedMessages: Message[],
-  existingMessages: Message[],
+  existingMessages: Message[]
 ): Message[] {
   const existingMessagesById = new Map(
-    existingMessages.map((message) => [message.id, message]),
+    existingMessages.map((message) => [message.id, message])
   );
   const existingAssistantThinkingByKey = new Map<string, string>();
 
@@ -175,7 +168,7 @@ function mergeTransientMessageFields(
     }
     existingAssistantThinkingByKey.set(
       transientMessageMatchKey(message),
-      message.thinking,
+      message.thinking
     );
   }
 
@@ -188,7 +181,7 @@ function mergeTransientMessageFields(
       return message;
     }
     const thinking = existingAssistantThinkingByKey.get(
-      transientMessageMatchKey(message),
+      transientMessageMatchKey(message)
     );
     if (!thinking) {
       return message;
@@ -208,7 +201,7 @@ export function useChat() {
   const activeChatIdRef = useRef<string | null>(activeChatId);
   const loadedConversationIdsRef = useRef<Set<string>>(new Set());
   const pendingConversationLoadsRef = useRef<Map<string, Promise<Message[]>>>(
-    new Map(),
+    new Map()
   );
 
   useEffect(() => {
@@ -217,24 +210,22 @@ export function useChat() {
 
   const activeChat = useMemo(
     () => chats.find((chat) => chat.id === activeChatId) ?? null,
-    [activeChatId, chats],
+    [activeChatId, chats]
   );
 
   const refreshConversations = useCallback(async () => {
     const storedConversations = await fetchConversations();
     setChats((previousChats) => {
-      const previousChatsById = new Map(
-        previousChats.map((chat) => [chat.id, chat]),
-      );
+      const previousChatsById = new Map(previousChats.map((chat) => [chat.id, chat]));
       return storedConversations.map((conversation) =>
-        mapConversation(conversation, previousChatsById.get(conversation.id)),
+        mapConversation(conversation, previousChatsById.get(conversation.id))
       );
     });
     setActiveChatId((currentActiveChatId) => {
       if (
         currentActiveChatId &&
         storedConversations.some(
-          (conversation) => conversation.id === currentActiveChatId,
+          (conversation) => conversation.id === currentActiveChatId
         )
       ) {
         return currentActiveChatId;
@@ -245,8 +236,7 @@ export function useChat() {
 
   const refreshConversationMessages = useCallback(
     async (conversationId: string): Promise<Message[]> => {
-      const pendingLoad =
-        pendingConversationLoadsRef.current.get(conversationId);
+      const pendingLoad = pendingConversationLoadsRef.current.get(conversationId);
       if (pendingLoad) {
         return pendingLoad;
       }
@@ -254,7 +244,7 @@ export function useChat() {
       const loadPromise = (async (): Promise<Message[]> => {
         const storedMessages = await fetchConversationMessages(
           conversationId,
-          DEFAULT_MESSAGES_LIMIT,
+          DEFAULT_MESSAGES_LIMIT
         );
         let messages = storedMessages.map(mapMessage);
         setChats((previousChats) =>
@@ -264,7 +254,7 @@ export function useChat() {
             }
             messages = mergeTransientMessageFields(messages, chat.messages);
             return { ...chat, messages };
-          }),
+          })
         );
         loadedConversationIdsRef.current.add(conversationId);
         return messages;
@@ -277,7 +267,7 @@ export function useChat() {
         pendingConversationLoadsRef.current.delete(conversationId);
       }
     },
-    [],
+    []
   );
 
   useEffect(() => {
@@ -318,40 +308,37 @@ export function useChat() {
     return newChat;
   }, []);
 
-  const addOrUpdateConversation = useCallback(
-    (conversation: ConversationInsert) => {
-      setChats((previousChats) => {
-        const existingIndex = previousChats.findIndex(
-          (chat) => chat.id === conversation.id,
-        );
-        if (existingIndex === -1) {
-          return [
-            {
-              ...conversation,
-              settings: conversation.settings ?? { ...DEFAULT_CHAT_SETTINGS },
-              messages: [],
-            },
-            ...previousChats,
-          ];
-        }
-        return previousChats.map((chat) =>
-          chat.id === conversation.id
-            ? {
-                ...chat,
+  const addOrUpdateConversation = useCallback((conversation: ConversationInsert) => {
+    setChats((previousChats) => {
+      const existingIndex = previousChats.findIndex(
+        (chat) => chat.id === conversation.id
+      );
+      if (existingIndex === -1) {
+        return [
+          {
+            ...conversation,
+            settings: conversation.settings ?? { ...DEFAULT_CHAT_SETTINGS },
+            messages: [],
+          },
+          ...previousChats,
+        ];
+      }
+      return previousChats.map((chat) =>
+        chat.id === conversation.id
+          ? {
+              ...chat,
               title: conversation.title,
               bridgeProvider: conversation.bridgeProvider ?? chat.bridgeProvider,
               processingStatus: conversation.processingStatus,
-                processingStage: conversation.processingStage,
-                processingStartedAt: conversation.processingStartedAt,
-                createdAt: conversation.createdAt,
-                updatedAt: conversation.updatedAt,
-              }
-            : chat,
-        );
-      });
-    },
-    [],
-  );
+              processingStage: conversation.processingStage,
+              processingStartedAt: conversation.processingStartedAt,
+              createdAt: conversation.createdAt,
+              updatedAt: conversation.updatedAt,
+            }
+          : chat
+      );
+    });
+  }, []);
 
   const switchChat = useCallback(
     async (chatId: string) => {
@@ -361,7 +348,7 @@ export function useChat() {
         await refreshConversationMessages(chatId);
       }
     },
-    [refreshConversationMessages],
+    [refreshConversationMessages]
   );
 
   const addMessage = useCallback((message: Message) => {
@@ -375,8 +362,8 @@ export function useChat() {
               messages: [...chat.messages, message],
               updatedAt: new Date(),
             }
-          : chat,
-      ),
+          : chat
+      )
     );
   }, []);
 
@@ -387,7 +374,9 @@ export function useChat() {
           if (chat.id !== conversationId) {
             return chat;
           }
-          if (chat.messages.some((existingMessage) => existingMessage.id === message.id)) {
+          if (
+            chat.messages.some((existingMessage) => existingMessage.id === message.id)
+          ) {
             return chat;
           }
           return {
@@ -395,31 +384,28 @@ export function useChat() {
             messages: [...chat.messages, message],
             updatedAt: message.timestamp,
           };
-        }),
+        })
       );
     },
-    [],
+    []
   );
 
   // Update an existing message (for streaming or final update)
-  const updateMessage = useCallback(
-    (messageId: string, updates: Partial<Message>) => {
-      const targetChatId = activeChatIdRef.current;
-      setChats((prev) =>
-        prev.map((chat) => {
-          if (chat.id !== targetChatId) return chat;
+  const updateMessage = useCallback((messageId: string, updates: Partial<Message>) => {
+    const targetChatId = activeChatIdRef.current;
+    setChats((prev) =>
+      prev.map((chat) => {
+        if (chat.id !== targetChatId) return chat;
 
-          return {
-            ...chat,
-            messages: chat.messages.map((msg) =>
-              msg.id === messageId ? { ...msg, ...updates } : msg,
-            ),
-          };
-        }),
-      );
-    },
-    [],
-  );
+        return {
+          ...chat,
+          messages: chat.messages.map((msg) =>
+            msg.id === messageId ? { ...msg, ...updates } : msg
+          ),
+        };
+      })
+    );
+  }, []);
 
   // Delete a chat
   const deleteChat = useCallback(async (chatId: string) => {
@@ -454,8 +440,8 @@ export function useChat() {
               title: updatedChat.title || DEFAULT_CHAT_TITLE,
               updatedAt: new Date(updatedChat.updated_at),
             }
-          : chat,
-      ),
+          : chat
+      )
     );
   }, []);
 
@@ -472,8 +458,7 @@ export function useChat() {
                     ? chat.bridgeProvider
                     : updates.bridgeProvider,
                 settings: updates.settings ?? chat.settings,
-                processingStatus:
-                  updates.processingStatus ?? chat.processingStatus,
+                processingStatus: updates.processingStatus ?? chat.processingStatus,
                 processingStage: updates.processingStage ?? chat.processingStage,
                 processingStartedAt:
                   updates.processingStartedAt === undefined
@@ -481,18 +466,18 @@ export function useChat() {
                     : updates.processingStartedAt || undefined,
                 updatedAt: updates.updatedAt ?? chat.updatedAt,
               }
-            : chat,
-        ),
+            : chat
+        )
       );
     },
-    [],
+    []
   );
 
   const updateConversationActivity = useCallback(
     (conversationId: string, updatedAt: Date) => {
       updateConversation(conversationId, { updatedAt });
     },
-    [updateConversation],
+    [updateConversation]
   );
 
   // Remove all messages after the given message ID (inclusive of the message itself is kept)
@@ -508,15 +493,14 @@ export function useChat() {
           messages: chat.messages.slice(0, index + 1),
           updatedAt: new Date(),
         };
-      }),
+      })
     );
   }, []);
 
   const ensureActiveChat = useCallback(async (): Promise<Chat | null> => {
     const currentChatId = activeChatIdRef.current;
     if (currentChatId) {
-      const currentChat =
-        chats.find((chat) => chat.id === currentChatId) ?? null;
+      const currentChat = chats.find((chat) => chat.id === currentChatId) ?? null;
       if (currentChat) {
         if (!loadedConversationIdsRef.current.has(currentChatId)) {
           await refreshConversationMessages(currentChatId);

@@ -172,9 +172,7 @@ class TestOrchestratorClient:
             session_id="s1",
             conversation_id="c1",
         )
-        chat_task = asyncio.create_task(
-            client.send_chat(chat_request, session_id="s1")
-        )
+        chat_task = asyncio.create_task(client.send_chat(chat_request, session_id="s1"))
         await asyncio.sleep(0)
         assert client.is_processing
 

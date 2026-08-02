@@ -120,6 +120,6 @@ def _parse_distillation(raw: str) -> Summary | None:
         cleaned = _extract_json(raw)
         data = json.loads(cleaned)
         return Summary.model_validate(data)
-    except (json.JSONDecodeError, ValidationError):
+    except json.JSONDecodeError, ValidationError:
         logger.warning("Distiller output failed validation: %.200s", raw)
         return None

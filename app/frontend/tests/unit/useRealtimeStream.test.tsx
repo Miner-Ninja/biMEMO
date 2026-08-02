@@ -1,85 +1,83 @@
-import { act, renderHook } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useRealtimeStream } from '@/hooks/useRealtimeStream'
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useRealtimeStream } from "@/hooks/useRealtimeStream";
 
-vi.mock('@/lib/bimemo-api', () => ({
+vi.mock("@/lib/bimemo-api", () => ({
   authStatus: vi.fn(async () => ({ authenticated: true })),
   refreshAccessToken: vi.fn(async () => true),
-}))
+}));
 
 class FakeWebSocket {
-  static instances: FakeWebSocket[] = []
-  onopen: (() => void) | null = null
-  onmessage: ((event: MessageEvent<string>) => void) | null = null
-  onerror: (() => void) | null = null
-  onclose: (() => void) | null = null
-  url: string
+  static instances: FakeWebSocket[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  url: string;
 
   constructor(url: string) {
-    this.url = url
-    FakeWebSocket.instances.push(this)
+    this.url = url;
+    FakeWebSocket.instances.push(this);
   }
 
   close() {
-    this.onclose?.()
+    this.onclose?.();
   }
 }
 
-describe('useRealtimeStream', () => {
+describe("useRealtimeStream", () => {
   beforeEach(() => {
-    FakeWebSocket.instances = []
-    vi.stubGlobal('WebSocket', FakeWebSocket)
-  })
+    FakeWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+  });
 
   afterEach(() => {
-    vi.useRealTimers()
-    vi.unstubAllGlobals()
-  })
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
-  it('dispatches WebSocket messages with the shared event contract', async () => {
-    const onEvent = vi.fn()
-    const { result } = renderHook(() => useRealtimeStream(onEvent, 'conv-1'))
+  it("dispatches WebSocket messages with the shared event contract", async () => {
+    const onEvent = vi.fn();
+    const { result } = renderHook(() => useRealtimeStream(onEvent, "conv-1"));
 
     await act(async () => {
-      await result.current.connect()
-    })
+      await result.current.connect();
+    });
 
-    const socket = FakeWebSocket.instances[0]
-    expect(socket.url).toContain('/ws?conversation_id=conv-1')
+    const socket = FakeWebSocket.instances[0];
+    expect(socket.url).toContain("/ws?conversation_id=conv-1");
 
     act(() => {
-      socket.onopen?.()
+      socket.onopen?.();
       socket.onmessage?.(
-        new MessageEvent('message', {
-          data: JSON.stringify({ type: 'final', request_id: 'req-1' }),
-        }),
-      )
-    })
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "final", request_id: "req-1" }),
+        })
+      );
+    });
 
-    expect(onEvent).toHaveBeenCalledWith({ type: 'final', request_id: 'req-1' })
-  })
+    expect(onEvent).toHaveBeenCalledWith({ type: "final", request_id: "req-1" });
+  });
 
-  it('reconnects with WebSocket when the connection closes', async () => {
-    vi.useFakeTimers()
-    const onEvent = vi.fn()
-    const { result } = renderHook(() => useRealtimeStream(onEvent, 'conv-2'))
+  it("reconnects with WebSocket when the connection closes", async () => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const { result } = renderHook(() => useRealtimeStream(onEvent, "conv-2"));
 
     await act(async () => {
-      await result.current.connect()
-    })
+      await result.current.connect();
+    });
 
-    const socket = FakeWebSocket.instances[0]
+    const socket = FakeWebSocket.instances[0];
     act(() => {
-      socket.onclose?.()
-    })
+      socket.onclose?.();
+    });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
-    })
+      await vi.advanceTimersByTimeAsync(1000);
+    });
 
-    expect(FakeWebSocket.instances).toHaveLength(2)
-    expect(FakeWebSocket.instances[1].url).toContain(
-      '/ws?conversation_id=conv-2',
-    )
-  })
-})
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1].url).toContain("/ws?conversation_id=conv-2");
+  });
+});

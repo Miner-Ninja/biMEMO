@@ -1,4 +1,4 @@
-import { Skeleton } from './skeleton'
+import { Skeleton } from "./skeleton";
 
 /**
  * Skeleton for a single chat item in the sidebar.
@@ -12,7 +12,7 @@ export function ChatItemSkeleton() {
         <Skeleton className="h-2.5 w-1/2" />
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -25,7 +25,7 @@ export function ChatListSkeleton({ count = 6 }: { count?: number }) {
         <ChatItemSkeleton key={i} />
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -33,7 +33,7 @@ export function ChatListSkeleton({ count = 6 }: { count?: number }) {
  */
 export function MessageSkeleton({ isUser = false }: { isUser?: boolean }) {
   return (
-    <div className={`flex gap-3 px-4 py-4 ${isUser ? '' : 'bg-muted/50'}`}>
+    <div className={`flex gap-3 px-4 py-4 ${isUser ? "" : "bg-muted/50"}`}>
       <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
       <div className="flex-1 space-y-2.5 pt-1">
         <Skeleton className="h-3 w-20" />
@@ -48,7 +48,7 @@ export function MessageSkeleton({ isUser = false }: { isUser?: boolean }) {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -62,7 +62,7 @@ export function MessageListSkeleton() {
       <MessageSkeleton isUser />
       <MessageSkeleton />
     </div>
-  )
+  );
 }
 
 /**
@@ -78,7 +78,7 @@ export function FileListSkeleton({ count = 4 }: { count?: number }) {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -97,7 +97,7 @@ export function AdminCardSkeleton({ count = 3 }: { count?: number }) {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -128,7 +128,7 @@ export function AppSkeleton() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -144,7 +144,7 @@ export function FormSkeleton({ fields = 4 }: { fields?: number }) {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -157,5 +157,5 @@ export function PanelSkeleton() {
       <Skeleton className="h-20 w-full rounded-lg" />
       <Skeleton className="h-20 w-full rounded-lg" />
     </div>
-  )
+  );
 }

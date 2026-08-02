@@ -190,7 +190,7 @@ class WorkerSocketServer:
                 if response is None:
                     break
                 await self._send_response(writer, response)
-        except (ConnectionResetError, asyncio.IncompleteReadError):
+        except ConnectionResetError, asyncio.IncompleteReadError:
             logger.debug("Worker disconnected")
         finally:
             await _close_writer(writer)

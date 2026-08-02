@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Command as CommandPrimitive } from "cmdk"
-import { Search } from "lucide-react"
+import * as React from "react";
+import { Command as CommandPrimitive } from "cmdk";
+import { Search } from "lucide-react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Command({
   className,
@@ -15,11 +15,11 @@ function Command({
       data-slot="command"
       className={cn(
         "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
-        className,
+        className
       )}
       {...props}
     />
-  )
+  );
 }
 
 function CommandInput({
@@ -36,12 +36,12 @@ function CommandInput({
         data-slot="command-input"
         className={cn(
           "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-          className,
+          className
         )}
         {...props}
       />
     </div>
-  )
+  );
 }
 
 function CommandList({
@@ -54,19 +54,17 @@ function CommandList({
       className={cn("max-h-[300px] overflow-x-hidden overflow-y-auto", className)}
       {...props}
     />
-  )
+  );
 }
 
-function CommandEmpty(
-  props: React.ComponentProps<typeof CommandPrimitive.Empty>,
-) {
+function CommandEmpty(props: React.ComponentProps<typeof CommandPrimitive.Empty>) {
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
       className="py-6 text-center text-sm text-muted-foreground"
       {...props}
     />
-  )
+  );
 }
 
 function CommandGroup({
@@ -78,11 +76,11 @@ function CommandGroup({
       data-slot="command-group"
       className={cn(
         "overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:tracking-[0.18em] [&_[cmdk-group-heading]]:text-muted-foreground",
-        className,
+        className
       )}
       {...props}
     />
-  )
+  );
 }
 
 function CommandSeparator({
@@ -95,7 +93,7 @@ function CommandSeparator({
       className={cn("-mx-1 h-px bg-border", className)}
       {...props}
     />
-  )
+  );
 }
 
 function CommandItem({
@@ -107,27 +105,24 @@ function CommandItem({
       data-slot="command-item"
       className={cn(
         "relative flex cursor-default items-start gap-3 rounded-sm px-3 py-2 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50",
-        className,
+        className
       )}
       {...props}
     />
-  )
+  );
 }
 
-function CommandShortcut({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
+function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="command-shortcut"
       className={cn(
         "ml-auto text-xs tracking-[0.14em] text-muted-foreground",
-        className,
+        className
       )}
       {...props}
     />
-  )
+  );
 }
 
 export {
@@ -139,4 +134,4 @@ export {
   CommandList,
   CommandSeparator,
   CommandShortcut,
-}
+};

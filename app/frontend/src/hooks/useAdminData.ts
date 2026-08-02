@@ -1,27 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
-import { apiRequest } from '@/lib/bimemo-api'
+import { useCallback, useEffect, useState } from "react";
+import { apiRequest } from "@/lib/bimemo-api";
 
 export function useAdminData<T>(endpoint: string) {
-  const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const refetch = useCallback(async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const result = await apiRequest<T>(endpoint)
-      setData(result)
-      setError('')
+      const result = await apiRequest<T>(endpoint);
+      setData(result);
+      setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data')
+      setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [endpoint])
+  }, [endpoint]);
 
   useEffect(() => {
-    refetch()
-  }, [refetch])
+    refetch();
+  }, [refetch]);
 
-  return { data, loading, error, setError, refetch }
+  return { data, loading, error, setError, refetch };
 }

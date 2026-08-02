@@ -53,27 +53,19 @@ function formatBridgeDate(createdAt: string): string {
 
 function latestBridgeMessage(
   messageLinks: ChatBridgeMessageLink[],
-  direction: string,
+  direction: string
 ): ChatBridgeMessageLink | null {
   const matchingLinks = messageLinks.filter(
-    (messageLink) => messageLink.direction === direction,
+    (messageLink) => messageLink.direction === direction
   );
   return matchingLinks[0] ?? null;
 }
 
-function DetailsRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function DetailsRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
       <span className="text-sm text-muted-foreground sm:max-w-[40%]">{label}</span>
-      <span className="break-words text-sm sm:max-w-[60%] sm:text-right">
-        {value}
-      </span>
+      <span className="break-words text-sm sm:max-w-[60%] sm:text-right">{value}</span>
     </div>
   );
 }
@@ -96,9 +88,7 @@ function SectionCard({
         ) : null}
       </CardHeader>
       <Separator />
-      <CardContent className="flex flex-col gap-3 p-4 pt-4">
-        {children}
-      </CardContent>
+      <CardContent className="flex flex-col gap-3 p-4 pt-4">{children}</CardContent>
     </Card>
   );
 }
@@ -116,10 +106,10 @@ export function ChatBridgeDetailsModal({
   const [messageLinksLoading, setMessageLinksLoading] = useState(false);
   const [messageLinksError, setMessageLinksError] = useState("");
   const [personaMode, setPersonaMode] = useState(
-    () => bridgeLink?.persona_mode || "neutral",
+    () => bridgeLink?.persona_mode || "neutral"
   );
   const [personaUserId, setPersonaUserId] = useState(
-    () => bridgeLink?.persona_user_id || "",
+    () => bridgeLink?.persona_user_id || ""
   );
 
   useEffect(() => {
@@ -140,9 +130,7 @@ export function ChatBridgeDetailsModal({
         if (!cancelled) {
           setMessageLinks([]);
           setMessageLinksError(
-            error instanceof Error
-              ? error.message
-              : "Failed to load bridge activity",
+            error instanceof Error ? error.message : "Failed to load bridge activity"
           );
         }
       })
@@ -183,7 +171,7 @@ export function ChatBridgeDetailsModal({
     : "Not selected";
   const isDiscordBridge = bridgeLink?.provider === "discord";
   const selectedProvider = availableProviders.find(
-    ({ provider }) => provider === bridgeLink?.provider,
+    ({ provider }) => provider === bridgeLink?.provider
   );
   const defaultPersonaUserId = selectedProvider?.default_persona_user_id || "";
   const isMappedPersona = personaMode === "mapped_user";
@@ -203,16 +191,16 @@ export function ChatBridgeDetailsModal({
       <DialogContent className="w-[calc(100vw-1rem)] max-w-3xl p-0 sm:max-h-[90dvh]">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle>Chat bridge properties</DialogTitle>
-          <DialogDescription>
-            {chatTitle || "New Chat"}
-          </DialogDescription>
+          <DialogDescription>{chatTitle || "New Chat"}</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(90dvh-9rem)] px-6">
           <div className="flex flex-col gap-4 py-6">
             <SectionCard title="Current state">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">Connected provider</span>
+                <span className="text-sm text-muted-foreground">
+                  Connected provider
+                </span>
                 <Badge variant="info">{connectedProvider}</Badge>
               </div>
               <Separator />
@@ -228,20 +216,11 @@ export function ChatBridgeDetailsModal({
                     value={bridgeProviderLabel(bridgeLink.provider)}
                   />
                   <Separator />
-                  <DetailsRow
-                    label="Direction"
-                    value={bridgeLink.sync_direction}
-                  />
+                  <DetailsRow label="Direction" value={bridgeLink.sync_direction} />
                   <Separator />
-                  <DetailsRow
-                    label="Delivery mode"
-                    value={bridgeLink.delivery_mode}
-                  />
+                  <DetailsRow label="Delivery mode" value={bridgeLink.delivery_mode} />
                   <Separator />
-                  <DetailsRow
-                    label="Persona mode"
-                    value={bridgeLink.persona_mode}
-                  />
+                  <DetailsRow label="Persona mode" value={bridgeLink.persona_mode} />
                   <Separator />
                   <DetailsRow
                     label="Created"

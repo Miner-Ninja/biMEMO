@@ -29,10 +29,7 @@ EXIT_ERROR = 1
 
 def _build_delete_statement() -> str:
     """Return the parameterized SQL that nulls out leftover 4000 overrides."""
-    return (
-        "DELETE FROM credentials "
-        "WHERE credential_type = ? AND value = ?"
-    )
+    return "DELETE FROM credentials WHERE credential_type = ? AND value = ?"
 
 
 def _run_migration(connection: object) -> int:

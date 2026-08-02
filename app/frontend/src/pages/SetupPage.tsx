@@ -1,59 +1,61 @@
-import { useState } from 'react'
-import { useAuth } from '@/hooks/useAuth'
-import { authLogin, authSetup, waitForApplicationReady } from '@/lib/bimemo-api'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { ErrorAlert } from '@/components/ui/error-alert'
+import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { authLogin, authSetup, waitForApplicationReady } from "@/lib/bimemo-api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 export function SetupPage() {
-  const { setAuthenticated } = useAuth()
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [startupMessage, setStartupMessage] = useState('')
+  const { setAuthenticated } = useAuth();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [startupMessage, setStartupMessage] = useState("");
 
-  const passwordTooShort = password.length > 0 && password.length < 8
-  const passwordsMatch = password === confirm
-  const canSubmit = password.length >= 8 && passwordsMatch && !loading
+  const passwordTooShort = password.length > 0 && password.length < 8;
+  const passwordsMatch = password === confirm;
+  const canSubmit = password.length >= 8 && passwordsMatch && !loading;
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canSubmit) return
+    e.preventDefault();
+    if (!canSubmit) return;
 
-    setLoading(true)
-    setError('')
-    setStartupMessage('')
+    setLoading(true);
+    setError("");
+    setStartupMessage("");
 
     try {
-      const result = await authSetup(password)
-      if (result.status === 'starting') {
-        setStartupMessage('Starting encrypted services. This can take a few seconds.')
-        await waitForApplicationReady()
-        await authLogin(password)
+      const result = await authSetup(password);
+      if (result.status === "starting") {
+        setStartupMessage("Starting encrypted services. This can take a few seconds.");
+        await waitForApplicationReady();
+        await authLogin(password);
       }
-      setAuthenticated(true)
+      setAuthenticated(true);
     } catch (err: any) {
       if (err.status === 409) {
-        setError('Password already configured.')
+        setError("Password already configured.");
       } else {
-        setError(err.message || 'Failed to set up password')
+        setError(err.message || "Failed to set up password");
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-full max-w-sm space-y-6 p-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold">biMEMO</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Create a password to get started</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Create a password to get started
+          </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            This same password unlocks the encrypted database and signs you in.
-            To enable automatic server startup later, store this password in the
-            local Docker secret file; that file is plaintext and must stay private.
+            This same password unlocks the encrypted database and signs you in. To
+            enable automatic server startup later, store this password in the local
+            Docker secret file; that file is plaintext and must stay private.
           </p>
         </div>
 
@@ -101,15 +103,11 @@ export function SetupPage() {
             <p className="text-sm text-muted-foreground">{startupMessage}</p>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!canSubmit}
-          >
-            {loading ? 'Setting up...' : 'Create Password'}
+          <Button type="submit" className="w-full" disabled={!canSubmit}>
+            {loading ? "Setting up..." : "Create Password"}
           </Button>
         </form>
       </div>
     </div>
-  )
+  );
 }

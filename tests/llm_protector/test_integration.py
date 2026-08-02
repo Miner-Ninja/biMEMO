@@ -693,9 +693,7 @@ class TestDockerNetworkIsolationArchitecture:
             Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
         )
         if not compose_path.exists():
-            pytest.skip(
-                "docker-compose.yml not available (running inside container)"
-            )
+            pytest.skip("docker-compose.yml not available (running inside container)")
         compose = yaml.safe_load(compose_path.read_text())
         networks = set(compose["networks"].keys())
         assert "bm-caddy" in networks
@@ -712,9 +710,7 @@ class TestDockerNetworkIsolationArchitecture:
             Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
         )
         if not compose_path.exists():
-            pytest.skip(
-                "docker-compose.yml not available (running inside container)"
-            )
+            pytest.skip("docker-compose.yml not available (running inside container)")
         compose = yaml.safe_load(compose_path.read_text())
         all_networks = set(compose["networks"].keys())
         for service_name, service in compose["services"].items():

@@ -156,7 +156,7 @@ def _parse_allowed_tools(raw: str) -> list[str]:
         tools = json.loads(raw)
         if isinstance(tools, list):
             return [str(t) for t in tools]
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         pass
     return []
 

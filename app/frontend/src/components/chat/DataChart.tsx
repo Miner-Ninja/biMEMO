@@ -12,36 +12,34 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-} from 'recharts'
-import type { ChartData } from '@/lib/chart-utils'
+} from "recharts";
+import type { ChartData } from "@/lib/chart-utils";
 
 const COLORS = [
-  'hsl(221, 83%, 53%)',  // blue
-  'hsl(142, 71%, 45%)',  // green
-  'hsl(38, 92%, 50%)',   // amber
-  'hsl(346, 77%, 50%)',  // rose
-  'hsl(262, 83%, 58%)',  // violet
-  'hsl(187, 85%, 43%)',  // cyan
-  'hsl(25, 95%, 53%)',   // orange
-  'hsl(330, 81%, 60%)',  // pink
-]
+  "hsl(221, 83%, 53%)", // blue
+  "hsl(142, 71%, 45%)", // green
+  "hsl(38, 92%, 50%)", // amber
+  "hsl(346, 77%, 50%)", // rose
+  "hsl(262, 83%, 58%)", // violet
+  "hsl(187, 85%, 43%)", // cyan
+  "hsl(25, 95%, 53%)", // orange
+  "hsl(330, 81%, 60%)", // pink
+];
 
 interface DataChartProps {
-  chart: ChartData
+  chart: ChartData;
 }
 
 export function DataChart({ chart }: DataChartProps) {
-  const { type, title, x, y, data } = chart
+  const { type, title, x, y, data } = chart;
 
-  if (!data || data.length === 0) return null
+  if (!data || data.length === 0) return null;
 
   return (
     <div className="my-3 rounded-lg border bg-card p-4">
-      {title && (
-        <h4 className="mb-3 text-sm font-medium text-center">{title}</h4>
-      )}
+      {title && <h4 className="mb-3 text-sm font-medium text-center">{title}</h4>}
       <ResponsiveContainer width="100%" height={300}>
-        {type === 'bar' ? (
+        {type === "bar" ? (
           <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis
@@ -49,14 +47,14 @@ export function DataChart({ chart }: DataChartProps) {
               tick={{ fontSize: 12 }}
               interval={0}
               angle={data.length > 6 ? -30 : 0}
-              textAnchor={data.length > 6 ? 'end' : 'middle'}
+              textAnchor={data.length > 6 ? "end" : "middle"}
               height={data.length > 6 ? 60 : 30}
             />
             <YAxis tick={{ fontSize: 12 }} />
             <Tooltip />
             <Bar dataKey={y} fill={COLORS[0]} radius={[4, 4, 0, 0]} />
           </BarChart>
-        ) : type === 'line' ? (
+        ) : type === "line" ? (
           <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey={x} tick={{ fontSize: 12 }} />
@@ -81,7 +79,7 @@ export function DataChart({ chart }: DataChartProps) {
               cy="50%"
               outerRadius={100}
               label={({ name, percent }: { name?: string; percent?: number }) =>
-                `${name ?? ''}: ${((percent ?? 0) * 100).toFixed(0)}%`
+                `${name ?? ""}: ${((percent ?? 0) * 100).toFixed(0)}%`
               }
               labelLine
             >
@@ -95,5 +93,5 @@ export function DataChart({ chart }: DataChartProps) {
         )}
       </ResponsiveContainer>
     </div>
-  )
+  );
 }

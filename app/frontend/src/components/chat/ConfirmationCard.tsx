@@ -23,7 +23,7 @@ interface ConfirmationCardProps {
 }
 
 function getConfirmationStatusVariant(
-  status: PendingConfirmation["status"],
+  status: PendingConfirmation["status"]
 ): "success" | "danger" | "warning" | "secondary" {
   switch (status) {
     case "approved":
@@ -66,10 +66,7 @@ function getConfirmationStatusIcon(status: PendingConfirmation["status"]) {
 function buildParameterSummary(parameters: PendingConfirmation["parameters"]): string {
   return Object.entries(parameters)
     .filter(([, value]) => typeof value === "string")
-    .map(
-      ([key, value]) =>
-        `${key}: ${String(value).slice(0, PARAMETER_PREVIEW_LIMIT)}`,
-    )
+    .map(([key, value]) => `${key}: ${String(value).slice(0, PARAMETER_PREVIEW_LIMIT)}`)
     .join(", ");
 }
 
@@ -122,10 +119,7 @@ export default function ConfirmationCard({
 
   return (
     <Card
-      className={cn(
-        "my-2 border-border/70 bg-card/80",
-        isResolved && "opacity-85",
-      )}
+      className={cn("my-2 border-border/70 bg-card/80", isResolved && "opacity-85")}
     >
       <CardHeader className="gap-3 p-4 pb-3">
         <div className="flex items-start justify-between gap-3">
@@ -159,11 +153,7 @@ export default function ConfirmationCard({
             <Button onClick={handleApprove} disabled={isLoading}>
               Allow
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleDeny}
-              disabled={isLoading}
-            >
+            <Button variant="outline" onClick={handleDeny} disabled={isLoading}>
               Deny
             </Button>
           </div>

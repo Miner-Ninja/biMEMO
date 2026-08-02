@@ -1,33 +1,33 @@
-import { useState } from 'react'
-import { Shield, MessageSquare, FileText, FolderTree } from 'lucide-react'
-import { NewChatButton } from './NewChatButton'
-import { ChatList } from './ChatList'
-import { ChatSearch } from './ChatSearch'
-import { FileList } from './FileList'
-import { WorkspaceFileTree } from './WorkspaceFileTree'
-import { UserMenu } from './UserMenu'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Chat } from '@/types/chat'
-import { SidebarPanel, SidebarShell } from './sidebar-chrome'
+import { useState } from "react";
+import { Shield, MessageSquare, FileText, FolderTree } from "lucide-react";
+import { NewChatButton } from "./NewChatButton";
+import { ChatList } from "./ChatList";
+import { ChatSearch } from "./ChatSearch";
+import { FileList } from "./FileList";
+import { WorkspaceFileTree } from "./WorkspaceFileTree";
+import { UserMenu } from "./UserMenu";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Chat } from "@/types/chat";
+import { SidebarPanel, SidebarShell } from "./sidebar-chrome";
 
-type TabKey = 'chats' | 'files' | 'workspace'
+type TabKey = "chats" | "files" | "workspace";
 
 interface SidebarProps {
-  chats: Chat[]
-  bridgeProvidersByChatId?: Record<string, string>
-  activeChatId: string | null
-  onNewChat: () => void
-  onSelectChat: (chatId: string) => void
-  onDeleteChat: (chatId: string) => void
-  onRenameChat: (chatId: string, newTitle: string) => void
-  username?: string | null
-  onLogout?: () => void
-  activeFiles: string[]
-  onActiveFilesChange: (fileIds: string[]) => void
-  onFilesChange?: () => void
-  fileRefreshKey?: number
-  voiceMode?: boolean
-  onToggleVoiceMode?: () => void
+  chats: Chat[];
+  bridgeProvidersByChatId?: Record<string, string>;
+  activeChatId: string | null;
+  onNewChat: () => void;
+  onSelectChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, newTitle: string) => void;
+  username?: string | null;
+  onLogout?: () => void;
+  activeFiles: string[];
+  onActiveFilesChange: (fileIds: string[]) => void;
+  onFilesChange?: () => void;
+  fileRefreshKey?: number;
+  voiceMode?: boolean;
+  onToggleVoiceMode?: () => void;
 }
 
 /**
@@ -50,13 +50,13 @@ export function Sidebar({
   voiceMode,
   onToggleVoiceMode,
 }: SidebarProps) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<TabKey>('chats')
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("chats");
 
   const switchTab = (tab: TabKey) => {
-    setActiveTab(tab)
-    setSearchQuery('')
-  }
+    setActiveTab(tab);
+    setSearchQuery("");
+  };
 
   return (
     <SidebarShell
@@ -91,13 +91,12 @@ export function Sidebar({
             </TabsList>
           </Tabs>
 
-          {activeTab !== 'workspace' && (
+          {activeTab !== "workspace" && (
             <ChatSearch
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder={
-                activeTab === 'chats' ? 'Search chats...'
-                  : 'Search files...'
+                activeTab === "chats" ? "Search chats..." : "Search files..."
               }
             />
           )}
@@ -105,7 +104,7 @@ export function Sidebar({
       }
       content={
         <div className="h-full min-h-0 overflow-hidden">
-          {activeTab === 'chats' ? (
+          {activeTab === "chats" ? (
             <ChatList
               chats={chats}
               bridgeProvidersByChatId={bridgeProvidersByChatId}
@@ -115,7 +114,7 @@ export function Sidebar({
               onDeleteChat={onDeleteChat}
               onRenameChat={onRenameChat}
             />
-          ) : activeTab === 'files' ? (
+          ) : activeTab === "files" ? (
             <FileList
               activeFiles={activeFiles}
               onActiveFilesChange={onActiveFilesChange}
@@ -132,7 +131,7 @@ export function Sidebar({
         <div className="flex flex-col gap-2">
           <NewChatButton onClick={onNewChat} />
           <UserMenu
-            userName={username || 'User'}
+            userName={username || "User"}
             onLogout={onLogout}
             voiceMode={voiceMode}
             onToggleVoiceMode={onToggleVoiceMode}
@@ -140,5 +139,5 @@ export function Sidebar({
         </div>
       }
     />
-  )
+  );
 }

@@ -10,16 +10,19 @@ React-based chat interface for the AI SQL Assistant.
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Create `.env.local` with MCP server URL:
+
 ```env
 VITE_MCP_SERVER_URL=http://localhost:8001/mcp
 ```
 
 3. Start development server:
+
 ```bash
 npm run dev
 ```

@@ -180,7 +180,7 @@ async def _fetch_show_payload(
         response = await client.post(SHOW_ENDPOINT, json={"model": model})
         response.raise_for_status()
         payload = response.json()
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPError, ValueError:
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -260,22 +260,16 @@ def _estimate_kv_bytes_per_token(payload: dict[str, Any]) -> int | None:
         return None
 
     block_count = _metadata_int(model_info, architecture, "block_count")
-    head_count = (
-        _metadata_int(model_info, architecture, "attention.head_count_kv")
-        or _metadata_int(model_info, architecture, "attention.head_count")
-    )
+    head_count = _metadata_int(
+        model_info, architecture, "attention.head_count_kv"
+    ) or _metadata_int(model_info, architecture, "attention.head_count")
     key_length = _metadata_int(model_info, architecture, "attention.key_length")
     value_length = _metadata_int(model_info, architecture, "attention.value_length")
 
     if None in (block_count, head_count, key_length, value_length):
         return None
 
-    return (
-        block_count
-        * head_count
-        * (key_length + value_length)
-        * KV_ELEMENT_BYTES
-    )
+    return block_count * head_count * (key_length + value_length) * KV_ELEMENT_BYTES
 
 
 def _metadata_int(

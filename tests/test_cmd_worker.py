@@ -21,6 +21,7 @@ from backend.workers.cmd_worker import (
 # Allowlist / Blocklist
 # ---------------------------------------------------------------------------
 
+
 def test_allowed_commands_not_empty():
     assert len(ALLOWED_COMMANDS) > 20
 
@@ -64,6 +65,7 @@ def test_resolve_path_stripped():
 # validate_command
 # ---------------------------------------------------------------------------
 
+
 def test_validate_echo():
     resolved, args = validate_command("echo hello")
     assert resolved is not None
@@ -91,6 +93,7 @@ def test_validate_empty():
 # ---------------------------------------------------------------------------
 # execute_command
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_execute_echo():
@@ -162,6 +165,7 @@ async def test_execute_env_extra():
 # CommandStream
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_stream_echo():
     chunks = []
@@ -212,6 +216,7 @@ async def test_stream_blocked():
 # ---------------------------------------------------------------------------
 # CommandResult
 # ---------------------------------------------------------------------------
+
 
 def test_command_result_defaults():
     result = CommandResult(stdout="", stderr="", exit_code=0)

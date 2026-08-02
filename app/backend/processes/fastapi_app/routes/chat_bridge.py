@@ -136,9 +136,7 @@ async def sync_bridge_inbound_message(
     provider: str,
     body: ChatBridgeInboundMessageRequest,
     request: Request,
-    orchestrator: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
     audit_fn: AuditCallable = Depends(_get_audit_fn),
 ) -> ChatBridgeInboundMessageResponse:
     """Accept one inbound external bridge message for a linked web conversation."""

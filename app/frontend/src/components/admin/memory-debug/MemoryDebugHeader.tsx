@@ -1,14 +1,14 @@
-import { ArrowLeft } from "lucide-react"
-import { Link } from "react-router-dom"
+import { ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 
 export function MemoryDebugHeader({
   onRefresh,
   lastUpdatedLabel,
 }: {
-  onRefresh: () => void
-  lastUpdatedLabel: string
+  onRefresh: () => void;
+  lastUpdatedLabel: string;
 }) {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -19,7 +19,8 @@ export function MemoryDebugHeader({
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Memory Debug</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">
-            Review memory health, inspect stored data, and trace how messages become records and summaries.
+            Review memory health, inspect stored data, and trace how messages become
+            records and summaries.
           </p>
         </div>
       </div>
@@ -30,5 +31,5 @@ export function MemoryDebugHeader({
         </Button>
       </div>
     </div>
-  )
+  );
 }

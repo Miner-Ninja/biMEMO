@@ -27,7 +27,7 @@ function Switch({
         "focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:ring-offset-2",
         "disabled:pointer-events-none disabled:opacity-50",
         checked ? "bg-primary" : "bg-muted",
-        className,
+        className
       )}
       onClick={() => onCheckedChange?.(!checked)}
       {...props}
@@ -35,7 +35,7 @@ function Switch({
       <span
         className={cn(
           "block h-5 w-5 rounded-full bg-background shadow-sm transition-transform",
-          checked ? "translate-x-5" : "translate-x-0",
+          checked ? "translate-x-5" : "translate-x-0"
         )}
       />
     </button>

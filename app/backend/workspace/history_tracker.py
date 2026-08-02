@@ -127,10 +127,12 @@ class WorkspaceHistoryTracker:
                 if path and path not in self._files_read:
                     self._files_read.append(path)
                 if not success:
-                    self._errors.append({
-                        "source": "file_read",
-                        "issue": action.get("error", "read failed"),
-                    })
+                    self._errors.append(
+                        {
+                            "source": "file_read",
+                            "issue": action.get("error", "read failed"),
+                        }
+                    )
 
             elif tool == "file_write":
                 path = params.get("path", "")
@@ -140,10 +142,12 @@ class WorkspaceHistoryTracker:
                     # Size is not known here — will be in result
                 else:
                     entry["status"] = "error"
-                    self._errors.append({
-                        "source": "file_write",
-                        "issue": action.get("error", "write failed"),
-                    })
+                    self._errors.append(
+                        {
+                            "source": "file_write",
+                            "issue": action.get("error", "write failed"),
+                        }
+                    )
                 self._files_written.append(entry)
 
             elif tool in ("execute_command", "execute_command_stream"):
@@ -151,21 +155,31 @@ class WorkspaceHistoryTracker:
                 cmd_entry: dict = {"cmd": cmd}
                 if not success:
                     cmd_entry["error"] = action.get("error", "command failed")
-                    self._errors.append({
-                        "source": tool,
-                        "issue": cmd_entry["error"],
-                    })
+                    self._errors.append(
+                        {
+                            "source": tool,
+                            "issue": cmd_entry["error"],
+                        }
+                    )
                 self._commands_run.append(cmd_entry)
 
-            elif tool in ("git_status", "git_diff", "git_log", "git_commit", "git_push"):
+            elif tool in (
+                "git_status",
+                "git_diff",
+                "git_log",
+                "git_commit",
+                "git_push",
+            ):
                 if self._git_info is None:
                     self._git_info = {}
                 self._git_info[tool] = True
                 if not success:
-                    self._errors.append({
-                        "source": tool,
-                        "issue": action.get("error", "git operation failed"),
-                    })
+                    self._errors.append(
+                        {
+                            "source": tool,
+                            "issue": action.get("error", "git operation failed"),
+                        }
+                    )
 
     def build_entry(self) -> WorkspaceHistoryEntry:
         """Build a history entry from collected data."""

@@ -48,19 +48,21 @@ class ToolResult:
     duration_ms: float
 
 
-WORKSPACE_TOOL_NAMES = frozenset({
-    "file_read",
-    "file_write",
-    "file_search",
-    "execute_command",
-    "execute_command_stream",
-    "git_status",
-    "git_diff",
-    "git_log",
-    "git_commit",
-    "git_push",
-    "code_search",
-})
+WORKSPACE_TOOL_NAMES = frozenset(
+    {
+        "file_read",
+        "file_write",
+        "file_search",
+        "execute_command",
+        "execute_command_stream",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_commit",
+        "git_push",
+        "code_search",
+    }
+)
 
 
 @dataclass

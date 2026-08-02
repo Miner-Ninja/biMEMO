@@ -59,6 +59,7 @@ class WorkspaceDirs:
             return True
         return False
 
+
 if TYPE_CHECKING:
     import multiprocessing.connection
 

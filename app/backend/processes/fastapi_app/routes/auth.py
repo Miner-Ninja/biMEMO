@@ -121,9 +121,7 @@ def _clear_auth_cookies(response: Response) -> None:
 @auth_router.get("/auth/status")
 async def auth_status(
     request: Request,
-    signing_client: SigningClient = Depends(
-        _get_signing_client
-    ),
+    signing_client: SigningClient = Depends(_get_signing_client),
 ) -> dict:
     """Check authentication state: needs_setup and authenticated.
 
@@ -146,9 +144,7 @@ async def auth_setup(
     body: PasswordAuthRequest,
     request: Request,
     response: Response,
-    signing_client: SigningClient = Depends(
-        _get_signing_client
-    ),
+    signing_client: SigningClient = Depends(_get_signing_client),
     audit_fn: object = Depends(_get_audit_fn),
 ) -> dict:
     """Create the user password on first launch.
@@ -183,9 +179,7 @@ async def auth_login(
     body: PasswordAuthRequest,
     request: Request,
     response: Response,
-    signing_client: SigningClient = Depends(
-        _get_signing_client
-    ),
+    signing_client: SigningClient = Depends(_get_signing_client),
     audit_fn: object = Depends(_get_audit_fn),
 ) -> dict:
     """Authenticate with password.
@@ -227,12 +221,8 @@ async def auth_login(
 async def refresh(
     request: Request,
     response: Response,
-    session_mgr: SessionManager = Depends(
-        _get_session_manager
-    ),
-    signing_client: SigningClient = Depends(
-        _get_signing_client
-    ),
+    session_mgr: SessionManager = Depends(_get_session_manager),
+    signing_client: SigningClient = Depends(_get_signing_client),
 ) -> dict:
     """Refresh access token using refresh token.
 
@@ -288,9 +278,7 @@ async def refresh(
 async def logout(
     response: Response,
     claims: TokenClaims = Depends(_require_auth),
-    session_mgr: SessionManager = Depends(
-        _get_session_manager
-    ),
+    session_mgr: SessionManager = Depends(_get_session_manager),
 ) -> dict:
     """Logout and revoke tokens.
 

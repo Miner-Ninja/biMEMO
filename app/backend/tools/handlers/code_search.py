@@ -53,6 +53,7 @@ async def code_search(
 
     # Build grep command
     import shlex
+
     grep_args = [
         "grep",
         "-E" if use_regex else "-F",
@@ -104,28 +105,29 @@ async def code_search(
                 text = parts[2]
                 current_file = filename
                 files_seen.add(filename)
-                matches.append(SearchMatch(
-                    file=filename,
-                    line=line_num,
-                    text=text.strip(),
-                ))
+                matches.append(
+                    SearchMatch(
+                        file=filename,
+                        line=line_num,
+                        text=text.strip(),
+                    )
+                )
             except ValueError:
                 # Context line without line number
                 if current_file:
-                    matches.append(SearchMatch(
-                        file=current_file,
-                        line=0,
-                        text=line.strip(),
-                    ))
+                    matches.append(
+                        SearchMatch(
+                            file=current_file,
+                            line=0,
+                            text=line.strip(),
+                        )
+                    )
 
     # Limit results
     matches = matches[:max_results]
 
     return {
-        "matches": [
-            {"file": m.file, "line": m.line, "text": m.text}
-            for m in matches
-        ],
+        "matches": [{"file": m.file, "line": m.line, "text": m.text} for m in matches],
         "count": len(matches),
         "files": sorted(files_seen),
         "file_count": len(files_seen),

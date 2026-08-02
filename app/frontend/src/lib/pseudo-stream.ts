@@ -11,17 +11,20 @@
  * neither streaming buffer accumulated anything.
  */
 
-export type StructuredAssistantContentLike = {
-  answer?: string;
-  thinking?: string | null;
-  sql?: string | null;
-} | null | undefined;
+export type StructuredAssistantContentLike =
+  | {
+      answer?: string;
+      thinking?: string | null;
+      sql?: string | null;
+    }
+  | null
+  | undefined;
 
 export function shouldUseStructuredPseudoStream(
   structuredContent: StructuredAssistantContentLike,
   streamedContent: string,
   streamedThinking: string,
-  streamEnabled: boolean | undefined,
+  streamEnabled: boolean | undefined
 ): boolean {
   if (streamEnabled === true) {
     return false;
@@ -33,8 +36,6 @@ export function shouldUseStructuredPseudoStream(
     return false;
   }
   return Boolean(
-    structuredContent.answer ||
-      structuredContent.thinking ||
-      structuredContent.sql,
+    structuredContent.answer || structuredContent.thinking || structuredContent.sql
   );
 }

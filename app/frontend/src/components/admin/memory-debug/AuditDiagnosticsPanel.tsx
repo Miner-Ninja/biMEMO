@@ -1,39 +1,49 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react";
 
-import type { AuditEntry } from "@/components/admin/memory-debug/types"
-import { AuditEventBadge, SectionIntro, formatTimestamp } from "@/components/admin/memory-debug/shared"
-import { Button } from "@/components/ui/button"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { apiRequest } from "@/lib/bimemo-api"
+import type { AuditEntry } from "@/components/admin/memory-debug/types";
+import {
+  AuditEventBadge,
+  SectionIntro,
+  formatTimestamp,
+} from "@/components/admin/memory-debug/shared";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { apiRequest } from "@/lib/bimemo-api";
 
 export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }) {
-  const [entries, setEntries] = useState<AuditEntry[]>([])
-  const [filter, setFilter] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [eventTypes, setEventTypes] = useState<string[]>([])
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [eventTypes, setEventTypes] = useState<string[]>([]);
 
   const fetchEntries = useCallback(async (): Promise<void> => {
-    setLoading(true)
-    const params = new URLSearchParams({ limit: "100", offset: "0" })
-    if (filter) params.set("event_type", filter)
+    setLoading(true);
+    const params = new URLSearchParams({ limit: "100", offset: "0" });
+    if (filter) params.set("event_type", filter);
     try {
-      const data = await apiRequest<{ entries: AuditEntry[] }>(`/admin/memory/audit?${params}`)
-      const list = data.entries || []
-      setEntries(list)
+      const data = await apiRequest<{ entries: AuditEntry[] }>(
+        `/admin/memory/audit?${params}`
+      );
+      const list = data.entries || [];
+      setEntries(list);
       if (!filter) {
-        setEventTypes([...new Set(list.map((entry) => entry.event_type))].sort())
+        setEventTypes([...new Set(list.map((entry) => entry.event_type))].sort());
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [filter])
+  }, [filter]);
 
   useEffect(() => {
-    fetchEntries()
-    const intervalId = window.setInterval(fetchEntries, 5000)
-    return () => window.clearInterval(intervalId)
-  }, [fetchEntries, refreshToken])
+    fetchEntries();
+    const intervalId = window.setInterval(fetchEntries, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchEntries, refreshToken]);
 
   return (
     <div className="space-y-6">
@@ -44,7 +54,11 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <Button variant={filter === "" ? "default" : "outline"} size="sm" onClick={() => setFilter("")}>
+          <Button
+            variant={filter === "" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilter("")}
+          >
             All
           </Button>
           {eventTypes.map((eventType) => (
@@ -71,12 +85,22 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
                 <CardHeader className="pb-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <AuditEventBadge eventType={entry.event_type} />
-                    {entry.tool_name ? <span className="text-xs font-mono">{entry.tool_name}</span> : null}
-                    {entry.zone ? <span className="text-xs text-muted-foreground">[{entry.zone}]</span> : null}
-                    {entry.duration_ms != null ? (
-                      <span className="text-xs text-muted-foreground">{entry.duration_ms.toFixed(0)}ms</span>
+                    {entry.tool_name ? (
+                      <span className="text-xs font-mono">{entry.tool_name}</span>
                     ) : null}
-                    <span className="ml-auto text-xs text-muted-foreground">{formatTimestamp(entry.timestamp)}</span>
+                    {entry.zone ? (
+                      <span className="text-xs text-muted-foreground">
+                        [{entry.zone}]
+                      </span>
+                    ) : null}
+                    {entry.duration_ms != null ? (
+                      <span className="text-xs text-muted-foreground">
+                        {entry.duration_ms.toFixed(0)}ms
+                      </span>
+                    ) : null}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatTimestamp(entry.timestamp)}
+                    </span>
                   </div>
                 </CardHeader>
               </CollapsibleTrigger>
@@ -84,7 +108,9 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
                 <CardContent className="space-y-3">
                   {entry.parameters ? (
                     <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Parameters</summary>
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                        Parameters
+                      </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {entry.parameters}
                       </pre>
@@ -92,7 +118,9 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
                   ) : null}
                   {entry.result ? (
                     <details className="text-xs">
-                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Result</summary>
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                        Result
+                      </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {entry.result.slice(0, 1000)}
                         {entry.result.length > 1000 ? "..." : ""}
@@ -106,10 +134,12 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
         ))}
         {entries.length === 0 && !loading ? (
           <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">No audit entries match the current filter.</CardContent>
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              No audit entries match the current filter.
+            </CardContent>
           </Card>
         ) : null}
       </div>
     </div>
-  )
+  );
 }

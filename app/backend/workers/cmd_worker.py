@@ -28,55 +28,152 @@ logger = logging.getLogger(__name__)
 # Allowlist / Blocklist
 # ---------------------------------------------------------------------------
 
-ALLOWED_COMMANDS: frozenset[str] = frozenset({
-    # Navigation
-    "ls", "cd", "pwd", "tree", "find",
-    # File ops (read-only)
-    "cat", "head", "tail", "less", "more", "wc", "stat",
-    # Search
-    "grep", "rg",  # ripgrep
-    # Text processing
-    "sed", "awk", "sort", "uniq", "diff", "patch",
-    # Dev tools
-    "python", "python3", "node", "npm", "npx", "pip", "pip3",
-    "git", "make", "cmake", "cargo", "go", "rustc",
-    "docker", "docker-compose",
-    # System info
-    "uname", "env", "printenv", "echo", "which", "whereis",
-    # Compression
-    "tar", "gzip", "gunzip", "zip", "unzip",
-    # Editors (non-interactive usage via stdin)
-    "nano", "vim", "vi", "nvim",
-    # Monitoring
-    "top", "htop", "ps", "df", "du", "free",
-    # Misc
-    "mkdir", "cp", "mv", "touch", "ln", "basename", "dirname",
-    "tr", "cut", "paste", "join", "comm", "shuf", "seq",
-    "date", "sleep", "true", "false", "test", "[",
-    "curl", "wget",  # network — allowed but RED zone
-    "java", "javac", "kotlin", "kotlinc",
-    "ruby", "gem", "bundle",
-    "php", "composer",
-    "perl", "lua", "r", "R",
-    "swift", "swiftc",
-    "rustup",
-})
+ALLOWED_COMMANDS: frozenset[str] = frozenset(
+    {
+        # Navigation
+        "ls",
+        "cd",
+        "pwd",
+        "tree",
+        "find",
+        # File ops (read-only)
+        "cat",
+        "head",
+        "tail",
+        "less",
+        "more",
+        "wc",
+        "stat",
+        # Search
+        "grep",
+        "rg",  # ripgrep
+        # Text processing
+        "sed",
+        "awk",
+        "sort",
+        "uniq",
+        "diff",
+        "patch",
+        # Dev tools
+        "python",
+        "python3",
+        "node",
+        "npm",
+        "npx",
+        "pip",
+        "pip3",
+        "git",
+        "make",
+        "cmake",
+        "cargo",
+        "go",
+        "rustc",
+        "docker",
+        "docker-compose",
+        # System info
+        "uname",
+        "env",
+        "printenv",
+        "echo",
+        "which",
+        "whereis",
+        # Compression
+        "tar",
+        "gzip",
+        "gunzip",
+        "zip",
+        "unzip",
+        # Editors (non-interactive usage via stdin)
+        "nano",
+        "vim",
+        "vi",
+        "nvim",
+        # Monitoring
+        "top",
+        "htop",
+        "ps",
+        "df",
+        "du",
+        "free",
+        # Misc
+        "mkdir",
+        "cp",
+        "mv",
+        "touch",
+        "ln",
+        "basename",
+        "dirname",
+        "tr",
+        "cut",
+        "paste",
+        "join",
+        "comm",
+        "shuf",
+        "seq",
+        "date",
+        "sleep",
+        "true",
+        "false",
+        "test",
+        "[",
+        "curl",
+        "wget",  # network — allowed but RED zone
+        "java",
+        "javac",
+        "kotlin",
+        "kotlinc",
+        "ruby",
+        "gem",
+        "bundle",
+        "php",
+        "composer",
+        "perl",
+        "lua",
+        "r",
+        "R",
+        "swift",
+        "swiftc",
+        "rustup",
+    }
+)
 
-BLOCKED_COMMANDS: frozenset[str] = frozenset({
-    "rm", "rmdir",
-    "chmod", "chown", "chgrp",
-    "sudo", "su", "ssh", "scp", "sftp",
-    "mkfs", "mkfs.ext4", "mkfs.fat", "mkfs.ntfs",
-    "dd", "shutdown", "reboot", "halt", "poweroff",
-    "kill", "killall", "pkill",
-    "iptables", "ufw", "firewall-cmd",
-    "visudo", "visudo.check",
-})
+BLOCKED_COMMANDS: frozenset[str] = frozenset(
+    {
+        "rm",
+        "rmdir",
+        "chmod",
+        "chown",
+        "chgrp",
+        "sudo",
+        "su",
+        "ssh",
+        "scp",
+        "sftp",
+        "mkfs",
+        "mkfs.ext4",
+        "mkfs.fat",
+        "mkfs.ntfs",
+        "dd",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "kill",
+        "killall",
+        "pkill",
+        "iptables",
+        "ufw",
+        "firewall-cmd",
+        "visudo",
+        "visudo.check",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def _resolve_command(cmd_name: str) -> str | None:
     """Resolve a command name to its absolute path.
@@ -124,6 +221,7 @@ def validate_command(command: str) -> tuple[str | None, list[str]]:
 # ---------------------------------------------------------------------------
 # Execute one-shot command
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CommandResult:
@@ -198,8 +296,9 @@ async def execute_command(
             # Kill the process group
             try:
                 import signal
+
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except (ProcessLookupError, OSError):
+            except ProcessLookupError, OSError:
                 process.kill()
             await process.wait()
             return CommandResult(
@@ -235,6 +334,7 @@ async def execute_command(
 # ---------------------------------------------------------------------------
 # Execute streaming command
 # ---------------------------------------------------------------------------
+
 
 class CommandStream:
     """Streams command output line-by-line via a callback.
@@ -368,8 +468,9 @@ class CommandStream:
             self._cancelled = True
             try:
                 import signal
+
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except (ProcessLookupError, OSError):
+            except ProcessLookupError, OSError:
                 process.kill()
             await process.wait()
             exit_code = -1
@@ -392,6 +493,7 @@ class CommandStream:
 # ---------------------------------------------------------------------------
 # IPC dispatch (for subprocess worker)
 # ---------------------------------------------------------------------------
+
 
 def make_cmd_dispatch() -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create the dispatch function for the cmd_worker IPC handler.
@@ -436,7 +538,7 @@ def make_cmd_dispatch() -> Callable[[dict[str, Any]], dict[str, Any]]:
             # The orchestrator handles streaming directly.
             return {
                 "error": "Streaming not supported via worker IPC. "
-                         "Use orchestrator-level execute_command_stream.",
+                "Use orchestrator-level execute_command_stream.",
             }
 
         return {"error": f"Unknown operation: {operation}"}

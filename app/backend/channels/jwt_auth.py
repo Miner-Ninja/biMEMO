@@ -245,7 +245,7 @@ def _claims_from_payload(data: object) -> TokenClaims | None:
             generation=data["gen"],
             token_type=data["type"],
         )
-    except (KeyError, TypeError):
+    except KeyError, TypeError:
         return None
 
 

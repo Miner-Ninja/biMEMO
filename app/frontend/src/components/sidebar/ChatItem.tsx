@@ -1,26 +1,26 @@
-import { useState, useRef, useEffect } from 'react'
-import { MessageSquare, MoreVertical, Pencil, Trash2 } from 'lucide-react'
-import { BridgeProviderIcon } from '@/components/icons/BridgeProviderIcon'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { useState, useRef, useEffect } from "react";
+import { MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { BridgeProviderIcon } from "@/components/icons/BridgeProviderIcon";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import type { Chat } from '@/types/chat'
-import { cn, truncate } from '@/lib/utils'
-import { getSidebarItemClassName } from './sidebar-chrome'
+} from "@/components/ui/dropdown-menu";
+import type { Chat } from "@/types/chat";
+import { cn, truncate } from "@/lib/utils";
+import { getSidebarItemClassName } from "./sidebar-chrome";
 
 interface ChatItemProps {
-  chat: Chat
-  bridgeProvider?: string
-  isActive: boolean
-  onSelect: () => void
-  onDelete: () => void
-  onRename: (newTitle: string) => void
+  chat: Chat;
+  bridgeProvider?: string;
+  isActive: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onRename: (newTitle: string) => void;
 }
 
 /**
@@ -34,61 +34,61 @@ export function ChatItem({
   onDelete,
   onRename,
 }: ChatItemProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState(chat.title)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(chat.title);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Focus input when entering edit mode
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
+      inputRef.current.focus();
+      inputRef.current.select();
     }
-  }, [isEditing])
+  }, [isEditing]);
 
   const handleStartEdit = () => {
-    setEditValue(chat.title)
-    setIsEditing(true)
-  }
+    setEditValue(chat.title);
+    setIsEditing(true);
+  };
 
   const handleSaveEdit = () => {
-    const trimmed = editValue.trim()
+    const trimmed = editValue.trim();
     if (trimmed && trimmed !== chat.title) {
-      onRename(trimmed)
+      onRename(trimmed);
     }
-    setIsEditing(false)
-  }
+    setIsEditing(false);
+  };
 
   const handleCancelEdit = () => {
-    setEditValue(chat.title)
-    setIsEditing(false)
-  }
+    setEditValue(chat.title);
+    setIsEditing(false);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSaveEdit()
-    } else if (e.key === 'Escape') {
-      handleCancelEdit()
+    if (e.key === "Enter") {
+      handleSaveEdit();
+    } else if (e.key === "Escape") {
+      handleCancelEdit();
     }
-  }
+  };
 
   const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    onDelete()
-  }
+    e.stopPropagation();
+    onDelete();
+  };
 
   const handleItemKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
       if (!isEditing) {
-        onSelect()
+        onSelect();
       }
     }
-  }
+  };
 
   const bridgeTitle = bridgeProvider
     ? `${bridgeProvider.charAt(0).toUpperCase() + bridgeProvider.slice(1)} bridge connected`
-    : ''
+    : "";
 
   return (
     <div
@@ -97,8 +97,8 @@ export function ChatItem({
       onClick={isEditing ? undefined : onSelect}
       onKeyDown={isEditing ? undefined : handleItemKeyDown}
       className={cn(
-        'group relative min-h-[44px] text-left focus-visible:outline-none',
-        isEditing ? 'cursor-default' : 'cursor-pointer',
+        "group relative min-h-[44px] text-left focus-visible:outline-none",
+        isEditing ? "cursor-default" : "cursor-pointer",
         getSidebarItemClassName(isActive)
       )}
     >
@@ -165,5 +165,5 @@ export function ChatItem({
         </div>
       )}
     </div>
-  )
+  );
 }

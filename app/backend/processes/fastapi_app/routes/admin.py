@@ -203,9 +203,7 @@ async def admin_reauth(
     body: ReauthRequest,
     claims: TokenClaims = Depends(_require_auth),
     reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
-    signing_client: SigningClient = Depends(
-        _get_signing_client
-    ),
+    signing_client: SigningClient = Depends(_get_signing_client),
 ) -> dict:
     """Issue a re-authentication token after password verification.
 
@@ -240,9 +238,7 @@ async def admin_reauth(
 @admin_router.get("/integrations")
 async def list_integrations(
     claims: TokenClaims = Depends(_require_auth),
-    cred: CredentialClient = Depends(
-        _get_credential_client
-    ),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> list[IntegrationListItem]:
     """List configured integrations via Credential Proxy.
 
@@ -262,9 +258,7 @@ async def list_integrations(
 async def create_integration(
     body: IntegrationCreateRequest,
     claims: TokenClaims = Depends(_require_auth),
-    cred: CredentialClient = Depends(
-        _get_credential_client
-    ),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Create a new integration via Credential Proxy.
 
@@ -286,12 +280,8 @@ async def delete_integration(
     name: str,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    cred: CredentialClient = Depends(
-        _get_credential_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
     """Delete an integration via Credential Proxy.
 
@@ -317,9 +307,7 @@ async def delete_integration(
 @admin_router.get("/summaries")
 async def list_summaries(
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
 ) -> list[SummaryItem]:
@@ -347,12 +335,8 @@ async def delete_conversation_endpoint(
     conversation_id: str,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Delete a conversation via DB Proxy Socket B.
 
@@ -378,9 +362,7 @@ async def delete_conversation_endpoint(
 @admin_router.get("/chat-bridges")
 async def list_chat_bridge_links(
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
     provider: str | None = Query(default=None),
     conversation_id: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -400,9 +382,7 @@ async def list_chat_bridge_links(
 @admin_router.get("/chat-bridge-providers")
 async def list_chat_bridge_providers(
     claims: TokenClaims = Depends(_require_auth),
-    chat_bridge_service: ChatBridgeService = Depends(
-        _get_chat_bridge_service
-    ),
+    chat_bridge_service: ChatBridgeService = Depends(_get_chat_bridge_service),
 ) -> list[ChatBridgeProviderItem]:
     """List configured external bridge providers available to the web UI."""
     del claims
@@ -421,9 +401,7 @@ async def list_chat_bridge_providers(
 async def get_chat_bridge_for_conversation(
     conversation_id: str,
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> ChatBridgeLinkItem | dict[str, None]:
     """Return the stored bridge link for one conversation, if it exists."""
     del claims
@@ -436,9 +414,7 @@ async def get_chat_bridge_for_conversation(
 async def list_chat_bridge_message_links(
     bridge_link_id: str,
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     direction: str = Query(default=""),
@@ -459,15 +435,9 @@ async def create_chat_bridge_link(
     body: ChatBridgeCreateRequest,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    chat_bridge_service: ChatBridgeService = Depends(
-        _get_chat_bridge_service
-    ),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    chat_bridge_service: ChatBridgeService = Depends(_get_chat_bridge_service),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> ChatBridgeLinkItem:
     """Create one external chat bridge link from the web conversation side."""
     _require_valid_reauth(reauth_mgr, reauth_token)
@@ -495,15 +465,9 @@ async def disable_chat_bridge_link(
     bridge_link_id: str,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    admin: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict[str, object]:
     """Disable one stored external chat bridge link."""
     del claims
@@ -531,15 +495,9 @@ async def enable_chat_bridge_link(
     bridge_link_id: str,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    admin: AdminDBClient = Depends(_get_admin_client),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict[str, object]:
     """Enable one stored external chat bridge link."""
     del claims
@@ -568,15 +526,9 @@ async def update_chat_bridge_link_settings(
     body: ChatBridgeUpdateRequest,
     reauth_token: str = Depends(_require_reauth_token),
     claims: TokenClaims = Depends(_require_auth),
-    reauth_mgr: ReauthManager = Depends(
-        _get_reauth_manager
-    ),
-    chat_bridge_service: ChatBridgeService = Depends(
-        _get_chat_bridge_service
-    ),
-    orchestrator_client: OrchestratorClient = Depends(
-        _get_orchestrator_client
-    ),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    chat_bridge_service: ChatBridgeService = Depends(_get_chat_bridge_service),
+    orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> ChatBridgeLinkItem | dict[str, None]:
     """Update one stored external chat bridge link settings."""
     del claims
@@ -601,9 +553,7 @@ async def update_chat_bridge_link_settings(
 @admin_router.get("/profile")
 async def get_user_profile(
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Get user profile from DB Proxy.
 
@@ -622,9 +572,7 @@ async def get_user_profile(
 async def store_user_profile(
     body: UserProfileRequest,
     claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(
-        _get_admin_client
-    ),
+    admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
     """Store user profile via DB Proxy.
 

@@ -1,10 +1,10 @@
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 export function ErrorAlert({ error }: { error: string }) {
-  if (!error) return null
+  if (!error) return null;
   return (
     <Card className="border-destructive/20 bg-destructive/5 shadow-none">
       <CardContent className="flex items-start gap-3 p-4">
@@ -15,5 +15,5 @@ export function ErrorAlert({ error }: { error: string }) {
         <div className="text-sm text-destructive">{error}</div>
       </CardContent>
     </Card>
-  )
+  );
 }

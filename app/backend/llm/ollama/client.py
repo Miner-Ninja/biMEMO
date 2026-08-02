@@ -619,7 +619,7 @@ class OllamaClient:
                 text,
                 thinking=thinking,
             )
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             logger.warning(
                 "Ollama returned non-JSON structured response; "
                 "using plaintext fallback",
