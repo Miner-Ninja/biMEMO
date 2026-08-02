@@ -65,3 +65,7 @@ CODE_REVIEW.md
 CODE_RULES.md
 AGENTS.md
 CLAUDE.md
+
+# Root npm
+package-lock.json
+node_modules/
