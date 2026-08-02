@@ -578,6 +578,38 @@ export async function deleteFileById(fileId: string): Promise<void> {
 }
 
 // ============================================================
+// Workspace
+// ============================================================
+
+export interface WorkspaceItem {
+  name: string
+  type: "file" | "directory"
+  path: string
+  size?: number
+}
+
+export interface WorkspaceTreeResponse {
+  items: WorkspaceItem[]
+  path: string
+  parent: string | null
+  workspace: string
+}
+
+/** Fetch workspace directory tree. */
+export async function fetchWorkspaceTree(
+  path: string = "",
+): Promise<WorkspaceTreeResponse> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : ""
+  return apiRequest<WorkspaceTreeResponse>(`/workspace/tree${params}`)
+}
+
+/** Fetch configured workspace directories. */
+export async function fetchWorkspaceDirs(): Promise<string[]> {
+  const data = await apiRequest<{ directories: string[] }>("/workspace/dirs")
+  return data.directories || []
+}
+
+// ============================================================
 // TTS (Text-to-Speech)
 // ============================================================
 

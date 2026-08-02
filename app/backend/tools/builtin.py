@@ -195,3 +195,116 @@ class SkillLoadInput(StrictToolInput):
 
 class SystemStatusInput(StrictToolInput):
     """Input for system_status tool (no parameters)."""
+
+
+class SetWorkspaceInput(StrictToolInput):
+    """Input for set_workspace tool.
+
+    Attributes:
+        action: Operation — add, remove, list.
+        path: Directory path (required for add/remove).
+    """
+
+    action: str = Field(description="Action: add, remove, list")
+    path: str = Field(default="", description="Directory path (for add/remove)")
+
+
+class WorkspaceHistoryInput(StrictToolInput):
+    """Input for workspace_history tool.
+
+    Attributes:
+        action: Operation — get, clear.
+    """
+
+    action: str = Field(description="Action: get, clear")
+
+
+class WorkspaceNoteInput(StrictToolInput):
+    """Input for workspace_note tool.
+
+    Attributes:
+        user_intent: What the user is trying to accomplish.
+        progress: Current progress status.
+        decisions: JSON array of decision strings.
+        blockers: JSON array of blocker strings.
+    """
+
+    user_intent: str = Field(default="", description="User intent summary")
+    progress: str = Field(default="", description="Progress status")
+    decisions: str = Field(default="[]", description="JSON array of decisions")
+    blockers: str = Field(default="[]", description="JSON array of blockers")
+
+
+class ExecuteCommandInput(StrictToolInput):
+    """Input for execute_command tool.
+
+    Attributes:
+        command: The shell command to execute.
+        cwd: Working directory (optional, defaults to workspace root).
+        timeout: Max execution time in seconds (default 30).
+    """
+
+    command: str = Field(description="Shell command to execute")
+    cwd: str = Field(default="", description="Working directory (optional)")
+    timeout: float = Field(default=30.0, description="Timeout in seconds")
+
+
+class ExecuteCommandStreamInput(StrictToolInput):
+    """Input for execute_command_stream tool.
+
+    Attributes:
+        command: The shell command to execute.
+        cwd: Working directory (optional, defaults to workspace root).
+        timeout: Max execution time in seconds (default 30).
+    """
+
+    command: str = Field(description="Shell command to execute")
+    cwd: str = Field(default="", description="Working directory (optional)")
+    timeout: float = Field(default=30.0, description="Timeout in seconds")
+
+
+class GitStatusInput(StrictToolInput):
+    """Input for git_status tool."""
+
+    cwd: str = Field(default="", description="Working directory (optional)")
+
+
+class GitDiffInput(StrictToolInput):
+    """Input for git_diff tool."""
+
+    cwd: str = Field(default="", description="Working directory (optional)")
+    staged: bool = Field(default=False, description="Show staged changes")
+
+
+class GitLogInput(StrictToolInput):
+    """Input for git_log tool."""
+
+    cwd: str = Field(default="", description="Working directory (optional)")
+    count: int = Field(default=10, description="Number of commits")
+
+
+class GitCommitInput(StrictToolInput):
+    """Input for git_commit tool."""
+
+    message: str = Field(description="Commit message")
+    cwd: str = Field(default="", description="Working directory (optional)")
+    all_files: bool = Field(default=False, description="Auto-stage all files")
+
+
+class GitPushInput(StrictToolInput):
+    """Input for git_push tool."""
+
+    cwd: str = Field(default="", description="Working directory (optional)")
+    remote: str = Field(default="origin", description="Remote name")
+    branch: str = Field(default="", description="Branch name (optional)")
+
+
+class CodeSearchInput(StrictToolInput):
+    """Input for code_search tool."""
+
+    pattern: str = Field(description="Text or regex pattern to search")
+    cwd: str = Field(default="", description="Working directory (optional)")
+    file_pattern: str = Field(default="**/*", description="File glob pattern")
+    max_results: int = Field(default=50, description="Max matches")
+    context_lines: int = Field(default=2, description="Context lines")
+    use_regex: bool = Field(default=False, description="Use regex")

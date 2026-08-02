@@ -48,6 +48,21 @@ class ToolResult:
     duration_ms: float
 
 
+WORKSPACE_TOOL_NAMES = frozenset({
+    "file_read",
+    "file_write",
+    "file_search",
+    "execute_command",
+    "execute_command_stream",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_commit",
+    "git_push",
+    "code_search",
+})
+
+
 @dataclass
 class ToolBroker:
     """Intercepts and routes tool calls.
@@ -74,6 +89,8 @@ class ToolBroker:
     # Handlers that need it read self.broker.current_context inside their
     # closure.
     current_context: dict[str, str] = field(default_factory=dict)
+    # Workspace action buffer — auto-collects workspace-relevant tool calls.
+    _workspace_actions: list[dict] = field(default_factory=list)
 
     def set_context(self, context: dict[str, str]) -> None:
         """Set the per-call execution context."""
@@ -82,6 +99,34 @@ class ToolBroker:
     def clear_context(self) -> None:
         """Clear the per-call execution context."""
         self.current_context = {}
+
+    def get_workspace_actions(self) -> list[dict]:
+        """Return a copy of collected workspace actions."""
+        return list(self._workspace_actions)
+
+    def clear_workspace_actions(self) -> None:
+        """Clear the workspace actions buffer."""
+        self._workspace_actions.clear()
+
+    def _record_workspace_action(
+        self,
+        tool_name: str,
+        parameters: dict,
+        result: object,
+        success: bool,
+    ) -> None:
+        """Record a workspace-relevant tool call if applicable."""
+        if tool_name not in WORKSPACE_TOOL_NAMES:
+            return
+        action: dict = {
+            "tool": tool_name,
+            "params": parameters,
+            "success": success,
+            "timestamp": time.time(),
+        }
+        if not success and result is not None:
+            action["error"] = str(result)[:200]
+        self._workspace_actions.append(action)
 
     def _log_audit(
         self,
@@ -232,6 +277,8 @@ class ToolBroker:
             result = await handler(validated)
             elapsed = self._elapsed_ms(start)
 
+            self._record_workspace_action(tool_name, parameters, result, True)
+
             self._log_audit(
                 "tool_success",
                 tool_name,
@@ -251,6 +298,7 @@ class ToolBroker:
 
         except ToolBrokerError as exc:
             elapsed = self._elapsed_ms(start)
+            self._record_workspace_action(tool_name, parameters, str(exc), False)
             self._log_audit(
                 "tool_rejected",
                 tool_name,

@@ -46,6 +46,10 @@ coverage.xml
 app/frontend/.vite/
 node_modules/.vite/vitest/
 
+# --- Playwright e2e (generated auth state + run artifacts) ---
+app/frontend/tests/e2e/.auth/
+test-results/
+
 # --- TLS certificates ---
 docker/caddy/certs/*.pem
 

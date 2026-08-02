@@ -47,6 +47,7 @@ from .routes import (
     scheduled_tasks_router,
     tools_catalog_router,
     tts_router,
+    workspace_router,
 )
 
 
@@ -189,6 +190,7 @@ def _register_api_routes(application: FastAPI) -> None:
     application.include_router(scheduled_tasks_router)
     application.include_router(tools_catalog_router)
     application.include_router(tts_router)
+    application.include_router(workspace_router)
 
 
 async def _close_optional_ipc_client(ipc_client: IPCSocketClient | None) -> None:

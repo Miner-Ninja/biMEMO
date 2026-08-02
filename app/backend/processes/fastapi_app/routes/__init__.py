@@ -11,6 +11,7 @@ from .health import health_router
 from .llm_providers import llm_router
 from .scheduled_tasks import scheduled_tasks_router, tools_catalog_router
 from .tts import tts_router
+from .workspace import workspace_router
 
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "scheduled_tasks_router",
     "tools_catalog_router",
     "tts_router",
+    "workspace_router",
 ]

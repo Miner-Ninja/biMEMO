@@ -37,6 +37,7 @@
 		path /files /files/*
 		path /bridge /bridge/*
 		path /security /security/*
+		path /workspace /workspace/*
 	}
 
 	handle @api {
