@@ -19,18 +19,20 @@ workspace_router = APIRouter(prefix="/workspace", tags=["workspace"])
 def _get_workspace_dirs() -> list[str]:
     """Get configured workspace directories.
 
-    For now, returns dirs from env or defaults to current project root.
-    Later this will be synced with WorkspaceDirs from the orchestrator.
+    Defaults to the same safe dirs used by the orchestrator:
+    data_dir (containing the database) and UPLOADED_FILES_DIR.
     """
     from backend.config import get_settings
+    from backend.files.paths import UPLOADED_FILES_DIR
 
     settings = get_settings()
-    # Use WORKSPACE_DIRS env var if set, otherwise default to project root
+    # Use WORKSPACE_DIRS env var if set
     dirs_raw = getattr(settings, "workspace_dirs", None) or []
     if dirs_raw:
         return [str(Path(d).resolve()) for d in dirs_raw]
-    # Default: project root (where biMEMO lives)
-    return [str(Path(__file__).resolve().parents[4].parent)]
+    # Default: same safe dirs as the orchestrator tool_setup
+    data_dir = str(Path(settings.database_path).parent)
+    return [data_dir, str(UPLOADED_FILES_DIR)]
 
 
 @workspace_router.get("/tree")

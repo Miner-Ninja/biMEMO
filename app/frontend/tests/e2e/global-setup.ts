@@ -103,7 +103,7 @@ async function globalSetup(_config: FullConfig) {
 
   // Save auth state (cookies + localStorage)
   await context.storageState({
-    path: '/home/recoder/Projects/biMEMO/app/frontend/tests/e2e/.auth/state.json',
+    path: './tests/e2e/.auth/state.json',
   })
   console.log('Auth state saved')
 

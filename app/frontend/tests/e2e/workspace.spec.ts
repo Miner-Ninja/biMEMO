@@ -1,5 +1,89 @@
 import { expect, test } from '@playwright/test'
 
+const PASSWORD = process.env.TEST_PASSWORD ?? 'testpass123'
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'https://localhost'
+
+/**
+ * Ensure the browser context has a valid session.
+ * If the stored session is expired, re-authenticate via the API.
+ */
+async function ensureSession(
+  context: Parameters<Parameters<typeof test>[0]>['context'],
+) {
+  // Check current auth status using the context's cookies
+  const resp = await context.request.get(`${BASE_URL}/auth/status`, {
+    maxRedirects: 0,
+    timeout: 5000,
+  })
+
+  if (resp.status === 200) {
+    const body = (await resp.json()) as Record<string, unknown>
+    if (body.authenticated === true) {
+      return // Session is still valid
+    }
+  }
+
+  // Session expired — re-authenticate
+  // Step 1: Unlock/login via API
+  const loginResp = await context.request.post(`${BASE_URL}/auth/login`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: { password: PASSWORD },
+    timeout: 30000,
+  })
+  const loginBody = (await loginResp.json()) as Record<string, unknown>
+
+  if (loginBody.status !== 'ok') {
+    throw new Error(`Login failed: ${JSON.stringify(loginBody)}`)
+  }
+
+  // Step 2: Wait for backend to restart after unlock
+  await new Promise((r) => setTimeout(r, 20000))
+
+  // Step 3: Wait for health
+  for (let i = 0; i < 30; i++) {
+    try {
+      const health = await context.request.get(`${BASE_URL}/health`, {
+        timeout: 5000,
+      })
+      const h = (await health.json()) as Record<string, unknown>
+      if (h.status === 'ok' || h.ready === true) {
+        break
+      }
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+
+  // Step 4: Login via browser to get fresh session cookies
+  const page = await context.newPage()
+  await page.goto(`${BASE_URL}/`)
+  await page.waitForLoadState('domcontentloaded')
+  await page.waitForTimeout(5000)
+
+  const pwd = page.getByLabel('Password')
+  const isLogin = await pwd.isVisible().catch(() => false)
+  if (isLogin) {
+    await pwd.fill(PASSWORD)
+    await page.getByRole('button', { name: 'Sign In' }).click()
+    await page.waitForTimeout(10000)
+    await page.waitForLoadState('domcontentloaded')
+    await page.waitForTimeout(5000)
+  }
+
+  await page.close()
+
+  // Step 5: Update storageState so subsequent tests use the fresh session
+  await context.storageState({
+    path: './tests/e2e/.auth/state.json',
+  })
+}
+
+// Run before each test to ensure valid session
+test.beforeEach(async ({ context }) => {
+  await ensureSession(context)
+})
+
 // ---------------------------------------------------------------------------
 // Workspace sidebar tab
 // ---------------------------------------------------------------------------

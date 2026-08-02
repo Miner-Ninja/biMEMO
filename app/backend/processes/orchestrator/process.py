@@ -810,11 +810,11 @@ async def _prepare_runtime_services(
         capabilities_registry=capabilities_registry,
     )
     support = await _prepare_runtime_support_services(
-        orch=core[3],
+        orch=core[5],
         db_client=db_client,
         settings=settings,
-        llm_config=core[6],
-        active_service_type=core[7],
+        llm_config=core[8],
+        active_service_type=core[9],
         capabilities_registry=capabilities_registry,
     )
     return RuntimeServices(
