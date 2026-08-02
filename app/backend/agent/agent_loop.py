@@ -43,6 +43,7 @@ from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.structured_response import (
     SKILL_EXTRACTION_SCHEMA,
+    SKILL_QUALITY_SCHEMA,
     StructuredAssistantContent,
 )
 from backend.llm.usage import aggregate_call_usages
@@ -98,6 +99,11 @@ __all__ = [
     "AgentOrchestrator",
 ]
 
+# --- Skill quality appraisal thresholds ---
+SKILL_QUALITY_AXIS_MAX = 25
+SKILL_QUALITY_MIN_TOTAL = 68
+SKILL_QUALITY_MIN_PER_AXIS = 8
+
 
 def _require_structured_content(
     structured_content: StructuredAssistantContent | None,
@@ -107,6 +113,49 @@ def _require_structured_content(
     if structured_content is not None:
         return structured_content
     return StructuredAssistantContent(answer=response_text)
+
+
+@dataclass(frozen=True)
+class SkillQualityVerdict:
+    """Result of a skill-quality appraisal.
+
+    Attributes:
+        total: Sum of all four axis scores (0..100).
+        accepted: True when total and per-axis floors are met.
+        weakest_axis: Name of the axis with the lowest score.
+    """
+
+    total: int
+    accepted: bool
+    weakest_axis: str
+
+
+def _appraise_skill_quality(appraisal: dict) -> SkillQualityVerdict:
+    """Decide whether a skill draft passes the quality gate.
+
+    This is a pure helper — it performs no I/O.
+
+    Args:
+        appraisal: Dict with keys matching SKILL_QUALITY_SCHEMA.
+
+    Returns:
+        SkillQualityVerdict with total, accepted, and weakest_axis.
+    """
+    axes = (
+        ("reusability", appraisal.get("reusability", 0)),
+        ("step_clarity", appraisal.get("step_clarity", 0)),
+        ("future_applicability", appraisal.get("future_applicability", 0)),
+        ("procedure_soundness", appraisal.get("procedure_soundness", 0)),
+    )
+    total = sum(score for _, score in axes)
+    all_above_floor = all(score >= SKILL_QUALITY_MIN_PER_AXIS for _, score in axes)
+    accepted = total >= SKILL_QUALITY_MIN_TOTAL and all_above_floor
+    weakest_axis = min(axes, key=lambda item: item[1])[0]
+    return SkillQualityVerdict(
+        total=total,
+        accepted=accepted,
+        weakest_axis=weakest_axis,
+    )
 
 
 @dataclass
@@ -274,6 +323,79 @@ class AgentOrchestrator:
         name = "-".join(name.split()[:5])
         name = "".join(c for c in name if c.isalnum() or c == "-")
         return name.strip("-") or "auto-skill"
+
+    async def _run_skill_quality_appraisal(
+        self,
+        *,
+        title: str,
+        description: str,
+        trigger: str,
+        procedure: str,
+        errors: str,
+        verification: str,
+        llm_call: object,
+    ) -> SkillQualityVerdict | None:
+        """Run a separate LLM call to appraise skill quality.
+
+        Returns a SkillQualityVerdict on success, or None on any failure
+        (fail-open: the caller should persist the draft anyway).
+        """
+        skill_text = (
+            f"Title: {title}\n"
+            f"Description: {description}\n"
+            f"Trigger: {trigger}\n"
+            f"Procedure: {procedure}\n"
+            f"Errors: {errors}\n"
+            f"Verification: {verification}"
+        )
+        appraiser_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a skill quality appraiser. Score the following "
+                    "skill draft on four axes (0-25 each):\n"
+                    "  - reusability: repeatable procedure vs one-off answer\n"
+                    "  - step_clarity: concrete tool/query steps vs vague prose\n"
+                    "  - future_applicability: likely to help future tasks\n"
+                    "  - procedure_soundness: steps plausibly achieve the stated task\n"
+                    "Score regardless of the skill's language. "
+                    "Respond with JSON only, do not call tools."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Appraise this skill:\n\n{skill_text}",
+            },
+        ]
+        try:
+            response = await llm_call(
+                appraiser_prompt,
+                options=LLMCallOptions(
+                    response_format=LlmResponseFormat.JSON_SCHEMA,
+                    response_schema=SKILL_QUALITY_SCHEMA,
+                    tools=[],
+                ),
+            )
+            raw = getattr(response, "text", "") or ""
+            if not raw:
+                return None
+            appraisal = json.loads(raw)
+            # Validate required fields exist and are integers
+            for axis in (
+                "reusability",
+                "step_clarity",
+                "future_applicability",
+                "procedure_soundness",
+            ):
+                if not isinstance(appraisal.get(axis), int):
+                    return None
+            return _appraise_skill_quality(appraisal)
+        except json.JSONDecodeError, Exception:
+            logger.warning(
+                "Skill quality appraiser did not return a usable verdict",
+                exc_info=True,
+            )
+            return None
 
     MIN_COMPLETION_TOKENS_FOR_SKILL = 300
 
@@ -453,6 +575,27 @@ class AgentOrchestrator:
                     "storing raw text as trigger",
                 )
                 skill_trigger = raw_text
+
+            # --- Quality appraisal gate ---
+            appraisal_verdict = await self._run_skill_quality_appraisal(
+                title=skill_title,
+                description=skill_description,
+                trigger=skill_trigger,
+                procedure=skill_procedure,
+                errors=skill_errors,
+                verification=skill_verification,
+                llm_call=llm_call,
+            )
+            if appraisal_verdict is not None and not appraisal_verdict.accepted:
+                logger.info(
+                    "Discarding skill '%s' — quality gate failed "
+                    "(total=%d, weakest=%s)",
+                    name,
+                    appraisal_verdict.total,
+                    appraisal_verdict.weakest_axis,
+                )
+                return
+            # --- End quality gate ---
 
             result = self.create_skill_fn(
                 name=name,

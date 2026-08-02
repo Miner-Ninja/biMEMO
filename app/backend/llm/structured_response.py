@@ -122,6 +122,36 @@ OPENAI_SKILL_EXTRACTION_FORMAT: dict[str, object] = {
 }
 
 
+# --- Skill-quality appraisal response contract ---
+SKILL_QUALITY_SCHEMA_NAME = "skill_quality_appraisal"
+SKILL_QUALITY_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "reusability": {"type": "integer", "minimum": 0, "maximum": 25},
+        "step_clarity": {"type": "integer", "minimum": 0, "maximum": 25},
+        "future_applicability": {"type": "integer", "minimum": 0, "maximum": 25},
+        "procedure_soundness": {"type": "integer", "minimum": 0, "maximum": 25},
+        "appraisal_note": {"type": "string"},
+    },
+    "required": [
+        "reusability",
+        "step_clarity",
+        "future_applicability",
+        "procedure_soundness",
+        "appraisal_note",
+    ],
+    "additionalProperties": False,
+}
+OPENAI_SKILL_QUALITY_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": SKILL_QUALITY_SCHEMA_NAME,
+        "strict": True,
+        "schema": SKILL_QUALITY_SCHEMA,
+    },
+}
+
+
 @dataclass(frozen=True)
 class StructuredAssistantContent:
     """Structured assistant content ready for UI rendering.
