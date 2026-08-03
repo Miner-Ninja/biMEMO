@@ -270,8 +270,7 @@ class MergeSummarySourcesParams(ForbidExtraParams):
 class PruneStaleSummariesParams(ForbidExtraParams):
     """Parameters for prune_stale_summaries operation."""
 
-    statuses: list[str]
-    age_days: int
+    grace_days: int
 
 
 class PruneUnlinkedRecordsParams(ForbidExtraParams):

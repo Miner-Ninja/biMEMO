@@ -486,78 +486,45 @@ def make_prune_stale_summaries_handler(db: DatabaseManager) -> OperationHandler:
     from backend.memory.retrieval.fulltext import delete_summary_index
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Delete stale summaries by derived status and age."""
+        """Delete summaries a newer summary has already outdated.
+
+        The revalidation status is read from the same read-path helpers the
+        ranker and evidence chain use, so pruning cannot diverge from what
+        ranking sees. The keep/delete decision is the pure
+        ``should_prune_summary`` policy helper.
+        """
+        from backend.memory.storage.pruning import should_prune_summary
         from backend.memory.summary_distiller.store import (
-            _build_distillation_relation_metrics,
-            _compute_age_penalty,
-            _normalize_record_relations,
-            _normalize_source_record_ids,
+            _build_revalidated_distillation_record,
+            _load_distillation_rows,
             _parse_timestamp,
-            _relation_penalty_and_status,
-            _relation_record_ids,
-        )
-        from backend.memory.summary_distiller.store import (
-            _revalidation_status as _compute_revalidation_status,
         )
 
         p = _validate_params(params, PruneStaleSummariesParams)
-        requested_statuses = set(p.statuses)
-
-        # Load all summaries with needed columns
-        rows = db.execute(
-            "SELECT id, created_at, record_relations, source_record_ids FROM summaries",
-        ).fetchall()
+        now = datetime.now(UTC)
 
         deleted = 0
-        for row in rows:
-            summary_id, created_at, raw_relations, raw_source_ids = row
-
-            # Compute age in days
-            ts = _parse_timestamp(created_at)
-            if ts is None:
+        for row in _load_distillation_rows(db, None):
+            record = _build_revalidated_distillation_record(db, row)
+            created_at = _parse_timestamp(str(record.get("created_at") or ""))
+            if created_at is None:
                 continue
-            age_days = (datetime.now(UTC) - ts).days
-
-            if age_days <= p.age_days:
-                continue
-
-            # Compute revalidation status using same logic as the read path
-            source_ids = _normalize_source_record_ids(raw_source_ids)
-            relations = _normalize_record_relations(raw_relations, source_ids)
-            supporting_ids = _relation_record_ids(relations, "supports")
-            conflicting_ids = _relation_record_ids(relations, "conflicts")
-            outdating_ids = _relation_record_ids(relations, "outdates")
-            metrics = _build_distillation_relation_metrics(
-                source_ids, supporting_ids, conflicting_ids, outdating_ids
-            )
-            active_support, support_total = (
-                metrics["active_support_count"],
-                metrics["supporting_record_count"],
-            )  # noqa: E501
-            active_conflict = metrics["active_conflict_count"]
-            active_outdate = metrics["active_outdate_count"]
-
-            _age_penalty = _compute_age_penalty(created_at)
-            relation_status, _ = _relation_penalty_and_status(
-                active_support, support_total, active_conflict, active_outdate
-            )
-            status = _compute_revalidation_status(_age_penalty, relation_status)
-
-            if status not in requested_statuses:
+            if not should_prune_summary(
+                status=str(record["revalidation_status"]),
+                age_days=(now - created_at).days,
+                grace_days=p.grace_days,
+            ):
                 continue
 
-            # Delete this summary
             rowid_row = db.execute(
                 "SELECT rowid FROM summaries WHERE id = ?",
-                (summary_id,),
+                (record["id"],),
             ).fetchone()
-            if rowid_row is not None:
-                db.execute(
-                    "DELETE FROM summaries WHERE id = ?",
-                    (summary_id,),
-                )
-                delete_summary_index(db, rowid_row[0])
-                deleted += 1
+            if rowid_row is None:
+                continue
+            db.execute("DELETE FROM summaries WHERE id = ?", (record["id"],))
+            delete_summary_index(db, rowid_row[0])
+            deleted += 1
 
         db.commit()
         return {"deleted": deleted}
