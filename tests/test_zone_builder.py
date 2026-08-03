@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.memory.context_builder.constants import estimate_tokens
 from backend.memory.context_builder.models import ContextZoneBudget
 from backend.memory.context_builder.zone_builder import (
@@ -21,8 +22,8 @@ from backend.memory.context_builder.zone_builder import (
     evict_oldest_messages,
 )
 from backend.memory.storage.pruning import (
+    OUTDATED_GRACE_DAYS,
     RECORD_PRUNE_AGE_DAYS,
-    SUMMARY_PRUNE_AGE_DAYS,
     prune_stale_summaries,
     prune_unlinked_records,
     run_pruning_cycle,
@@ -470,8 +471,7 @@ class TestPruning:
         call_args = db_client.send_operation.call_args
         assert call_args[0][0] == "prune_stale_summaries"
         params = call_args[0][1]
-        assert set(params["statuses"]) == {"outdated", "orphaned"}
-        assert params["age_days"] == SUMMARY_PRUNE_AGE_DAYS
+        assert params["grace_days"] == OUTDATED_GRACE_DAYS
 
     @pytest.mark.asyncio
     async def test_prune_unlinked_records_calls_operation(self) -> None:
@@ -489,15 +489,18 @@ class TestPruning:
 
     @pytest.mark.asyncio
     async def test_run_pruning_cycle_returns_counts(self) -> None:
-        """Both prune functions called and counts returned as tuple."""
+        """Prune and surface run; counts returned as a three-tuple."""
         db_client = AsyncMock()
         db_client.send_operation.side_effect = [
-            {"deleted": 2},
-            {"deleted": 7},
+            {"deleted": 2},  # prune_stale_summaries
+            {"deleted": 7},  # prune_unlinked_records
+            {"summaries": []},  # list_conflicted_summaries (none)
         ]
 
-        summaries_deleted, records_deleted = await run_pruning_cycle(db_client)
+        summaries_deleted, records_deleted, conflicts = await run_pruning_cycle(
+            db_client
+        )
 
         assert summaries_deleted == 2
         assert records_deleted == 7
-        assert db_client.send_operation.call_count == 2
+        assert conflicts == 0

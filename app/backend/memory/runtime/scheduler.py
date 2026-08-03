@@ -376,12 +376,14 @@ async def run_pruning_loop(db_client: object) -> None:
         while True:
             await asyncio.sleep(PRUNING_INTERVAL_SECONDS)
             try:
-                summaries, records = await run_pruning_cycle(db_client)
-                if summaries or records:
+                summaries, records, conflicts = await run_pruning_cycle(db_client)
+                if summaries or records or conflicts:
                     logger.info(
-                        "Pruning cycle: %d summaries, %d records",
+                        "Maintenance cycle: %d summaries, %d records, "
+                        "%d conflicts surfaced",
                         summaries,
                         records,
+                        conflicts,
                     )
             except Exception:
                 logger.warning("Pruning cycle failed", exc_info=True)

@@ -195,6 +195,13 @@ class WriteSummaryProcessingDiagnosticParams(ForbidExtraParams):
     detail: str = ""
 
 
+class ConflictedSummaryFlagParams(ForbidExtraParams):
+    """Parameters for conflicted_summary_flag operation."""
+
+    summary_id: str
+    main_point: str = ""
+
+
 class ListRecordProcessingDiagnosticsParams(LimitOnlyParams):
     """Parameters for list_record_processing_diagnostics operation."""
 
@@ -265,6 +272,18 @@ class MergeSummarySourcesParams(ForbidExtraParams):
     trust_level_score: int | None = None
     source_record_ids: list[str] = Field(default_factory=list)
     record_relations: list[RecordRelationParams] = Field(default_factory=list)
+
+
+class PruneStaleSummariesParams(ForbidExtraParams):
+    """Parameters for prune_stale_summaries operation."""
+
+    grace_days: int
+
+
+class PruneUnlinkedRecordsParams(ForbidExtraParams):
+    """Parameters for prune_unlinked_records operation."""
+
+    age_days: int
 
 
 class ListSummariesParams(LimitOffsetParams):

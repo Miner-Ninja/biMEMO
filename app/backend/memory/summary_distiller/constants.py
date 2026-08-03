@@ -52,6 +52,7 @@ DISTILLER_TRACE_DECISIONS = {
     "merged_into_existing": "summary_merged_by_existing_main_point_match",
     "overreaching_short_term": "summary_rejected_by_short_term_overreach",
     "overreaching_reversion": "summary_rejected_by_preference_reversion_overreach",
+    "conflict_pending": "summary_conflict_pending_user_resolution",
 }
 TRACE_DECISION_STORED = DISTILLER_TRACE_DECISIONS["stored"]
 TRACE_DECISION_NO_OBSERVATIONS = DISTILLER_TRACE_DECISIONS["no_observations"]
@@ -68,6 +69,7 @@ TRACE_DECISION_OVERREACHING_SHORT_TERM = DISTILLER_TRACE_DECISIONS[
 TRACE_DECISION_OVERREACHING_REVERSION = DISTILLER_TRACE_DECISIONS[
     "overreaching_reversion"
 ]
+TRACE_DECISION_CONFLICT_PENDING = DISTILLER_TRACE_DECISIONS["conflict_pending"]
 TRACE_SCOPE_ADJUSTMENT_BY_TIME_SIGNALS_AND_LLM_MISMATCH = (
     "scope_downgraded_by_time_signals_and_llm_mismatch"
 )
