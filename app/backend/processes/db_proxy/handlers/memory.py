@@ -615,3 +615,41 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
         return {"deleted": deleted}
 
     return handle
+
+
+def make_list_conflicted_summaries_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_conflicted_summaries operation.
+
+    Returns the id and main point of every summary whose derived
+    revalidation status is ``conflicted``, using the same read-path
+    derivation the ranker and evidence chain use. Read-only; it never
+    mutates a summary.
+
+    Args:
+        db: DatabaseManager instance.
+
+    Returns:
+        Async handler function.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return conflicted summaries as {summary_id, main_point} pairs."""
+        from backend.memory.summary_distiller.store import (
+            _build_revalidated_distillation_record,
+            _load_distillation_rows,
+        )
+
+        conflicted = [
+            {
+                "summary_id": str(record["id"]),
+                "main_point": str(record.get("main_point") or ""),
+            }
+            for record in (
+                _build_revalidated_distillation_record(db, row)
+                for row in _load_distillation_rows(db, None)
+            )
+            if str(record["revalidation_status"]) == "conflicted"
+        ]
+        return {"summaries": conflicted}
+
+    return handle

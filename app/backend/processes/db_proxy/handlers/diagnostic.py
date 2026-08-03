@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from backend.memory.summary_distiller.constants import (
+    TRACE_DECISION_CONFLICT_PENDING,
+)
+
 from ..common import build_in_clause_query
 from ..params import (
+    ConflictedSummaryFlagParams,
     GetMemoryRouteDiagnosticsSummaryParams,
     ListMemoryRouteDiagnosticsParams,
     ListRecordProcessingDiagnosticsParams,
@@ -641,6 +646,49 @@ def make_write_summary_processing_diagnostic_handler(
         )
         diagnostics_db.commit()
         return {"diagnostic_id": int(cursor.lastrowid)}
+
+    return handle
+
+
+def make_conflicted_summary_flag_handler(
+    diagnostics_db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for the conflicted_summary_flag operation.
+
+    Records one pending-conflict diagnostic for a summary, but only when the
+    summary does not already have an unresolved one. This keeps surfacing
+    idempotent server-side, so the caller does not need to read diagnostics.
+
+    Args:
+        diagnostics_db: DatabaseManager for the diagnostics database.
+
+    Returns:
+        Async handler function.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Insert a pending-conflict row unless one already exists."""
+        payload = ConflictedSummaryFlagParams.model_validate(params or {})
+        cursor = diagnostics_db.execute(
+            """
+            INSERT INTO summary_processing_diagnostics
+                (decision, summary_id, main_point)
+            SELECT ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM summary_processing_diagnostics
+                WHERE decision = ? AND summary_id = ?
+            )
+            """,
+            (
+                TRACE_DECISION_CONFLICT_PENDING,
+                payload.summary_id,
+                payload.main_point,
+                TRACE_DECISION_CONFLICT_PENDING,
+                payload.summary_id,
+            ),
+        )
+        diagnostics_db.commit()
+        return {"surfaced": int(cursor.rowcount or 0)}
 
     return handle
 

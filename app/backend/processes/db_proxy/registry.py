@@ -59,6 +59,7 @@ from .handlers.core import (
     make_fetch_untainted_records_handler,
     make_fulltext_search_handler,
     make_init_vector_table_handler,
+    make_list_conflicted_summaries_handler,
     make_list_summaries_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
@@ -75,6 +76,7 @@ from .handlers.core import (
     make_write_audit_handler,
 )
 from .handlers.diagnostic import (
+    make_conflicted_summary_flag_handler,
     make_get_memory_route_diagnostics_summary_handler,
     make_list_memory_route_diagnostics_handler,
     make_list_record_processing_diagnostics_handler,
@@ -193,6 +195,7 @@ SOCKET_A_OPERATIONS = {
     "merge_summary_sources",
     "prune_stale_summaries",
     "prune_unlinked_records",
+    "list_conflicted_summaries",
     "list_summaries",
     "count_distillations",
     "list_summaries_full",
@@ -240,6 +243,7 @@ SOCKET_A_OPERATIONS = {
     "write_memory_route_diagnostic",
     "write_record_processing_diagnostic",
     "write_summary_processing_diagnostic",
+    "conflicted_summary_flag",
     "skill_create",
     "skill_search",
     "skill_use",
@@ -428,7 +432,12 @@ def _register_diagnostic_operations(
     )
     registry.register(
         "write_summary_processing_diagnostic",
+    "conflicted_summary_flag",
         make_write_summary_processing_diagnostic_handler(diagnostics_db),
+    )
+    registry.register(
+        "conflicted_summary_flag",
+        make_conflicted_summary_flag_handler(diagnostics_db),
     )
     registry.register(
         "list_memory_route_diagnostics",
@@ -493,6 +502,10 @@ def _register_memory_operations(
         make_prune_unlinked_records_handler(db),
     )
     registry.register("list_summaries", make_list_summaries_handler(db))
+    registry.register(
+        "list_conflicted_summaries",
+        make_list_conflicted_summaries_handler(db),
+    )
     registry.register("count_distillations", make_count_distillations_handler(db))
     registry.register("skill_create", make_skill_create_handler(db))
     registry.register("skill_search", make_skill_search_handler(db))

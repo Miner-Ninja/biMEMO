@@ -195,6 +195,13 @@ class WriteSummaryProcessingDiagnosticParams(ForbidExtraParams):
     detail: str = ""
 
 
+class ConflictedSummaryFlagParams(ForbidExtraParams):
+    """Parameters for conflicted_summary_flag operation."""
+
+    summary_id: str
+    main_point: str = ""
+
+
 class ListRecordProcessingDiagnosticsParams(LimitOnlyParams):
     """Parameters for list_record_processing_diagnostics operation."""
 
