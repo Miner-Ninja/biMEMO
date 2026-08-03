@@ -432,7 +432,6 @@ def _register_diagnostic_operations(
     )
     registry.register(
         "write_summary_processing_diagnostic",
-    "conflicted_summary_flag",
         make_write_summary_processing_diagnostic_handler(diagnostics_db),
     )
     registry.register(

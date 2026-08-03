@@ -257,3 +257,27 @@ def test_conflicted_summary_flag_is_idempotent(diagnostics_db: DatabaseManager):
     assert first["surfaced"] == 1
     assert second["surfaced"] == 0
     assert _pending_count(diagnostics_db, "s1") == 1
+
+
+# --- registry build regression ------------------------------------------------
+
+
+def test_register_diagnostic_operations_builds_without_stray_argument(
+    db: DatabaseManager, diagnostics_db: DatabaseManager
+):
+    """Building the diagnostic operations must not crash the db-proxy.
+
+    Regression guard: a stray operation-name line once landed inside the
+    ``write_summary_processing_diagnostic`` registration, so ``register`` was
+    called with an extra positional argument and the db-proxy process raised
+    ``TypeError`` on every startup. This exercises the real registration path;
+    the socket allow-list membership tests do not call ``register`` at all.
+    """
+    from backend.ipc.db_proxy import OperationRegistry
+    from backend.processes.db_proxy.registry import _register_diagnostic_operations
+
+    registry = OperationRegistry()
+    _register_diagnostic_operations(registry, db, diagnostics_db, 14)
+
+    assert registry.has_operation("write_summary_processing_diagnostic")
+    assert registry.has_operation("conflicted_summary_flag")
