@@ -489,15 +489,18 @@ class TestPruning:
 
     @pytest.mark.asyncio
     async def test_run_pruning_cycle_returns_counts(self) -> None:
-        """Both prune functions called and counts returned as tuple."""
+        """Prune and surface run; counts returned as a three-tuple."""
         db_client = AsyncMock()
         db_client.send_operation.side_effect = [
-            {"deleted": 2},
-            {"deleted": 7},
+            {"deleted": 2},  # prune_stale_summaries
+            {"deleted": 7},  # prune_unlinked_records
+            {"summaries": []},  # list_conflicted_summaries (none)
         ]
 
-        summaries_deleted, records_deleted = await run_pruning_cycle(db_client)
+        summaries_deleted, records_deleted, conflicts = await run_pruning_cycle(
+            db_client
+        )
 
         assert summaries_deleted == 2
         assert records_deleted == 7
-        assert db_client.send_operation.call_count == 2
+        assert conflicts == 0

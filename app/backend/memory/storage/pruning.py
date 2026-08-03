@@ -95,17 +95,56 @@ async def prune_unlinked_records(
     return count
 
 
-async def run_pruning_cycle(
+async def surface_conflicted_summaries(
     db_client: DBProxyClient,
-) -> tuple[int, int]:
-    """Run one full pruning cycle.
+) -> int:
+    """Record a pending-conflict signal for each newly conflicted summary.
+
+    Conflicted summaries are only surfaced for the user (or the distiller)
+    to resolve, never deleted or reclassified here. Deduplication is done
+    server-side by the idempotent ``conflicted_summary_flag`` operation, so
+    a summary that already has an unresolved signal is not surfaced again.
 
     Args:
         db_client: DB proxy client for storage operations.
 
     Returns:
-        Tuple of (summaries_deleted, records_deleted).
+        Number of summaries newly surfaced.
+    """
+    listed = await db_client.send_operation("list_conflicted_summaries", {})
+    conflicted = listed.get("summaries", [])
+
+    surfaced = 0
+    for item in conflicted:
+        summary_id = str(item.get("summary_id", ""))
+        if not summary_id:
+            continue
+        result = await db_client.send_operation(
+            "conflicted_summary_flag",
+            {
+                "summary_id": summary_id,
+                "main_point": str(item.get("main_point", "")),
+            },
+        )
+        surfaced += int(result.get("surfaced", 0))
+
+    if surfaced:
+        logger.info("Surfaced %d conflicted summaries", surfaced)
+    return surfaced
+
+
+async def run_pruning_cycle(
+    db_client: DBProxyClient,
+) -> tuple[int, int, int]:
+    """Run one full memory-maintenance cycle.
+
+    Args:
+        db_client: DB proxy client for storage operations.
+
+    Returns:
+        Tuple of (summaries_deleted, records_deleted, conflicts_surfaced).
     """
     summaries_deleted = await prune_stale_summaries(db_client)
     records_deleted = await prune_unlinked_records(db_client)
-    return summaries_deleted, records_deleted
+    conflicts_surfaced = await surface_conflicted_summaries(db_client)
+    return summaries_deleted, records_deleted, conflicts_surfaced
