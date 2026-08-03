@@ -267,6 +267,19 @@ class MergeSummarySourcesParams(ForbidExtraParams):
     record_relations: list[RecordRelationParams] = Field(default_factory=list)
 
 
+class PruneStaleSummariesParams(ForbidExtraParams):
+    """Parameters for prune_stale_summaries operation."""
+
+    statuses: list[str]
+    age_days: int
+
+
+class PruneUnlinkedRecordsParams(ForbidExtraParams):
+    """Parameters for prune_unlinked_records operation."""
+
+    age_days: int
+
+
 class ListSummariesParams(LimitOffsetParams):
     """Parameters for list_summaries operation."""
 

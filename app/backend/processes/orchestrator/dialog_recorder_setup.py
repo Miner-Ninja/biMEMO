@@ -117,6 +117,7 @@ async def _setup_dialog_recorder_pipeline(
         SchedulingMode,
         run_dialog_recorder_loop,
         run_distiller_loop,
+        run_pruning_loop,
         run_reembed_loop,
     )
 
@@ -188,6 +189,7 @@ async def _setup_dialog_recorder_pipeline(
         service_type=service_type,
         run_dialog_recorder_loop_fn=run_dialog_recorder_loop,
         run_distiller_loop_fn=run_distiller_loop,
+        run_pruning_loop_fn=run_pruning_loop,
         run_reembed_loop_fn=run_reembed_loop,
     )
 
@@ -239,6 +241,7 @@ def _start_dialog_recorder_background_tasks(
     service_type: str,
     run_dialog_recorder_loop_fn: object,
     run_distiller_loop_fn: object,
+    run_pruning_loop_fn: object,
     run_reembed_loop_fn: object,
 ) -> None:
     """Start the dialog recorder background loops for one configured provider."""
@@ -269,6 +272,12 @@ def _start_dialog_recorder_background_tasks(
         ),
         log_message="Summary Distiller background loop started (provider=%s)",
         log_value=service_type,
+    )
+
+    _start_runtime_background_task(
+        tasks=tasks,
+        coro=run_pruning_loop_fn(db_client=db_client),
+        log_message="Memory pruning loop started",
     )
 
     if vector_ready:

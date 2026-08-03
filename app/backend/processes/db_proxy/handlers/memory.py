@@ -4,14 +4,17 @@ Provides make_save_record_handler, make_mark_tainted_handler,
 make_save_summary_handler, make_merge_summary_sources_handler,
 make_store_embedding_handler, make_fetch_untainted_records_handler,
 make_count_distillations_handler, make_list_summaries_handler,
-make_init_vector_table_handler, and make_fetch_unembedded_records_handler.
+make_init_vector_table_handler, make_fetch_unembedded_records_handler,
+make_prune_stale_summaries_handler, and make_prune_unlinked_records_handler.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from backend.memory.models import (
@@ -36,6 +39,8 @@ from ..params import (
     ListSummariesParams,
     MarkTaintedParams,
     MergeSummarySourcesParams,
+    PruneStaleSummariesParams,
+    PruneUnlinkedRecordsParams,
     SaveRecordParams,
     SaveSummaryParams,
     StoreEmbeddingParams,
@@ -462,5 +467,184 @@ def make_fetch_unembedded_records_handler(
             rows = [r for r in all_rows if r[0] not in embedded_ids][: p.limit]
 
         return {"records": [{"id": r[0], "summary": r[1]} for r in rows]}
+
+    return handle
+
+
+def make_prune_stale_summaries_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for prune_stale_summaries operation.
+
+    Deletes summaries whose derived revalidation status is in the
+    requested statuses AND whose age exceeds age_days.
+
+    Args:
+        db: DatabaseManager instance.
+
+    Returns:
+        Async handler function.
+    """
+    from backend.memory.retrieval.fulltext import delete_summary_index
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Delete stale summaries by derived status and age."""
+        from backend.memory.summary_distiller.store import (
+            _build_distillation_relation_metrics,
+            _compute_age_penalty,
+            _normalize_record_relations,
+            _normalize_source_record_ids,
+            _parse_timestamp,
+            _relation_penalty_and_status,
+            _relation_record_ids,
+        )
+        from backend.memory.summary_distiller.store import (
+            _revalidation_status as _compute_revalidation_status,
+        )
+
+        p = _validate_params(params, PruneStaleSummariesParams)
+        requested_statuses = set(p.statuses)
+
+        # Load all summaries with needed columns
+        rows = db.execute(
+            "SELECT id, created_at, record_relations, source_record_ids FROM summaries",
+        ).fetchall()
+
+        deleted = 0
+        for row in rows:
+            summary_id, created_at, raw_relations, raw_source_ids = row
+
+            # Compute age in days
+            ts = _parse_timestamp(created_at)
+            if ts is None:
+                continue
+            age_days = (datetime.now(UTC) - ts).days
+
+            if age_days <= p.age_days:
+                continue
+
+            # Compute revalidation status using same logic as the read path
+            source_ids = _normalize_source_record_ids(raw_source_ids)
+            relations = _normalize_record_relations(raw_relations, source_ids)
+            supporting_ids = _relation_record_ids(relations, "supports")
+            conflicting_ids = _relation_record_ids(relations, "conflicts")
+            outdating_ids = _relation_record_ids(relations, "outdates")
+            metrics = _build_distillation_relation_metrics(
+                source_ids, supporting_ids, conflicting_ids, outdating_ids
+            )
+            active_support, support_total = (
+                metrics["active_support_count"],
+                metrics["supporting_record_count"],
+            )  # noqa: E501
+            active_conflict = metrics["active_conflict_count"]
+            active_outdate = metrics["active_outdate_count"]
+
+            _age_penalty = _compute_age_penalty(created_at)
+            relation_status, _ = _relation_penalty_and_status(
+                active_support, support_total, active_conflict, active_outdate
+            )
+            status = _compute_revalidation_status(_age_penalty, relation_status)
+
+            if status not in requested_statuses:
+                continue
+
+            # Delete this summary
+            rowid_row = db.execute(
+                "SELECT rowid FROM summaries WHERE id = ?",
+                (summary_id,),
+            ).fetchone()
+            if rowid_row is not None:
+                db.execute(
+                    "DELETE FROM summaries WHERE id = ?",
+                    (summary_id,),
+                )
+                delete_summary_index(db, rowid_row[0])
+                deleted += 1
+
+        db.commit()
+        return {"deleted": deleted}
+
+    return handle
+
+
+def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for prune_unlinked_records operation.
+
+    Deletes records older than age_days that are not referenced by
+    any summary (via source_record_ids or record_relations).
+
+    Args:
+        db: DatabaseManager instance.
+
+    Returns:
+        Async handler function.
+    """
+    from backend.memory.retrieval.fulltext import delete_record_index
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Delete unlinked records by age."""
+        from datetime import timedelta
+
+        from backend.memory.summary_distiller.store import _parse_timestamp
+
+        p = _validate_params(params, PruneUnlinkedRecordsParams)
+
+        # Collect all record IDs referenced by any summary
+        referenced_ids = set()
+        summary_rows = db.execute(
+            "SELECT source_record_ids, record_relations FROM summaries",
+        ).fetchall()
+        for src_ids, raw_relations in summary_rows:
+            if src_ids:
+                try:
+                    ids = json.loads(src_ids)
+                    if isinstance(ids, list):
+                        referenced_ids.update(ids)
+                except json.JSONDecodeError, TypeError:
+                    pass
+            if raw_relations:
+                try:
+                    rels = json.loads(raw_relations)
+                    if isinstance(rels, list):
+                        for rel in rels:
+                            if isinstance(rel, dict) and rel.get("record_id"):
+                                referenced_ids.add(str(rel["record_id"]))
+                except json.JSONDecodeError, TypeError:
+                    pass
+
+        # Load all records
+        rows = db.execute(
+            "SELECT id, created_at, rowid FROM records",
+        ).fetchall()
+
+        cutoff = datetime.now(UTC) - timedelta(days=p.age_days)
+
+        deleted = 0
+        for record_id, created_at, rowid in rows:
+            # Check age
+            record_time = _parse_timestamp(created_at)
+            if record_time is None or record_time >= cutoff:
+                continue
+
+            # Check if referenced
+            if record_id in referenced_ids:
+                continue
+
+            # Delete this record
+            db.execute(
+                "DELETE FROM records WHERE id = ?",
+                (record_id,),
+            )
+            # Delete FTS index
+            delete_record_index(db, rowid)
+            # Delete embedding if exists
+            with contextlib.suppress(Exception):
+                db.execute(
+                    "DELETE FROM record_embeddings WHERE record_id = ?",
+                    (record_id,),
+                )
+
+            deleted += 1
+
+        db.commit()
+        return {"deleted": deleted}
 
     return handle

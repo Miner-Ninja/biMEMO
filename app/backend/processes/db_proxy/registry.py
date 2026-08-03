@@ -64,6 +64,8 @@ from .handlers.core import (
     make_load_recent_messages_handler,
     make_mark_tainted_handler,
     make_merge_summary_sources_handler,
+    make_prune_stale_summaries_handler,
+    make_prune_unlinked_records_handler,
     make_save_conversation_summary_handler,
     make_save_message_handler,
     make_save_record_handler,
@@ -189,6 +191,8 @@ SOCKET_A_OPERATIONS = {
     "fetch_untainted_records",
     "save_summary",
     "merge_summary_sources",
+    "prune_stale_summaries",
+    "prune_unlinked_records",
     "list_summaries",
     "count_distillations",
     "list_summaries_full",
@@ -479,6 +483,14 @@ def _register_memory_operations(
     registry.register(
         "merge_summary_sources",
         make_merge_summary_sources_handler(db),
+    )
+    registry.register(
+        "prune_stale_summaries",
+        make_prune_stale_summaries_handler(db),
+    )
+    registry.register(
+        "prune_unlinked_records",
+        make_prune_unlinked_records_handler(db),
     )
     registry.register("list_summaries", make_list_summaries_handler(db))
     registry.register("count_distillations", make_count_distillations_handler(db))
