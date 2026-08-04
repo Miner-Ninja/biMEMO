@@ -2,13 +2,14 @@
 
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Mount
 
 from backend.channels.endpoints import EndpointRateLimiter, ReauthManager
 from backend.channels.jwt_auth import SessionManager
@@ -288,16 +289,40 @@ def create_app(
         )
         application.state.tts_client = _build_tts_client(settings)
 
-        logger.info("FastAPI process ready (IPC connected)")
+        async with AsyncExitStack() as lifespan_stack:
+            # MCP server setup (when enabled). The FastMCP app carries its own
+            # lifespan that starts the Streamable HTTP session manager; it must
+            # be entered here, or every /mcp request fails with an
+            # uninitialized-task-group error.
+            if settings.mcp_enabled:
+                # Imported lazily: fastmcp is only required when MCP is on.
+                from backend.processes.fastapi_app.routes.mcp import (
+                    _load_mcp_tokens,
+                    build_mcp_server,
+                )
 
-        yield
+                tokens = _load_mcp_tokens(Path(settings.mcp_token_file))
+                mcp_server = build_mcp_server(admin_client, orch_client, tokens)
+                mcp_app = mcp_server.http_app(path="/")
+                # Insert at the front so /mcp is matched before the
+                # StaticFiles("/") SPA catch-all; Starlette matches routes in
+                # order, and this mount is added after create_app's routes.
+                application.router.routes.insert(0, Mount("/mcp", app=mcp_app))
+                await lifespan_stack.enter_async_context(
+                    mcp_app.lifespan(mcp_app)
+                )
+                logger.info("MCP endpoint mounted at /mcp")
 
-        # Shutdown: close IPC connections
-        logger.info("FastAPI process shutting down")
-        await orch_client.stop()
-        await _close_optional_ipc_client(cred_ipc)
-        await _close_optional_ipc_client(sign_ipc)
-        await db_ipc.close()
+            logger.info("FastAPI process ready (IPC connected)")
+
+            yield
+
+            # Shutdown: close IPC connections
+            logger.info("FastAPI process shutting down")
+            await orch_client.stop()
+            await _close_optional_ipc_client(cred_ipc)
+            await _close_optional_ipc_client(sign_ipc)
+            await db_ipc.close()
 
     application = FastAPI(
         title="biMEMO",

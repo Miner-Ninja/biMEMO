@@ -8,9 +8,12 @@ to the DB Proxy via IPC.
 import asyncio
 import json
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 import httpx
+
+from backend.ipc.models import McpRememberRequest, McpRememberResponse
 
 from .client import DBProxyClient, DBProxyError
 
@@ -525,6 +528,41 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
         )
 
     return save_fn
+
+
+def make_mcp_remember_fn(db_client: DBProxyClient) -> Callable:
+    """Create the store-only handler for MCP external-agent memories.
+
+    The write runs in the orchestrator process (Socket A), so the
+    web-facing FastAPI process never writes memory content directly.
+    A fresh conversation is created per remembered fact.
+
+    Args:
+        db_client: Connected DBProxyClient (Socket A).
+
+    Returns:
+        Async callable(McpRememberRequest) -> McpRememberResponse.
+    """
+
+    async def mcp_remember_fn(
+        request: McpRememberRequest,
+    ) -> McpRememberResponse:
+        """Persist one MCP memory as a message and report the stored ids."""
+        conversation_id = str(uuid.uuid4())
+        message_id = await db_client.save_message(
+            conversation_id,
+            "user",
+            request.content,
+            channel=request.channel,
+        )
+        return McpRememberResponse(
+            request_id=request.request_id,
+            message_id=message_id,
+            conversation_id=conversation_id,
+            stored=True,
+        )
+
+    return mcp_remember_fn
 
 
 def make_save_record_fn(db_client: DBProxyClient) -> Callable:

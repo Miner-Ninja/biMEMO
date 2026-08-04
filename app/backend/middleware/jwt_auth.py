@@ -33,9 +33,10 @@ EXEMPT_PATHS = frozenset(
         "/",
         "/setup",
         "/login",
+        "/mcp",
     }
 )
-EXEMPT_PREFIXES = ("/assets/",)
+EXEMPT_PREFIXES = ("/assets/", "/mcp/")
 
 UNAUTHORIZED_BODY = json.dumps({"detail": "Authentication required"}).encode()
 

@@ -102,6 +102,23 @@ class BridgeInboundSyncRequest(IPCModel):
     images: list[str] = []
 
 
+class McpRememberRequest(IPCModel):
+    """Request from the MCP endpoint to store one external-agent memory.
+
+    The write is executed in the orchestrator process (Socket A) so the
+    web-facing FastAPI process never writes memory content directly.
+
+    Attributes:
+        request_id: Unique identifier for this request.
+        content: Plain text content to store.
+        channel: Provenance channel identifying the external agent source.
+    """
+
+    request_id: str
+    content: str
+    channel: str
+
+
 class ReloadLLMRequest(IPCModel):
     """Request from frontend to reload the active LLM runtime configuration.
 
@@ -225,6 +242,22 @@ class BridgeInboundSyncResponse(IPCModel):
     reason: str = ""
     assistant_content: str = ""
     assistant_message_id: str = ""
+
+
+class McpRememberResponse(IPCModel):
+    """Response confirming one MCP external-agent memory was stored.
+
+    Attributes:
+        request_id: Matching request identifier.
+        message_id: Stored internal biMEMO message identifier.
+        conversation_id: Conversation the message was stored under.
+        stored: Whether the message was persisted.
+    """
+
+    request_id: str
+    message_id: str = ""
+    conversation_id: str = ""
+    stored: bool = False
 
 
 class ReloadLLMResponse(IPCModel):
