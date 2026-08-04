@@ -9,6 +9,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { SetupPage } from "@/pages/SetupPage";
 import { AdminDashboard } from "@/pages/AdminDashboard";
 import { IntegrationsPage } from "@/pages/IntegrationsPage";
+import { AgentConnectionPage } from "@/pages/AgentConnectionPage";
 import { BackupsPage } from "@/pages/BackupsPage";
 import { LLMConfigPage } from "@/pages/admin/LLMConfigPage";
 import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
@@ -63,6 +64,7 @@ function AppRoutes() {
       <Route path="/" element={<ChatPage />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/admin/integrations" element={<IntegrationsPage />} />
+      <Route path="/admin/agents" element={<AgentConnectionPage />} />
       <Route path="/admin/backups" element={<BackupsPage />} />
       <Route path="/admin/llm" element={<LLMConfigPage />} />
       <Route path="/admin/profile" element={<ProfilePage />} />

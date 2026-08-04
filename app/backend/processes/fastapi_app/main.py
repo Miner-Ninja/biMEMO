@@ -37,6 +37,7 @@ from .clients import (
 from .deps import _csrf_tokens, _get_csrf_token_for_jti
 from .routes import (
     admin_router,
+    agents_router,
     auth_router,
     avatars_router,
     chat_bridge_router,
@@ -184,6 +185,7 @@ def _register_api_routes(application: FastAPI) -> None:
     application.include_router(chat_router)
     application.include_router(chat_bridge_router)
     application.include_router(admin_router)
+    application.include_router(agents_router)
     application.include_router(memory_router)
     application.include_router(llm_router)
     application.include_router(files_router)
@@ -295,14 +297,21 @@ def create_app(
             # be entered here, or every /mcp request fails with an
             # uninitialized-task-group error.
             if settings.mcp_enabled:
-                # Imported lazily: fastmcp is only required when MCP is on.
+                if cred_client is None:
+                    msg = (
+                        "MCP is enabled but credential proxy is not available. "
+                        "Cannot start MCP server."
+                    )
+                    raise RuntimeError(msg)
+
+                # Seed agent tokens from environment variables
                 from backend.processes.fastapi_app.routes.mcp import (
-                    _load_mcp_tokens,
                     build_mcp_server,
+                    seed_mcp_tokens_from_env,
                 )
 
-                tokens = _load_mcp_tokens(Path(settings.mcp_token_file))
-                mcp_server = build_mcp_server(admin_client, orch_client, tokens)
+                await seed_mcp_tokens_from_env(cred_client)
+                mcp_server = build_mcp_server(admin_client, orch_client, cred_client)
                 mcp_app = mcp_server.http_app(path="/")
                 # Insert at the front so /mcp is matched before the
                 # StaticFiles("/") SPA catch-all; Starlette matches routes in

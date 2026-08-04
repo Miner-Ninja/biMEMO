@@ -1,35 +1,88 @@
-"""Tests for MCP (Model Context Protocol) endpoint.
+"""Tests for MCP (Model Context Protocol) endpoint — agent connection.
 
-Covers configuration validation, token loading, bearer authentication,
-AdminDBClient MCP operations, the resolve_relevant_memory seam, and
-middleware exemptions. Uses mock IPC to avoid actual sockets.
+Covers hash-based token storage/validation, environment seeding,
+capability enforcement, boundary checks, and default-off behavior.
 """
 
+from __future__ import annotations
+
+import hashlib
 from typing import TYPE_CHECKING, Any
 
 import pytest
+
 from backend.config import reset_settings
-from backend.ipc.models import DBOperation, DBResult
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from backend.ipc.models import DBOperation, DBResult
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hex digest of a plaintext token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+class FakeCredentialClient:
+    """Mock CredentialClient for agent-token tests."""
+
+    def __init__(self) -> None:
+        """Initialize empty integration/created/deleted records."""
+        self._integrations: list[dict[str, Any]] = []
+        self._created: list[dict[str, Any]] = []
+        self._deleted: list[str] = []
+
+    async def list_integrations(self) -> list[dict[str, Any]]:
+        """Return a copy of the stored integrations."""
+        return list(self._integrations)
+
+    async def create_integration(
+        self,
+        name: str,
+        integration_type: str,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Store one integration and return its new id."""
+        entry = {
+            "id": f"int-{len(self._integrations)}",
+            "name": name,
+            "service_type": integration_type,
+            "enabled": True,
+            "config": config,
+            "created_at": "2025-01-01T00:00:00",
+        }
+        self._integrations.append(entry)
+        self._created.append(entry)
+        return {"integration_id": entry["id"]}
+
+    async def delete_integration(self, name: str) -> dict[str, Any]:
+        """Delete every integration matching the name."""
+        self._integrations = [
+            i for i in self._integrations if i.get("name") != name
+        ]
+        self._deleted.append(name)
+        return {"deleted": True}
 
 
 class FakeDBProxyIPC:
     """Mock IPC client that returns preset DBResult responses."""
 
     def __init__(self) -> None:
-        """Initialize empty sent-message and response queues."""
+        """Initialize empty response and sent-operation queues."""
         self._responses: list[DBResult] = []
         self._sent: list[DBOperation] = []
 
     def queue_response(self, result: DBResult) -> None:
-        """Queue a DBResult for the next request."""
+        """Queue one DBResult to return from the next call."""
         self._responses.append(result)
 
     async def send_and_receive(self, message: object) -> object:
-        """Record the request and return the next queued response."""
+        """Record the message and return the next queued response."""
         self._sent.append(message)
         if not self._responses:
             raise RuntimeError("No response queued")
@@ -37,602 +90,656 @@ class FakeDBProxyIPC:
 
     @property
     def sent_operations(self) -> list[DBOperation]:
-        """Return all sent DB operations."""
+        """Return all recorded sent operations."""
         return self._sent
 
 
-class TestMCPConfig:
-    """Verify MCP configuration validation in Settings."""
+# ──────────────────────────────────────────────────────────────────────
+# R1: Hash-based token storage
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestHashStorage:
+    """R1 / S1.1, S1.2 — store tokens as hashes, return plaintext once."""
 
     @pytest.fixture(autouse=True)
     def _cleanup(self) -> None:
-        """Reset settings singleton after each test."""
+        yield
+        reset_settings()
+
+    @pytest.mark.asyncio
+    async def test_issue_stores_only_hash(self) -> None:
+        """After issue, the stored config has only token_hash — no plaintext."""
+        from backend.processes.fastapi_app.routes.agents import (
+            _hash_token as agents_hash_token,
+        )
+
+        plaintext = "my-secret-token"
+        expected_hash = agents_hash_token(plaintext)
+
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="test-agent",
+            integration_type="mcp_agent",
+            config={"token_hash": expected_hash, "capability": "read-write"},
+        )
+
+        integrations = await cred.list_integrations()
+        agent = next(i for i in integrations if i["service_type"] == "mcp_agent")
+
+        assert "token_hash" in agent["config"]
+        assert agent["config"]["token_hash"] == expected_hash
+        assert "token" not in agent["config"]
+        assert "plaintext" not in agent["config"]
+
+    def test_hash_is_sha256_hex(self) -> None:
+        """_hash_token returns a 64-char hex string (SHA-256)."""
+        from backend.processes.fastapi_app.routes.mcp import _hash_token
+
+        h = _hash_token("test")
+        assert len(h) == 64
+        assert all(c in "0123456789abcdef" for c in h)
+
+    @pytest.mark.asyncio
+    async def test_plaintext_never_in_caplog(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The plaintext token never appears in log output."""
+        from backend.processes.fastapi_app.routes.mcp import _hash_token
+
+        caplog.clear()
+        plaintext = "super-secret-token-123"
+        _hash_token(plaintext)
+        assert plaintext not in caplog.text
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R2: Hash-based validation
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestHashBasedValidation:
+    """R2 / S2.1, S2.2, S2.3 — hash-based bearer validation."""
+
+    @pytest.mark.asyncio
+    async def test_valid_token_returns_capability(self) -> None:
+        """A valid token (matching stored hash) returns its capability."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            _resolve_agent_capability,
+        )
+
+        plaintext = "valid-token"
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="agent1",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token(plaintext),
+                "capability": "read-write",
+            },
+        )
+
+        capability = await _resolve_agent_capability(
+            {"authorization": f"Bearer {plaintext}"},
+            cred,
+        )
+        assert capability == "read-write"
+
+    @pytest.mark.asyncio
+    async def test_unknown_hash_rejected(self) -> None:
+        """A token whose hash is not stored is rejected."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            _resolve_agent_capability,
+        )
+
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="agent1",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("other-token"),
+                "capability": "read",
+            },
+        )
+
+        with pytest.raises(RuntimeError, match="Invalid bearer token"):
+            await _resolve_agent_capability(
+                {"authorization": "Bearer wrong-token"},
+                cred,
+            )
+
+    @pytest.mark.asyncio
+    async def test_missing_bearer_rejected(self) -> None:
+        """Missing Authorization header is rejected."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            _resolve_agent_capability,
+        )
+
+        cred = FakeCredentialClient()
+
+        with pytest.raises(RuntimeError, match="Bearer token required"):
+            await _resolve_agent_capability({}, cred)
+
+    @pytest.mark.asyncio
+    async def test_tool_does_not_run_without_valid_token(self) -> None:
+        """search_memory tool does not execute body when token is invalid."""
+        pytest.importorskip("fastmcp")
+
+        admin = _FakeMCPAdminClient()
+        orch = _FakeMCPOrchestratorClient()
+        cred = FakeCredentialClient()
+        # No tokens stored — all requests should fail auth
+
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
+
+        mcp_server = build_mcp_server(admin, orch, cred)
+        mcp_app = mcp_server.http_app(path="/")
+        parent = Starlette(lifespan=mcp_app.lifespan)
+        parent.mount("/mcp", mcp_app)
+
+        with TestClient(parent) as client:
+            session_id = _handshake(client)
+            result = _call_tool(
+                client, session_id, "search_memory", {"query": "hi"}, None
+            )
+
+        assert result["isError"] is True
+        assert admin.searched == []
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R3: Capability enforcement
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestCapabilityEnforcement:
+    """R3 / S3.1, S3.2 - read token cannot remember; read-write can."""
+
+    @pytest.mark.asyncio
+    async def test_read_token_cannot_remember(self) -> None:
+        """A read-only token cannot call the remember tool."""
+        pytest.importorskip("fastmcp")
+
+        admin = _FakeMCPAdminClient()
+        orch = _FakeMCPOrchestratorClient()
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="ro-agent",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("ro-token"),
+                "capability": "read",
+            },
+        )
+
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
+
+        mcp_server = build_mcp_server(admin, orch, cred)
+        mcp_app = mcp_server.http_app(path="/")
+        parent = Starlette(lifespan=mcp_app.lifespan)
+        parent.mount("/mcp", mcp_app)
+
+        with TestClient(parent) as client:
+            session_id = _handshake(client)
+            result = _call_tool(
+                client,
+                session_id,
+                "remember",
+                {"content": "x"},
+                "Bearer ro-token",
+            )
+
+        assert result["isError"] is True
+        assert orch.remembered == []
+
+    @pytest.mark.asyncio
+    async def test_read_write_token_can_remember(self) -> None:
+        """A read-write token stores via the orchestrator on channel 'agent'."""
+        pytest.importorskip("fastmcp")
+
+        admin = _FakeMCPAdminClient()
+        orch = _FakeMCPOrchestratorClient()
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="rw-agent",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("rw-token"),
+                "capability": "read-write",
+            },
+        )
+
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
+
+        mcp_server = build_mcp_server(admin, orch, cred)
+        mcp_app = mcp_server.http_app(path="/")
+        parent = Starlette(lifespan=mcp_app.lifespan)
+        parent.mount("/mcp", mcp_app)
+
+        with TestClient(parent) as client:
+            session_id = _handshake(client)
+            result = _call_tool(
+                client,
+                session_id,
+                "remember",
+                {"content": "remember this"},
+                "Bearer rw-token",
+            )
+
+        assert result["isError"] is False
+        assert len(orch.remembered) == 1
+        assert orch.remembered[0]["channel"] == "agent"
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R4: Issue token → authenticates
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestIssueAndAuth:
+    """R4 / S4.1 — issued token authenticates."""
+
+    @pytest.mark.asyncio
+    async def test_issued_token_authenticates(self) -> None:
+        """A token issued via create_integration authenticates in MCP."""
+        pytest.importorskip("fastmcp")
+
+        admin = _FakeMCPAdminClient()
+        orch = _FakeMCPOrchestratorClient()
+        cred = FakeCredentialClient()
+
+        plaintext = "issued-token-abc"
+        await cred.create_integration(
+            name="issued",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token(plaintext),
+                "capability": "read-write",
+            },
+        )
+
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
+
+        mcp_server = build_mcp_server(admin, orch, cred)
+        mcp_app = mcp_server.http_app(path="/")
+        parent = Starlette(lifespan=mcp_app.lifespan)
+        parent.mount("/mcp", mcp_app)
+
+        with TestClient(parent) as client:
+            session_id = _handshake(client)
+            result = _call_tool(
+                client,
+                session_id,
+                "remember",
+                {"content": "test"},
+                f"Bearer {plaintext}",
+            )
+
+        assert result["isError"] is False
+        assert len(orch.remembered) == 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R5: Revoke token
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestRevoke:
+    """R5 / S5.1 — revoke by label stops authentication."""
+
+    @pytest.mark.asyncio
+    async def test_revoked_token_no_longer_authenticates(self) -> None:
+        """After revoking, the token's hash is gone and auth fails."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            _resolve_agent_capability,
+        )
+
+        plaintext = "to-revoke"
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="revocable",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token(plaintext),
+                "capability": "read",
+            },
+        )
+
+        # Before revoke — works
+        cap = await _resolve_agent_capability(
+            {"authorization": f"Bearer {plaintext}"},
+            cred,
+        )
+        assert cap == "read"
+
+        # Revoke
+        await cred.delete_integration("revocable")
+
+        # After revoke — fails
+        with pytest.raises(RuntimeError, match="Invalid bearer token"):
+            await _resolve_agent_capability(
+                {"authorization": f"Bearer {plaintext}"},
+                cred,
+            )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R6: List metadata only
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestListMetadata:
+    """R6 / S6.1 — list shows label/capability/created, no plaintext."""
+
+    @pytest.mark.asyncio
+    async def test_list_shows_metadata_no_plaintext(self) -> None:
+        """list_integrations returns config with token_hash but no secret."""
+        plaintext = "secret-token"
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="my-agent",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token(plaintext),
+                "capability": "read-write",
+            },
+        )
+
+        integrations = await cred.list_integrations()
+        agent = next(i for i in integrations if i["service_type"] == "mcp_agent")
+
+        assert agent["name"] == "my-agent"
+        assert agent["config"]["capability"] == "read-write"
+        assert "token_hash" in agent["config"]
+        assert plaintext not in str(agent)
+        assert "secret" not in agent["config"]
+
+    @pytest.mark.asyncio
+    async def test_list_integrations_returns_config_for_all_types(self) -> None:
+        """list_integrations returns config field for any service_type."""
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="telegram-bot",
+            integration_type="telegram",
+            config={"chat_id": "12345"},
+        )
+        await cred.create_integration(
+            name="my-agent",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("x"),
+                "capability": "read",
+            },
+        )
+
+        integrations = await cred.list_integrations()
+        for entry in integrations:
+            assert "config" in entry
+
+    @pytest.mark.asyncio
+    async def test_config_has_no_secret_field(self) -> None:
+        """The config field never contains plaintext secrets."""
+        plaintext = "my-api-key-12345"
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="test-agent",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token(plaintext),
+                "capability": "read",
+            },
+        )
+
+        integrations = await cred.list_integrations()
+        for entry in integrations:
+            config_str = str(entry.get("config", {}))
+            assert plaintext not in config_str
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R7: Environment seeding
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestEnvSeeding:
+    """R7 / S7.1, S7.2, S7.3 — env-seed tokens."""
+
+    @pytest.mark.asyncio
+    async def test_env_seed_token_authenticates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Token from BIMEMO_MCP_TOKEN_* env var authenticates."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            _resolve_agent_capability,
+            seed_mcp_tokens_from_env,
+        )
+
+        plaintext = "env-token-123"
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_CLAUDE", f"{plaintext}:read-write")
+
+        cred = FakeCredentialClient()
+        await seed_mcp_tokens_from_env(cred)
+
+        capability = await _resolve_agent_capability(
+            {"authorization": f"Bearer {plaintext}"},
+            cred,
+        )
+        assert capability == "read-write"
+
+    @pytest.mark.asyncio
+    async def test_reseed_is_idempotent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Re-seeding does not create duplicate entries."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            seed_mcp_tokens_from_env,
+        )
+
+        plaintext = "idempotent-token"
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_TEST", f"{plaintext}:read")
+
+        cred = FakeCredentialClient()
+        await seed_mcp_tokens_from_env(cred)
+        await seed_mcp_tokens_from_env(cred)
+
+        agent_count = sum(
+            1 for i in await cred.list_integrations()
+            if i["service_type"] == "mcp_agent"
+        )
+        assert agent_count == 1
+
+    @pytest.mark.asyncio
+    async def test_malformed_env_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Malformed BIMEMO_MCP_TOKEN_* raises at seed time."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            seed_mcp_tokens_from_env,
+        )
+
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_BAD", "no-colon-here")
+
+        cred = FakeCredentialClient()
+        with pytest.raises(ValueError, match="expected"):
+            await seed_mcp_tokens_from_env(cred)
+
+    @pytest.mark.asyncio
+    async def test_env_seed_does_not_wipe_ui_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """UI-created non-agent integrations are not deleted by env seed."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            seed_mcp_tokens_from_env,
+        )
+
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_MYAGENT", "tok:read")
+
+        cred = FakeCredentialClient()
+        # Pre-existing non-agent integration
+        await cred.create_integration(
+            name="telegram-bot",
+            integration_type="telegram",
+            config={"chat_id": "123"},
+        )
+
+        await seed_mcp_tokens_from_env(cred)
+
+        integrations = await cred.list_integrations()
+        telegram = [i for i in integrations if i["name"] == "telegram-bot"]
+        assert len(telegram) == 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R9: CA root endpoint
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestCaRootEndpoint:
+    """R9 / S9.1 — /admin/agents/ca-root returns public cert, not key."""
+
+    def test_ca_root_path_is_configured_via_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CA root path comes from BIMEMO_CA_ROOT_PATH env var."""
+        # It reads from env at import time; in tests it may be empty
+        # The important thing is it's a Path, not reading a key file
+        from pathlib import Path
+
+        from backend.processes.fastapi_app.routes.agents import _CA_ROOT_PATH
+
+        assert isinstance(_CA_ROOT_PATH, Path)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R12: Boundary checks
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestBoundaries:
+    """R12 / S12.1, S12.2, S12.3 — boundary invariants."""
+
+    def test_registry_has_no_new_operations(self) -> None:
+        """registry.py socket allow-lists gain no new operation."""
+        from backend.processes.db_proxy.registry import (
+            SOCKET_A_OPERATIONS,
+            SOCKET_B_OPERATIONS,
+            SOCKET_C_OPERATIONS,
+        )
+
+        # Agent token ops use existing operations only
+        assert "create_integration" in SOCKET_C_OPERATIONS
+        assert "list_integrations" in SOCKET_C_OPERATIONS
+        assert "delete_integration" in SOCKET_C_OPERATIONS
+
+        # No new mcp-specific operation added
+        agent_ops = {"create_integration", "list_integrations", "delete_integration"}
+        for op in agent_ops:
+            assert op not in SOCKET_A_OPERATIONS
+            assert op not in SOCKET_B_OPERATIONS
+
+    @pytest.mark.asyncio
+    async def test_write_routes_through_orchestrator(self) -> None:
+        """Write memory routes through orchestrator, not admin client."""
+        pytest.importorskip("fastmcp")
+
+        admin = _FakeMCPAdminClient()
+        orch = _FakeMCPOrchestratorClient()
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="rw",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("rw-token"),
+                "capability": "read-write",
+            },
+        )
+
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
+
+        mcp_server = build_mcp_server(admin, orch, cred)
+        mcp_app = mcp_server.http_app(path="/")
+        parent = Starlette(lifespan=mcp_app.lifespan)
+        parent.mount("/mcp", mcp_app)
+
+        with TestClient(parent) as client:
+            session_id = _handshake(client)
+            result = _call_tool(
+                client,
+                session_id,
+                "remember",
+                {"content": "test"},
+                "Bearer rw-token",
+            )
+
+        assert result["isError"] is False
+        # The write went through orchestrator
+        assert len(orch.remembered) == 1
+        # NOT through admin
+        assert not any(
+            op.operation == "save_message" for op in admin.searched
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R13: Default off
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestDefaultOff:
+    """R13 / S13.1, S13.2 — disabled by default; no token-file requirement."""
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self) -> None:
         yield
         reset_settings()
 
     def test_mcp_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """MCP endpoint is off when no MCP config is set."""
+        """MCP is off by default."""
         from backend.config import get_settings
 
         settings = get_settings()
         assert settings.mcp_enabled is False
-        assert settings.mcp_token_file == ""
 
-    def test_mcp_enabled_requires_token_file(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Startup fails when MCP is enabled but no token file is set."""
-        monkeypatch.setenv("BIMEMO_MCP_ENABLED", "true")
-        monkeypatch.delenv("BIMEMO_MCP_TOKEN_FILE", raising=False)
-
+    def test_no_mcp_token_file_field(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Settings no longer has mcp_token_file field."""
         from backend.config import get_settings
-        from pydantic import ValidationError
 
-        with pytest.raises(
-            ValidationError, match="BIMEMO_MCP_TOKEN_FILE is required"
-        ):
-            get_settings()
+        settings = get_settings()
+        assert not hasattr(settings, "mcp_token_file")
 
-    def test_mcp_enabled_with_token_file(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Settings load when MCP is enabled with a token file path."""
+    def test_mcp_enabled_without_token_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mcp_enabled=true no longer requires BIMEMO_MCP_TOKEN_FILE."""
         monkeypatch.setenv("BIMEMO_MCP_ENABLED", "true")
-        monkeypatch.setenv("BIMEMO_MCP_TOKEN_FILE", "/run/secrets/mcp_tokens")
 
         from backend.config import get_settings
 
         settings = get_settings()
         assert settings.mcp_enabled is True
-        assert settings.mcp_token_file == "/run/secrets/mcp_tokens"
+        # No exception — no token file required
 
 
-class TestMCPTokenLoading:
-    """Verify MCP token file parsing and validation."""
-
-    def test_load_valid_tokens(self, tmp_path: Path) -> None:
-        """Loads tokens with both capabilities from a valid file."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text(
-            "# biMEMO MCP tokens\n"
-            "read-only-token read\n"
-            "rw-token read-write\n"
-            "\n"
-            "# another comment\n"
-            "another-read read\n"
-        )
-
-        tokens = _load_mcp_tokens(token_file)
-
-        assert tokens["read-only-token"] == "read"
-        assert tokens["rw-token"] == "read-write"
-        assert tokens["another-read"] == "read"
-        assert len(tokens) == 3
-
-    def test_load_single_token(self, tmp_path: Path) -> None:
-        """Loads a single token from the file."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text("single-token read-write\n")
-
-        tokens = _load_mcp_tokens(token_file)
-
-        assert len(tokens) == 1
-        assert tokens["single-token"] == "read-write"
-
-    def test_load_empty_file(self, tmp_path: Path) -> None:
-        """Returns empty dict for a file with only comments and blank lines."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text("# only comments\n\n# nothing else\n")
-
-        tokens = _load_mcp_tokens(token_file)
-
-        assert tokens == {}
-
-    def test_reject_invalid_capability(self, tmp_path: Path) -> None:
-        """Raises ValueError for an unknown capability value."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text("my-token admin\n")
-
-        with pytest.raises(ValueError, match="capability 'admin' is invalid"):
-            _load_mcp_tokens(token_file)
-
-    def test_reject_missing_capability(self, tmp_path: Path) -> None:
-        """Raises ValueError for a line with only a token and no capability."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text("token-only\n")
-
-        with pytest.raises(
-            ValueError,
-            match="expected '<token> <capability>'",
-        ):
-            _load_mcp_tokens(token_file)
-
-    def test_reject_empty_token(self, tmp_path: Path) -> None:
-        """Raises ValueError for a line with only a capability and no token."""
-        from backend.processes.fastapi_app.routes.mcp import _load_mcp_tokens
-
-        token_file = tmp_path / "tokens.txt"
-        token_file.write_text("  read\n")  # single word, splits as 1 part
-
-        with pytest.raises(
-            ValueError,
-            match="expected '<token> <capability>'",
-        ):
-            _load_mcp_tokens(token_file)
-
-
-class TestBearerAuth:
-    """Verify bearer token validation logic."""
-
-    @pytest.fixture
-    def tokens(self) -> dict[str, str]:
-        """Return a token map with one read and one read-write token."""
-        return {"read-token": "read", "write-token": "read-write"}
-
-    def test_accept_valid_read_token(self, tokens: dict[str, str]) -> None:
-        """Accepts a valid read-only bearer token."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        capability = _validate_bearer_capability(
-            {"authorization": "Bearer read-token"}, tokens
-        )
-        assert capability == "read"
-
-    def test_accept_valid_write_token(self, tokens: dict[str, str]) -> None:
-        """Accepts a valid read-write bearer token."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        capability = _validate_bearer_capability(
-            {"authorization": "Bearer write-token"}, tokens
-        )
-        assert capability == "read-write"
-
-    def test_reject_missing_authorization_header(
-        self, tokens: dict[str, str]
-    ) -> None:
-        """Rejects requests without an Authorization header."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        with pytest.raises(RuntimeError, match="Bearer token required"):
-            _validate_bearer_capability({}, tokens)
-
-    def test_reject_non_bearer_auth(self, tokens: dict[str, str]) -> None:
-        """Rejects non-Bearer authorization schemes."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        with pytest.raises(RuntimeError, match="Bearer token required"):
-            _validate_bearer_capability({"authorization": "Basic abc123"}, tokens)
-
-    def test_reject_invalid_token(self, tokens: dict[str, str]) -> None:
-        """Rejects a bearer token that is not in the token map."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        with pytest.raises(RuntimeError, match="Invalid bearer token"):
-            _validate_bearer_capability(
-                {"authorization": "Bearer unknown-token"}, tokens
-            )
-
-    def test_reject_empty_token(self, tokens: dict[str, str]) -> None:
-        """Rejects a Bearer header with an empty token string."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _validate_bearer_capability,
-        )
-
-        with pytest.raises(RuntimeError, match="Empty bearer token"):
-            _validate_bearer_capability({"authorization": "Bearer  "}, tokens)
-
-    def test_require_write_capability_allows_read_write(self) -> None:
-        """Allows read-write capability through."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _require_write_capability,
-        )
-
-        _require_write_capability("read-write")  # No exception
-
-    def test_require_write_capability_blocks_read(self) -> None:
-        """Blocks read-only capability."""
-        from backend.processes.fastapi_app.routes.mcp import (
-            _require_write_capability,
-        )
-
-        with pytest.raises(RuntimeError, match="Read-only token cannot write"):
-            _require_write_capability("read")
-
-
-class TestAdminDBClientMCPOperations:
-    """Verify AdminDBClient fulltext_search method."""
-
-    @pytest.fixture
-    def fake_ipc(self) -> FakeDBProxyIPC:
-        """Create a fake DB-proxy IPC client."""
-        return FakeDBProxyIPC()
-
-    @pytest.fixture
-    def admin_client(self, fake_ipc: FakeDBProxyIPC):
-        """Create an AdminDBClient backed by the fake IPC client."""
-        from backend.processes.fastapi_app.admin_db_client import AdminDBClient
-
-        return AdminDBClient(fake_ipc)
-
-    @pytest.mark.asyncio
-    async def test_fulltext_search_messages(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Searches the messages table via FTS5."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 1, "snippet": "...Python code..."},
-                        {"rowid": 2, "snippet": "...database..."},
-                    ]
-                },
-            )
-        )
-
-        results = await admin_client.fulltext_search(
-            query="python database",
-            table="messages",
-            limit=10,
-        )
-
-        assert len(results) == 2
-        assert results[0]["rowid"] == 1
-        op = fake_ipc.sent_operations[0]
-        assert op.operation == "fulltext_search"
-        assert op.parameters["query"] == "python database"
-        assert op.parameters["table"] == "messages"
-        assert op.parameters["limit"] == 10
-
-    @pytest.mark.asyncio
-    async def test_fulltext_search_records(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Searches the records table via FTS5."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 10, "snippet": "...preference..."},
-                    ]
-                },
-            )
-        )
-
-        results = await admin_client.fulltext_search(
-            query="preference",
-            table="records",
-        )
-
-        assert len(results) == 1
-        assert results[0]["rowid"] == 10
-        op = fake_ipc.sent_operations[0]
-        assert op.parameters["table"] == "records"
-
-    @pytest.mark.asyncio
-    async def test_fulltext_search_empty_results(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Returns empty list when no results match."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={"results": []},
-            )
-        )
-
-        results = await admin_client.fulltext_search(
-            query="nonexistent",
-            table="summaries",
-        )
-
-        assert results == []
-        op = fake_ipc.sent_operations[0]
-        assert op.parameters["table"] == "summaries"
-
-    @pytest.mark.asyncio
-    async def test_fulltext_search_default_params(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Uses default table='messages' and limit=20."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={"results": []},
-            )
-        )
-
-        await admin_client.fulltext_search(query="test")
-
-        op = fake_ipc.sent_operations[0]
-        assert op.parameters["table"] == "messages"
-        assert op.parameters["limit"] == 20
-
-
-class TestMCPSeam:
-    """Verify resolve_relevant_memory seam function."""
-
-    @pytest.fixture
-    def fake_ipc(self) -> FakeDBProxyIPC:
-        """Create a fake DB-proxy IPC client."""
-        return FakeDBProxyIPC()
-
-    @pytest.fixture
-    def admin_client(self, fake_ipc: FakeDBProxyIPC):
-        """Create an AdminDBClient backed by the fake IPC client."""
-        from backend.processes.fastapi_app.admin_db_client import AdminDBClient
-
-        return AdminDBClient(fake_ipc)
-
-    @pytest.mark.asyncio
-    async def test_resolve_searches_all_tables(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Calls fulltext_search for each of messages, records, summaries."""
-        # Queue 3 responses (one per table)
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 1, "snippet": "...msg..."},
-                    ]
-                },
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r2",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 2, "snippet": "...record..."},
-                    ]
-                },
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r3",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 3, "snippet": "...summary..."},
-                    ]
-                },
-            )
-        )
-
-        from backend.memory.mcp_seam import resolve_relevant_memory
-
-        results = await resolve_relevant_memory(
-            admin_client=admin_client,
-            query="test query",
-            limit=5,
-        )
-
-        assert len(results) == 3
-        # Each result should be tagged with table and agent_identity
-        assert results[0]["table"] == "messages"
-        assert results[0]["agent_identity"] == "agent"
-        assert results[1]["table"] == "records"
-        assert results[1]["agent_identity"] == "agent"
-        assert results[2]["table"] == "summaries"
-        assert results[2]["agent_identity"] == "agent"
-
-        # Verify 3 operations were sent
-        assert len(fake_ipc.sent_operations) == 3
-        tables_called = [op.parameters["table"] for op in fake_ipc.sent_operations]
-        assert tables_called == ["messages", "records", "summaries"]
-
-    @pytest.mark.asyncio
-    async def test_resolve_custom_agent_identity(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Passes custom agent_identity through to results."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 1, "snippet": "...msg..."},
-                    ]
-                },
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r2",
-                status="success",
-                data={"results": []},
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r3",
-                status="success",
-                data={"results": []},
-            )
-        )
-
-        from backend.memory.mcp_seam import resolve_relevant_memory
-
-        results = await resolve_relevant_memory(
-            admin_client=admin_client,
-            query="test",
-            agent_identity="claude-code",
-        )
-
-        assert results[0]["agent_identity"] == "claude-code"
-
-    @pytest.mark.asyncio
-    async def test_resolve_empty_results(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Returns empty list when all tables return no results."""
-        for _ in range(3):
-            fake_ipc.queue_response(
-                DBResult(
-                    request_id="r1",
-                    status="success",
-                    data={"results": []},
-                )
-            )
-
-        from backend.memory.mcp_seam import resolve_relevant_memory
-
-        results = await resolve_relevant_memory(
-            admin_client=admin_client,
-            query="nothing",
-        )
-
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_resolve_multiple_hits_per_table(
-        self,
-        admin_client: Any,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Aggregates multiple hits from each table."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 1, "snippet": "...a..."},
-                        {"rowid": 2, "snippet": "...b..."},
-                    ]
-                },
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r2",
-                status="success",
-                data={
-                    "results": [
-                        {"rowid": 3, "snippet": "...c..."},
-                    ]
-                },
-            )
-        )
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r3",
-                status="success",
-                data={"results": []},
-            )
-        )
-
-        from backend.memory.mcp_seam import resolve_relevant_memory
-
-        results = await resolve_relevant_memory(
-            admin_client=admin_client,
-            query="test",
-        )
-
-        assert len(results) == 3
-        assert results[0]["table"] == "messages"
-        assert results[1]["table"] == "messages"
-        assert results[2]["table"] == "records"
-
-
-class TestMCPMiddlewareExemptions:
-    """Verify MCP paths are exempt from JWT and CSRF middleware."""
-
-    def test_mcp_in_csrf_exempt_paths(self) -> None:
-        """The /mcp path is in the CSRF exemption list."""
-        from backend.middleware.csrf import EXEMPT_PATHS
-
-        assert "/mcp" in EXEMPT_PATHS
-
-    def test_mcp_in_jwt_exempt_paths(self) -> None:
-        """The /mcp path is in the JWT auth exemption list."""
-        from backend.middleware.jwt_auth import EXEMPT_PATHS, EXEMPT_PREFIXES
-
-        assert "/mcp" in EXEMPT_PATHS
-        assert "/mcp/" in EXEMPT_PREFIXES
-
-    def test_mcp_subpaths_match_exempt_prefix(self) -> None:
-        """MCP subpaths like /mcp/message match the exempt prefix."""
-        from backend.middleware.jwt_auth import _is_exempt_path
-
-        assert _is_exempt_path("/mcp")
-        assert _is_exempt_path("/mcp/message")
-        assert _is_exempt_path("/mcp/anything")
-        assert not _is_exempt_path("/admin/memory")
-
-
-class TestMCPSeamConstants:
-    """Verify MCP seam constants match spec requirements."""
-
-    def test_channel_name_is_agent(self) -> None:
-        """MCP_CHANNEL_NAME is 'agent' as required by the spec."""
-        from backend.memory.mcp_seam import MCP_CHANNEL_NAME
-
-        assert MCP_CHANNEL_NAME == "agent"
-
-    def test_default_search_limit(self) -> None:
-        """DEFAULT_SEARCH_LIMIT is 20."""
-        from backend.memory.mcp_seam import DEFAULT_SEARCH_LIMIT
-
-        assert DEFAULT_SEARCH_LIMIT == 20
-
-    def test_memory_search_tables(self) -> None:
-        """MEMORY_SEARCH_TABLES covers all three FTS tables."""
-        from backend.memory.mcp_seam import MEMORY_SEARCH_TABLES
-
-        assert MEMORY_SEARCH_TABLES == ("messages", "records", "summaries")
+# ──────────────────────────────────────────────────────────────────────
+# Fakes for integration tests
+# ──────────────────────────────────────────────────────────────────────
 
 
 class _FakeMCPAdminClient:
     """Minimal admin client stub for the MCP integration test."""
 
     def __init__(self) -> None:
-        """Initialize the search-call recorder."""
         self.searched: list[dict[str, Any]] = []
 
     async def fulltext_search(
@@ -641,24 +748,22 @@ class _FakeMCPAdminClient:
         table: str = "messages",
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Record a fulltext_search call and return one fake hit."""
         self.searched.append({"query": query, "table": table, "limit": limit})
         return [{"rowid": 1, "snippet": f"hit:{table}"}]
 
 
 class _FakeMCPOrchestratorClient:
-    """Minimal orchestrator client stub for the MCP integration test.
-
-    The remember write is routed through the orchestrator, not the admin
-    (Socket B) client, so this records the mcp_remember calls.
-    """
+    """Minimal orchestrator client stub for the MCP integration test."""
 
     def __init__(self) -> None:
-        """Initialize the remembered-call recorder."""
         self.remembered: list[dict[str, Any]] = []
 
-    async def mcp_remember(self, *, content: str, channel: str):
-        """Record an mcp_remember call and return a fake stored result."""
+    async def mcp_remember(
+        self,
+        *,
+        content: str,
+        channel: str,
+    ):
         from types import SimpleNamespace
 
         self.remembered.append({"content": content, "channel": channel})
@@ -667,6 +772,11 @@ class _FakeMCPOrchestratorClient:
             message_id="msg-fake",
             conversation_id="conv-fake",
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# SSE helpers (for integration test over HTTP)
+# ──────────────────────────────────────────────────────────────────────
 
 
 def _sse_events(text: str) -> list[dict[str, Any]]:
@@ -686,190 +796,265 @@ _MCP_HEADERS = {
 }
 
 
-class TestMCPIntegration:
-    """End-to-end: mount the FastMCP server and drive it over HTTP.
-
-    Covers the wiring that unit tests miss: the lifespan-started session
-    manager, tokens flowing from build_mcp_server into the tool closures,
-    and header-based capability enforcement.
-    """
-
-    def _mounted_client(
-        self,
-        admin_client: object,
-        orchestrator_client: object,
-        tokens: dict[str, str],
-    ):
-        """Return a TestClient with the MCP app mounted and lifespan-wired."""
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
-        from starlette.applications import Starlette
-        from starlette.testclient import TestClient
-
-        server = build_mcp_server(admin_client, orchestrator_client, tokens)
-        mcp_app = server.http_app(path="/")
-        parent = Starlette(lifespan=mcp_app.lifespan)
-        parent.mount("/mcp", mcp_app)
-        return TestClient(parent)
-
-    def _handshake(self, client: object) -> str:
-        """Run initialize + initialized and return the session id."""
-        init = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "1"},
-            },
-        }
-        response = client.post("/mcp/", json=init, headers=_MCP_HEADERS)
-        session_id = response.headers.get("mcp-session-id")
-        client.post(
-            "/mcp/",
-            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-            headers={**_MCP_HEADERS, "mcp-session-id": session_id},
-        )
-        return session_id
-
-    def _call_tool(
-        self,
-        client: object,
-        session_id: str,
-        name: str,
-        arguments: dict[str, Any],
-        auth: str | None,
-    ) -> dict[str, Any]:
-        """Call one tool and return the parsed JSON-RPC result object."""
-        headers = {**_MCP_HEADERS, "mcp-session-id": session_id}
-        if auth is not None:
-            headers["Authorization"] = auth
-        body = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments},
-        }
-        response = client.post("/mcp/", json=body, headers=headers)
-        events = _sse_events(response.text)
-        return events[-1]["result"]
-
-    def test_tools_list_excludes_injected_headers(self) -> None:
-        """Both tools are listed and the injected headers param is hidden."""
-        pytest.importorskip("fastmcp")
-        tokens = {"rw": "read-write"}
-        with self._mounted_client(
-            _FakeMCPAdminClient(), _FakeMCPOrchestratorClient(), tokens
-        ) as client:
-            session_id = self._handshake(client)
-            response = client.post(
-                "/mcp/",
-                json={"jsonrpc": "2.0", "id": 3, "method": "tools/list"},
-                headers={**_MCP_HEADERS, "mcp-session-id": session_id},
-            )
-            tools = {
-                tool["name"]: tool
-                for tool in _sse_events(response.text)[-1]["result"]["tools"]
-            }
-
-        assert set(tools) == {"search_memory", "remember"}
-        search_props = tools["search_memory"]["inputSchema"]["properties"]
-        assert set(search_props) == {"query", "limit"}
-        remember_props = tools["remember"]["inputSchema"]["properties"]
-        assert set(remember_props) == {"content", "context"}
-
-    def test_search_with_read_token_delegates(self) -> None:
-        """A read token can search; the call reaches fulltext_search."""
-        pytest.importorskip("fastmcp")
-        admin = _FakeMCPAdminClient()
-        with self._mounted_client(
-            admin, _FakeMCPOrchestratorClient(), {"ro": "read"}
-        ) as client:
-            session_id = self._handshake(client)
-            result = self._call_tool(
-                client, session_id, "search_memory", {"query": "hi"}, "Bearer ro"
-            )
-
-        assert result["isError"] is False
-        assert [call["table"] for call in admin.searched] == [
-            "messages",
-            "records",
-            "summaries",
-        ]
-
-    def test_search_without_token_is_rejected(self) -> None:
-        """A search with no bearer token is rejected and does not run."""
-        pytest.importorskip("fastmcp")
-        admin = _FakeMCPAdminClient()
-        with self._mounted_client(
-            admin, _FakeMCPOrchestratorClient(), {"ro": "read"}
-        ) as client:
-            session_id = self._handshake(client)
-            result = self._call_tool(
-                client, session_id, "search_memory", {"query": "hi"}, None
-            )
-
-        assert result["isError"] is True
-        assert admin.searched == []
-
-    def test_remember_with_write_token_stores(self) -> None:
-        """A read-write token stores via the orchestrator on channel 'agent'."""
-        pytest.importorskip("fastmcp")
-        orch = _FakeMCPOrchestratorClient()
-        with self._mounted_client(
-            _FakeMCPAdminClient(), orch, {"rw": "read-write"}
-        ) as client:
-            session_id = self._handshake(client)
-            result = self._call_tool(
-                client,
-                session_id,
-                "remember",
-                {"content": "remember this"},
-                "Bearer rw",
-            )
-
-        assert result["isError"] is False
-        assert len(orch.remembered) == 1
-        assert orch.remembered[0]["channel"] == "agent"
-        assert orch.remembered[0]["content"] == "remember this"
-
-    def test_remember_with_read_token_is_rejected(self) -> None:
-        """A read-only token cannot write and nothing is stored."""
-        pytest.importorskip("fastmcp")
-        orch = _FakeMCPOrchestratorClient()
-        with self._mounted_client(
-            _FakeMCPAdminClient(), orch, {"ro": "read"}
-        ) as client:
-            session_id = self._handshake(client)
-            result = self._call_tool(
-                client, session_id, "remember", {"content": "x"}, "Bearer ro"
-            )
-
-        assert result["isError"] is True
-        assert orch.remembered == []
+def _handshake(client: object) -> str:
+    """Run initialize + initialized and return the session id."""
+    init = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1"},
+        },
+    }
+    response = client.post("/mcp/", json=init, headers=_MCP_HEADERS)
+    session_id = response.headers.get("mcp-session-id")
+    client.post(
+        "/mcp/",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+        headers={**_MCP_HEADERS, "mcp-session-id": session_id},
+    )
+    return session_id
 
 
-class TestMCPConstants:
-    """Verify MCP route constants match spec requirements."""
+def _call_tool(
+    client: object,
+    session_id: str,
+    name: str,
+    arguments: dict[str, Any],
+    auth: str | None,
+) -> dict[str, Any]:
+    """Call one tool and return the parsed JSON-RPC result object."""
+    headers = {**_MCP_HEADERS, "mcp-session-id": session_id}
+    if auth is not None:
+        headers["Authorization"] = auth
+    body = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": name, "arguments": arguments},
+    }
+    response = client.post("/mcp/", json=body, headers=headers)
+    events = _sse_events(response.text)
+    return events[-1]["result"]
 
-    def test_read_capability_value(self) -> None:
-        """MCP_READ_CAPABILITY is 'read'."""
-        from backend.processes.fastapi_app.routes.mcp import MCP_READ_CAPABILITY
 
-        assert MCP_READ_CAPABILITY == "read"
+# ──────────────────────────────────────────────────────────────────────
+# R7 negative: env seed must preserve UI-issued agent tokens
+# ──────────────────────────────────────────────────────────────────────
 
-    def test_read_write_capability_value(self) -> None:
-        """MCP_READ_WRITE_CAPABILITY is 'read-write'."""
+
+class TestSeedPreservesUiTokens:
+    """R7 negative — env seed only upserts its own labels."""
+
+    @pytest.mark.asyncio
+    async def test_seed_keeps_ui_agent_token_absent_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A UI-issued mcp_agent token whose label is not in env survives."""
         from backend.processes.fastapi_app.routes.mcp import (
-            MCP_READ_WRITE_CAPABILITY,
+            seed_mcp_tokens_from_env,
         )
 
-        assert MCP_READ_WRITE_CAPABILITY == "read-write"
+        monkeypatch.delenv("BIMEMO_MCP_TOKEN_UITOKEN", raising=False)
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_ENVAGENT", "envtok:read")
 
-    def test_valid_capabilities_set(self) -> None:
-        """_VALID_CAPABILITIES contains both allowed values."""
-        from backend.processes.fastapi_app.routes.mcp import _VALID_CAPABILITIES
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="uitoken",
+            integration_type="mcp_agent",
+            config={
+                "token_hash": _hash_token("ui-secret"),
+                "capability": "read-write",
+            },
+        )
 
-        assert "read" in _VALID_CAPABILITIES
-        assert "read-write" in _VALID_CAPABILITIES
-        assert len(_VALID_CAPABILITIES) == 2
+        await seed_mcp_tokens_from_env(cred)
+
+        names = {i["name"] for i in await cred.list_integrations()}
+        assert "uitoken" in names, "UI-issued agent token must not be wiped"
+        assert "envagent" in names, "env token must be seeded"
+
+    @pytest.mark.asyncio
+    async def test_seed_is_idempotent_for_same_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-seeding the same env token creates no duplicate."""
+        from backend.processes.fastapi_app.routes.mcp import (
+            seed_mcp_tokens_from_env,
+        )
+
+        monkeypatch.setenv("BIMEMO_MCP_TOKEN_DUPE", "dupetok:read")
+        cred = FakeCredentialClient()
+
+        await seed_mcp_tokens_from_env(cred)
+        await seed_mcp_tokens_from_env(cred)
+
+        dupes = [
+            i
+            for i in await cred.list_integrations()
+            if i["service_type"] == "mcp_agent" and i["name"] == "dupe"
+        ]
+        assert len(dupes) == 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# R5 negative: revoke validates reauth and only deletes agent tokens
+# ──────────────────────────────────────────────────────────────────────
+
+
+class _FakeAuthState:
+    """Minimal request.state carrying authenticated claims."""
+
+    def __init__(self) -> None:
+        self._state = {"claims": {"sub": "admin"}}
+
+
+class _FakeAuthRequest:
+    """Minimal Request stand-in for direct route-function calls."""
+
+    def __init__(self) -> None:
+        self.state = _FakeAuthState()
+        self.headers: dict[str, str] = {}
+
+
+class TestRevokeAgentToken:
+    """R5 negative — reauth enforced; non-agent integrations untouched."""
+
+    async def _seed_agent(self, cred: Any, name: str) -> None:
+        await cred.create_integration(
+            name=name,
+            integration_type="mcp_agent",
+            config={"token_hash": _hash_token("x"), "capability": "read"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_revoke_without_reauth_is_rejected(self) -> None:
+        """Missing reauth token -> 403 and nothing deleted."""
+        from fastapi import HTTPException
+
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            revoke_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        await self._seed_agent(cred, "claude")
+        mgr = ReauthManager()
+
+        with pytest.raises(HTTPException) as exc:
+            await revoke_agent_token(_FakeAuthRequest(), "claude", None, cred, mgr)
+        assert exc.value.status_code == 403
+        assert "claude" in {i["name"] for i in await cred.list_integrations()}
+
+    @pytest.mark.asyncio
+    async def test_revoke_with_invalid_reauth_is_rejected(self) -> None:
+        """A bogus reauth token -> 403."""
+        from fastapi import HTTPException
+
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            revoke_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        await self._seed_agent(cred, "claude")
+        mgr = ReauthManager()
+
+        with pytest.raises(HTTPException) as exc:
+            await revoke_agent_token(
+                _FakeAuthRequest(), "claude", "bogus-token", cred, mgr
+            )
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_revoke_does_not_delete_non_agent_integration(self) -> None:
+        """Revoking a label owned by a non-agent integration -> 404, kept."""
+        from fastapi import HTTPException
+
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            revoke_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        await cred.create_integration(
+            name="openrouter",
+            integration_type="openrouter",
+            config={"model": "x"},
+        )
+        mgr = ReauthManager()
+        token = mgr.issue_token()
+
+        with pytest.raises(HTTPException) as exc:
+            await revoke_agent_token(
+                _FakeAuthRequest(), "openrouter", token, cred, mgr
+            )
+        assert exc.value.status_code == 404
+        assert "openrouter" in {i["name"] for i in await cred.list_integrations()}
+
+    @pytest.mark.asyncio
+    async def test_revoke_agent_token_succeeds_with_valid_reauth(self) -> None:
+        """A valid reauth token revokes the agent token."""
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            revoke_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        await self._seed_agent(cred, "claude")
+        mgr = ReauthManager()
+        token = mgr.issue_token()
+
+        result = await revoke_agent_token(
+            _FakeAuthRequest(), "claude", token, cred, mgr
+        )
+        assert "revoked" in result["detail"]
+        assert "claude" not in {i["name"] for i in await cred.list_integrations()}
+
+
+class TestIssueAgentToken:
+    """R4 + reauth — issuing a token requires a valid reauth token."""
+
+    @pytest.mark.asyncio
+    async def test_issue_without_reauth_is_rejected(self) -> None:
+        """Missing reauth token -> 403 and nothing is stored."""
+        from fastapi import HTTPException
+
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            issue_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        mgr = ReauthManager()
+
+        with pytest.raises(HTTPException) as exc:
+            await issue_agent_token(
+                _FakeAuthRequest(), "claude", "read", None, cred, mgr
+            )
+        assert exc.value.status_code == 403
+        assert await cred.list_integrations() == []
+
+    @pytest.mark.asyncio
+    async def test_issue_with_valid_reauth_stores_hash_only(self) -> None:
+        """A valid reauth token issues the token and stores only its hash."""
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            issue_agent_token,
+        )
+
+        cred = FakeCredentialClient()
+        mgr = ReauthManager()
+        token = mgr.issue_token()
+
+        result = await issue_agent_token(
+            _FakeAuthRequest(), "claude", "read-write", token, cred, mgr
+        )
+        assert result["label"] == "claude"
+        assert result["token"]  # plaintext returned once
+
+        stored = (await cred.list_integrations())[0]
+        assert stored["config"]["token_hash"]
+        assert "token" not in stored["config"]

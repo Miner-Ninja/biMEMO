@@ -2,6 +2,7 @@
 
 from .admin import admin_router
 from .admin_memory import memory_router
+from .agents import agents_router
 from .auth import auth_router
 from .avatars import avatars_router
 from .chat import chat_router
@@ -16,6 +17,7 @@ from .workspace import workspace_router
 
 __all__ = [
     "admin_router",
+    "agents_router",
     "auth_router",
     "avatars_router",
     "chat_bridge_router",

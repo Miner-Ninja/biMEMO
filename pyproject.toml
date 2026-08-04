@@ -59,7 +59,7 @@ ignore = ["D100", "D104", "D203", "D213", "S101"]
 fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106", "S108", "ANN", "ASYNC"]
+"tests/**/*.py" = ["S101", "S105", "S106", "S108", "S603", "S607", "ANN", "ASYNC"]
 "app/backend/memory/vector_store.py" = ["S608"]
 "scripts/**/*.py" = ["D", "ANN"]
 
