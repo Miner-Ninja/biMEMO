@@ -27,6 +27,7 @@ EXEMPT_PATHS = frozenset(
         "/auth/login",
         "/refresh",
         "/bridge/providers/discord/messages",
+        "/mcp",
     }
 )
 SAFE_METHODS = frozenset({b"GET", b"HEAD", b"OPTIONS"})

@@ -625,3 +625,31 @@ class AdminDBClient(_BaseIPCClient):
             },
         )
         return result.get("settings", {})
+
+    # --- MCP read operation (Socket B; memory writes go via the orchestrator) ---
+
+    async def fulltext_search(
+        self,
+        query: str,
+        table: str = "messages",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search messages, records, or summaries via FTS5.
+
+        Args:
+            query: Full-text search query string.
+            table: Table to search ("messages", "records", or "summaries").
+            limit: Maximum results to return.
+
+        Returns:
+            List of result dicts with "rowid" and "snippet" keys.
+        """
+        result = await self.send_operation(
+            "fulltext_search",
+            {
+                "query": query,
+                "table": table,
+                "limit": limit,
+            },
+        )
+        return result.get("results", [])

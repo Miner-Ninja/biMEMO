@@ -18,6 +18,8 @@ from backend.ipc.models import (
     ConfirmResponse,
     ListAgentRunEventsRequest,
     ListAgentRunEventsResponse,
+    McpRememberRequest,
+    McpRememberResponse,
     ReloadLLMRequest,
     ReloadLLMResponse,
     StopRequest,
@@ -39,6 +41,7 @@ FRONTEND_TYPE_MAP = {
     "BridgeInboundSyncRequest": BridgeInboundSyncRequest,
     "ChatRequest": ChatRequest,
     "ListAgentRunEventsRequest": ListAgentRunEventsRequest,
+    "McpRememberRequest": McpRememberRequest,
     "ReloadLLMRequest": ReloadLLMRequest,
     "StopRequest": StopRequest,
     "ConfirmRequest": ConfirmRequest,
@@ -67,6 +70,7 @@ class OrchestratorIPCServer:
         save_error_response_fn: Callable | None = None,
         reload_llm_fn: Callable | None = None,
         list_run_events_fn: Callable | None = None,
+        mcp_remember_fn: Callable | None = None,
     ) -> None:
         """Initialize the orchestrator IPC server.
 
@@ -83,6 +87,8 @@ class OrchestratorIPCServer:
                 LLM runtime from the latest saved configuration.
             list_run_events_fn: Optional async callable that returns runtime
                 journal events for reconnect recovery.
+            mcp_remember_fn: Optional async callable that persists one MCP
+                external-agent memory (store-only) and returns its ids.
         """
         self._orchestrator_fn = orchestrator_fn
         self._confirm_fn = confirm_fn
@@ -90,6 +96,7 @@ class OrchestratorIPCServer:
         self._save_error_response_fn = save_error_response_fn
         self._reload_llm_fn = reload_llm_fn
         self._list_run_events_fn = list_run_events_fn
+        self._mcp_remember_fn = mcp_remember_fn
         self._active_task: asyncio.Task | None = None
 
         self._server = IPCSocketServer(
@@ -159,7 +166,21 @@ class OrchestratorIPCServer:
             "StopRequest": self._handle_stop,
             "ConfirmRequest": self._handle_confirm,
             "BridgeInboundSyncRequest": self._handle_bridge_inbound,
+            "McpRememberRequest": self._handle_mcp_remember,
         }
+
+    async def _handle_mcp_remember(
+        self,
+        request: McpRememberRequest,
+    ) -> McpRememberResponse:
+        """Persist one MCP external-agent memory in the orchestrator process.
+
+        Memory-content writes are reserved for the orchestrator (Socket A);
+        the web-facing FastAPI process never writes memory directly.
+        """
+        if self._mcp_remember_fn is None:
+            return McpRememberResponse(request_id=request.request_id, stored=False)
+        return await self._mcp_remember_fn(request)
 
     @staticmethod
     def _build_internal_error_text(error: Exception) -> str:

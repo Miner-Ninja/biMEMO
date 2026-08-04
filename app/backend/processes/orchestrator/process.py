@@ -184,7 +184,7 @@ def _build_runtime_ipc_server(
     """Build the IPC server that exposes the runtime to FastAPI."""
     from .bridge_handler import _build_bridge_inbound_handler
     from .chat_handler import _build_orchestrator_request_handler
-    from .factories import make_save_fn
+    from .factories import make_mcp_remember_fn, make_save_fn
 
     return OrchestratorIPCServer(
         socket_path=frontend_socket,
@@ -210,6 +210,7 @@ def _build_runtime_ipc_server(
         save_error_response_fn=make_save_fn(db_client),
         reload_llm_fn=reload_llm_fn,
         list_run_events_fn=_build_list_run_events_handler(db_client),
+        mcp_remember_fn=make_mcp_remember_fn(db_client),
     )
 
 

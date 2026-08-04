@@ -93,6 +93,25 @@ class Settings(BaseSettings):
         validation_alias="DISCORD_BRIDGE_TOKEN",
     )
 
+    # --- MCP (Model Context Protocol) ---
+    mcp_enabled: bool = False
+    mcp_token_file: str = ""
+
+    @model_validator(mode="after")
+    def _check_mcp_config(self) -> Settings:
+        """Validate MCP configuration is consistent.
+
+        Raises:
+            ValueError: If MCP is enabled but no token file is configured.
+        """
+        if self.mcp_enabled and not self.mcp_token_file:
+            msg = (
+                "BIMEMO_MCP_TOKEN_FILE is required when "
+                "BIMEMO_MCP_ENABLED is true"
+            )
+            raise ValueError(msg)
+        return self
+
     @model_validator(mode="after")
     def _check_key_source_fields(self) -> Settings:
         """Validate key-source-specific fields are set."""

@@ -347,6 +347,7 @@ SOCKET_B_ONLY_OPERATIONS = {
 }
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
+    "fulltext_search",   # MCP search_memory tool (read-only; writes go via Socket A)
     "write_audit",
     "list_summaries",
     "create_scheduled_task",

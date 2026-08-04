@@ -46,6 +46,12 @@ from backend.ipc.models import (
     ListAgentRunEventsResponse as IPCListAgentRunEventsResponse,
 )
 from backend.ipc.models import (
+    McpRememberRequest as IPCMcpRememberRequest,
+)
+from backend.ipc.models import (
+    McpRememberResponse as IPCMcpRememberResponse,
+)
+from backend.ipc.models import (
     ReloadLLMRequest as IPCReloadLLMRequest,
 )
 from backend.ipc.models import (
@@ -77,6 +83,7 @@ ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "BridgeInboundSyncResponse": IPCBridgeInboundSyncResponse,
     "ChatResponse": IPCChatResponse,
     "ListAgentRunEventsResponse": IPCListAgentRunEventsResponse,
+    "McpRememberResponse": IPCMcpRememberResponse,
     "ReloadLLMResponse": IPCReloadLLMResponse,
     "StopResponse": IPCStopResponse,
     "ConfirmResponse": IPCConfirmResponse,
@@ -252,6 +259,7 @@ class OrchestratorClient:
                         IPCBridgeInboundSyncResponse,
                         IPCChatResponse,
                         IPCListAgentRunEventsResponse,
+                        IPCMcpRememberResponse,
                         IPCReloadLLMResponse,
                         IPCStopResponse,
                         IPCConfirmResponse,
@@ -335,6 +343,37 @@ class OrchestratorClient:
             )
         except TimeoutError:
             raise
+
+    async def mcp_remember(
+        self,
+        *,
+        content: str,
+        channel: str,
+        timeout: float = 10.0,
+    ) -> IPCMcpRememberResponse:
+        """Store one MCP external-agent memory via the Orchestrator.
+
+        The write executes in the orchestrator process (Socket A); the
+        web-facing FastAPI process never writes memory content directly.
+
+        Args:
+            content: Plain text content to store.
+            channel: Provenance channel identifying the external agent.
+            timeout: Maximum wait time in seconds.
+
+        Returns:
+            McpRememberResponse with the stored message and conversation ids.
+        """
+        self._require_connected()
+        request = IPCMcpRememberRequest(
+            request_id=str(uuid.uuid4()),
+            content=content,
+            channel=channel,
+        )
+        return await self._send_request_and_wait(
+            request=request,
+            timeout=timeout,
+        )
 
     async def list_agent_run_events(
         self,
