@@ -12,7 +12,6 @@ module-level token state.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 import os
@@ -21,7 +20,15 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentHeaders
 
-from backend.memory.mcp_seam import MCP_CHANNEL_NAME, resolve_relevant_memory
+from backend.memory.mcp_seam import (
+    MCP_CHANNEL_NAME,
+    resolve_conversation_memory,
+    resolve_memory_entry,
+    resolve_memory_stats,
+    resolve_recent_memory,
+    resolve_relevant_memory,
+)
+from backend.security.token_hash import hash_token as _hash_token
 
 
 if TYPE_CHECKING:
@@ -42,15 +49,10 @@ _BEARER_PREFIX = "bearer "
 
 _SERVER_INSTRUCTIONS = (
     "biMEMO memory access for external coding agents. "
-    "Use search_memory to find relevant records, summaries, or messages. "
-    "Use remember to store new information. All writes are append-only; "
-    "there is no delete or update."
+    "Memory is append-only — no edit or delete of existing entries. "
+    "Use search_memory for keyword search, recent_memory for latest entries, "
+    "and memory_stats for counts. There is no full-store dump."
 )
-
-
-def _hash_token(token: str) -> str:
-    """Return the SHA-256 hex digest of a plaintext token."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 async def _load_agent_token_hashes(
@@ -86,14 +88,12 @@ async def _load_agent_token_hashes(
 async def _resolve_agent_capability(
     headers: dict[str, str],
     cred_client: CredentialClient,
-    token_hashes: dict[str, str] | None = None,
 ) -> str:
     """Extract and validate a bearer token by comparing its SHA-256 hash.
 
     Args:
         headers: HTTP request headers.
         cred_client: Credential Proxy client (used to load token hashes).
-        token_hashes: Pre-loaded token hash map; loaded from DB if not given.
 
     Returns:
         The capability string ("read" or "read-write") for the token.
@@ -109,8 +109,7 @@ async def _resolve_agent_capability(
     if not token:
         raise RuntimeError("Empty bearer token")
 
-    if token_hashes is None:
-        token_hashes = await _load_agent_token_hashes(cred_client)
+    token_hashes = await _load_agent_token_hashes(cred_client)
 
     presented_hash = _hash_token(token)
     for stored_hash, capability in token_hashes.items():
@@ -253,23 +252,27 @@ def build_mcp_server(
         description=(
             "Search biMEMO's memory for relevant records, summaries, or "
             "messages matching the query. Returns structured results with "
-            "evidence snippets. Read-only operation."
+            "evidence snippets. Read-only operation. Empty/wildcard query "
+            "returns recent entries with a note. Zero matches returns empty "
+            "with guidance note."
         ),
     )
     async def search_memory(
         query: str,
         limit: int = 20,
+        offset: int = 0,
         headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Search memory for relevant entries.
 
         Args:
             query: Natural language search query.
             limit: Maximum results per table (default 20).
+            offset: Pagination offset (default 0).
             headers: Injected request headers (excluded from the schema).
 
         Returns:
-            List of matching memory entries with table type and snippet.
+            Dict with "results" list and optional "note".
         """
         await _resolve_agent_capability(
             headers, credential_client
@@ -278,6 +281,120 @@ def build_mcp_server(
             admin_client=admin_client,
             query=query,
             limit=limit,
+            offset=offset,
+        )
+
+    @server.tool(
+        name="recent_memory",
+        description=(
+            "Return the most recent memory entries, newest-first. "
+            "Bounded window — not a full store dump. "
+            "Use memory_stats for aggregate counts."
+        ),
+    )
+    async def recent_memory(
+        limit: int = 20,
+        offset: int = 0,
+        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+    ) -> dict[str, Any]:
+        """Return recent memory entries.
+
+        Args:
+            limit: Maximum entries (default 20, capped at 50).
+            offset: Pagination offset.
+            headers: Injected request headers.
+
+        Returns:
+            Dict with "results" list and optional "note".
+        """
+        await _resolve_agent_capability(headers, credential_client)
+        return await resolve_recent_memory(
+            admin_client=admin_client,
+            limit=limit,
+            offset=offset,
+        )
+
+    @server.tool(
+        name="get_memory",
+        description=(
+            "Fetch a single memory entry by its id. "
+            "The id is surfaced by search_memory or recent_memory results. "
+            "Returns clear not-found when id is unknown."
+        ),
+    )
+    async def get_memory(
+        entry_id: str,
+        table: str = "messages",
+        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+    ) -> dict[str, Any]:
+        """Fetch one memory entry by id.
+
+        Args:
+            entry_id: The entry's id.
+            table: Table to search (messages, records, summaries).
+            headers: Injected request headers.
+
+        Returns:
+            Dict with "entry" (or None) and optional "note".
+        """
+        await _resolve_agent_capability(headers, credential_client)
+        return await resolve_memory_entry(
+            admin_client=admin_client,
+            entry_id=entry_id,
+            table=table,
+        )
+
+    @server.tool(
+        name="memory_stats",
+        description=(
+            "Return aggregate memory statistics: total count, per-type counts, "
+            "and date range. Does not return entry content."
+        ),
+    )
+    async def memory_stats(
+        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+    ) -> dict[str, Any]:
+        """Return memory statistics.
+
+        Args:
+            headers: Injected request headers.
+
+        Returns:
+            Dict with total, by_type counts, and optional date range.
+        """
+        await _resolve_agent_capability(headers, credential_client)
+        return await resolve_memory_stats(admin_client=admin_client)
+
+    @server.tool(
+        name="get_memory_by_conversation",
+        description=(
+            "Return entries for one conversation, newest-first. "
+            "Bounded by the read limit. Only returns that conversation's entries."
+        ),
+    )
+    async def get_memory_by_conversation(
+        conversation_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+    ) -> dict[str, Any]:
+        """Return entries for one conversation.
+
+        Args:
+            conversation_id: The conversation to fetch.
+            limit: Maximum entries (default 20, capped at 50).
+            offset: Pagination offset.
+            headers: Injected request headers.
+
+        Returns:
+            Dict with "results" list and optional "note".
+        """
+        await _resolve_agent_capability(headers, credential_client)
+        return await resolve_conversation_memory(
+            admin_client=admin_client,
+            conversation_id=conversation_id,
+            limit=limit,
+            offset=offset,
         )
 
     @server.tool(
@@ -314,7 +431,7 @@ def build_mcp_server(
 
         # Route the write through the orchestrator (Socket A); the web-facing
         # FastAPI process must not write memory content directly.
-        response = await orchestrator_client.mcp_remember(
+        response = await orchestrator_client.mcp_memory_remember(
             content=full_content,
             channel=MCP_CHANNEL_NAME,
         )
@@ -322,6 +439,8 @@ def build_mcp_server(
             "stored": response.stored,
             "message_id": response.message_id,
             "conversation_id": response.conversation_id,
+            "reason": response.reason,
         }
+
 
     return server

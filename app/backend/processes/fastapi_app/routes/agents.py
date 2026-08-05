@@ -8,13 +8,14 @@ rest of the /admin routes and route through the Credential Proxy (Socket C).
 
 # ruff: noqa: B008
 
-import hashlib
 import os
 import secrets
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+
+from backend.security.token_hash import hash_token as _hash_token
 
 from ..deps import (
     _get_credential_client,
@@ -38,11 +39,6 @@ _CA_ROOT_PATH = Path(os.environ.get("BIMEMO_CA_ROOT_PATH", ""))
 def _generate_token() -> str:
     """Generate a high-entropy random token string."""
     return secrets.token_hex(32)
-
-
-def _hash_token(token: str) -> str:
-    """Return the SHA-256 hex digest of a plaintext token."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 @agents_router.get("/list")

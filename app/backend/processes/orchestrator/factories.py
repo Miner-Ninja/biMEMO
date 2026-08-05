@@ -8,12 +8,17 @@ to the DB Proxy via IPC.
 import asyncio
 import json
 import logging
+import time
 import uuid
+from collections import deque
 from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.ipc.models import McpRememberRequest, McpRememberResponse
+from backend.ipc.models import (
+    McpMemoryRememberRequest,
+    McpMemoryRememberResponse,
+)
 
 from .client import DBProxyClient, DBProxyError
 
@@ -33,6 +38,11 @@ RECOVERABLE_EMBEDDING_ERRORS = (
     httpx.HTTPError,
 )
 LOAD_CONTEXT_COMPRESSION_SESSION_ID = "s-zone-compression"
+
+# ── Write guard constants (R7) ──
+_MAX_CONTENT_BYTES = 8192
+_WRITE_RATE_PER_MIN = 20
+_DEDUP_WINDOW = 20  # minutes
 
 
 def _meta_json(meta: dict | None) -> str | None:
@@ -530,39 +540,94 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
     return save_fn
 
 
-def make_mcp_remember_fn(db_client: DBProxyClient) -> Callable:
+# ── Per-instance write guards (R7) ──
+_mcp_memory_remember_lock = asyncio.Lock()
+_mcp_recent_contents: deque[tuple[float, str]] = deque()  # (timestamp, content)
+_mcp_write_timestamps: deque[float] = deque()
+
+
+def _clean_write_guards(now: float) -> None:
+    """Evict stale entries from dedup and rate-limit deques."""
+    cutoff_dedup = now - _DEDUP_WINDOW * 60  # 20 min → seconds
+    cutoff_rate = now - 60  # 1 min → seconds
+    while _mcp_recent_contents and _mcp_recent_contents[0][0] < cutoff_dedup:
+        _mcp_recent_contents.popleft()
+    while _mcp_write_timestamps and _mcp_write_timestamps[0] < cutoff_rate:
+        _mcp_write_timestamps.popleft()
+
+
+def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
     """Create the store-only handler for MCP external-agent memories.
 
     The write runs in the orchestrator process (Socket A), so the
     web-facing FastAPI process never writes memory content directly.
     A fresh conversation is created per remembered fact.
 
+    Applies dedup (DEDUP_WINDOW min), content-size cap (8192 bytes),
+    and write rate-limit (20/min). Rejections return stored=false with
+    a reason.
+
     Args:
         db_client: Connected DBProxyClient (Socket A).
 
     Returns:
-        Async callable(McpRememberRequest) -> McpRememberResponse.
+        Async callable(McpMemoryRememberRequest) -> McpMemoryRememberResponse.
     """
 
-    async def mcp_remember_fn(
-        request: McpRememberRequest,
-    ) -> McpRememberResponse:
-        """Persist one MCP memory as a message and report the stored ids."""
-        conversation_id = str(uuid.uuid4())
-        message_id = await db_client.save_message(
-            conversation_id,
-            "user",
-            request.content,
-            channel=request.channel,
-        )
-        return McpRememberResponse(
-            request_id=request.request_id,
-            message_id=message_id,
-            conversation_id=conversation_id,
-            stored=True,
-        )
+    async def mcp_memory_remember_fn(
+        request: McpMemoryRememberRequest,
+    ) -> McpMemoryRememberResponse:
+        """Persist one MCP memory as a message with write guards."""
+        now = time.time()
 
-    return mcp_remember_fn
+        async with _mcp_memory_remember_lock:
+            _clean_write_guards(now)
+
+            # R7.2 — content-size cap
+            if len(request.content.encode("utf-8")) > _MAX_CONTENT_BYTES:
+                return McpMemoryRememberResponse(
+                    request_id=request.request_id,
+                    stored=False,
+                    reason=f"oversized: content exceeds {_MAX_CONTENT_BYTES} bytes",
+                )
+
+            # R7.3 — rate-limit
+            if len(_mcp_write_timestamps) >= _WRITE_RATE_PER_MIN:
+                return McpMemoryRememberResponse(
+                    request_id=request.request_id,
+                    stored=False,
+                    reason="rate_limited",
+                )
+
+            # R7.1 — dedup of near-identical recent entries
+            for _ts, prev_content in _mcp_recent_contents:
+                if prev_content == request.content:
+                    return McpMemoryRememberResponse(
+                        request_id=request.request_id,
+                        stored=False,
+                        reason="duplicate",
+                    )
+
+            # All guards passed — store
+            conversation_id = str(uuid.uuid4())
+            message_id = await db_client.save_message(
+                conversation_id,
+                "user",
+                request.content,
+                channel=request.channel,
+            )
+            _mcp_recent_contents.append((now, request.content))
+            _mcp_write_timestamps.append(now)
+
+            return McpMemoryRememberResponse(
+                request_id=request.request_id,
+                message_id=message_id,
+                conversation_id=conversation_id,
+                stored=True,
+            )
+
+    return mcp_memory_remember_fn
+
 
 
 def make_save_record_fn(db_client: DBProxyClient) -> Callable:

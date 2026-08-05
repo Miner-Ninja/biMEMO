@@ -1325,3 +1325,5 @@ class DBProxyClient:
     ) -> list[dict[str, Any]]:
         """Fetch records that have no embedding yet."""
         return await mem_ops.fetch_unembedded_records(self, limit)
+
+

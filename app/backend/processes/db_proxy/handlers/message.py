@@ -608,30 +608,45 @@ def make_fulltext_search_handler(db: DatabaseManager) -> OperationHandler:
         safe_query = sanitize_fts_query(p.query)
         if not safe_query:
             return {"results": []}
+        # Join the base table to return the stable text ``id`` alongside the
+        # FTS rowid, so an agent can pass a search result to get_memory.
         if p.table == "messages":
             rows = db.execute(
-                "SELECT rowid, snippet(messages_fts, 0, '', '', '...', 32) "
-                "FROM messages_fts WHERE messages_fts MATCH ? "
-                "ORDER BY rank LIMIT ?",
-                (safe_query, p.limit),
+                "SELECT m.id, messages_fts.rowid, "
+                "snippet(messages_fts, 0, '', '', '...', 32) "
+                "FROM messages_fts "
+                "JOIN messages m ON m.rowid = messages_fts.rowid "
+                "WHERE messages_fts MATCH ? "
+                "ORDER BY rank LIMIT ? OFFSET ?",
+                (safe_query, p.limit, p.offset),
             ).fetchall()
         elif p.table == "records":
             rows = db.execute(
-                "SELECT rowid, snippet(records_fts, 0, '', '', '...', 32) "
-                "FROM records_fts WHERE records_fts MATCH ? "
-                "ORDER BY rank LIMIT ?",
-                (safe_query, p.limit),
+                "SELECT r.id, records_fts.rowid, "
+                "snippet(records_fts, 0, '', '', '...', 32) "
+                "FROM records_fts "
+                "JOIN records r ON r.rowid = records_fts.rowid "
+                "WHERE records_fts MATCH ? "
+                "ORDER BY rank LIMIT ? OFFSET ?",
+                (safe_query, p.limit, p.offset),
             ).fetchall()
         elif p.table == "summaries":
             rows = db.execute(
-                "SELECT rowid, snippet(summaries_fts, 0, '', '', '...', 32) "
-                "FROM summaries_fts WHERE summaries_fts MATCH ? "
-                "ORDER BY rank LIMIT ?",
-                (safe_query, p.limit),
+                "SELECT s.id, summaries_fts.rowid, "
+                "snippet(summaries_fts, 0, '', '', '...', 32) "
+                "FROM summaries_fts "
+                "JOIN summaries s ON s.rowid = summaries_fts.rowid "
+                "WHERE summaries_fts MATCH ? "
+                "ORDER BY rank LIMIT ? OFFSET ?",
+                (safe_query, p.limit, p.offset),
             ).fetchall()
         else:
             raise ValueError(f"Invalid search table: '{p.table}'")
-        return {"results": [{"rowid": r[0], "snippet": r[1]} for r in rows]}
+        return {
+            "results": [
+                {"id": r[0], "rowid": r[1], "snippet": r[2]} for r in rows
+            ]
+        }
 
     return handle
 
