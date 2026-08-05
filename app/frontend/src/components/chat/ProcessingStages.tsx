@@ -20,7 +20,6 @@ const ShimmerText = memo(function ShimmerText({ text }: { text: string }) {
     <span className="inline-flex whitespace-pre">
       {chars.map((ch, i) => (
         <span
-          // eslint-disable-next-line react/no-array-index-key
           key={i}
           style={{
             animation: `char-shimmer ${SHIMMER_DURATION_MS}ms ease-in-out infinite`,

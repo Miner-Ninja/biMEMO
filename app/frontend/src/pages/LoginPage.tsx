@@ -41,14 +41,19 @@ export function LoginPage() {
         await authLogin(password);
       }
       setAuthenticated(true);
-    } catch (err: any) {
-      if (err.status === 429) {
-        const parsed = parseInt(err.retryAfter || "30", 10);
+    } catch (err: unknown) {
+      const apiErr = err as {
+        status?: number;
+        retryAfter?: string;
+        message?: string;
+      };
+      if (apiErr.status === 429) {
+        const parsed = parseInt(apiErr.retryAfter || "30", 10);
         const seconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
         setRetryAfter(seconds);
         setError(`Too many attempts. Try again in ${seconds}s.`);
       } else {
-        setError(err.message || "Invalid password");
+        setError(apiErr.message || "Invalid password");
       }
     } finally {
       setLoading(false);

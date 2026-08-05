@@ -91,13 +91,8 @@ test.describe("Agent Connection page", () => {
     await page.waitForTimeout(3000);
 
     // Look for the Download CA Root button
-    const downloadBtn = page.getByRole("button", {
-      name: "Download CA Root",
-    });
-    const isVisible = await downloadBtn.isVisible().catch(() => false);
-
-    // If CA is configured, the button should be visible; if not, an error
-    // message should be shown. Either way, the CA section should exist.
+    // If CA is configured, the Download CA Root button is shown; if not, an
+    // error message is. Either way, the CA section should exist.
     const caSection = page.locator("section").filter({
       hasText: "Trust the CA Certificate",
     });

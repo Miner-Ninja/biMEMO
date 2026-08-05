@@ -44,7 +44,7 @@ describe("ChatMessage code blocks", () => {
     renderMessage({
       id: "assistant-message-1",
       role: "assistant",
-      content: '```python\nprint(\"hello\")\n```',
+      content: '```python\nprint("hello")\n```',
       timestamp: new Date("2026-03-13T16:00:00Z"),
     });
 
