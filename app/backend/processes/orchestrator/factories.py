@@ -8,12 +8,16 @@ to the DB Proxy via IPC.
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.ipc.models import McpRememberRequest, McpRememberResponse
+from backend.ipc.models import (
+    McpMemoryRememberRequest,
+    McpMemoryRememberResponse,
+)
 
 from .client import DBProxyClient, DBProxyError
 
@@ -33,6 +37,19 @@ RECOVERABLE_EMBEDDING_ERRORS = (
     httpx.HTTPError,
 )
 LOAD_CONTEXT_COMPRESSION_SESSION_ID = "s-zone-compression"
+
+# ── Write guard constants (R7) ──
+# Content-blind guards only: a size cap and a rate cap. There is deliberately
+# NO content-level dedup — collapsing repeated writes would starve the
+# distillation pipeline of the corroborating source material that memory
+# reinforcement emerges from. Flood control is the rate cap's job; redundancy
+# is judged downstream by the Summary Distiller, not at the write gate.
+_MAX_CONTENT_BYTES = 8192
+_WRITE_RATE_PER_MIN = 20
+_WRITE_RATE_WINDOW_SECONDS = 60.0
+# Namespaces our rows in the shared rate_limit_calls table (Socket A),
+# separate from the LLM tool broker's entries.
+_MCP_WRITE_TOOL_NAME = "mcp_memory_remember"
 
 
 def _meta_json(meta: dict | None) -> str | None:
@@ -530,39 +547,84 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
     return save_fn
 
 
-def make_mcp_remember_fn(db_client: DBProxyClient) -> Callable:
+# ── Write guard state (R7) ──
+# The rate cap is DB-backed (rate_limit_calls table, Socket A), so it survives
+# an orchestrator restart — an agent can't reset its budget by forcing one.
+# The lock serializes the check→store→record sequence so two concurrent
+# writes can't both slip past the limit before either is recorded.
+_mcp_memory_remember_lock = asyncio.Lock()
+
+
+def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
     """Create the store-only handler for MCP external-agent memories.
 
     The write runs in the orchestrator process (Socket A), so the
     web-facing FastAPI process never writes memory content directly.
     A fresh conversation is created per remembered fact.
 
+    Applies two content-blind guards: a content-size cap (8192 bytes) and a
+    DB-backed write rate-limit (20/min, survives restart). There is no
+    content dedup — repeated writes are legitimate reinforcement and must
+    reach the distillation pipeline. Rejections return stored=false with a
+    reason.
+
     Args:
         db_client: Connected DBProxyClient (Socket A).
 
     Returns:
-        Async callable(McpRememberRequest) -> McpRememberResponse.
+        Async callable(McpMemoryRememberRequest) -> McpMemoryRememberResponse.
     """
 
-    async def mcp_remember_fn(
-        request: McpRememberRequest,
-    ) -> McpRememberResponse:
-        """Persist one MCP memory as a message and report the stored ids."""
-        conversation_id = str(uuid.uuid4())
-        message_id = await db_client.save_message(
-            conversation_id,
-            "user",
-            request.content,
-            channel=request.channel,
-        )
-        return McpRememberResponse(
-            request_id=request.request_id,
-            message_id=message_id,
-            conversation_id=conversation_id,
-            stored=True,
-        )
+    async def mcp_memory_remember_fn(
+        request: McpMemoryRememberRequest,
+    ) -> McpMemoryRememberResponse:
+        """Persist one MCP memory as a message with write guards."""
+        now = time.time()
 
-    return mcp_remember_fn
+        async with _mcp_memory_remember_lock:
+            # R7.2 — content-size cap
+            if len(request.content.encode("utf-8")) > _MAX_CONTENT_BYTES:
+                return McpMemoryRememberResponse(
+                    request_id=request.request_id,
+                    stored=False,
+                    reason=f"oversized: content exceeds {_MAX_CONTENT_BYTES} bytes",
+                )
+
+            # R7.3 — rate-limit via the shared DB limiter (Socket A). Count our
+            # own recent calls in the trailing window; the table self-prunes.
+            recent = await db_client.get_recent_rate_limit_calls(
+                tool_name=_MCP_WRITE_TOOL_NAME,
+                since=now - _WRITE_RATE_WINDOW_SECONDS,
+            )
+            if len(recent.get("timestamps", [])) >= _WRITE_RATE_PER_MIN:
+                return McpMemoryRememberResponse(
+                    request_id=request.request_id,
+                    stored=False,
+                    reason="rate_limited",
+                )
+
+            # All guards passed — store, then record the call for the limiter.
+            conversation_id = str(uuid.uuid4())
+            message_id = await db_client.save_message(
+                conversation_id,
+                "user",
+                request.content,
+                channel=request.channel,
+            )
+            await db_client.record_rate_limit_call(
+                tool_name=_MCP_WRITE_TOOL_NAME,
+                called_at=now,
+            )
+
+            return McpMemoryRememberResponse(
+                request_id=request.request_id,
+                message_id=message_id,
+                conversation_id=conversation_id,
+                stored=True,
+            )
+
+    return mcp_memory_remember_fn
+
 
 
 def make_save_record_fn(db_client: DBProxyClient) -> Callable:

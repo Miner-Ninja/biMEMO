@@ -18,6 +18,7 @@ from ..params import (
     DeleteAvatarParams,
     GetAvatarParams,
     GetRecentRateLimitCallsParams,
+    LimitOffsetParams,
     ListAuditLogParams,
     ListMessagesParams,
     ListRecordsParams,
@@ -56,12 +57,14 @@ LIST_RECORDS_SQL = (
     "SELECT "
     "id, summary, key_facts, action_items, conversation_id, created_at, "
     "tainted, source_message_ids, memory_kinds "
-    "FROM records ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    "FROM records "
+    "ORDER BY created_at DESC LIMIT ? OFFSET ?"
 )
 
 LIST_MESSAGES_SQL = (
     "SELECT id, role, content, conversation_id, created_at, meta "
-    "FROM messages ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    "FROM messages "
+    "ORDER BY created_at DESC LIMIT ? OFFSET ?"
 )
 
 LIST_AUDIT_LOG_SQL = (
@@ -524,6 +527,157 @@ def make_count_memory_entries_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
+RECENT_MEMORY_SQL = """
+    SELECT 'message' AS table_type, id, role, content, conversation_id,
+           created_at, meta
+    FROM messages
+    UNION ALL
+    SELECT 'record' AS table_type, id, NULL AS role, summary AS content,
+           conversation_id, created_at, NULL AS meta
+    FROM records
+    UNION ALL
+    SELECT 'summary' AS table_type, id, NULL AS role, main_point AS content,
+           NULL AS conversation_id, created_at, NULL AS meta
+    FROM summaries
+    ORDER BY created_at DESC
+"""
+
+
+def make_mcp_memory_recent_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for mcp_memory_recent operation.
+
+    Returns newest-first entries across messages/records/summaries,
+    bounded by MAX_RECENT_WINDOW (50).
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return recent memory entries, newest-first."""
+        p = validate_params(params, LimitOffsetParams)
+        limit = min(p.limit, 50)  # MAX_RECENT_WINDOW
+        rows = db.execute(
+            RECENT_MEMORY_SQL + " LIMIT ? OFFSET ?",
+            (limit, p.offset),
+        ).fetchall()
+        entries = []
+        for row in rows:
+            entries.append({
+                "id": row[1],
+                "table": row[0],
+                "role": row[2],
+                "content": parse_content(row[3]),
+                "conversation_id": row[4],
+                "created_at": row[5],
+                "meta": row[6],
+            })
+        return {"entries": entries}
+
+    return handle
+
+
+def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for mcp_memory_get operation.
+
+    Fetches a single entry by (entry_id, table).
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return one memory entry by id."""
+        from ..params import GetMemoryEntryParams
+
+        p = validate_params(params, GetMemoryEntryParams)
+        table = p.table
+        entry_id = p.entry_id
+
+        # Validate table name
+        allowed_tables = {"messages", "records", "summaries"}
+        if table not in allowed_tables:
+            return {"entry": None, "note": f"Invalid table: {table}"}
+
+        if table == "messages":
+            row = db.execute(
+                "SELECT id, role, content, conversation_id, created_at, meta "
+                "FROM messages WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
+            if row is None:
+                return {"entry": None}
+            return {"entry": _message_entry(row)}
+
+        if table == "records":
+            row = db.execute(
+                "SELECT id, summary, key_facts, action_items, conversation_id, "
+                "created_at, tainted, source_message_ids, memory_kinds "
+                "FROM records WHERE id = ?",
+                (entry_id,),
+            ).fetchone()
+            if row is None:
+                return {"entry": None}
+            return {"entry": _record_entry(row)}
+
+        # summaries
+        row = db.execute(
+            "SELECT id, main_point, based_on, trust_level, summary_scope, "
+            "trust_level_score, source_record_ids, record_relations, created_at "
+            "FROM summaries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        if row is None:
+            return {"entry": None}
+        return {"entry": {
+            "id": row[0],
+            "main_point": row[1],
+            "based_on": row[2],
+            "trust_level": row[3],
+            "scope": row[4],
+            "trust_level_score": row[5],
+            "source_record_ids": row[6],
+            "record_relations": row[7],
+            "created_at": row[8],
+        }}
+
+    return handle
+
+
+def make_mcp_memory_stats_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for mcp_memory_stats operation.
+
+    Returns totals, per-type counts, and date range without content.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return memory statistics: counts and date range."""
+        validate_params(params, CountMemoryEntriesParams)
+        counts = _table_counts(db, MEMORY_COUNT_QUERIES)
+        total = sum(counts.values())
+
+        # Get date range across all memory tables
+        min_row = db.execute(
+            "SELECT min(created_at) FROM messages "
+            "UNION ALL SELECT min(created_at) FROM records "
+            "UNION ALL SELECT min(created_at) FROM summaries"
+        ).fetchall()
+        min_ts = min((r[0] for r in min_row if r[0] is not None), default=None)
+
+        max_row = db.execute(
+            "SELECT max(created_at) FROM messages "
+            "UNION ALL SELECT max(created_at) FROM records "
+            "UNION ALL SELECT max(created_at) FROM summaries"
+        ).fetchall()
+        max_ts = max((r[0] for r in max_row if r[0] is not None), default=None)
+
+        result: dict[str, Any] = {
+            "total": total,
+            "by_type": counts,
+        }
+        if min_ts is not None:
+            result["earliest"] = min_ts
+        if max_ts is not None:
+            result["latest"] = max_ts
+        return result
+
+    return handle
+
+
 def make_list_audit_log_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for list_audit_log operation."""
 
@@ -535,3 +689,5 @@ def make_list_audit_log_handler(db: DatabaseManager) -> OperationHandler:
         return {"entries": [_audit_log_entry(row) for row in rows]}
 
     return handle
+
+

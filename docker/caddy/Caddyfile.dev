@@ -38,6 +38,7 @@
 		path /bridge /bridge/*
 		path /security /security/*
 		path /workspace /workspace/*
+		path /mcp /mcp/*
 	}
 
 	handle @api {

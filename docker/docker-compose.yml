@@ -21,9 +21,14 @@ services:
       - ../tests:/app/tests
       - ../scripts:/app/scripts
       - ../secrets:/run/secrets:ro
+      # Public CA root (read-only) so the admin connection page can offer it
+      # for download. The CA PRIVATE key stays on the host, never mounted here.
+      - ./caddy/ca/ca-cert.pem:/etc/bimemo/ca-root.pem:ro
     command: python -m backend.processes.supervisor
     environment:
       - BIMEMO_DEBUG=true
+      - BIMEMO_MCP_ENABLED=true
+      - BIMEMO_CA_ROOT_PATH=/etc/bimemo/ca-root.pem
     networks:
       - bm-caddy
       - bm-searxng

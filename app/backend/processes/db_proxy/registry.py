@@ -22,6 +22,9 @@ from .handlers.admin import (
     make_list_messages_handler,
     make_list_records_handler,
     make_list_summaries_full_handler,
+    make_mcp_memory_get_handler,
+    make_mcp_memory_recent_handler,
+    make_mcp_memory_stats_handler,
     make_record_rate_limit_call_handler,
     make_store_avatar_handler,
     make_store_password_hash_handler,
@@ -348,6 +351,9 @@ SOCKET_B_ONLY_OPERATIONS = {
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
     "fulltext_search",   # MCP search_memory tool (read-only; writes go via Socket A)
+    "mcp_memory_recent",  # MCP recent_memory (read-only)
+    "mcp_memory_get",   # MCP get_memory (read-only)
+    "mcp_memory_stats",   # MCP memory_stats (read-only)
     "write_audit",
     "list_summaries",
     "create_scheduled_task",
@@ -747,6 +753,9 @@ def _register_misc_db_operations(
     registry.register("list_summaries_full", make_list_summaries_full_handler(db))
     registry.register("list_messages", make_list_messages_handler(db))
     registry.register("count_memory_entries", make_count_memory_entries_handler(db))
+    registry.register("mcp_memory_recent", make_mcp_memory_recent_handler(db))
+    registry.register("mcp_memory_get", make_mcp_memory_get_handler(db))
+    registry.register("mcp_memory_stats", make_mcp_memory_stats_handler(db))
     registry.register("list_audit_log", make_list_audit_log_handler(db))
 
 

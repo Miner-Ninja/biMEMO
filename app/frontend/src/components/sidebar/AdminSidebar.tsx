@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
+  Plug,
   Settings,
   Database,
   Cpu,
@@ -30,6 +31,7 @@ const adminLinks = [
   { to: "/admin/skills", icon: Sparkles, label: "Skills" },
   { to: "/admin/memory-debug", icon: Bug, label: "Memory Debug" },
   { to: "/admin/integrations", icon: Settings, label: "Integrations" },
+  { to: "/admin/agents", icon: Plug, label: "Agent Connection" },
   { to: "/admin/backups", icon: Database, label: "Backups" },
   { to: "/admin/llm", icon: Cpu, label: "LLM Configuration" },
 ];

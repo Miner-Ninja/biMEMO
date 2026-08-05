@@ -633,6 +633,7 @@ class AdminDBClient(_BaseIPCClient):
         query: str,
         table: str = "messages",
         limit: int = 20,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """Search messages, records, or summaries via FTS5.
 
@@ -640,9 +641,10 @@ class AdminDBClient(_BaseIPCClient):
             query: Full-text search query string.
             table: Table to search ("messages", "records", or "summaries").
             limit: Maximum results to return.
+            offset: Pagination offset.
 
         Returns:
-            List of result dicts with "rowid" and "snippet" keys.
+            List of result dicts with "id", "rowid", and "snippet" keys.
         """
         result = await self.send_operation(
             "fulltext_search",
@@ -650,6 +652,58 @@ class AdminDBClient(_BaseIPCClient):
                 "query": query,
                 "table": table,
                 "limit": limit,
+                "offset": offset,
             },
         )
         return result.get("results", [])
+
+    async def mcp_memory_recent(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return the most recently created memory entries, newest-first.
+
+        Reads across messages/records/summaries via Socket B.
+        Bounded by the handler's MAX_RECENT_WINDOW.
+
+        Args:
+            limit: Maximum entries to return.
+            offset: Pagination offset.
+
+        Returns:
+            List of entry dicts, newest-first, each tagged with "table".
+        """
+        return await self._send_list_operation(
+            "mcp_memory_recent",
+            result_key="entries",
+            parameters={"limit": limit, "offset": offset},
+        )
+
+    async def mcp_memory_get(
+        self,
+        entry_id: str,
+        table: str = "messages",
+    ) -> dict[str, Any] | None:
+        """Fetch a single memory entry by (table, id) via Socket B.
+
+        Args:
+            entry_id: The entry's id.
+            table: One of "messages", "records", "summaries".
+
+        Returns:
+            Entry dict or None if not found.
+        """
+        return await self._send_optional_dict_operation(
+            "mcp_memory_get",
+            result_key="entry",
+            parameters={"entry_id": entry_id, "table": table},
+        )
+
+    async def mcp_memory_stats(self) -> dict[str, Any]:
+        """Get memory-specific statistics: counts + date range.
+
+        Returns totals, per-type counts, and created_at range
+        without any entry content.
+        """
+        return await self.send_operation("mcp_memory_stats")

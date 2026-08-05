@@ -90,11 +90,16 @@ def _not_found_result() -> dict[str, str]:
 
 def _integration_list_entry(row: tuple[object, ...]) -> dict[str, Any]:
     """Convert one integration row into a public list entry."""
+    import json as _json
+
+    raw_config = row[5]
+    config = _json.loads(raw_config) if raw_config else {}
     return {
         "id": row[0],
         "name": row[1],
         "service_type": row[2],
         "enabled": bool(row[3]),
+        "config": config,
         "created_at": row[4],
     }
 
@@ -211,7 +216,7 @@ def make_list_integrations_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """List all integrations."""
         rows = db.execute(
-            "SELECT id, name, service_type, enabled, created_at "
+            "SELECT id, name, service_type, enabled, created_at, config "
             "FROM integrations ORDER BY created_at DESC",
         ).fetchall()
         return {"integrations": [_integration_list_entry(row) for row in rows]}

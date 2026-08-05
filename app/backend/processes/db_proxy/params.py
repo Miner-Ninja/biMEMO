@@ -74,6 +74,7 @@ class FulltextSearchParams(ForbidExtraParams):
     query: str
     table: str = "messages"
     limit: int = 20
+    offset: int = 0
 
 
 class LoadContextParams(ForbidExtraParams):
@@ -613,6 +614,14 @@ class ListAuditLogParams(LimitOffsetParams):
 
 class CountMemoryEntriesParams(ForbidExtraParams):
     """Parameters for count_memory_entries operation."""
+
+
+class GetMemoryEntryParams(ForbidExtraParams):
+    """Parameters for get_memory_entry operation."""
+
+    entry_id: str
+    table: str
+
 
 
 class CreateFileMetadataParams(ForbidExtraParams):

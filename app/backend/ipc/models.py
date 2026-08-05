@@ -102,7 +102,7 @@ class BridgeInboundSyncRequest(IPCModel):
     images: list[str] = []
 
 
-class McpRememberRequest(IPCModel):
+class McpMemoryRememberRequest(IPCModel):
     """Request from the MCP endpoint to store one external-agent memory.
 
     The write is executed in the orchestrator process (Socket A) so the
@@ -244,7 +244,7 @@ class BridgeInboundSyncResponse(IPCModel):
     assistant_message_id: str = ""
 
 
-class McpRememberResponse(IPCModel):
+class McpMemoryRememberResponse(IPCModel):
     """Response confirming one MCP external-agent memory was stored.
 
     Attributes:
@@ -252,12 +252,17 @@ class McpRememberResponse(IPCModel):
         message_id: Stored internal biMEMO message identifier.
         conversation_id: Conversation the message was stored under.
         stored: Whether the message was persisted.
+        reason: Explanation when stored=false (e.g. "duplicate",
+            "rate_limited", "oversized").
     """
 
     request_id: str
     message_id: str = ""
     conversation_id: str = ""
     stored: bool = False
+    reason: str = ""
+
+
 
 
 class ReloadLLMResponse(IPCModel):

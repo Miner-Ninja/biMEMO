@@ -46,10 +46,10 @@ from backend.ipc.models import (
     ListAgentRunEventsResponse as IPCListAgentRunEventsResponse,
 )
 from backend.ipc.models import (
-    McpRememberRequest as IPCMcpRememberRequest,
+    McpMemoryRememberRequest as IPCMcpMemoryRememberRequest,
 )
 from backend.ipc.models import (
-    McpRememberResponse as IPCMcpRememberResponse,
+    McpMemoryRememberResponse as IPCMcpMemoryRememberResponse,
 )
 from backend.ipc.models import (
     ReloadLLMRequest as IPCReloadLLMRequest,
@@ -83,7 +83,7 @@ ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "BridgeInboundSyncResponse": IPCBridgeInboundSyncResponse,
     "ChatResponse": IPCChatResponse,
     "ListAgentRunEventsResponse": IPCListAgentRunEventsResponse,
-    "McpRememberResponse": IPCMcpRememberResponse,
+    "McpMemoryRememberResponse": IPCMcpMemoryRememberResponse,
     "ReloadLLMResponse": IPCReloadLLMResponse,
     "StopResponse": IPCStopResponse,
     "ConfirmResponse": IPCConfirmResponse,
@@ -259,7 +259,7 @@ class OrchestratorClient:
                         IPCBridgeInboundSyncResponse,
                         IPCChatResponse,
                         IPCListAgentRunEventsResponse,
-                        IPCMcpRememberResponse,
+                        IPCMcpMemoryRememberResponse,
                         IPCReloadLLMResponse,
                         IPCStopResponse,
                         IPCConfirmResponse,
@@ -344,13 +344,13 @@ class OrchestratorClient:
         except TimeoutError:
             raise
 
-    async def mcp_remember(
+    async def mcp_memory_remember(
         self,
         *,
         content: str,
         channel: str,
         timeout: float = 10.0,
-    ) -> IPCMcpRememberResponse:
+    ) -> IPCMcpMemoryRememberResponse:
         """Store one MCP external-agent memory via the Orchestrator.
 
         The write executes in the orchestrator process (Socket A); the
@@ -362,10 +362,10 @@ class OrchestratorClient:
             timeout: Maximum wait time in seconds.
 
         Returns:
-            McpRememberResponse with the stored message and conversation ids.
+            McpMemoryRememberResponse with the stored message and conversation ids.
         """
         self._require_connected()
-        request = IPCMcpRememberRequest(
+        request = IPCMcpMemoryRememberRequest(
             request_id=str(uuid.uuid4()),
             content=content,
             channel=channel,
@@ -374,6 +374,7 @@ class OrchestratorClient:
             request=request,
             timeout=timeout,
         )
+
 
     async def list_agent_run_events(
         self,

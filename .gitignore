@@ -52,6 +52,9 @@ test-results/
 
 # --- TLS certificates ---
 docker/caddy/certs/*.pem
+# Local CA (private key + public root + serial) — generated at install,
+# never committed. The CA private key must not enter the repository.
+docker/caddy/ca/
 
 # --- OS ---
 .DS_Store
