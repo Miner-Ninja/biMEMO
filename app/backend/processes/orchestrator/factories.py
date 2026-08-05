@@ -10,7 +10,6 @@ import json
 import logging
 import time
 import uuid
-from collections import deque
 from typing import TYPE_CHECKING
 
 import httpx
@@ -40,9 +39,17 @@ RECOVERABLE_EMBEDDING_ERRORS = (
 LOAD_CONTEXT_COMPRESSION_SESSION_ID = "s-zone-compression"
 
 # ── Write guard constants (R7) ──
+# Content-blind guards only: a size cap and a rate cap. There is deliberately
+# NO content-level dedup — collapsing repeated writes would starve the
+# distillation pipeline of the corroborating source material that memory
+# reinforcement emerges from. Flood control is the rate cap's job; redundancy
+# is judged downstream by the Summary Distiller, not at the write gate.
 _MAX_CONTENT_BYTES = 8192
 _WRITE_RATE_PER_MIN = 20
-_DEDUP_WINDOW = 20  # minutes
+_WRITE_RATE_WINDOW_SECONDS = 60.0
+# Namespaces our rows in the shared rate_limit_calls table (Socket A),
+# separate from the LLM tool broker's entries.
+_MCP_WRITE_TOOL_NAME = "mcp_memory_remember"
 
 
 def _meta_json(meta: dict | None) -> str | None:
@@ -540,20 +547,12 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
     return save_fn
 
 
-# ── Per-instance write guards (R7) ──
+# ── Write guard state (R7) ──
+# The rate cap is DB-backed (rate_limit_calls table, Socket A), so it survives
+# an orchestrator restart — an agent can't reset its budget by forcing one.
+# The lock serializes the check→store→record sequence so two concurrent
+# writes can't both slip past the limit before either is recorded.
 _mcp_memory_remember_lock = asyncio.Lock()
-_mcp_recent_contents: deque[tuple[float, str]] = deque()  # (timestamp, content)
-_mcp_write_timestamps: deque[float] = deque()
-
-
-def _clean_write_guards(now: float) -> None:
-    """Evict stale entries from dedup and rate-limit deques."""
-    cutoff_dedup = now - _DEDUP_WINDOW * 60  # 20 min → seconds
-    cutoff_rate = now - 60  # 1 min → seconds
-    while _mcp_recent_contents and _mcp_recent_contents[0][0] < cutoff_dedup:
-        _mcp_recent_contents.popleft()
-    while _mcp_write_timestamps and _mcp_write_timestamps[0] < cutoff_rate:
-        _mcp_write_timestamps.popleft()
 
 
 def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
@@ -563,9 +562,11 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
     web-facing FastAPI process never writes memory content directly.
     A fresh conversation is created per remembered fact.
 
-    Applies dedup (DEDUP_WINDOW min), content-size cap (8192 bytes),
-    and write rate-limit (20/min). Rejections return stored=false with
-    a reason.
+    Applies two content-blind guards: a content-size cap (8192 bytes) and a
+    DB-backed write rate-limit (20/min, survives restart). There is no
+    content dedup — repeated writes are legitimate reinforcement and must
+    reach the distillation pipeline. Rejections return stored=false with a
+    reason.
 
     Args:
         db_client: Connected DBProxyClient (Socket A).
@@ -581,8 +582,6 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
         now = time.time()
 
         async with _mcp_memory_remember_lock:
-            _clean_write_guards(now)
-
             # R7.2 — content-size cap
             if len(request.content.encode("utf-8")) > _MAX_CONTENT_BYTES:
                 return McpMemoryRememberResponse(
@@ -591,24 +590,20 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
                     reason=f"oversized: content exceeds {_MAX_CONTENT_BYTES} bytes",
                 )
 
-            # R7.3 — rate-limit
-            if len(_mcp_write_timestamps) >= _WRITE_RATE_PER_MIN:
+            # R7.3 — rate-limit via the shared DB limiter (Socket A). Count our
+            # own recent calls in the trailing window; the table self-prunes.
+            recent = await db_client.get_recent_rate_limit_calls(
+                tool_name=_MCP_WRITE_TOOL_NAME,
+                since=now - _WRITE_RATE_WINDOW_SECONDS,
+            )
+            if len(recent.get("timestamps", [])) >= _WRITE_RATE_PER_MIN:
                 return McpMemoryRememberResponse(
                     request_id=request.request_id,
                     stored=False,
                     reason="rate_limited",
                 )
 
-            # R7.1 — dedup of near-identical recent entries
-            for _ts, prev_content in _mcp_recent_contents:
-                if prev_content == request.content:
-                    return McpMemoryRememberResponse(
-                        request_id=request.request_id,
-                        stored=False,
-                        reason="duplicate",
-                    )
-
-            # All guards passed — store
+            # All guards passed — store, then record the call for the limiter.
             conversation_id = str(uuid.uuid4())
             message_id = await db_client.save_message(
                 conversation_id,
@@ -616,8 +611,10 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
                 request.content,
                 channel=request.channel,
             )
-            _mcp_recent_contents.append((now, request.content))
-            _mcp_write_timestamps.append(now)
+            await db_client.record_rate_limit_call(
+                tool_name=_MCP_WRITE_TOOL_NAME,
+                called_at=now,
+            )
 
             return McpMemoryRememberResponse(
                 request_id=request.request_id,

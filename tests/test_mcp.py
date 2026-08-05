@@ -1528,120 +1528,127 @@ class TestRememberAppendOnly:
         assert orch.remembered[0]["channel"] == "agent"
 
 
-class TestWriteGuard:
-    """R7 — writes are rate-limited, deduplicated, size-bounded."""
+class _FakeLimiterDB:
+    """Fake Socket A client backing the DB rate-limiter for write-guard tests.
 
-    def test_duplicate_rejected_with_reason(self) -> None:
-        """S7.1 — duplicate → stored=false, reason='duplicate'."""
+    ``preload`` seeds the recent-call window; every stored write appends a
+    timestamp, exactly like record_rate_limit_call would.
+    """
+
+    def __init__(self, preload: int = 0) -> None:
+        self.timestamps: list[float] = [0.0] * preload
+        self.saved: list[tuple] = []
+        self.recorded: list[float] = []
+
+    async def save_message(self, *args, **kwargs) -> str:
+        self.saved.append((args, kwargs))
+        return "msg-1"
+
+    async def get_recent_rate_limit_calls(
+        self, tool_name: str, since: float
+    ) -> dict:
+        return {"timestamps": list(self.timestamps)}
+
+    async def record_rate_limit_call(
+        self, tool_name: str, called_at: float
+    ) -> dict:
+        self.timestamps.append(called_at)
+        self.recorded.append(called_at)
+        return {"ok": True}
+
+
+def _req(content: str, request_id: str = "r1"):
+    return type(
+        "Req",
+        (),
+        {"request_id": request_id, "content": content, "channel": "agent"},
+    )()
+
+
+class TestWriteGuard:
+    """R7 — writes are size-bounded and rate-limited (content-blind).
+
+    There is deliberately no content dedup: repeated writes are legitimate
+    reinforcement and must reach the distillation pipeline.
+    """
+
+    def test_stored_records_rate_limit_call(self) -> None:
+        """A successful write persists and records a limiter call."""
         import asyncio
 
         from backend.processes.orchestrator.factories import (
-            _mcp_recent_contents,
-            _mcp_write_timestamps,
             make_mcp_memory_remember_fn,
         )
 
-        # Clear state
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
-
-        class FakeDB:
-            async def save_message(self, *a, **kw):
-                return "msg-1"
-
-        fn = make_mcp_memory_remember_fn(FakeDB())
-
-        req = type("Req", (), {
-            "request_id": "r1", "content": "hello", "channel": "agent"
-        })()
+        db = _FakeLimiterDB()
+        fn = make_mcp_memory_remember_fn(db)
 
         async def run():
-            # First store succeeds
-            r1 = await fn(req)
+            r = await fn(_req("hello"))
+            assert r.stored is True
+            assert len(db.saved) == 1
+            assert len(db.recorded) == 1
+
+        asyncio.run(run())
+
+    def test_duplicate_content_is_not_rejected(self) -> None:
+        """Repeated identical content is stored again — no dedup."""
+        import asyncio
+
+        from backend.processes.orchestrator.factories import (
+            make_mcp_memory_remember_fn,
+        )
+
+        db = _FakeLimiterDB()
+        fn = make_mcp_memory_remember_fn(db)
+
+        async def run():
+            r1 = await fn(_req("same", "r1"))
+            r2 = await fn(_req("same", "r2"))
             assert r1.stored is True
+            assert r2.stored is True
+            assert len(db.saved) == 2
 
-            # Second identical request should be rejected as duplicate
-            r2 = await fn(req)
-            assert r2.stored is False
-            assert "duplicate" in r2.reason
-
-        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(run())
-
-        # Cleanup
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
+        asyncio.run(run())
 
     def test_oversized_rejected_with_reason(self) -> None:
-        """S7.2 — oversized content → stored=false."""
+        """S7.2 — oversized content → stored=false, nothing persisted."""
         import asyncio
 
         from backend.processes.orchestrator.factories import (
-            _mcp_recent_contents,
-            _mcp_write_timestamps,
             make_mcp_memory_remember_fn,
         )
 
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
-
-        class FakeDB:
-            async def save_message(self, *a, **kw):
-                return "msg-1"
-
-        fn = make_mcp_memory_remember_fn(FakeDB())
-
-        oversized = "x" * 9000
-        req = type("Req", (), {
-            "request_id": "r1", "content": oversized, "channel": "agent"
-        })()
+        db = _FakeLimiterDB()
+        fn = make_mcp_memory_remember_fn(db)
 
         async def run():
-            r = await fn(req)
+            r = await fn(_req("x" * 9000))
             assert r.stored is False
             assert "oversized" in r.reason
+            assert db.saved == []
 
-        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(run())
-
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
+        asyncio.run(run())
 
     def test_rate_limited_with_reason(self) -> None:
-        """S7.3 — excessive write rate → stored=false, reason='rate_limited'."""
+        """S7.3 — window already full → stored=false, no write persisted."""
         import asyncio
-        import time
 
         from backend.processes.orchestrator.factories import (
-            _mcp_recent_contents,
-            _mcp_write_timestamps,
+            _WRITE_RATE_PER_MIN,
             make_mcp_memory_remember_fn,
         )
 
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
-
-        class FakeDB:
-            async def save_message(self, *a, **kw):
-                return "msg-1"
-
-        fn = make_mcp_memory_remember_fn(FakeDB())
+        db = _FakeLimiterDB(preload=_WRITE_RATE_PER_MIN)
+        fn = make_mcp_memory_remember_fn(db)
 
         async def run():
-            # Simulate hitting the rate limit by pre-populating timestamps
-            now = time.time()
-            for _ in range(20):
-                _mcp_write_timestamps.append(now)
-
-            req = type("Req", (), {
-                "request_id": "r1", "content": "x", "channel": "agent"
-            })()
-            r = await fn(req)
+            r = await fn(_req("x"))
             assert r.stored is False
             assert "rate_limited" in r.reason
+            assert db.saved == []
 
-        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(run())
-
-        _mcp_recent_contents.clear()
-        _mcp_write_timestamps.clear()
+        asyncio.run(run())
 
 
 class TestServerInstructions:
