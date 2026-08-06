@@ -134,7 +134,7 @@ export function ChatItem({
       {/* Actions menu - visible on hover */}
       {!isEditing && (
         <div
-          className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          className="absolute -right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
