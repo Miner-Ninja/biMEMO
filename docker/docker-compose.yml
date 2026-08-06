@@ -104,7 +104,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: searxng/searxng@sha256:4242059517c1cc183dde7876721435b447f3e25202716d09f502043d56e6f619
+    image: searxng/searxng:latest
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     networks:
