@@ -33,11 +33,12 @@ export function SetupPage() {
         await authLogin(password);
       }
       setAuthenticated(true);
-    } catch (err: any) {
-      if (err.status === 409) {
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; message?: string };
+      if (apiErr.status === 409) {
         setError("Password already configured.");
       } else {
-        setError(err.message || "Failed to set up password");
+        setError(apiErr.message || "Failed to set up password");
       }
     } finally {
       setLoading(false);

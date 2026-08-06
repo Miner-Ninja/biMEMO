@@ -15,6 +15,8 @@ export function MemoryDebugPage() {
   const [refreshToken, setRefreshToken] = useState(0);
 
   const lastUpdatedLabel = useMemo(() => {
+    // Re-snapshot the time on each manual refresh (refreshToken bump).
+    void refreshToken;
     return `Last refreshed at ${new Date().toLocaleTimeString()}`;
   }, [refreshToken]);
 

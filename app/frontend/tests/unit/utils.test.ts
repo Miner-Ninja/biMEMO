@@ -7,7 +7,9 @@ describe("cn", () => {
   });
 
   it("handles conditional classes", () => {
-    expect(cn("base", true && "active", false && "hidden")).toBe("base active");
+    const active = true;
+    const hidden = false;
+    expect(cn("base", active && "active", hidden && "hidden")).toBe("base active");
   });
 
   it("merges tailwind classes correctly", () => {
