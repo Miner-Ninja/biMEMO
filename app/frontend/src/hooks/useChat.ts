@@ -230,7 +230,9 @@ export function useChat() {
       ) {
         return currentActiveChatId;
       }
-      return storedConversations[0]?.id ?? null;
+      // Selection is driven by the URL (see ChatPage routing sync) — do NOT
+      // auto-pick the first conversation here, or it would race the URL param.
+      return null;
     });
   }, []);
 
