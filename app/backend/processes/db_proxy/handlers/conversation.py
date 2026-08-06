@@ -65,9 +65,12 @@ def make_create_conversation_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Create a new conversation."""
         p = validate_params(params, CreateConversationParams)
-        conversation_id = str(uuid.uuid4())
+        # Callers may pin a conversation id (e.g. the scheduler's isolated
+        # per-run conversation); otherwise generate one. INSERT OR IGNORE keeps
+        # a repeated pinned id idempotent instead of failing on the primary key.
+        conversation_id = p.conversation_id or str(uuid.uuid4())
         db.execute(
-            "INSERT INTO conversations (id, title) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO conversations (id, title) VALUES (?, ?)",
             (conversation_id, p.title),
         )
         db.commit()

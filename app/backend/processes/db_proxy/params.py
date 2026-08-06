@@ -298,6 +298,7 @@ class CreateConversationParams(ForbidExtraParams):
     """Parameters for create_conversation operation."""
 
     title: str = ""
+    conversation_id: str = ""
 
 
 class ListConversationsParams(LimitOffsetParams):

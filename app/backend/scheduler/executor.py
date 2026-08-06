@@ -123,7 +123,11 @@ async def _execute_agent_task(
             session_id=f"sched_{task_id}",
             conversation_id=conversation_id,
         )
-        result_text = response.text or ""
+        result_text = (
+            response.structured_content.answer
+            if response.structured_content
+            else ""
+        ) or ""
         success = True
     except Exception as exc:
         logger.exception("Agent task %s (%s) failed", task_id, task_name)

@@ -722,7 +722,14 @@ async def _reload_llm_subsystem(
                 llm_client=llm_client,
             )
             if services.scheduler_orch is not None:
-                services.scheduler_orch.model_name = llm_config.get("model", "")
+                _apply_llm_context_settings(
+                    orch=services.scheduler_orch,
+                    db_client=db_client,
+                    llm_config=llm_config,
+                    user_tz=None,
+                    capabilities_registry=services.capabilities_registry,
+                    llm_client=llm_client,
+                )
 
             dialog_recorder_tasks = await _start_runtime_dialog_recorder_tasks(
                 orch=services.orch,
@@ -914,6 +921,18 @@ async def _prepare_runtime_core_services(
             user_tz=user_tz,
             gateway_concurrency_cls=AgentConcurrency,
             action_grants=action_grants,
+        )
+        # Wire the same capabilities resolver / context_fn as the main
+        # orchestrator; without it the placeholder context_fn raises
+        # "make_zone_context_fn was constructed without a capabilities_resolver"
+        # the first time a scheduled task starts a chat.
+        _apply_llm_context_settings(
+            orch=scheduler_orch,
+            db_client=db_client,
+            llm_config=llm_config,
+            user_tz=user_tz,
+            capabilities_registry=capabilities_registry,
+            llm_client=llm_client,
         )
 
     return (
