@@ -5,6 +5,7 @@ RED zone confirmation flow, performance benchmarks,
 and retrieved memories pipeline.
 """
 
+import asyncio
 import json
 import os
 import time
@@ -16,6 +17,7 @@ from backend.agent.concurrency import (
     AgentConcurrency,
 )
 from backend.llm.call_factory import LLMResponse, LLMToolCall
+from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import (
     ContextEntry,
     ContextResult,
@@ -406,3 +408,116 @@ class TestRetrievedMemoriesPipeline:
             conversation_id="test-conv",
         )
         assert resp.retrieved_memories == []
+
+
+class TestStageTimingPersistence:
+    """End-to-end: a turn's tool duration reaches persisted stats without bleed."""
+
+    def _tool_registry(self):
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="file_read",
+                description="Read a file",
+                input_model=FileReadInput,
+                zone=TrustZone.GREEN,
+                worker=WorkerTarget.FS_WORKER,
+            )
+        )
+        return registry
+
+    async def test_tool_stage_recorded_and_does_not_bleed_into_next_turn(self):
+        """The tool phase appears in turn 1's stats and is absent from turn 2."""
+        broker = ToolBroker(registry=self._tool_registry())
+
+        async def slow_handler(params):
+            # Sleep so the measured duration rounds above zero and is not dropped.
+            await asyncio.sleep(0.01)
+            return "file content here"
+
+        broker.set_handler("file_read", slow_handler)
+
+        orchestrator = AgentOrchestrator(
+            broker=broker,
+            concurrency=AgentConcurrency(),
+            context_fn=lambda sid, **kwargs: [],
+        )
+
+        final_usage = LLMCallUsage(
+            prompt_tokens=10,
+            completion_tokens=5,
+            prompt_ms=100.0,
+            generation_ms=500.0,
+            model="m",
+        )
+
+        call_count = 0
+
+        async def mock_llm_with_tool(messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            id="call_1",
+                            name="file_read",
+                            arguments={"path": "/tmp/test"},
+                        )
+                    ],
+                    raw_message={
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "file_read",
+                                    "arguments": json.dumps({"path": "/tmp/test"}),
+                                },
+                            }
+                        ],
+                    },
+                )
+            return LLMResponse(
+                text="The file contains: file content here",
+                tool_calls=[],
+                raw_message={
+                    "role": "assistant",
+                    "content": "The file contains: file content here",
+                },
+                usage=final_usage,
+            )
+
+        resp1 = await orchestrator.process_message(
+            message="Read /tmp/test",
+            channel="web",
+            llm_call=mock_llm_with_tool,
+            session_id="s1",
+            conversation_id="c1",
+        )
+        assert resp1.stats is not None
+        labels1 = [stage.label for stage in resp1.stats.timing.stages]
+        assert "File read" in labels1
+        assert labels1[-2:] == ["Prompt", "Generation"]
+
+        async def mock_llm_plain(messages):
+            return LLMResponse(
+                text="hello",
+                tool_calls=[],
+                raw_message={"role": "assistant", "content": "hello"},
+                usage=final_usage,
+            )
+
+        resp2 = await orchestrator.process_message(
+            message="hi",
+            channel="web",
+            llm_call=mock_llm_plain,
+            session_id="s1",
+            conversation_id="c1",
+        )
+        assert resp2.stats is not None
+        labels2 = [stage.label for stage in resp2.stats.timing.stages]
+        assert "File read" not in labels2

@@ -58,4 +58,58 @@ describe("TokenStats", () => {
     expect(screen.getByText("31.3 tok/s")).toBeInTheDocument();
     expect(screen.queryByText(/ctx \(/)).not.toBeInTheDocument();
   });
+
+  it("shows the per-phase breakdown in the time tooltip when stages exist", () => {
+    render(
+      <TokenStats
+        stats={{
+          prompt_tokens: 100,
+          completion_tokens: 25,
+          total_tokens: 125,
+          timing: {
+            prompt_ms: 120,
+            generation_ms: 9900,
+            total_ms: 11440,
+            stages: [
+              { label: "Memory recall", duration_ms: 340 },
+              { label: "Web search", duration_ms: 1200 },
+              { label: "Prompt", duration_ms: 120 },
+              { label: "Generation", duration_ms: 9900 },
+            ],
+          },
+          model: "qwen3:8b",
+          iterations: 1,
+        }}
+      />
+    );
+
+    // Query via the (unique) total-time text, then read the raw title attribute
+    // to avoid Testing Library's whitespace/newline normalisation in getByTitle.
+    const timeBadge = screen.getByText("11.4s").closest("[title]");
+    expect(timeBadge).toHaveAttribute(
+      "title",
+      "Memory recall  340ms\nWeb search  1.2s\nPrompt  120ms\nGeneration  9.9s"
+    );
+  });
+
+  it("falls back to the Prompt/Generation tooltip when no stages exist", () => {
+    render(
+      <TokenStats
+        stats={{
+          prompt_tokens: 100,
+          completion_tokens: 25,
+          total_tokens: 125,
+          timing: {
+            prompt_ms: 200,
+            generation_ms: 800,
+            total_ms: 1000,
+          },
+          model: "qwen3:8b",
+          iterations: 1,
+        }}
+      />
+    );
+
+    expect(screen.getByTitle("Prompt: 200ms, Generation: 800ms")).toBeInTheDocument();
+  });
 });

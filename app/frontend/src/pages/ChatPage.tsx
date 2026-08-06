@@ -439,7 +439,6 @@ export function ChatPage() {
   });
   const {
     processingStages,
-    stagesRef,
     addStage,
     completeActiveStage,
     errorActiveStage,
@@ -530,21 +529,6 @@ export function ChatPage() {
     }
     clearAssistantStream();
   }, [clearAssistantStream]);
-
-  const persistAssistantStageTimes = useCallback(() => {
-    const assistantMessageId = assistantMessageIdRef.current;
-    if (!assistantMessageId || stagesRef.current.length === 0) {
-      return;
-    }
-    const now = performance.now();
-    const stageTimes = stagesRef.current.map((stage) => ({
-      label: stage.label,
-      durationMs: stage.frozenDurationMs ?? now - stage.startedAt,
-    }));
-    if (stageTimes.length > 0) {
-      updateMessage(assistantMessageId, { stageTimes });
-    }
-  }, [stagesRef, updateMessage]);
 
   const isCurrentAssistantStreamEvent = useCallback((event: RealtimeEvent) => {
     const activeStream = activeAssistantStreamRef.current;
@@ -932,7 +916,6 @@ export function ChatPage() {
           errorActiveStage();
         }
       } else if (event.type === "done") {
-        persistAssistantStageTimes();
         setIsLoading(false);
         setTimeout(() => clearStages(), 1000);
         activeAssistantStreamRef.current.realtimeCompleted = true;
@@ -965,7 +948,6 @@ export function ChatPage() {
             assistantMessageId,
             response: finalPayload,
           });
-          persistAssistantStageTimes();
           activeAssistantStreamRef.current.finalReceived = true;
           activeAssistantStreamRef.current.realtimeCompleted = true;
           setIsLoading(false);
@@ -1142,7 +1124,6 @@ export function ChatPage() {
       errorActiveStage,
       clearStages,
       finalizeAssistantStreamIfReady,
-      persistAssistantStageTimes,
       refreshConversationMessages,
       clearAssistantStream,
       isCurrentAssistantStreamEvent,

@@ -21,6 +21,7 @@ from backend.agent.agent_loop_models import (
     ToolCall,
     ToolRoundResult,
 )
+from backend.agent.stage_timings import StageTimings, humanize_stage_label
 from backend.permissions import (
     ActionContext,
     ActionDecision,
@@ -79,6 +80,9 @@ class ToolExecutor:
         # (e.g. {"conversation_id": ..., "session_id": ...}).
         # Set by the orchestrator before processing a turn.
         self.current_context: dict[str, str] = {}
+        # Per-turn processing-stage accumulator, assigned by the orchestrator
+        # before each turn so tool durations join recall/context timings.
+        self.stage_timings: StageTimings | None = None
 
     def build_tool_calls(self, llm_response: object) -> list[ToolCall]:
         """Convert raw LLM tool calls into the internal tool-call shape."""
@@ -131,6 +135,10 @@ class ToolExecutor:
             raise
         finally:
             self.broker.clear_context()
+        if self.stage_timings is not None:
+            self.stage_timings.record(
+                humanize_stage_label(tool_call.name), result.duration_ms
+            )
         if self.sse_queue is not None:
             await self.sse_queue.put(
                 {"type": "tool_status", "name": tool_call.name, "status": "completed"}

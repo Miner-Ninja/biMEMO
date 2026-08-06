@@ -37,6 +37,7 @@ from backend.agent.loop import (
 from backend.agent.memory_context import MemoryContextLoader
 from backend.agent.message_persistence import MessagePersistence
 from backend.agent.prompt_builder import PromptBuilder
+from backend.agent.stage_timings import StageTimings
 from backend.agent.tool_executor import ToolExecutor
 from backend.ipc.models import build_multimodal_content
 from backend.llm.call_options import LLMCallOptions
@@ -201,6 +202,10 @@ class AgentOrchestrator:
             action_decisions=ActionDecisionService(self.action_grants),
             pending_action_recorder=self.pending_action_recorder,
         )
+        # Per-turn accumulator for the processing-stage timing breakdown; reset
+        # at the start of each turn (see process_message) and read at finalize.
+        self._stage_timings = StageTimings()
+        self.tool_executor.stage_timings = self._stage_timings
         self.llm_caller = LLMCaller(
             self.model_name,
             self.web_search_classifier_fn,
@@ -676,6 +681,7 @@ class AgentOrchestrator:
                 fallback_model=self.model_name,
                 total_wall_time_ms=(perf_counter() - request_started_at) * 1000,
                 zone_usage=zone_usage,
+                stage_phases=self._stage_timings.phases,
             ),
             structured_content=filtered_structured_content,
         )
@@ -868,10 +874,14 @@ class AgentOrchestrator:
         meta: dict | None,
     ) -> tuple[object, str | None, list[dict[str, object]]]:
         """Load memory context, save the user message, and build prompt messages."""
+        recall_started_at = perf_counter()
         prepared_context = await self.memory_loader.load_prepared_context(
             session_id=session_id,
             filtered_message=filtered_message,
             conversation_id=conversation_id,
+        )
+        self._stage_timings.record(
+            "Memory recall", (perf_counter() - recall_started_at) * 1000
         )
         user_content = build_multimodal_content(
             filtered_message,
@@ -884,10 +894,14 @@ class AgentOrchestrator:
             uploaded_images=uploaded_images,
             meta=meta,
         )
+        context_started_at = perf_counter()
         messages = self.prompt_builder.build_prompt_messages(
             context_entries=prepared_context.entries,
             memory_guidance=prepared_context.memory_guidance,
             log_context_fn=self._log_context_composition,
+        )
+        self._stage_timings.record(
+            "Context", (perf_counter() - context_started_at) * 1000
         )
         self.prompt_builder.append_turn_reminder_and_user_message(
             messages=messages,
@@ -1075,6 +1089,8 @@ class AgentOrchestrator:
             await self._load_skill_index()
             self.tool_executor.tool_call_count = 0
             self.tool_executor.tool_names_used = []
+            self._stage_timings = StageTimings()
+            self.tool_executor.stage_timings = self._stage_timings
             # Propagate turn context to tool handlers via the broker.
             self.tool_executor.current_context = {
                 "conversation_id": conversation_id,

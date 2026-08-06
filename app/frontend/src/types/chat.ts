@@ -83,8 +83,6 @@ export interface Message {
   errorDetail?: string;
   /** User-facing suggestion for error recovery */
   errorSuggestion?: string;
-  /** Processing stage timings (assistant messages only) */
-  stageTimes?: { label: string; durationMs: number }[];
   /** Token usage statistics (assistant messages only) */
   stats?: ExtendedUsage;
   /** Pending RED zone actions awaiting user confirmation */

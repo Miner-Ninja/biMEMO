@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 
 interface TokenStatsProps {
   stats: ExtendedUsage;
-  stageTimes?: { label: string; durationMs: number }[];
   className?: string;
 }
 
@@ -13,7 +12,8 @@ interface TokenStatsProps {
  * Compact display of token usage, timing, and context stats.
  * Shows: tokens in/out, time, context usage with warning.
  */
-export function TokenStats({ stats, stageTimes, className }: TokenStatsProps) {
+export function TokenStats({ stats, className }: TokenStatsProps) {
+  const stages = stats.timing.stages;
   const contextUsage = stats.context;
   const hasContextUsage = Boolean(contextUsage && contextUsage.total > 0);
   const contextPercent = contextUsage?.used_percent ?? 0;
@@ -54,12 +54,8 @@ export function TokenStats({ stats, stageTimes, className }: TokenStatsProps) {
         variant="secondary"
         className="gap-1 whitespace-nowrap tabular-nums"
         title={
-          stageTimes && stageTimes.length > 0
-            ? stageTimes
-                .map(
-                  (s) => `${s.label.replace("...", "")}  ${formatTime(s.durationMs)}`
-                )
-                .join("\n")
+          stages && stages.length > 0
+            ? stages.map((s) => `${s.label}  ${formatTime(s.duration_ms)}`).join("\n")
             : `Prompt: ${formatTime(stats.timing.prompt_ms)}, Generation: ${formatTime(stats.timing.generation_ms)}`
         }
       >
