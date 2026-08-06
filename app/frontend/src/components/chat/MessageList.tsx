@@ -70,6 +70,11 @@ export const MessageList = memo(function MessageList({
 }: MessageListProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
+  // Signature of the last rendered message set. Lets the auto-scroll effect
+  // skip reference-only changes (e.g. a reconnect refetch of identical content)
+  // and fire only on real changes (a new message, or the last message growing
+  // during streaming).
+  const lastMessagesSignatureRef = useRef("");
 
   const getViewport = () =>
     rootRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ??
@@ -85,6 +90,7 @@ export const MessageList = memo(function MessageList({
 
   useEffect(() => {
     shouldStickToBottomRef.current = true;
+    lastMessagesSignatureRef.current = "";
     const frameId = window.requestAnimationFrame(() => {
       scrollViewportToBottom(getViewport(), "auto");
     });
@@ -105,15 +111,68 @@ export const MessageList = memo(function MessageList({
       return undefined;
     }
 
+    // Position-based: re-enable sticking once the user is back at the bottom
+    // (this also fires from our own programmatic scroll, which is fine).
     const handleScroll = () => {
       shouldStickToBottomRef.current = isNearBottom(nextViewport);
     };
 
+    // Intent-based: a wheel-up, an upward touch drag, or an up/page/home key is
+    // produced ONLY by the user — never by programmatic auto-scroll. Releasing
+    // the stick here lets the user scroll up while a long answer streams,
+    // instead of being pulled back to the bottom.
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        shouldStickToBottomRef.current = false;
+      }
+    };
+    let lastTouchY = 0;
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? 0;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY ?? 0;
+      // Finger moving down drags the content up = the user is scrolling up.
+      if (y > lastTouchY) {
+        shouldStickToBottomRef.current = false;
+      }
+      lastTouchY = y;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+        shouldStickToBottomRef.current = false;
+      }
+    };
+
     nextViewport.addEventListener("scroll", handleScroll, { passive: true });
-    return () => nextViewport.removeEventListener("scroll", handleScroll);
+    nextViewport.addEventListener("wheel", handleWheel, { passive: true });
+    nextViewport.addEventListener("touchstart", handleTouchStart, {
+      passive: true,
+    });
+    nextViewport.addEventListener("touchmove", handleTouchMove, {
+      passive: true,
+    });
+    nextViewport.addEventListener("keydown", handleKeyDown);
+    return () => {
+      nextViewport.removeEventListener("scroll", handleScroll);
+      nextViewport.removeEventListener("wheel", handleWheel);
+      nextViewport.removeEventListener("touchstart", handleTouchStart);
+      nextViewport.removeEventListener("touchmove", handleTouchMove);
+      nextViewport.removeEventListener("keydown", handleKeyDown);
+    };
   }, [conversationKey]);
 
   useEffect(() => {
+    const last = messages[messages.length - 1];
+    const signature = `${messages.length}:${last?.id ?? ""}:${
+      last?.content?.length ?? 0
+    }`;
+    if (signature === lastMessagesSignatureRef.current) {
+      // No real change (e.g. a reconnect refetch of identical content) — do
+      // not force-scroll, so the user's scroll position is preserved.
+      return;
+    }
+    lastMessagesSignatureRef.current = signature;
     if (!shouldStickToBottomRef.current) {
       return;
     }
