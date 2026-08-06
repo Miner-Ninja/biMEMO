@@ -96,11 +96,12 @@ async def _execute_agent_task(
     prompt = task["prompt"]
     allowed_tools = _parse_allowed_tools(task.get("allowed_tools", "[]"))
 
-    # Create isolated conversation ID
-    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-    conversation_id = f"sched_{task_id}_{timestamp}"
+    # One stable conversation per task (bound to the task id) so every run's
+    # result accumulates in the same chat instead of spawning a new one each run.
+    conversation_id = f"sched_{task_id}"
 
-    # Create the conversation in DB
+    # Create it once; create_conversation is idempotent (INSERT OR IGNORE), so
+    # repeated runs reuse the same conversation.
     await services.db_client.send_operation(
         "create_conversation",
         {"conversation_id": conversation_id, "title": f"[Scheduled] {task_name}"},
