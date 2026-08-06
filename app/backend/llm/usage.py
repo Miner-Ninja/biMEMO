@@ -178,7 +178,14 @@ def aggregate_call_usages(
         call_usages
     )
     if prompt_ms == ZERO_DURATION_MS and generation_ms == ZERO_DURATION_MS:
-        generation_ms = total_wall_time_ms
+        # The provider reported no per-phase timing (e.g. an OpenAI-compatible
+        # endpoint returns token counts only). Treat generation as the remainder
+        # of the turn after the phases we measured ourselves (recall, context,
+        # tools), so the breakdown partitions total time instead of counting
+        # those phases twice — once on their own line and again inside
+        # "Generation".
+        measured_phase_ms = sum(ms for _, ms in (stage_phases or []))
+        generation_ms = max(ZERO_DURATION_MS, total_wall_time_ms - measured_phase_ms)
     latest_usage = call_usages[-1]
 
     return _build_extended_usage(
