@@ -23,8 +23,12 @@ if TYPE_CHECKING:
 
 
 def _conversation_item(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert one conversation row into the API shape."""
-    result = {
+    """Convert one conversation row into the API shape.
+
+    Bridge/agent marking (``bridge_provider``) is added downstream by the web
+    tier from ``list_chat_bridge_links`` — this handler returns base fields only.
+    """
+    return {
         "id": row[0],
         "title": row[1],
         "processing_status": row[2],
@@ -33,13 +37,6 @@ def _conversation_item(row: tuple[Any, ...]) -> dict[str, Any]:
         "created_at": row[5],
         "updated_at": row[6],
     }
-    # R8 — mark bridge/agent sessions via the bridge link provider column.
-    # The API model (ConversationItem) exposes this as `bridge_provider`.
-    if len(row) > 7:
-        provider = row[7]
-        if provider:
-            result["bridge_provider"] = provider
-    return result
 
 
 def _conversation_payload(row: tuple[Any, ...] | None) -> dict[str, Any]:
@@ -88,28 +85,13 @@ def make_list_conversations_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """List conversations ordered by update time."""
         p = validate_params(params, ListConversationsParams)
-        # R8 — LEFT JOIN chat_bridge_links to surface the provider marker for
-        # agent sessions. No migration needed — conversations has no channel
-        # column; the marker comes from the join. Guard on the table existing
-        # so listing still works before any bridge link has been created.
-        if table_exists(db, "chat_bridge_links"):
-            rows = db.execute(
-                "SELECT c.id, c.title, c.processing_status, c.processing_stage, "
-                "c.processing_started_at, c.created_at, c.updated_at, "
-                "l.provider "
-                "FROM conversations c "
-                "LEFT JOIN chat_bridge_links l ON l.conversation_id = c.id "
-                "ORDER BY c.updated_at DESC LIMIT ? OFFSET ?",
-                (p.limit, p.offset),
-            ).fetchall()
-        else:
-            rows = db.execute(
-                "SELECT id, title, processing_status, processing_stage, "
-                "processing_started_at, created_at, updated_at "
-                "FROM conversations "
-                "ORDER BY updated_at DESC LIMIT ? OFFSET ?",
-                (p.limit, p.offset),
-            ).fetchall()
+        rows = db.execute(
+            "SELECT id, title, processing_status, processing_stage, "
+            "processing_started_at, created_at, updated_at "
+            "FROM conversations "
+            "ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (p.limit, p.offset),
+        ).fetchall()
         return {"conversations": [_conversation_item(row) for row in rows]}
 
     return handle
