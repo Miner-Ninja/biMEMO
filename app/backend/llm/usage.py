@@ -16,6 +16,10 @@ from backend.models.chat_stats import (
 
 PROMPT_STAGE_LABEL = "Prompt"
 GENERATION_STAGE_LABEL = "Generation"
+# Drop phases too short to render as anything but "0ms". The UI shows sub-second
+# times as whole milliseconds (round()), so a phase under half a millisecond —
+# e.g. context assembly, which is just string building — would read as "0ms".
+MIN_VISIBLE_STAGE_MS = 0.5
 
 
 def _build_stage_timings(
@@ -23,7 +27,7 @@ def _build_stage_timings(
     prompt_ms: float,
     generation_ms: float,
 ) -> list[StageTiming]:
-    """Build the ordered per-phase breakdown, dropping zero-duration phases.
+    """Build the ordered per-phase breakdown, dropping phases that read as zero.
 
     ``stage_phases`` holds the wall-clock spans measured during the turn
     (memory recall, context assembly, tools) in execution order. Repeated tool
@@ -45,7 +49,7 @@ def _build_stage_timings(
     return [
         StageTiming(label=label, duration_ms=round(duration_ms, 1))
         for label, duration_ms in combined
-        if duration_ms > ZERO_DURATION_MS
+        if duration_ms >= MIN_VISIBLE_STAGE_MS
     ]
 
 

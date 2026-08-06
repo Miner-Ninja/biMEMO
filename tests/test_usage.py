@@ -47,7 +47,7 @@ class TestStageTimingBreakdown:
             total_wall_time_ms=1500.0,
             stage_phases=[
                 ("Memory recall", 340.0),
-                ("Context", 0.0),  # dropped: zero duration
+                ("Context", 0.3),  # dropped: sub-millisecond, would read as "0ms"
                 ("Web search", 1200.0),
             ],
         )
