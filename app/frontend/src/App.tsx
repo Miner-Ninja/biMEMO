@@ -62,6 +62,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<ChatPage />} />
+      <Route path="/c/:conversationId" element={<ChatPage />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/admin/integrations" element={<IntegrationsPage />} />
       <Route path="/admin/agents" element={<AgentConnectionPage />} />

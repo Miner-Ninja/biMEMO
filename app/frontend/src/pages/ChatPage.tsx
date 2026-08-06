@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/sidebar/Sidebar";
@@ -390,6 +391,34 @@ export function ChatPage() {
   } = useChat();
 
   const { logout } = useAuth();
+
+  const { conversationId: urlConversationId } = useParams();
+  const navigate = useNavigate();
+
+  // The URL is the source of truth for the active conversation (Option A).
+  //   /c/:id  -> select that chat (so a refresh restores where you were);
+  //   bare /  -> canonicalize to the first chat's id in the URL;
+  //   unknown id (deleted chat / stale bookmark) -> fall back to /.
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+    if (urlConversationId) {
+      if (urlConversationId === activeChatId) {
+        return;
+      }
+      if (chats.some((chat) => chat.id === urlConversationId)) {
+        void switchChat(urlConversationId);
+      } else if (chats.length > 0) {
+        navigate("/", { replace: true });
+      }
+      return;
+    }
+    if (chats.length > 0) {
+      navigate(`/c/${chats[0].id}`, { replace: true });
+    }
+  }, [urlConversationId, isReady, chats, activeChatId, switchChat, navigate]);
+
   const chatSettings = activeChat?.settings ?? DEFAULT_CHAT_SETTINGS;
   const showSql = chatSettings.showSql;
   const showThinking = chatSettings.showThinking;
@@ -1643,8 +1672,10 @@ export function ChatPage() {
   };
 
   const handleNewChat = useCallback(() => {
-    void createNewChat();
-  }, [createNewChat]);
+    void createNewChat().then((chat) => {
+      navigate(`/c/${chat.id}`);
+    });
+  }, [createNewChat, navigate]);
 
   const activeBridgeLink = activeChatId
     ? (bridgeLinksByConversationId[activeChatId] ?? null)
@@ -1957,11 +1988,15 @@ export function ChatPage() {
       activeChatId={activeChatId}
       onNewChat={handleNewChat}
       onSelectChat={(chatId) => {
-        void switchChat(chatId);
+        navigate(`/c/${chatId}`);
       }}
       onDeleteChat={(chatId) => {
         removeStoredBridgeLink(chatId);
-        void deleteChat(chatId);
+        void deleteChat(chatId).then(() => {
+          if (chatId === activeChatId) {
+            navigate("/", { replace: true });
+          }
+        });
       }}
       onRenameChat={(chatId, newTitle) => {
         void renameChat(chatId, newTitle);
