@@ -521,3 +521,74 @@ class TestStageTimingPersistence:
         assert resp2.stats is not None
         labels2 = [stage.label for stage in resp2.stats.timing.stages]
         assert "File read" not in labels2
+
+    async def test_fallback_generation_excludes_measured_tool_time(self):
+        """Fallback provider: a tool's time is excluded from Generation."""
+        broker = ToolBroker(registry=self._tool_registry())
+
+        async def slow_handler(params):
+            await asyncio.sleep(0.02)
+            return "file content here"
+
+        broker.set_handler("file_read", slow_handler)
+        orchestrator = AgentOrchestrator(
+            broker=broker,
+            concurrency=AgentConcurrency(),
+            context_fn=lambda sid, **kwargs: [],
+        )
+        # Usage with token counts only and no durations — like an
+        # OpenAI-compatible endpoint (prompt_ms / generation_ms default to 0).
+        zero_timing_usage = LLMCallUsage(
+            prompt_tokens=10, completion_tokens=5, model="m"
+        )
+        call_count = 0
+
+        async def mock_llm(messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            id="call_1", name="file_read", arguments={"path": "/tmp/x"}
+                        )
+                    ],
+                    raw_message={
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "file_read",
+                                    "arguments": json.dumps({"path": "/tmp/x"}),
+                                },
+                            }
+                        ],
+                    },
+                )
+            return LLMResponse(
+                text="done",
+                tool_calls=[],
+                raw_message={"role": "assistant", "content": "done"},
+                usage=zero_timing_usage,
+            )
+
+        resp = await orchestrator.process_message(
+            message="Read /tmp/x",
+            channel="web",
+            llm_call=mock_llm,
+            session_id="s1",
+            conversation_id="c1",
+        )
+        assert resp.stats is not None
+        timing = resp.stats.timing
+        labels = [s.label for s in timing.stages]
+        assert "File read" in labels
+        assert "Generation" in labels
+        # Generation is the remainder, strictly below the whole-turn time — the
+        # tool's duration is no longer counted inside it. (Exact partitioning is
+        # asserted deterministically in test_usage's unit test.)
+        assert timing.generation_ms < timing.total_ms

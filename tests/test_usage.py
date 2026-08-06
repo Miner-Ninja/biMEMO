@@ -47,7 +47,7 @@ class TestStageTimingBreakdown:
             total_wall_time_ms=1500.0,
             stage_phases=[
                 ("Memory recall", 340.0),
-                ("Context", 0.0),  # dropped: zero duration
+                ("Context", 0.3),  # dropped: sub-millisecond, would read as "0ms"
                 ("Web search", 1200.0),
             ],
         )
@@ -93,6 +93,25 @@ class TestStageTimingBreakdown:
         assert [(s.label, s.duration_ms) for s in stats.timing.stages] == [
             ("Generation", 800.0),
         ]
+
+    def test_fallback_generation_is_remainder_after_measured_phases(self):
+        """Fallback: Generation is the remainder after measured phases (R1)."""
+        stats = aggregate_call_usages(
+            [self._usage(prompt_ms=0.0, generation_ms=0.0)],
+            fallback_model="m",
+            total_wall_time_ms=8000.0,
+            stage_phases=[("Memory recall", 100.0), ("Web search", 3000.0)],
+        )
+
+        assert stats is not None
+        assert stats.timing.generation_ms == 4900.0  # 8000 - (100 + 3000)
+        assert [(s.label, s.duration_ms) for s in stats.timing.stages] == [
+            ("Memory recall", 100.0),
+            ("Web search", 3000.0),
+            ("Generation", 4900.0),
+        ]
+        # The lines now partition the total turn time (no double-count).
+        assert sum(s.duration_ms for s in stats.timing.stages) == 8000.0
 
     def test_stages_survive_model_dump_round_trip(self):
         """The breakdown persists through JSON serialisation and back (R2)."""

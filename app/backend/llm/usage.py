@@ -16,6 +16,10 @@ from backend.models.chat_stats import (
 
 PROMPT_STAGE_LABEL = "Prompt"
 GENERATION_STAGE_LABEL = "Generation"
+# Drop phases too short to render as anything but "0ms". The UI shows sub-second
+# times as whole milliseconds (round()), so a phase under half a millisecond —
+# e.g. context assembly, which is just string building — would read as "0ms".
+MIN_VISIBLE_STAGE_MS = 0.5
 
 
 def _build_stage_timings(
@@ -23,7 +27,7 @@ def _build_stage_timings(
     prompt_ms: float,
     generation_ms: float,
 ) -> list[StageTiming]:
-    """Build the ordered per-phase breakdown, dropping zero-duration phases.
+    """Build the ordered per-phase breakdown, dropping phases that read as zero.
 
     ``stage_phases`` holds the wall-clock spans measured during the turn
     (memory recall, context assembly, tools) in execution order. Repeated tool
@@ -45,7 +49,7 @@ def _build_stage_timings(
     return [
         StageTiming(label=label, duration_ms=round(duration_ms, 1))
         for label, duration_ms in combined
-        if duration_ms > ZERO_DURATION_MS
+        if duration_ms >= MIN_VISIBLE_STAGE_MS
     ]
 
 
@@ -174,7 +178,14 @@ def aggregate_call_usages(
         call_usages
     )
     if prompt_ms == ZERO_DURATION_MS and generation_ms == ZERO_DURATION_MS:
-        generation_ms = total_wall_time_ms
+        # The provider reported no per-phase timing (e.g. an OpenAI-compatible
+        # endpoint returns token counts only). Treat generation as the remainder
+        # of the turn after the phases we measured ourselves (recall, context,
+        # tools), so the breakdown partitions total time instead of counting
+        # those phases twice — once on their own line and again inside
+        # "Generation".
+        measured_phase_ms = sum(ms for _, ms in (stage_phases or []))
+        generation_ms = max(ZERO_DURATION_MS, total_wall_time_ms - measured_phase_ms)
     latest_usage = call_usages[-1]
 
     return _build_extended_usage(
