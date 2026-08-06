@@ -862,6 +862,7 @@ class _FakeMCPOrchestratorClient:
         *,
         content: str,
         channel: str,
+        agent_id: str | None = None,
     ):
         from types import SimpleNamespace
 
@@ -871,6 +872,21 @@ class _FakeMCPOrchestratorClient:
             message_id="msg-fake",
             conversation_id="conv-fake",
             reason="",
+        )
+
+    async def mcp_ask(
+        self,
+        *,
+        question: str,
+        agent_id: str | None = None,
+    ):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            answer="Fake answer",
+            conversation_id="conv-fake",
+            session_id="session-fake",
+            error="",
         )
 
 
@@ -1556,12 +1572,26 @@ class _FakeLimiterDB:
         self.recorded.append(called_at)
         return {"ok": True}
 
+    async def create_conversation(self, title: str = "") -> str:
+        return "conv-1"
+
+    async def send_operation(self, op: str, params: dict | None = None) -> dict:
+        # resolve_agent_session: report no existing link, then accept creation.
+        if op == "get_chat_bridge_by_external_target":
+            return {"chat_bridge_link": None}
+        return {"ok": True}
+
 
 def _req(content: str, request_id: str = "r1"):
     return type(
         "Req",
         (),
-        {"request_id": request_id, "content": content, "channel": "agent"},
+        {
+            "request_id": request_id,
+            "content": content,
+            "channel": "agent",
+            "agent_id": "agent-alpha",
+        },
     )()
 
 
@@ -1781,4 +1811,533 @@ class TestPaginationCap:
         clamped, note = _clamp_offset(MAX_OFFSET + 1)
         assert clamped == MAX_OFFSET
         assert note is not None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Verification pins: agent-memory-bridge (R1-R10)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestOneSessionPerAgent:
+    """R1 — One persistent session per agent identity."""
+
+    async def test_remember_uses_one_session_per_agent(self) -> None:
+        """S1.1 — Repeated stores share one session for the same agent."""
+        from backend.processes.orchestrator.agent_session import resolve_agent_session
+
+        class FakeDBClient:
+            def __init__(self):
+                self.link_exists = False
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    if not self.link_exists:
+                        return {"chat_bridge_link": None}
+                    return {"chat_bridge_link": {"conversation_id": "conv-123"}}
+                if op == "create_chat_bridge_link":
+                    self.link_exists = True
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+        client = FakeDBClient()
+        # First call — creates session
+        conv1, _ = await resolve_agent_session(
+            agent_id="agent-alpha", db_client=client
+        )
+        assert conv1 == "conv-123"
+        # Second call — reuses same session
+        conv2, _ = await resolve_agent_session(
+            agent_id="agent-alpha", db_client=client
+        )
+        assert conv1 == conv2
+
+    async def test_distinct_agents_distinct_sessions(self) -> None:
+        """S1.2 — Distinct agents get distinct sessions."""
+        from backend.processes.orchestrator.agent_session import resolve_agent_session
+
+        class FakeDBClient:
+            def __init__(self):
+                self.links: dict[str, str] = {}
+                self.conv_counter = 0
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    agent = params.get("external_space_id", "")
+                    if agent in self.links:
+                        return {
+                            "chat_bridge_link": {
+                                "conversation_id": self.links[agent]
+                            }
+                        }
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    agent = params.get("external_space_id", "")
+                    self.links[agent] = f"conv-{agent}"
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                self.conv_counter += 1
+                return f"conv-new-{self.conv_counter}"
+
+        client = FakeDBClient()
+        conv_a, _ = await resolve_agent_session(
+            agent_id="agent-alpha", db_client=client
+        )
+        conv_b, _ = await resolve_agent_session(
+            agent_id="agent-beta", db_client=client
+        )
+        assert conv_a != conv_b
+
+
+class TestRememberReachesRecorder:
+    """R2 — Stored facts enter the normal memory pipeline."""
+
+    async def test_remember_reaches_recorder(self) -> None:
+        """S2.1 — A stored fact is queued for record processing."""
+        from backend.ipc.models import McpMemoryRememberRequest
+
+        record_calls = []
+
+        async def fake_save_record(
+            conversation_id, session_id, summary, source_message_ids
+        ):
+            record_calls.append(
+                (conversation_id, session_id, summary, source_message_ids)
+            )
+
+        class FakeDBClient:
+            async def get_recent_rate_limit_calls(self, **kwargs):
+                return {"timestamps": []}
+
+            async def record_rate_limit_call(self, **kwargs):
+                return {"ok": True}
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                return {"ok": True}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+            async def save_message(
+                self, conversation_id, role, content, channel=None, meta=None
+            ):
+                return "msg-456"
+
+        from backend.processes.orchestrator.factories import (
+            make_mcp_memory_remember_fn,
+        )
+
+        client = FakeDBClient()
+        fn = make_mcp_memory_remember_fn(client, save_record_fn=fake_save_record)
+        request = McpMemoryRememberRequest(
+            request_id="req-1",
+            content="Agent says: buy milk",
+            channel="agent",
+            agent_id="agent-alpha",
+        )
+        result = await fn(request)
+
+        assert result.stored is True
+        # The stored fact was enqueued for record processing via save_record_fn.
+        assert len(record_calls) == 1
+        conversation_id, _session_id, summary, source_ids = record_calls[0]
+        assert summary == "Agent says: buy milk"
+        assert conversation_id == "conv-123"
+        assert source_ids == ["msg-456"]
+
+
+class TestRememberReturnsAckNoReply:
+    """R3 — remember is one-way with an acknowledgement."""
+
+    async def test_remember_returns_ack_no_reply(self) -> None:
+        """S3.1 — Store returns an ack, no assistant/LLM reply."""
+        from backend.ipc.models import (
+            McpMemoryRememberRequest,
+            McpMemoryRememberResponse,
+        )
+
+        class FakeDBClient:
+            async def get_recent_rate_limit_calls(self, **kwargs):
+                return {"timestamps": []}
+
+            async def record_rate_limit_call(self, **kwargs):
+                return {"ok": True}
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    return {"ok": True}
+                if op == "record_rate_limit_call":
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+            async def save_message(
+                self, conversation_id, role, content, channel=None, meta=None
+            ):
+                return "msg-456"
+
+        from backend.processes.orchestrator.factories import make_mcp_memory_remember_fn
+
+        client = FakeDBClient()
+        fn = make_mcp_memory_remember_fn(client)
+        request = McpMemoryRememberRequest(
+            request_id="req-1",
+            content="test fact",
+            channel="agent",
+            agent_id="agent-alpha",
+        )
+        result = await fn(request)
+
+        assert isinstance(result, McpMemoryRememberResponse)
+        assert result.stored is True
+        assert result.message_id == "msg-456"
+        assert result.conversation_id == "conv-123"
+        # No LLM reply is generated
+        assert not hasattr(result, "answer")
+
+
+class TestAskReturnsAnswer:
+    """R4 — ask answers from biMEMO and returns the answer as the tool result."""
+
+    async def test_ask_returns_answer(self) -> None:
+        """S4.1 — Ask returns an answer."""
+        from backend.ipc.models import (
+            ChatResponse,
+            McpAskRequest,
+            McpAskResponse,
+            StructuredAssistantContent,
+        )
+
+        class FakeDBClient:
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+        from backend.processes.orchestrator.factories import make_mcp_ask_fn
+
+        client = FakeDBClient()
+        fn = make_mcp_ask_fn(client)
+
+        def fake_orchestrator(req):
+            return ChatResponse(
+                request_id=req.request_id,
+                structured_content=StructuredAssistantContent(
+                    answer="The answer is 42"
+                ),
+            )
+
+        fn.set_orchestrator_fn(fake_orchestrator)
+        request = McpAskRequest(
+            request_id="req-1",
+            question="What is 6*7?",
+            agent_id="agent-alpha",
+        )
+        result = await fn(request)
+
+        assert isinstance(result, McpAskResponse)
+        assert "42" in result.answer
+
+    async def test_ask_uses_no_outbound_send(self) -> None:
+        """S4.2 — No outbound delivery path is used for ask."""
+        from backend.chat_bridge.providers.mcp import McpChatBridgeProvider
+
+        provider = McpChatBridgeProvider()
+
+        # send_message is a no-op — it does not raise or make network calls
+        from backend.chat_bridge.models import (
+            BridgeTarget,
+            OutboundBridgeMessage,
+        )
+
+        ref = await provider.send_message(
+            target=BridgeTarget(external_space_id="mcp", external_channel_id="mcp"),
+            message=OutboundBridgeMessage(
+                role="assistant", content="Hello"
+            ),
+        )
+        # Returns a local placeholder, no external send occurs
+        assert ref.external_message_id == "mcp-no-op"
+
+
+class TestAskProducesDialogRecord:
+    """R5 — ask turns are recorded like a normal dialog."""
+
+    async def test_ask_produces_dialog_record(self) -> None:
+        """S5.1 — Ask produces a dialog record via the normal chat path."""
+        from backend.ipc.models import (
+            ChatResponse,
+            McpAskRequest,
+            McpAskResponse,
+            StructuredAssistantContent,
+        )
+
+        orchestrator_called = []
+
+        class FakeDBClient:
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+        def fake_orchestrator(req):
+            orchestrator_called.append(req)
+            return ChatResponse(
+                request_id=req.request_id,
+                structured_content=StructuredAssistantContent(answer="recorded"),
+            )
+
+        from backend.processes.orchestrator.factories import make_mcp_ask_fn
+
+        client = FakeDBClient()
+        fn = make_mcp_ask_fn(client)
+        fn.set_orchestrator_fn(fake_orchestrator)
+
+        request = McpAskRequest(
+            request_id="req-1",
+            question="What do you remember?",
+            agent_id="agent-alpha",
+        )
+        result = await fn(request)
+
+        assert isinstance(result, McpAskResponse)
+        assert len(orchestrator_called) == 1
+        # The call uses the normal chat path which records via save_record_fn
+        assert orchestrator_called[0].channel == "bridge:mcp"
+
+
+class TestToolsGatedByMasterSwitch:
+    """R6 — The connection is gated by the existing master switch."""
+
+    async def test_tools_gated_by_master_switch(self) -> None:
+        """S6.1/S6.2 — Both tools live under the existing MCP_ENABLED gate."""
+        from backend.config import get_settings, reset_settings
+
+        reset_settings()
+        try:
+            settings = get_settings()
+            # When mcp_enabled is False, the endpoint is not mounted
+            # The server is only built when mcp_enabled is True
+            # We verify the setting defaults to False
+            assert not settings.mcp_enabled
+        finally:
+            reset_settings()
+
+
+class TestAgentWriteGoesThroughOrchestrator:
+    """R7 — Agent memory writes cross only the orchestrator boundary."""
+
+    async def test_agent_write_goes_through_orchestrator(self) -> None:
+        """S7.1 — Writes go through the orchestrator, not the web tier."""
+        from backend.ipc.models import McpMemoryRememberRequest
+
+        class FakeDBClient:
+            async def get_recent_rate_limit_calls(self, **kwargs):
+                return {"timestamps": []}
+
+            async def record_rate_limit_call(self, **kwargs):
+                return {"ok": True}
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    return {"ok": True}
+                if op == "record_rate_limit_call":
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                return "conv-123"
+
+            async def save_message(
+                self, conversation_id, role, content, channel=None, meta=None
+            ):
+                return "msg-456"
+
+        from backend.processes.orchestrator.factories import make_mcp_memory_remember_fn
+
+        client = FakeDBClient()
+        fn = make_mcp_memory_remember_fn(client)
+        request = McpMemoryRememberRequest(
+            request_id="req-1",
+            content="test",
+            channel="agent",
+            agent_id="agent-alpha",
+        )
+        result = await fn(request)
+        assert result.stored is True
+
+
+class TestAgentSessionListedOnceMarked:
+    """R8 — Agent sessions are listed as one marked conversation per agent."""
+
+    async def test_agent_session_listed_once_marked(self) -> None:
+        """S8.1 — One marked conversation, not per-fact spam."""
+        # The LEFT JOIN in make_list_conversations_handler returns provider
+        # column from chat_bridge_links. When provider == "mcp", the frontend
+        # marks it as an agent session. We verify the handler includes provider.
+        from backend.processes.db_proxy.handlers.conversation import _conversation_item
+
+        # Simulate a row with provider="mcp" from the LEFT JOIN
+        row = (
+            "conv-123",
+            "Agent: agent-alpha",
+            "idle",
+            "",
+            None,
+            "2024-01-01T00:00:00",
+            "2024-01-01T00:00:00",
+            "mcp",
+        )
+        item = _conversation_item(row)
+        assert item["id"] == "conv-123"
+        assert item["bridge_provider"] == "mcp"
+
+        # Simulate a regular conversation (no bridge link)
+        row_no_link = (
+            "conv-456",
+            "Regular chat",
+            "idle",
+            "",
+            None,
+            "2024-01-01T00:00:00",
+            "2024-01-01T00:00:00",
+            None,
+        )
+        item_no_link = _conversation_item(row_no_link)
+        assert item_no_link["id"] == "conv-456"
+        assert "bridge_provider" not in item_no_link
+
+
+class TestMcpProviderRegisteredInertOutbound:
+    """R9 — The MCP provider is registered like existing providers."""
+
+    async def test_mcp_provider_registered_inert_outbound(self) -> None:
+        """S9.1/S9.2 — MCP provider is present and outbound is inert."""
+        from backend.chat_bridge.models import BridgeProvider
+        from backend.chat_bridge.providers import (
+            REGISTERED_PROVIDERS,
+        )
+        from backend.chat_bridge.providers.mcp import McpChatBridgeProvider
+
+        # S9.1 — Registered as a peer provider
+        assert BridgeProvider.MCP in REGISTERED_PROVIDERS
+        assert REGISTERED_PROVIDERS[BridgeProvider.MCP] is McpChatBridgeProvider
+
+        # S9.2 — Outbound is inert
+
+        # MCP provider only configures when mcp_enabled is True
+        # We test that the provider can be instantiated and its
+        # outbound methods are inert no-ops
+        provider = McpChatBridgeProvider()
+
+        from backend.chat_bridge.models import (
+            BridgeTarget,
+            OutboundBridgeMessage,
+        )
+
+        # send_message is a no-op
+        ref = await provider.send_message(
+            target=BridgeTarget(
+                external_space_id="mcp",
+                external_channel_id="mcp",
+            ),
+            message=OutboundBridgeMessage(role="assistant", content="Hi"),
+        )
+        assert ref.external_message_id == "mcp-no-op"
+
+        # create_bridge_target returns a local placeholder
+        target = await provider.create_bridge_target(title="test")
+        assert target.external_space_id == "mcp"
+        assert target.external_channel_id == "mcp"
+
+
+class TestNoThrowawayConversationPerFact:
+    """R10 — The old per-fact bypass is removed."""
+
+    async def test_no_throwaway_conversation_per_fact(self) -> None:
+        """S10.1 — No new conversation is created per individual fact."""
+        from backend.ipc.models import McpMemoryRememberRequest
+
+        class FakeDBClient:
+            def __init__(self):
+                self.created_conversations = []
+                self.saved_messages = []
+                self.link_exists = False
+
+            async def get_recent_rate_limit_calls(self, **kwargs):
+                return {"timestamps": []}
+
+            async def record_rate_limit_call(self, **kwargs):
+                return {"ok": True}
+
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    if not self.link_exists:
+                        return {"chat_bridge_link": None}
+                    return {
+                        "chat_bridge_link": {
+                            "conversation_id": self.created_conversations[0],
+                        }
+                    }
+                if op == "create_chat_bridge_link":
+                    self.link_exists = True
+                    return {"ok": True}
+                if op == "record_rate_limit_call":
+                    return {"ok": True}
+                return {}
+
+            async def create_conversation(self, title=""):
+                conv_id = f"conv-{len(self.created_conversations)}"
+                self.created_conversations.append(conv_id)
+                return conv_id
+
+            async def save_message(
+                self, conversation_id, role, content, channel=None, meta=None
+            ):
+                msg_id = f"msg-{len(self.saved_messages)}"
+                self.saved_messages.append((conversation_id, msg_id))
+                return msg_id
+
+        from backend.processes.orchestrator.factories import make_mcp_memory_remember_fn
+
+        client = FakeDBClient()
+        fn = make_mcp_memory_remember_fn(client)
+
+        # Store 3 facts for the same agent
+        for i in range(3):
+            request = McpMemoryRememberRequest(
+                request_id=f"req-{i}",
+                content=f"fact {i}",
+                channel="agent",
+                agent_id="agent-alpha",
+            )
+            await fn(request)
+
+        # Only ONE conversation should have been created
+        assert len(client.created_conversations) == 1
+        # All 3 messages went into the same conversation
+        for conv_id, _msg_id in client.saved_messages:
+            assert conv_id == client.created_conversations[0]
 

@@ -46,6 +46,12 @@ from backend.ipc.models import (
     ListAgentRunEventsResponse as IPCListAgentRunEventsResponse,
 )
 from backend.ipc.models import (
+    McpAskRequest as IPCMcpAskRequest,
+)
+from backend.ipc.models import (
+    McpAskResponse as IPCMcpAskResponse,
+)
+from backend.ipc.models import (
     McpMemoryRememberRequest as IPCMcpMemoryRememberRequest,
 )
 from backend.ipc.models import (
@@ -83,6 +89,7 @@ ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "BridgeInboundSyncResponse": IPCBridgeInboundSyncResponse,
     "ChatResponse": IPCChatResponse,
     "ListAgentRunEventsResponse": IPCListAgentRunEventsResponse,
+    "McpAskResponse": IPCMcpAskResponse,
     "McpMemoryRememberResponse": IPCMcpMemoryRememberResponse,
     "ReloadLLMResponse": IPCReloadLLMResponse,
     "StopResponse": IPCStopResponse,
@@ -259,6 +266,7 @@ class OrchestratorClient:
                         IPCBridgeInboundSyncResponse,
                         IPCChatResponse,
                         IPCListAgentRunEventsResponse,
+                        IPCMcpAskResponse,
                         IPCMcpMemoryRememberResponse,
                         IPCReloadLLMResponse,
                         IPCStopResponse,
@@ -349,6 +357,7 @@ class OrchestratorClient:
         *,
         content: str,
         channel: str,
+        agent_id: str = "",
         timeout: float = 10.0,
     ) -> IPCMcpMemoryRememberResponse:
         """Store one MCP external-agent memory via the Orchestrator.
@@ -359,6 +368,7 @@ class OrchestratorClient:
         Args:
             content: Plain text content to store.
             channel: Provenance channel identifying the external agent.
+            agent_id: Stable identifier for the requesting agent.
             timeout: Maximum wait time in seconds.
 
         Returns:
@@ -369,6 +379,38 @@ class OrchestratorClient:
             request_id=str(uuid.uuid4()),
             content=content,
             channel=channel,
+            agent_id=agent_id,
+        )
+        return await self._send_request_and_wait(
+            request=request,
+            timeout=timeout,
+        )
+
+    async def mcp_ask(
+        self,
+        *,
+        question: str,
+        agent_id: str = "",
+        timeout: float = 300.0,
+    ) -> IPCMcpAskResponse:
+        """Ask biMEMO a question via an MCP external agent.
+
+        Resolves the agent session in the orchestrator and returns
+        the LLM answer. Never uses outbound send (MCP is pull-only).
+
+        Args:
+            question: The question text to ask.
+            agent_id: Stable identifier for the requesting agent.
+            timeout: Maximum wait time in seconds.
+
+        Returns:
+            McpAskResponse with the answer text.
+        """
+        self._require_connected()
+        request = IPCMcpAskRequest(
+            request_id=str(uuid.uuid4()),
+            question=question,
+            agent_id=agent_id,
         )
         return await self._send_request_and_wait(
             request=request,

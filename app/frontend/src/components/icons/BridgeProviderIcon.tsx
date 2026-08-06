@@ -1,4 +1,4 @@
-import { Waypoints } from "lucide-react";
+import { Bot, Waypoints } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BridgeProviderIconProps {
@@ -46,6 +46,10 @@ export function BridgeProviderIcon({ provider, className }: BridgeProviderIconPr
 
   if (normalized === "telegram") {
     return <TelegramIcon className={cn("h-3.5 w-3.5", className)} />;
+  }
+
+  if (normalized === "mcp") {
+    return <Bot className={cn("h-3.5 w-3.5", className)} />;
   }
 
   return <Waypoints className={cn("h-3.5 w-3.5", className)} />;

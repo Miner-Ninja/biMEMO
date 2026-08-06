@@ -18,6 +18,8 @@ from backend.ipc.models import (
     ConfirmResponse,
     ListAgentRunEventsRequest,
     ListAgentRunEventsResponse,
+    McpAskRequest,
+    McpAskResponse,
     McpMemoryRememberRequest,
     McpMemoryRememberResponse,
     ReloadLLMRequest,
@@ -41,6 +43,7 @@ FRONTEND_TYPE_MAP = {
     "BridgeInboundSyncRequest": BridgeInboundSyncRequest,
     "ChatRequest": ChatRequest,
     "ListAgentRunEventsRequest": ListAgentRunEventsRequest,
+    "McpAskRequest": McpAskRequest,
     "McpMemoryRememberRequest": McpMemoryRememberRequest,
     "ReloadLLMRequest": ReloadLLMRequest,
     "StopRequest": StopRequest,
@@ -71,6 +74,7 @@ class OrchestratorIPCServer:
         reload_llm_fn: Callable | None = None,
         list_run_events_fn: Callable | None = None,
         mcp_memory_remember_fn: Callable | None = None,
+        mcp_ask_fn: Callable | None = None,
     ) -> None:
         """Initialize the orchestrator IPC server.
 
@@ -89,6 +93,8 @@ class OrchestratorIPCServer:
                 journal events for reconnect recovery.
             mcp_memory_remember_fn: Optional async callable that persists one MCP
                 external-agent memory (store-only) and returns its ids.
+            mcp_ask_fn: Optional async callable that resolves an agent session,
+                runs the LLM agentic loop, and returns the answer.
         """
         self._orchestrator_fn = orchestrator_fn
         self._confirm_fn = confirm_fn
@@ -97,6 +103,7 @@ class OrchestratorIPCServer:
         self._reload_llm_fn = reload_llm_fn
         self._list_run_events_fn = list_run_events_fn
         self._mcp_memory_remember_fn = mcp_memory_remember_fn
+        self._mcp_ask_fn = mcp_ask_fn
         self._active_task: asyncio.Task | None = None
 
         self._server = IPCSocketServer(
@@ -167,6 +174,7 @@ class OrchestratorIPCServer:
             "ConfirmRequest": self._handle_confirm,
             "BridgeInboundSyncRequest": self._handle_bridge_inbound,
             "McpMemoryRememberRequest": self._handle_mcp_memory_remember,
+            "McpAskRequest": self._handle_mcp_ask,
         }
 
     async def _handle_mcp_memory_remember(
@@ -183,6 +191,23 @@ class OrchestratorIPCServer:
                 request_id=request.request_id, stored=False
             )
         return await self._mcp_memory_remember_fn(request)
+
+    async def _handle_mcp_ask(
+        self,
+        request: McpAskRequest,
+    ) -> McpAskResponse:
+        """Handle an MCP ask request — run LLM over the agent's session.
+
+        Resolves the agent session, builds a ChatRequest, runs the
+        normal agentic loop, and returns the answer. Never calls
+        provider.send_message (MCP is pull-only).
+        """
+        if self._mcp_ask_fn is None:
+            return McpAskResponse(
+                request_id=request.request_id,
+                error="ask handler unavailable",
+            )
+        return await self._mcp_ask_fn(request)
 
     @staticmethod
     def _build_internal_error_text(error: Exception) -> str:

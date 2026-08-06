@@ -184,7 +184,22 @@ def _build_runtime_ipc_server(
     """Build the IPC server that exposes the runtime to FastAPI."""
     from .bridge_handler import _build_bridge_inbound_handler
     from .chat_handler import _build_orchestrator_request_handler
-    from .factories import make_mcp_memory_remember_fn, make_save_fn
+    from .factories import make_mcp_ask_fn, make_mcp_memory_remember_fn, make_save_fn
+
+    # Reuse the orchestrator's existing queue-backed record writer so one-way
+    # remember facts enter the normal memory pipeline (row 8). It is set during
+    # dialog-recorder setup, which runs before this IPC server is built.
+    save_record_fn = getattr(orch, "save_record_fn", None)
+
+    mcp_ask_fn = make_mcp_ask_fn(db_client)
+    mcp_ask_fn.set_orchestrator_fn(_build_orchestrator_request_handler(
+        orch=orch,
+        ipc_server_ref=ipc_server_ref,
+        db_client=db_client,
+        broker=broker,
+        get_llm_call=get_llm_call,
+        stt_client=stt_client,
+    ))
 
     return OrchestratorIPCServer(
         socket_path=frontend_socket,
@@ -210,7 +225,10 @@ def _build_runtime_ipc_server(
         save_error_response_fn=make_save_fn(db_client),
         reload_llm_fn=reload_llm_fn,
         list_run_events_fn=_build_list_run_events_handler(db_client),
-        mcp_memory_remember_fn=make_mcp_memory_remember_fn(db_client),
+        mcp_memory_remember_fn=make_mcp_memory_remember_fn(
+            db_client, save_record_fn=save_record_fn
+        ),
+        mcp_ask_fn=mcp_ask_fn,
     )
 
 
