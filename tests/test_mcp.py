@@ -2192,14 +2192,22 @@ class TestAgentWriteGoesThroughOrchestrator:
 class TestAgentSessionListedOnceMarked:
     """R8 — Agent sessions are listed as one marked conversation per agent."""
 
-    async def test_agent_session_listed_once_marked(self) -> None:
-        """S8.1 — One marked conversation, not per-fact spam."""
-        # The LEFT JOIN in make_list_conversations_handler returns provider
-        # column from chat_bridge_links. When provider == "mcp", the frontend
-        # marks it as an agent session. We verify the handler includes provider.
-        from backend.processes.db_proxy.handlers.conversation import _conversation_item
+    async def test_agent_session_marker_source(self) -> None:
+        """S8.1 — The agent session is an active ``mcp`` bridge link.
 
-        # Simulate a row with provider="mcp" from the LEFT JOIN
+        The web tier turns active ``chat_bridge_links`` into the
+        ``bridge_provider`` marker (this already covers Telegram/Discord); the
+        db conversation handler returns base fields only, with no marker.
+        """
+        from backend.processes.db_proxy.handlers.conversation import (
+            _conversation_item,
+        )
+        from backend.processes.orchestrator.agent_session import (
+            resolve_agent_session,
+        )
+
+        # The db handler returns base fields only — marking is applied
+        # downstream by the web tier, not here.
         row = (
             "conv-123",
             "Agent: agent-alpha",
@@ -2208,26 +2216,31 @@ class TestAgentSessionListedOnceMarked:
             None,
             "2024-01-01T00:00:00",
             "2024-01-01T00:00:00",
-            "mcp",
         )
         item = _conversation_item(row)
         assert item["id"] == "conv-123"
-        assert item["bridge_provider"] == "mcp"
+        assert "bridge_provider" not in item
 
-        # Simulate a regular conversation (no bridge link)
-        row_no_link = (
-            "conv-456",
-            "Regular chat",
-            "idle",
-            "",
-            None,
-            "2024-01-01T00:00:00",
-            "2024-01-01T00:00:00",
-            None,
+        # resolve_agent_session creates ONE active mcp link — the marker source.
+        created: dict = {}
+
+        class FakeDB:
+            async def send_operation(self, op, params=None):
+                if op == "get_chat_bridge_by_external_target":
+                    return {"chat_bridge_link": None}
+                if op == "create_chat_bridge_link":
+                    created.update(params)
+                return {"ok": True}
+
+            async def create_conversation(self, title=""):
+                return "conv-agent-1"
+
+        conv, _sess = await resolve_agent_session(
+            agent_id="agent-alpha", db_client=FakeDB()
         )
-        item_no_link = _conversation_item(row_no_link)
-        assert item_no_link["id"] == "conv-456"
-        assert "bridge_provider" not in item_no_link
+        assert conv == "conv-agent-1"
+        assert created["provider"] == "mcp"
+        assert created["status"] == "active"
 
 
 class TestMcpProviderRegisteredInertOutbound:
