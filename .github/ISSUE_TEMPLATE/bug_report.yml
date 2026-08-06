@@ -1,0 +1,65 @@
+name: 🐛 Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please do **not** include
+        secrets, tokens, or the contents of your `.env` in logs you paste.
+        For security vulnerabilities, use private reporting (see SECURITY.md) —
+        not a public issue.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and this isn't a duplicate
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md)
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the stack with ...
+        2. Open ...
+        3. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running biMEMO?
+      options:
+        - Docker Compose
+        - Local / from source
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `git rev-parse --short HEAD` or the release tag.
+    validations:
+      required: true
+  - type: input
+    id: llm-provider
+    attributes:
+      label: LLM provider
+      description: e.g. local Ollama (model), or a remote provider.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste logs (redact any secrets). Rendered as code.
+      render: shell
