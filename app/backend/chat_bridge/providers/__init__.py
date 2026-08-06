@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from ..models import BridgeProvider
 from .base import ChatBridgeProviderBase
 from .discord import DiscordChatBridgeProvider
+from .mcp import McpChatBridgeProvider
 
 
 if TYPE_CHECKING:
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 # --- Provider registry ---
 REGISTERED_PROVIDERS: dict[BridgeProvider, type[ChatBridgeProviderBase]] = {
     BridgeProvider.DISCORD: DiscordChatBridgeProvider,
+    BridgeProvider.MCP: McpChatBridgeProvider,
 }
 
 
@@ -41,6 +43,7 @@ __all__ = [
     "REGISTERED_PROVIDERS",
     "ChatBridgeProviderBase",
     "DiscordChatBridgeProvider",
+    "McpChatBridgeProvider",
     "build_configured_providers",
     "get_provider_class",
 ]

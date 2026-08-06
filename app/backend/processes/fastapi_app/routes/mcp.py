@@ -85,18 +85,21 @@ async def _load_agent_token_hashes(
     return tokens
 
 
-async def _resolve_agent_capability(
+async def _resolve_agent_info(
     headers: dict[str, str],
     cred_client: CredentialClient,
-) -> str:
-    """Extract and validate a bearer token by comparing its SHA-256 hash.
+) -> tuple[str, str]:
+    """Extract and validate a bearer token; return (capability, agent_id).
+
+    Derives the agent identity from the matching integration's label
+    (e.g. ``BIMEMO_MCP_TOKEN_CLAUDE`` -> ``claude``), not the raw hash.
 
     Args:
         headers: HTTP request headers.
         cred_client: Credential Proxy client (used to load token hashes).
 
     Returns:
-        The capability string ("read" or "read-write") for the token.
+        Tuple of (capability_string, agent_identity_label).
 
     Raises:
         RuntimeError: If the token is missing, empty, or unknown.
@@ -114,9 +117,38 @@ async def _resolve_agent_capability(
     presented_hash = _hash_token(token)
     for stored_hash, capability in token_hashes.items():
         if hmac.compare_digest(presented_hash, stored_hash):
-            return capability
+            # Derive agent identity from the label used when the token was seeded.
+            # We load integrations again to find the matching label.
+            integrations = await cred_client.list_integrations()
+            for entry in integrations:
+                if entry.get("service_type") != "mcp_agent":
+                    continue
+                config = entry.get("config") or {}
+                if config.get("token_hash") == stored_hash:
+                    return capability, (entry.get("name") or stored_hash[:12]).lower()
+            return capability, stored_hash[:12].lower()
 
     raise RuntimeError("Invalid bearer token")
+
+
+async def _resolve_agent_capability(
+    headers: dict[str, str],
+    cred_client: CredentialClient,
+) -> str:
+    """Extract and validate a bearer token by comparing its SHA-256 hash.
+
+    Args:
+        headers: HTTP request headers.
+        cred_client: Credential Proxy client (used to load token hashes).
+
+    Returns:
+        The capability string ("read" or "read-write") for the token.
+
+    Raises:
+        RuntimeError: If the token is missing, empty, or unknown.
+    """
+    capability, _agent_id = await _resolve_agent_info(headers, cred_client)
+    return capability
 
 
 def _require_write_capability(capability: str) -> None:
@@ -420,7 +452,7 @@ def build_mcp_server(
         Returns:
             Dict with "stored", "message_id", and "conversation_id".
         """
-        capability = await _resolve_agent_capability(
+        capability, agent_id = await _resolve_agent_info(
             headers, credential_client
         )
         _require_write_capability(capability)
@@ -434,6 +466,7 @@ def build_mcp_server(
         response = await orchestrator_client.mcp_memory_remember(
             content=full_content,
             channel=MCP_CHANNEL_NAME,
+            agent_id=agent_id,
         )
         return {
             "stored": response.stored,
@@ -442,5 +475,44 @@ def build_mcp_server(
             "reason": response.reason,
         }
 
+    @server.tool(
+        name="ask",
+        description=(
+            "Ask biMEMO a question and receive an answer. The question and "
+            "answer are persisted in the agent's session, flowing into the "
+            "normal memory pipeline (records, summaries). This is a "
+            "two-way synchronous tool — the answer is returned as the tool result."
+        ),
+    )
+    async def ask(
+        question: str,
+        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+    ) -> dict[str, Any]:
+        """Ask biMEMO a question and get an answer.
+
+        Args:
+            question: The question to ask.
+            headers: Injected request headers (excluded from the schema).
+
+        Returns:
+            Dict with "answer" text and session identifiers.
+        """
+        _capability, agent_id = await _resolve_agent_info(
+            headers, credential_client
+        )
+
+        # R4, R5 — send through orchestrator via typed IPC.
+        # The orchestrator resolves the session, runs the LLM loop,
+        # and returns the answer. Never uses outbound send.
+        response = await orchestrator_client.mcp_ask(
+            question=question,
+            agent_id=agent_id,
+        )
+        return {
+            "answer": response.answer,
+            "conversation_id": response.conversation_id,
+            "session_id": response.session_id,
+            "error": response.error,
+        }
 
     return server

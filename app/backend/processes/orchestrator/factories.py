@@ -9,12 +9,13 @@ import asyncio
 import json
 import logging
 import time
-import uuid
 from typing import TYPE_CHECKING
 
 import httpx
 
 from backend.ipc.models import (
+    McpAskRequest,
+    McpAskResponse,
     McpMemoryRememberRequest,
     McpMemoryRememberResponse,
 )
@@ -555,12 +556,21 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
 _mcp_memory_remember_lock = asyncio.Lock()
 
 
-def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
+def make_mcp_memory_remember_fn(
+    db_client: DBProxyClient,
+    save_record_fn: object | None = None,
+) -> Callable:
     """Create the store-only handler for MCP external-agent memories.
 
     The write runs in the orchestrator process (Socket A), so the
     web-facing FastAPI process never writes memory content directly.
-    A fresh conversation is created per remembered fact.
+    Each agent has ONE persistent session (via resolve_agent_session)
+    — no throwaway conversations per fact.
+
+    When ``save_record_fn`` is provided, the handler also enqueues a one-way
+    record so the stored fact enters the normal memory pipeline
+    (records → summaries) without weakening the existing ``save_dialog_record``
+    guard on assistant-only turns.
 
     Applies two content-blind guards: a content-size cap (8192 bytes) and a
     DB-backed write rate-limit (20/min, survives restart). There is no
@@ -570,10 +580,14 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
 
     Args:
         db_client: Connected DBProxyClient (Socket A).
+        save_record_fn: Optional queue-backed record writer
+            (orchestrator.save_record_fn) for one-way record enqueuing (row 8).
+            When None, facts are stored but not queued for record processing.
 
     Returns:
         Async callable(McpMemoryRememberRequest) -> McpMemoryRememberResponse.
     """
+    from .agent_session import resolve_agent_session
 
     async def mcp_memory_remember_fn(
         request: McpMemoryRememberRequest,
@@ -603,14 +617,32 @@ def make_mcp_memory_remember_fn(db_client: DBProxyClient) -> Callable:
                     reason="rate_limited",
                 )
 
-            # All guards passed — store, then record the call for the limiter.
-            conversation_id = str(uuid.uuid4())
+            # R1 — resolve (or create) ONE session for this agent
+            conversation_id, session_id = await resolve_agent_session(
+                agent_id=request.agent_id,
+                db_client=db_client,
+            )
+
+            # Store the message into the agent's persistent session
             message_id = await db_client.save_message(
                 conversation_id,
                 "user",
                 request.content,
                 channel=request.channel,
             )
+
+            # R2 — enqueue a one-way record via the orchestrator's existing
+            # queue-backed record writer. This does NOT weaken
+            # save_dialog_record's guard (that only fires on assistant
+            # response_text); it is a SEPARATE user-only record path.
+            if save_record_fn is not None:
+                await save_record_fn(
+                    conversation_id,
+                    session_id,
+                    request.content,
+                    [message_id],
+                )
+
             await db_client.record_rate_limit_call(
                 tool_name=_MCP_WRITE_TOOL_NAME,
                 called_at=now,
@@ -805,3 +837,86 @@ def make_memory_route_diagnostic_fn(db_client: DBProxyClient) -> Callable:
             )
 
     return write_memory_route_diagnostic_fn
+
+
+def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
+    """Create the two-way ask handler for MCP external agents.
+
+    Resolves the agent session (get-or-create), builds a ChatRequest,
+    and pushes it through the normal orchestrator chat pipeline. The
+    answer is returned as an McpAskResponse — never via outbound send.
+
+    Args:
+        db_client: Connected DBProxyClient (Socket A).
+
+    Returns:
+        Async callable(McpAskRequest) -> McpAskResponse.
+    """
+    from backend.ipc.models import ChatRequest, ChatResponse
+
+    from .agent_session import resolve_agent_session
+
+    # We need the orchestrator_fn reference — it's passed at construction time
+    # via the IPC server. The factory captures it as a closure.
+    _orchestrator_fn: Callable | None = None
+
+    def set_orchestrator_fn(fn: Callable) -> None:
+        """Bind the orchestrator callable after factory construction."""
+        nonlocal _orchestrator_fn
+        _orchestrator_fn = fn
+
+    async def mcp_ask_fn(request: McpAskRequest) -> McpAskResponse:
+        """Run one MCP ask through the normal agentic loop."""
+        try:
+            # R1 — resolve (or create) ONE session for this agent
+            conversation_id, session_id = await resolve_agent_session(
+                agent_id=request.agent_id,
+                db_client=db_client,
+            )
+
+            # Build a ChatRequest and run it through the orchestrator
+            chat_req = ChatRequest(
+                request_id=request.request_id,
+                message=request.question,
+                channel="bridge:mcp",
+                session_id=session_id,
+                conversation_id=conversation_id,
+            )
+
+            # Call the orchestrator fn directly — it returns ChatResponse
+            if _orchestrator_fn is None:
+                return McpAskResponse(
+                    request_id=request.request_id,
+                    error="orchestrator not initialized",
+                )
+            result = _orchestrator_fn(chat_req)
+            if asyncio.iscoroutine(result):
+                result = await result
+
+            if isinstance(result, ChatResponse):
+                answer = getattr(
+                    result.structured_content,
+                    "answer",
+                    "",
+                ) if result.structured_content else ""
+                return McpAskResponse(
+                    request_id=request.request_id,
+                    answer=answer,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                )
+
+            return McpAskResponse(
+                request_id=request.request_id,
+                error="unexpected orchestrator response",
+            )
+        except Exception as error:
+            logger.error("MCP ask error: %s", error, exc_info=True)
+            return McpAskResponse(
+                request_id=request.request_id,
+                error=str(error)[:200],
+            )
+
+    # Attach the setter so process.py can wire it after construction
+    mcp_ask_fn.set_orchestrator_fn = set_orchestrator_fn  # type: ignore[attr-defined]
+    return mcp_ask_fn

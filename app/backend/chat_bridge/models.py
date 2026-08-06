@@ -8,6 +8,7 @@ class BridgeProvider(StrEnum):
     """Supported external chat bridge providers."""
 
     DISCORD = "discord"
+    MCP = "mcp"
 
 
 class BridgeSyncDirection(StrEnum):

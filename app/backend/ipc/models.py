@@ -112,11 +112,31 @@ class McpMemoryRememberRequest(IPCModel):
         request_id: Unique identifier for this request.
         content: Plain text content to store.
         channel: Provenance channel identifying the external agent source.
+        agent_id: Stable identifier for the requesting agent (from bearer token).
     """
 
     request_id: str
     content: str
     channel: str
+    agent_id: str
+
+
+class McpAskRequest(IPCModel):
+    """Request from the MCP endpoint to ask biMEMO a question.
+
+    The orchestrator resolves the agent session, runs the normal
+    agentic loop, and returns the answer. The web tier never writes
+    memory content or calls outbound sends.
+
+    Attributes:
+        request_id: Unique identifier for this request.
+        question: The question text to ask.
+        agent_id: Stable identifier for the requesting agent.
+    """
+
+    request_id: str
+    question: str
+    agent_id: str
 
 
 class ReloadLLMRequest(IPCModel):
@@ -159,6 +179,7 @@ class StreamEventType(StrEnum):
     CONVERSATION_DELETED = "conversation_deleted"
     CONVERSATION_CREATED = "conversation_created"
     SCHEDULED_TASK_RESULT = "scheduled_task_result"
+    MCP_ASK_RESULT = "mcp_ask_result"
 
 
 class StructuredAssistantContent(IPCModel):
@@ -261,6 +282,24 @@ class McpMemoryRememberResponse(IPCModel):
     conversation_id: str = ""
     stored: bool = False
     reason: str = ""
+
+
+class McpAskResponse(IPCModel):
+    """Response from biMEMO after processing an agent's question.
+
+    Attributes:
+        request_id: Matching request identifier.
+        answer: biMEMO's answer text.
+        conversation_id: The agent's session conversation.
+        session_id: The agent's session identifier.
+        error: Error message when the request failed.
+    """
+
+    request_id: str
+    answer: str = ""
+    conversation_id: str = ""
+    session_id: str = ""
+    error: str = ""
 
 
 
