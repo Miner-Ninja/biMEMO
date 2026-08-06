@@ -16,7 +16,6 @@ import {
   useChat,
 } from "@/hooks/useChat";
 import { useProcessingStages } from "@/hooks/useProcessingStages";
-import { ProcessingStages } from "@/components/chat/ProcessingStages";
 import {
   useRealtimeStream,
   type ConnectionStatus,
@@ -1980,6 +1979,19 @@ export function ChatPage() {
     isLoading || processingStages.length > 0
       ? processingStages
       : serverProcessingStages;
+  // Label of the currently-active stage, shown as a shimmering overlay inside
+  // the chat input (in place of the placeholder) while a request is processing.
+  const lastProcessingStage =
+    displayedProcessingStages.length > 0
+      ? displayedProcessingStages[displayedProcessingStages.length - 1]
+      : null;
+  const currentProcessingStage =
+    lastProcessingStage && lastProcessingStage.status === "active"
+      ? {
+          label: lastProcessingStage.label,
+          startedAt: lastProcessingStage.startedAt,
+        }
+      : null;
 
   const sidebar = (
     <Sidebar
@@ -2035,14 +2047,6 @@ export function ChatPage() {
         ttsAvailable={ttsAvailable}
         onConfirmationStatusChange={handleConfirmationStatusChange}
       />
-      <div className="mx-auto w-full max-w-[1920px] min-h-[32px] px-2 sm:min-h-[40px] sm:px-4 2xl:px-[10%]">
-        {displayedProcessingStages && displayedProcessingStages.length > 0 && (
-          <ProcessingStages
-            stages={displayedProcessingStages}
-            className="px-2 py-1.5 sm:px-4 sm:py-2"
-          />
-        )}
-      </div>
       <ChatInput
         ref={chatInputRef}
         onSend={handleSend}
@@ -2058,6 +2062,7 @@ export function ChatPage() {
               ? "Server disconnected. Reconnecting..."
               : "Ask me anything..."
         }
+        processingStage={currentProcessingStage}
         activeFiles={activeFileNames}
         onDeactivateFile={(filename) => {
           const match = availableFiles.find((file) => file.filename === filename);

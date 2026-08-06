@@ -2,6 +2,7 @@ import { memo } from "react";
 import { ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { LiveTimer } from "./LiveTimer";
+import { ShimmerText } from "./ShimmerText";
 import { cn } from "@/lib/utils";
 import type { ProcessingStage } from "@/types/chat";
 
@@ -11,28 +12,6 @@ interface ProcessingStagesProps {
 }
 
 const LASER_EASING = "cubic-bezier(0.2, 0.6, 0.25, 1)";
-const SHIMMER_DURATION_MS = 1600;
-const SHIMMER_STEP_MS = 70;
-
-const ShimmerText = memo(function ShimmerText({ text }: { text: string }) {
-  const chars = Array.from(text);
-  return (
-    <span className="inline-flex whitespace-pre">
-      {chars.map((ch, i) => (
-        <span
-          key={i}
-          style={{
-            animation: `char-shimmer ${SHIMMER_DURATION_MS}ms ease-in-out infinite`,
-            animationDelay: `-${(i * SHIMMER_STEP_MS) % SHIMMER_DURATION_MS}ms`,
-            willChange: "opacity",
-          }}
-        >
-          {ch}
-        </span>
-      ))}
-    </span>
-  );
-});
 
 const LaserScanner = memo(() => (
   <div aria-hidden className="relative h-2 w-full">
