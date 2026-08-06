@@ -50,6 +50,9 @@ export function useRealtimeStream(
   const onEventRef = useRef(onEvent);
   const connectRef = useRef<(() => Promise<void>) | null>(null);
   const reconnectingRef = useRef(false);
+  // Bumped on every connect()/disconnect(). Each connection attempt captures
+  // its generation; stale callbacks (from a superseded socket) early-return.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     onEventRef.current = onEvent;
@@ -95,7 +98,11 @@ export function useRealtimeStream(
   }, []);
 
   const connectWebSocket = useCallback(async () => {
+    // Capture this attempt's generation. A later connect()/disconnect() bumps
+    // generationRef and invalidates every callback below.
+    const generation = generationRef.current;
     const authenticated = await ensureAuthenticated();
+    if (generation !== generationRef.current) return; // superseded during auth
     if (!authenticated) {
       setStatus("disconnected");
       scheduleReconnect();
@@ -106,23 +113,27 @@ export function useRealtimeStream(
     webSocketRef.current = socket;
 
     socket.onopen = () => {
+      if (generation !== generationRef.current) return;
       setStatus("connected");
       backoffRef.current = MIN_BACKOFF;
     };
 
     socket.onmessage = (event) => {
+      if (generation !== generationRef.current) return;
       if (typeof event.data === "string") {
         dispatchEvent(event.data);
       }
     };
 
     socket.onerror = () => {
+      if (generation !== generationRef.current) return;
       if (activeRef.current) {
         socket.close();
       }
     };
 
     socket.onclose = () => {
+      if (generation !== generationRef.current) return; // stale socket — ignore
       if (webSocketRef.current === socket) {
         webSocketRef.current = null;
       }
@@ -133,6 +144,7 @@ export function useRealtimeStream(
   }, [conversationId, dispatchEvent, scheduleReconnect]);
 
   const connect = useCallback(async () => {
+    generationRef.current += 1; // invalidate any in-flight/previous attempt
     activeRef.current = false;
     cleanup();
     activeRef.current = true;
@@ -145,6 +157,7 @@ export function useRealtimeStream(
   }, [connect]);
 
   const disconnect = useCallback(() => {
+    generationRef.current += 1; // invalidate the current attempt's callbacks
     activeRef.current = false;
     cleanup();
     setStatus("disconnected");
