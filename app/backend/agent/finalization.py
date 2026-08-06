@@ -125,6 +125,27 @@ class RequirementSatisfaction:
             missing_current_data_targets=missing_targets,
         )
 
+    def with_current_data_targets_covered(
+        self,
+        covered: tuple[str, ...],
+    ) -> RequirementSatisfaction:
+        """Return a copy with covered targets dropped from the missing set.
+
+        A target becomes covered when some tool this turn actually fetched
+        content naming it, even if the required web_search did not.
+        """
+        covered_folded = {label.casefold() for label in covered}
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools,
+            failed_tools=dict(self.failed_tools),
+            current_data_targets=self.current_data_targets,
+            missing_current_data_targets=tuple(
+                target
+                for target in self.missing_current_data_targets
+                if target.casefold() not in covered_folded
+            ),
+        )
+
 
 @dataclass(frozen=True)
 class FinalAnswerDecision:
