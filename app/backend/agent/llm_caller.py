@@ -702,6 +702,28 @@ class LLMCaller:
             return any(isinstance(item, dict) and bool(item) for item in raw_results)
         return bool(str(parsed_result).strip())
 
+    @staticmethod
+    def _current_data_targets_covered_by_tools(
+        messages: list[dict],
+        missing_labels: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Return missing targets whose name appears in a tool result this turn.
+
+        Only ``role: "tool"`` message content counts as grounding — a target is
+        credited when some tool actually fetched content naming it, never merely
+        because a tool was invoked or the model's prose mentions it.
+        """
+        tool_content = " ".join(
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "tool"
+        ).casefold()
+        if not tool_content.strip():
+            return ()
+        return tuple(
+            label for label in missing_labels if label.casefold() in tool_content
+        )
+
     def _search_result_source_summary(
         self,
         result: object | None,
@@ -933,6 +955,16 @@ class LLMCaller:
                 break
 
             loop.advance()
+
+        if (
+            requirements.needs_current_data
+            and satisfaction.missing_current_data_targets
+        ):
+            covered = self._current_data_targets_covered_by_tools(
+                messages, satisfaction.missing_current_data_targets
+            )
+            if covered:
+                satisfaction = satisfaction.with_current_data_targets_covered(covered)
 
         decision = validate_final_answer(
             raw_final_text=raw_final_text,

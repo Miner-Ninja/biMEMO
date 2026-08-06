@@ -11,6 +11,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
     AgentOrchestrator,
@@ -380,6 +381,56 @@ class TestFinalAnswerRecovery:
                 current_data_targets=("Bitcoin", "Ethereum", "Solana"),
                 missing_current_data_targets=("Solana",),
             ),
+        )
+
+        assert decision.accepted
+
+    def test_with_current_data_targets_covered_drops_covered(self):
+        """Covered targets leave the missing set; others stay (R1)."""
+        satisfaction = RequirementSatisfaction(
+            current_data_targets=("Bitcoin", "Ethereum", "Solana"),
+            missing_current_data_targets=("Ethereum", "Solana"),
+        )
+
+        updated = satisfaction.with_current_data_targets_covered(("ethereum",))
+
+        assert updated.missing_current_data_targets == ("Solana",)
+        assert updated.current_data_targets == ("Bitcoin", "Ethereum", "Solana")
+
+    def test_covered_by_tools_credits_only_tool_result_content(self):
+        """A target is credited from tool output, not prose or invocation (R2, R4)."""
+        messages = [
+            {"role": "user", "content": "какой курс эфириума"},
+            {"role": "assistant", "content": "Ethereum looks interesting"},
+            {"role": "tool", "content": '{"ethereum": {"usd": 1902.5}}'},
+        ]
+
+        covered = LLMCaller._current_data_targets_covered_by_tools(
+            messages, ("Ethereum", "Solana")
+        )
+
+        assert covered == ("Ethereum",)  # in the tool result
+        # "Solana" appears nowhere; "Ethereum" in the assistant prose does not count
+        assert LLMCaller._current_data_targets_covered_by_tools(
+            [{"role": "assistant", "content": "Ethereum Solana"}], ("Ethereum",)
+        ) == ()
+
+    def test_finalization_accepts_when_target_covered_by_fetch(self):
+        """A fetch covering the target clears the guard's rejection (R1, R3)."""
+        satisfaction = RequirementSatisfaction(
+            satisfied_tools=frozenset({"web_search"}),
+            current_data_targets=("Ethereum",),
+            missing_current_data_targets=("Ethereum",),
+        ).with_current_data_targets_covered(("Ethereum",))
+
+        decision = validate_final_answer(
+            raw_final_text="Ethereum is 1902.5 USD.",
+            structured_content=None,
+            requirements=ResponseRequirements(
+                needs_current_data=True,
+                required_tools=("web_search",),
+            ),
+            satisfaction=satisfaction,
         )
 
         assert decision.accepted
