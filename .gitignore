@@ -60,10 +60,14 @@ docker/caddy/ca/
 .DS_Store
 Thumbs.db
 
+# --- Runtime traces (contain real conversation/memory content) ---
+app/.runtime/
+
 # --- Local analysis / scratch ---
 tmp/
 sandbox/
 openspec/
+PROJECT_PROFILE.md
 CODE_REVIEW.md
 CODE_RULES.md
 AGENTS.md

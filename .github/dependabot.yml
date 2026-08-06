@@ -1,0 +1,35 @@
+# Dependabot keeps dependencies patched across biMEMO's ecosystems.
+# Grouped minor/patch updates keep PR noise low; majors come separately.
+version: 2
+updates:
+  # Python backend (pyproject.toml at repo root)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Frontend (Vite/React)
+  - package-ecosystem: "npm"
+    directory: "/app/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Container base images (docker/Dockerfile)
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+
+  # CI actions (.github/workflows/*)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

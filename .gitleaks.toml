@@ -1,11 +1,43 @@
-title = "biMEMO secret scanning"
+# biMEMO gitleaks configuration.
+# Extends the default ruleset with biMEMO-specific secret shapes, and
+# allowlists known structural false positives (Docker secret file-paths,
+# canonical test fixtures, example/doc files). Used locally and in CI.
+title = "biMEMO gitleaks rules"
 
 [extend]
 useDefault = true
 
+# MCP agent bearer token: secrets.token_hex(32) => 64 hex chars. Anchored to
+# bearer/authorization/env context so plain 64-hex SHA-256 *hashes* (not
+# secret) don't trip it.
+[[rules]]
+id = "bimemo-mcp-bearer-token"
+description = "biMEMO MCP agent bearer token (64-hex with auth context)"
+regex = '''(?i)(bearer\s+|bearertoken["'\s:=]+|BIMEMO_MCP_TOKEN_[A-Z0-9]+\s*=\s*|authorization["'\s:=]+bearer\s+)[a-f0-9]{64}\b'''
+tags = ["bimemo", "token"]
+
+# biMEMO secret-bearing env var carrying a real (non-placeholder, non-path)
+# value. The (?!/) lookahead excludes Docker secret file-paths like
+# BIMEMO_UNLOCK_PASSWORD_FILE=/run/secrets/... which are references, not secrets.
+[[rules]]
+id = "bimemo-env-secret"
+description = "biMEMO secret/password/key/token env var with a real value"
+regex = '''(?i)\bBIMEMO_[A-Z0-9_]*(SECRET|PASSWORD|TOKEN|MASTER_?KEY|SIGNING|DB_?KEY|CIPHER)[A-Z0-9_]*\s*[=:]\s*["']?[^\s"'#</][^\s"'#<]{5,}'''
+tags = ["bimemo", "env"]
+
+# Argon2 password hashes should never appear in a public repo either.
+[[rules]]
+id = "argon2-hash"
+description = "Argon2 password hash"
+regex = '''\$argon2(id|i|d)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/=]{12,}\$[A-Za-z0-9+/=]{16,}'''
+tags = ["hash", "password"]
+
 [allowlist]
-description = "Allow fixed fake secrets used by security-filter tests."
+description = "placeholders, Docker secret file-paths, and fixed fake secrets used by security-filter tests"
 regexes = [
+  '''(?i)(changeme|change_me|example|placeholder|your[-_ ]|xxxx+|<[^>]+>|\.\.\.|dummy|sample|fake|test[-_]?token|0{16,}|deadbeef)''',
+  '''/run/secrets/''',              # BIMEMO_*_FILE=/run/secrets/... are PATHS, not secrets
+  # Fixed fake secrets used by the content-filter / security tests:
   '''AKIAIOSFODNN7EXAMPLE''',
   '''ghp_abcdefghijklmnopqrstuvwxyz0123456789''',
   '''sk-1234567890abcdefghij''',
@@ -17,4 +49,8 @@ regexes = [
 ]
 paths = [
   '''app/frontend/package-lock\.json''',
+  '''(^|/)\.env\.example$''',
+  '''(^|/)INSTALL\.md$''',
+  '''(^|/)openspec/''',             # gitignored design docs; may hold truncated example creds
+  '''(^|/)security/content_scanning\.py$''',  # scanner module: defines credential-shaped patterns by design
 ]
