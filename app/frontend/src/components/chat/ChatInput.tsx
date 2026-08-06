@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ShimmerText } from "./ShimmerText";
+import { LiveTimer } from "./LiveTimer";
 import { UploadProgressPanel } from "@/components/ui/UploadProgressPanel";
 import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
 import { cn } from "@/lib/utils";
@@ -66,6 +68,9 @@ interface ChatInputProps {
   isLoading?: boolean;
   uploadProgress?: UploadProgressData | null;
   placeholder?: string;
+  /** Current processing stage; shown as a shimmering label + live timer in
+   *  place of the placeholder while a request is processing (empty input only). */
+  processingStage?: { label: string; startedAt: number } | null;
   activeFiles?: string[];
   onDeactivateFile?: (filename: string) => void;
   availableFiles?: string[];
@@ -127,6 +132,7 @@ export const ChatInput = memo(
       isLoading = false,
       uploadProgress,
       placeholder = "Ask a question about your data...",
+      processingStage = null,
       activeFiles,
       onDeactivateFile,
       availableFiles,
@@ -266,6 +272,9 @@ export const ChatInput = memo(
     };
 
     const canSend = value.trim().length > 0 && !disabled;
+    // Show the shimmering stage label in the placeholder spot only while a
+    // request is processing AND the input is empty (so typing hides it).
+    const showStageOverlay = !!processingStage && value.length === 0;
 
     return (
       <div
@@ -434,21 +443,34 @@ export const ChatInput = memo(
                   className="w-full px-3 pt-2 sm:px-4 sm:pt-2.5"
                 />
               ) : (
-                <Textarea
-                  ref={textareaRef}
-                  value={value}
-                  onChange={handleChange}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  onBlur={handleBlur}
-                  placeholder={placeholder}
-                  disabled={disabled}
-                  rows={1}
-                  className={cn(
-                    "min-h-[38px] max-h-[160px] resize-none overflow-y-hidden border-0 bg-transparent px-3 py-1.5 text-[15px] shadow-none sm:min-h-[44px] sm:px-4 sm:py-2.5 sm:text-base",
-                    "focus-visible:ring-0 focus-visible:border-0"
-                  )}
-                />
+                <div className="relative">
+                  <Textarea
+                    ref={textareaRef}
+                    value={value}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
+                    onBlur={handleBlur}
+                    placeholder={showStageOverlay ? "" : placeholder}
+                    disabled={disabled}
+                    rows={1}
+                    className={cn(
+                      "min-h-[38px] max-h-[160px] resize-none overflow-y-hidden border-0 bg-transparent px-3 py-1.5 text-[15px] shadow-none sm:min-h-[44px] sm:px-4 sm:py-2.5 sm:text-base",
+                      "focus-visible:ring-0 focus-visible:border-0"
+                    )}
+                  />
+                  {showStageOverlay && processingStage ? (
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 px-3 py-1.5 text-[15px] text-muted-foreground sm:px-4 sm:py-2.5 sm:text-base"
+                    >
+                      <span className="min-w-0 truncate">
+                        <ShimmerText text={processingStage.label} />
+                      </span>
+                      <LiveTimer startedAt={processingStage.startedAt} />
+                    </div>
+                  ) : null}
+                </div>
               )}
               <div className="flex items-center justify-between gap-2 py-1.5 pl-1.5 pr-1 sm:py-1.5 sm:pl-2 sm:pr-1">
                 <div className="flex items-center gap-1">
