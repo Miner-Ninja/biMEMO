@@ -295,7 +295,7 @@ export const ChatMessage = memo(function ChatMessage({
           <div className="min-h-[14px]">
             {hasStats && (
               <div className="animate-in fade-in duration-500">
-                <TokenStats stats={message.stats!} stageTimes={message.stageTimes} />
+                <TokenStats stats={message.stats!} />
               </div>
             )}
           </div>

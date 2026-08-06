@@ -8,9 +8,45 @@ from backend.models.chat_stats import (
     ContextUsage,
     ExtendedUsage,
     MemoryZones,
+    StageTiming,
     TimingStats,
     ZoneBudgetItem,
 )
+
+
+PROMPT_STAGE_LABEL = "Prompt"
+GENERATION_STAGE_LABEL = "Generation"
+
+
+def _build_stage_timings(
+    stage_phases: list[tuple[str, float]] | None,
+    prompt_ms: float,
+    generation_ms: float,
+) -> list[StageTiming]:
+    """Build the ordered per-phase breakdown, dropping zero-duration phases.
+
+    ``stage_phases`` holds the wall-clock spans measured during the turn
+    (memory recall, context assembly, tools) in execution order. Repeated tool
+    labels are summed while keeping first-seen order. The engine-reported prompt
+    and generation times are appended last. Phases are *durations*, not a
+    partition of ``total_ms`` — they may overlap and are not summed to a total.
+    """
+    ordered_labels: list[str] = []
+    totals: dict[str, float] = {}
+    for label, duration_ms in stage_phases or []:
+        if label not in totals:
+            ordered_labels.append(label)
+        totals[label] = totals.get(label, 0.0) + duration_ms
+
+    combined = [(label, totals[label]) for label in ordered_labels]
+    combined.append((PROMPT_STAGE_LABEL, prompt_ms))
+    combined.append((GENERATION_STAGE_LABEL, generation_ms))
+
+    return [
+        StageTiming(label=label, duration_ms=round(duration_ms, 1))
+        for label, duration_ms in combined
+        if duration_ms > ZERO_DURATION_MS
+    ]
 
 
 ZERO_DURATION_MS = 0.0
@@ -92,6 +128,7 @@ def _build_extended_usage(
     iterations: int,
     context_total: int | None = None,
     zone_usage: dict[str, int] | None = None,
+    stage_phases: list[tuple[str, float]] | None = None,
 ) -> ExtendedUsage:
     """Build the final aggregated usage object."""
     return ExtendedUsage(
@@ -104,6 +141,7 @@ def _build_extended_usage(
             prompt_ms=round(prompt_ms, 1),
             generation_ms=round(generation_ms, 1),
             total_ms=round(total_wall_time_ms, 1),
+            stages=_build_stage_timings(stage_phases, prompt_ms, generation_ms),
         ),
         model=model,
         iterations=iterations,
@@ -126,6 +164,7 @@ def aggregate_call_usages(
     fallback_model: str,
     total_wall_time_ms: float,
     zone_usage: dict[str, int] | None = None,
+    stage_phases: list[tuple[str, float]] | None = None,
 ) -> ExtendedUsage | None:
     """Aggregate provider call usage data into response statistics."""
     if not call_usages:
@@ -149,4 +188,5 @@ def aggregate_call_usages(
         iterations=len(call_usages),
         context_total=latest_usage.context_total,
         zone_usage=zone_usage,
+        stage_phases=stage_phases,
     )

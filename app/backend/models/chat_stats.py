@@ -18,12 +18,20 @@ class ContextUsage(StrictChatStatsModel):
     used_percent: float
 
 
+class StageTiming(StrictChatStatsModel):
+    """One labelled processing-phase duration for a chat response."""
+
+    label: str
+    duration_ms: float
+
+
 class TimingStats(StrictChatStatsModel):
     """Timing statistics for a chat response."""
 
     prompt_ms: float
     generation_ms: float
     total_ms: float
+    stages: list[StageTiming] = []
 
 
 class ZoneBudgetItem(StrictChatStatsModel):

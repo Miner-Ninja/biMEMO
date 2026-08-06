@@ -15,6 +15,14 @@ export interface ContextUsage {
   used_percent: number;
 }
 
+/** One labelled processing-phase duration */
+export interface StageTiming {
+  /** Phase label (e.g. "Memory recall", "Web search", "Generation") */
+  label: string;
+  /** Phase duration (ms) */
+  duration_ms: number;
+}
+
 /** Timing statistics for request processing */
 export interface TimingStats {
   /** Time to process prompt (ms) */
@@ -23,6 +31,8 @@ export interface TimingStats {
   generation_ms: number;
   /** Total request time (ms) */
   total_ms: number;
+  /** Ordered per-phase breakdown (empty on older messages) */
+  stages?: StageTiming[];
 }
 
 /** Token budget and usage for one memory zone */
