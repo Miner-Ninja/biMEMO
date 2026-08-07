@@ -3,7 +3,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertTriangle,
-  BarChart3,
   Copy,
   Check,
   Pencil,
@@ -15,11 +14,6 @@ import { SpeakButton } from "./SpeakButton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,12 +25,9 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { DataChart } from "./DataChart";
-import { ResultsTable } from "./ResultsTable";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { TokenStats } from "./TokenStats";
 import { VoicePlayer } from "./VoicePlayer";
-import { detectChartType } from "@/lib/chart-utils";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import type { Message, PendingConfirmation } from "@/types/chat";
 import ConfirmationCard from "./ConfirmationCard";
@@ -57,7 +48,7 @@ interface ChatMessageProps {
 }
 
 /**
- * Single chat message with collapsible SQL and Results sections.
+ * Single chat message with a collapsible thinking section.
  * Memoized to prevent re-renders when other messages update.
  */
 export const ChatMessage = memo(function ChatMessage({
@@ -70,30 +61,17 @@ export const ChatMessage = memo(function ChatMessage({
   ttsAvailable = false,
   onConfirmationStatusChange,
 }: ChatMessageProps) {
-  const [resultsOpen, setResultsOpen] = useState(false);
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showFallbackChart, setShowFallbackChart] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const isUser = message.role === "user";
   const hasError = Boolean(message.error);
-  const hasResults = Boolean(message.results && message.results.data.length > 0);
   const hasStats = Boolean(message.stats);
   const hasThinking = Boolean(message.thinking);
-  const hasChartBlock = message.content.includes("```chart");
   const hasImages = Boolean(message.images && message.images.length > 0);
-
-  // Fallback chart detection from table results
-  const fallbackChart = useMemo(() => {
-    if (hasChartBlock || !hasResults || !message.results) return null;
-    return detectChartType(
-      message.results.columns,
-      message.results.data as Record<string, unknown>[]
-    );
-  }, [hasChartBlock, hasResults, message.results]);
 
   const cleanContent = message.content;
   const suggestions = message.suggestions ?? [];
@@ -424,40 +402,6 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         ) : null}
-
-        {/* Results (collapsible) */}
-        {hasResults && (
-          <>
-            <Collapsible open={resultsOpen} onOpenChange={setResultsOpen}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <CollapsibleTrigger className="flex flex-1 items-center gap-2 rounded border border-border p-2 text-sm hover:bg-muted/50">
-                  <ChevronRight
-                    className={cn(
-                      "h-4 w-4 transition-transform",
-                      resultsOpen && "rotate-90"
-                    )}
-                  />
-                  <span>Results ({message.results!.rowCount} rows)</span>
-                </CollapsibleTrigger>
-                {fallbackChart && !showFallbackChart && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 self-start sm:shrink-0"
-                    onClick={() => setShowFallbackChart(true)}
-                  >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Chart
-                  </Button>
-                )}
-              </div>
-              <CollapsibleContent className="mt-2">
-                <ResultsTable results={message.results!} />
-              </CollapsibleContent>
-            </Collapsible>
-            {showFallbackChart && fallbackChart && <DataChart chart={fallbackChart} />}
-          </>
-        )}
       </div>
 
       <Dialog

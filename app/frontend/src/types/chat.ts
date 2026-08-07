@@ -1,18 +1,6 @@
 import type { ExtendedUsage } from "./stats";
 
 /**
- * Query result containing SQL execution results
- */
-export interface QueryResult {
-  /** Column names in order */
-  columns: string[];
-  /** Row data as array of objects */
-  data: Record<string, unknown>[];
-  /** Total number of rows returned */
-  rowCount: number;
-}
-
-/**
  * Tool execution status
  */
 export interface ToolStatus {
@@ -71,8 +59,6 @@ export interface Message {
   toolStatus?: ToolStatus;
   /** Follow-up suggestions shown after the final answer */
   suggestions?: string[];
-  /** Query execution results (assistant messages only) */
-  results?: QueryResult;
   /** Error message if query failed (assistant messages only) */
   error?: string;
   /** Structured error category from backend */
