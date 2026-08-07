@@ -90,6 +90,50 @@ def make_runtime_ps_response(model: str = "qwen3:8b", context_length: int = 2048
     )
 
 
+class TestBuildChatPayloadToolChoice:
+    """The native chat payload nudges tool use when tools are offered."""
+
+    def _caps(self):
+        """Build capabilities that select the structured (JSON schema) format."""
+        from backend.llm.capabilities import ModelCapabilities
+
+        return ModelCapabilities(
+            provider=OLLAMA_PROVIDER_NAME,
+            model="qwen3:8b",
+            max_context_tokens=DEFAULT_TEST_NUM_CTX,
+            source=PREBUILT_CAPABILITIES_SOURCE,
+            llm_response_format=LlmResponseFormat.JSON_SCHEMA,
+        )
+
+    def test_tool_choice_auto_when_tools_present(self, tmp_path):
+        """tool_choice='auto' rides along whenever tools are sent."""
+        transport = httpx.MockTransport(lambda _req: httpx.Response(200))
+        client = make_client(transport, tmp_path)
+
+        payload = client._build_chat_payload(
+            [{"role": "user", "content": "check the price"}],
+            [{"type": "function", "function": {"name": "http_fetch"}}],
+            capabilities=self._caps(),
+        )
+
+        assert payload["tools"]
+        assert payload["tool_choice"] == "auto"
+
+    def test_no_tool_choice_without_tools(self, tmp_path):
+        """No tools -> neither tools nor tool_choice appear in the payload."""
+        transport = httpx.MockTransport(lambda _req: httpx.Response(200))
+        client = make_client(transport, tmp_path)
+
+        payload = client._build_chat_payload(
+            [{"role": "user", "content": "hello"}],
+            None,
+            capabilities=self._caps(),
+        )
+
+        assert "tools" not in payload
+        assert "tool_choice" not in payload
+
+
 class TestOllamaClientInit:
     """Tests for OllamaClient initialization."""
 

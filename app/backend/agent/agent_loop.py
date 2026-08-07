@@ -26,7 +26,11 @@ from backend.agent.agent_loop_models import (
     TurnInputState,
     TurnPreparation,
 )
-from backend.agent.finalization import detect_turn_requirements
+from backend.agent.finalization import (
+    RequirementSatisfaction,
+    ResponseRequirements,
+    detect_turn_requirements,
+)
 from backend.agent.llm_caller import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
     LLMCaller,
@@ -944,23 +948,32 @@ class AgentOrchestrator:
             attached_files=attached_files or [],
             meta=meta,
         )
-        requirements = detect_turn_requirements(turn_input.filtered_message)
-        satisfaction = await self.llm_caller.append_required_tool_context(
-            filtered_message=turn_input.filtered_message,
-            messages=messages,
-            requirements=requirements,
-        )
-        if "web_search" not in requirements.required_tools:
-            web_search_satisfied = (
-                await self.llm_caller.append_forced_web_search_context(
-                    filtered_message=turn_input.filtered_message,
-                    messages=messages,
-                    llm_call=llm_call,
-                    call_usages=call_usages,
-                )
+        # Scheduled tasks drive tool use via their own declared allowlist
+        # (enforced with retries by the scheduler), NOT via keyword-forced
+        # prefetch and the current-data guard. Neutralise the keyword forcing so
+        # the agent decides for itself — universal behaviour instead of a
+        # hardcoded "current-data word -> mandatory web_search" special case.
+        if self.prompt_builder.scheduled_task_mode:
+            requirements = ResponseRequirements()
+            satisfaction = RequirementSatisfaction()
+        else:
+            requirements = detect_turn_requirements(turn_input.filtered_message)
+            satisfaction = await self.llm_caller.append_required_tool_context(
+                filtered_message=turn_input.filtered_message,
+                messages=messages,
+                requirements=requirements,
             )
-            if web_search_satisfied:
-                satisfaction = satisfaction.with_success("web_search")
+            if "web_search" not in requirements.required_tools:
+                web_search_satisfied = (
+                    await self.llm_caller.append_forced_web_search_context(
+                        filtered_message=turn_input.filtered_message,
+                        messages=messages,
+                        llm_call=llm_call,
+                        call_usages=call_usages,
+                    )
+                )
+                if web_search_satisfied:
+                    satisfaction = satisfaction.with_success("web_search")
         forced_recall_tokens = 0
         if "memory_recall" not in requirements.required_tools:
             forced_recall_tokens = (

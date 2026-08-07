@@ -392,6 +392,11 @@ class OllamaClient:
             payload["format"] = schema_override or STRUCTURED_RESPONSE_SCHEMA
         if tools:
             payload["tools"] = tools
+            # Nudge the model to actually consider the tools. The OpenAI-compatible
+            # client always sent tool_choice="auto"; the native client omitted it,
+            # which (with a structured `format`) biased the model toward emitting
+            # the answer schema and never calling a tool.
+            payload["tool_choice"] = "auto"
         return payload
 
     async def _emit_reasoning_deltas(
