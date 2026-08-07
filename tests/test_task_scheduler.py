@@ -1011,15 +1011,36 @@ class TestScheduledTaskSystemPrompt:
         assert "```suggestions" in prompt
         assert "[SILENT]" not in prompt
 
-    def test_scheduled_mode_omits_suggestions(self):
-        """In scheduled_task_mode the suggestions block is removed."""
+    def test_scheduled_mode_omits_suggestions_when_disabled(self):
+        """A scheduled task with suggestions disabled omits the block."""
         from backend.agent.prompt_builder import PromptBuilder
 
         builder = PromptBuilder("test-model", {}, MagicMock(), None)
         builder.scheduled_task_mode = True
+        builder.suggestions_enabled = False
         prompt = builder.build_system_prompt()
         assert "```suggestions" not in prompt
         assert "scheduled background task" in prompt
+
+    def test_scheduled_mode_includes_suggestions_when_enabled(self):
+        """A scheduled task with suggestions enabled includes the block."""
+        from backend.agent.prompt_builder import PromptBuilder
+
+        builder = PromptBuilder("test-model", {}, MagicMock(), None)
+        builder.scheduled_task_mode = True
+        builder.suggestions_enabled = True
+        prompt = builder.build_system_prompt()
+        assert "```suggestions" in prompt
+        assert "scheduled background task" in prompt
+
+    def test_normal_mode_omits_suggestions_when_disabled(self):
+        """An interactive chat with suggestions disabled omits the block."""
+        from backend.agent.prompt_builder import PromptBuilder
+
+        builder = PromptBuilder("test-model", {}, MagicMock(), None)
+        builder.suggestions_enabled = False
+        prompt = builder.build_system_prompt()
+        assert "```suggestions" not in prompt
 
     def test_scheduled_mode_includes_silent_marker(self):
         """In scheduled_task_mode the [SILENT] marker is documented."""

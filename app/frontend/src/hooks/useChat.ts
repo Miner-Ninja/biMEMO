@@ -68,12 +68,15 @@ function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
 }
 
 function mapSettings(
-  raw: { show_sql?: boolean; show_thinking?: boolean } | undefined
+  raw:
+    | { show_sql?: boolean; show_thinking?: boolean; show_suggestions?: boolean }
+    | undefined
 ): ChatSettings {
   if (!raw) return { ...DEFAULT_CHAT_SETTINGS };
   return {
     showSql: raw.show_sql ?? DEFAULT_CHAT_SETTINGS.showSql,
     showThinking: raw.show_thinking ?? DEFAULT_CHAT_SETTINGS.showThinking,
+    showSuggestions: raw.show_suggestions ?? DEFAULT_CHAT_SETTINGS.showSuggestions,
   };
 }
 

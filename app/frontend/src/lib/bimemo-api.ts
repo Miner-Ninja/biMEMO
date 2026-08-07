@@ -222,6 +222,7 @@ export class ApiError extends Error {
 export interface StoredChatSettings {
   show_sql: boolean;
   show_thinking: boolean;
+  show_suggestions: boolean;
 }
 
 export interface StoredConversation {

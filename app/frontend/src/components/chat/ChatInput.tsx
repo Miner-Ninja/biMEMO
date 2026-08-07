@@ -19,6 +19,7 @@ import {
   Settings,
   Code,
   Brain,
+  Lightbulb,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,8 @@ interface ChatInputProps {
   onToggleSql?: () => void;
   showThinking?: boolean;
   onToggleThinking?: () => void;
+  showSuggestions?: boolean;
+  onToggleSuggestions?: () => void;
 }
 
 function bridgeProviderLabel(provider: string): string {
@@ -148,6 +151,8 @@ export const ChatInput = memo(
       onToggleSql,
       showThinking,
       onToggleThinking,
+      showSuggestions,
+      onToggleSuggestions,
     }: ChatInputProps,
     ref
   ) {
@@ -548,7 +553,7 @@ export const ChatInput = memo(
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : null}
-                  {onToggleSql || onToggleThinking ? (
+                  {onToggleSql || onToggleThinking || onToggleSuggestions ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -581,6 +586,15 @@ export const ChatInput = memo(
                                 Show Thinking
                               </span>
                               <Switch checked={Boolean(showThinking)} />
+                            </DropdownMenuItem>
+                          )}
+                          {onToggleSuggestions && (
+                            <DropdownMenuItem onClick={onToggleSuggestions}>
+                              <span className="flex items-center gap-2">
+                                <Lightbulb className="h-4 w-4" />
+                                Suggestions
+                              </span>
+                              <Switch checked={Boolean(showSuggestions)} />
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuGroup>

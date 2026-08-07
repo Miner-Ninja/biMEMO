@@ -99,6 +99,11 @@ class PromptBuilder:
         self.active_skill_context: str | None = None
         self.allowed_tool_names: set[str] | None = None
         self.scheduled_task_mode: bool = False
+        # Whether the model is asked to end its answer with a suggestions block.
+        # Set per turn from the conversation's show_suggestions setting; when
+        # False the suggestions instructions are omitted from the prompt so the
+        # model never generates them (and finalization strips any it volunteers).
+        self.suggestions_enabled: bool = True
 
     def build_system_prompt(self) -> str:
         """Build system prompt for the orchestrator.
@@ -120,28 +125,10 @@ class PromptBuilder:
             "- Write in a concise, conversational tone\n"
             "- Always use numbered or bulleted lists with one item per line; "
             "never write list items in a continuous paragraph\n"
-            "- End every answer with exactly this format (three backticks, "
-            "the word suggestions, newline, 3 lines, three backticks):\n"
-            "```suggestions\n"
-            "First action prompt\n"
-            "Second action prompt\n"
-            "Third action prompt\n"
-            "```\n"
-            "- Each suggestion must be written as if the user is typing it — "
-            "a direct request from user to assistant, e.g. "
-            "'Find the weekly exchange-rate forecast', "
-            "'Create a reminder to check the exchange rate', "
-            "'Search for ETH price history'\n"
-            "- Never write suggestions addressed to the user; always address "
-            "the assistant\n"
-            "- Suggestions must only propose actions the assistant can perform "
-            "using its available tools: web search, file operations, email, "
-            "reminders, memory recall, URL fetch, and system status\n"
-            "- Never suggest actions that require the user's browser or device: "
-            "opening websites, installing apps, or downloading files\n"
-            "- Each suggestion must be specific to the current topic, "
-            "and written in the same language as the user's latest message\n"
-            "- Do not mention the suggestions block in the main answer body\n"
+        )
+        if self.suggestions_enabled:
+            prompt += self._suggestions_rules()
+        prompt += (
             "- If <matched_skills> section is present, call skill_load(name) "
             "to load the full procedure before starting the task\n"
             "</rules>\n\n"
@@ -186,6 +173,33 @@ class PromptBuilder:
 
         return prompt
 
+    def _suggestions_rules(self) -> str:
+        """Return the rules asking the model to end its answer with suggestions."""
+        return (
+            "- End every answer with exactly this format (three backticks, "
+            "the word suggestions, newline, 3 lines, three backticks):\n"
+            "```suggestions\n"
+            "First action prompt\n"
+            "Second action prompt\n"
+            "Third action prompt\n"
+            "```\n"
+            "- Each suggestion must be written as if the user is typing it — "
+            "a direct request from user to assistant, e.g. "
+            "'Find the weekly exchange-rate forecast', "
+            "'Create a reminder to check the exchange rate', "
+            "'Search for ETH price history'\n"
+            "- Never write suggestions addressed to the user; always address "
+            "the assistant\n"
+            "- Suggestions must only propose actions the assistant can perform "
+            "using its available tools: web search, file operations, email, "
+            "reminders, memory recall, URL fetch, and system status\n"
+            "- Never suggest actions that require the user's browser or device: "
+            "opening websites, installing apps, or downloading files\n"
+            "- Each suggestion must be specific to the current topic, "
+            "and written in the same language as the user's latest message\n"
+            "- Do not mention the suggestions block in the main answer body\n"
+        )
+
     def _build_scheduled_task_system_prompt(self) -> str:
         """Build system prompt for scheduled task execution.
 
@@ -198,7 +212,12 @@ class PromptBuilder:
             "<rules>\n"
             "- You are executing a scheduled background task — "
             "there is no interactive user reading this in real time\n"
-            "- Do NOT include a suggestions block in your response\n"
+        )
+        if self.suggestions_enabled:
+            prompt += self._suggestions_rules()
+        else:
+            prompt += "- Do NOT include a suggestions block in your response\n"
+        prompt += (
             "- Do NOT address the user directly with greetings or "
             "follow-up questions\n"
             "- Report concisely: state findings, results, or status only\n"

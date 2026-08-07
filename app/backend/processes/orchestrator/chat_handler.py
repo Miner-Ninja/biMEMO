@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from backend.agent.conversation_settings import read_suggestions_enabled
 from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
@@ -548,6 +549,12 @@ async def _run_chat_request(
         orch=orch,
         run_event_recorder=run_event_recorder,
     )
+    # Suggestions are on by default in interactive chats; the per-chat toggle
+    # can turn them off. Set before the turn (the prompt is built inside) and
+    # restored afterwards since the orchestrator is reused across turns.
+    orch.prompt_builder.suggestions_enabled = await read_suggestions_enabled(
+        db_client, request.conversation_id, default=True
+    )
     try:
         response = await _run_with_processing_state(
             db_client=db_client,
@@ -580,6 +587,7 @@ async def _run_chat_request(
         )
         raise
     finally:
+        orch.prompt_builder.suggestions_enabled = True
         await _finish_request_event_forwarding(
             request_stream_queue=request_stream_queue,
             event_forwarder=event_forwarder,

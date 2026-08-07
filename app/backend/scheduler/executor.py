@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from backend.agent.conversation_settings import read_suggestions_enabled
 from backend.ipc.models import StreamEventType
 
 
@@ -118,6 +119,11 @@ async def _execute_agent_task(
     orch.prompt_builder.allowed_tool_names = allowed_set
     orch.prompt_builder.scheduled_task_mode = True
     orch.tool_executor.allowed_tool_names = allowed_set
+    # Suggestions are off for a task chat by default (an autonomous run has no
+    # one to click them), but the per-chat toggle can turn them back on.
+    orch.prompt_builder.suggestions_enabled = await read_suggestions_enabled(
+        services.db_client, conversation_id, default=False
+    )
 
     # Run the agentic loop, requiring the task's declared tools to actually be
     # applied. The task's allowlist IS the list of tools that must run for a
@@ -164,6 +170,7 @@ async def _execute_agent_task(
     finally:
         orch.prompt_builder.allowed_tool_names = None
         orch.prompt_builder.scheduled_task_mode = False
+        orch.prompt_builder.suggestions_enabled = True
         orch.tool_executor.allowed_tool_names = None
 
     # Transparent report: declared tools that never ran across all attempts.

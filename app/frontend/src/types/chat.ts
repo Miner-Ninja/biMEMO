@@ -109,6 +109,8 @@ export interface ChatSettings {
   showSql: boolean;
   /** Show LLM thinking blocks in assistant messages */
   showThinking: boolean;
+  /** Ask the model to produce a suggestions block (on by default) */
+  showSuggestions: boolean;
 }
 
 /**
@@ -117,6 +119,7 @@ export interface ChatSettings {
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   showSql: false,
   showThinking: false,
+  showSuggestions: true,
 };
 
 /**

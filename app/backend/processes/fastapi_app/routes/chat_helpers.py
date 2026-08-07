@@ -91,6 +91,8 @@ def chat_settings_from_raw(raw: dict[str, str]) -> ChatSettingsResponse:
     return ChatSettingsResponse(
         show_sql=raw.get("show_sql") == "1",
         show_thinking=raw.get("show_thinking") == "1",
+        # Suggestions default ON when unset (unlike sql/thinking which default off).
+        show_suggestions=raw.get("show_suggestions", "1") == "1",
     )
 
 

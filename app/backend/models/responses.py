@@ -135,6 +135,7 @@ class ChatSettingsResponse(StrictResponseModel):
 
     show_sql: bool = False
     show_thinking: bool = False
+    show_suggestions: bool = True
 
 
 class ConversationItem(StrictResponseModel):
