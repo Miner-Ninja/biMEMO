@@ -10,7 +10,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/memories", description: "Show saved memories", hasArgs: false },
   { name: "/forget", description: "Delete memory by ID", hasArgs: true },
   { name: "/forget_all", description: "Clear all memories", hasArgs: false },
-  { name: "/schema", description: "Show database schema", hasArgs: true },
   { name: "/help", description: "Show available commands", hasArgs: false },
 ];
 
