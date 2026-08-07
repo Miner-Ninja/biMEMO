@@ -1108,6 +1108,15 @@ export function ChatPage() {
               ? `🔔 ${taskName}: ${summary}`
               : `✅ ${taskName}: ${summary}`,
         });
+        // The scheduler writes the run's messages to its own conversation
+        // server-side; the browser gets no per-message push for it. If that
+        // conversation is the one being viewed, refetch it so the result
+        // appears immediately instead of only on the next socket reconnect.
+        const scheduledConversationId = String(eventPayload?.conversation_id || "");
+        if (scheduledConversationId && scheduledConversationId === activeChatId) {
+          void refreshConversationMessages(scheduledConversationId);
+          updateConversationActivity(scheduledConversationId, new Date());
+        }
       }
     },
     [
@@ -1129,6 +1138,7 @@ export function ChatPage() {
       isCurrentAssistantStreamEvent,
       applyAssistantResponsePayload,
       activeChat?.title,
+      activeChatId,
       playTtsAndAutoRecord,
       updateConversationActivity,
     ]

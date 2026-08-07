@@ -45,7 +45,10 @@ class _FakeOrchestrator:
         )
         used = self._plan[idx] if idx < len(self._plan) else self._plan[-1]
         self.tool_executor.tool_names_used = list(used)
-        return SimpleNamespace(structured_content=SimpleNamespace(answer=self._answer))
+        return SimpleNamespace(
+            structured_content=SimpleNamespace(answer=self._answer),
+            assistant_message_id=f"msg-{idx}",
+        )
 
 
 def _services(orch):
@@ -118,6 +121,27 @@ class TestScheduledTaskToolEnforcement:
         assert success is True
         assert len(orch.calls) == 1
         assert "not applied" not in result
+
+    async def test_delivers_result_through_task_chat_bridge(self):
+        """Result is forwarded via the sched_ chat's bridge under the real id."""
+        orch = _FakeOrchestrator([["http_fetch"]])
+        services = _services(orch)
+        bridge = MagicMock()
+        bridge.sync_outbound_message = AsyncMock()
+        services.bridge_service = bridge
+
+        await _execute_agent_task(services, _task())
+
+        bridge.sync_outbound_message.assert_awaited_once()
+        kwargs = bridge.sync_outbound_message.await_args.kwargs
+        # The task's own conversation is the delivery target, NOT the origin.
+        assert kwargs["conversation_id"] == "sched_t1"
+        # The real persisted assistant message id is used (dedup on reconnect),
+        # not a synthetic "sched_msg_..." id.
+        assert kwargs["message_id"] == "msg-0"
+        assert kwargs["role"] == "assistant"
+        # Agent-task results go out bare — no "[Scheduled task] ..." label.
+        assert kwargs["content"] == "Done."
 
     async def test_scheduled_mode_and_allowlist_active_during_run(self):
         """Scheduled flag + allowlist are set while running, restored after."""

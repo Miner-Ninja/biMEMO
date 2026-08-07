@@ -670,9 +670,15 @@ class AgentOrchestrator:
         output_result = filter_output(raw_final_text)
         filtered_structured_content = structured_content
         if structured_content is not None:
+            # A scheduled task is not an interactive dialog, so it must never
+            # carry a suggestions block. The system prompt asks the model to
+            # omit it, but models comply inconsistently — strip it here so the
+            # result is deterministic regardless of what the model emitted.
+            drop_suggestions = self.prompt_builder.scheduled_task_mode
             filtered_structured_content = replace(
                 structured_content,
                 answer=output_result.text,
+                suggestions=[] if drop_suggestions else structured_content.suggestions,
             )
         return FinalizedAssistantResponse(
             loop_result=loop.complete(raw_final_text),
@@ -717,7 +723,7 @@ class AgentOrchestrator:
             zone_usage=zone_usage,
         )
 
-        await self.persistence.persist_final_turn_messages(
+        assistant_message_id = await self.persistence.persist_final_turn_messages(
             conversation_id=conversation_id,
             raw_assistant_text=raw_final_text,
             session_id=session_id,
@@ -739,6 +745,7 @@ class AgentOrchestrator:
             retrieved_memories=retrieved_memories,
             retrieved_messages=retrieved_messages,
             stats=finalized_response.stats,
+            assistant_message_id=assistant_message_id,
         )
 
     async def _build_prepared_turn_response(
