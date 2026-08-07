@@ -932,8 +932,8 @@ class TestBridgeDelivery:
         bridge.sync_outbound_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_bridge_called_with_origin_conversation(self):
-        """Bridge sync is called with the originating conversation_id."""
+    async def test_bridge_defaults_to_task_conversation(self):
+        """Without a target, delivery uses the task conversation, result bare."""
         from backend.scheduler.executor import _deliver_to_bridge
 
         bridge = AsyncMock()
@@ -950,8 +950,34 @@ class TestBridgeDelivery:
         call_kwargs = bridge.sync_outbound_message.call_args.kwargs
         assert call_kwargs["conversation_id"] == "conv-abc"
         assert call_kwargs["role"] == "assistant"
-        assert "Daily check" in call_kwargs["content"]
-        assert "All systems healthy" in call_kwargs["content"]
+        # Agent-task result goes out bare — no "[Scheduled task] Daily check".
+        assert call_kwargs["content"] == "All systems healthy"
+
+    @pytest.mark.asyncio
+    async def test_bridge_explicit_conversation_and_message_id(self):
+        """An explicit conversation_id/message_id override the task defaults."""
+        from backend.scheduler.executor import _deliver_to_bridge
+
+        bridge = AsyncMock()
+        services = MagicMock()
+        services.bridge_service = bridge
+        task = {
+            "id": "t-99",
+            "name": "Daily check",
+            "task_type": "agent_task",
+            "conversation_id": "conv-abc",
+        }
+        await _deliver_to_bridge(
+            services,
+            task,
+            "Price is $100",
+            conversation_id="sched_t-99",
+            message_id="real-msg-id",
+        )
+        call_kwargs = bridge.sync_outbound_message.call_args.kwargs
+        assert call_kwargs["conversation_id"] == "sched_t-99"
+        assert call_kwargs["message_id"] == "real-msg-id"
+        assert call_kwargs["content"] == "Price is $100"
 
     @pytest.mark.asyncio
     async def test_bridge_failure_does_not_raise(self):

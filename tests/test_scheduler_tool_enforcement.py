@@ -140,6 +140,8 @@ class TestScheduledTaskToolEnforcement:
         # not a synthetic "sched_msg_..." id.
         assert kwargs["message_id"] == "msg-0"
         assert kwargs["role"] == "assistant"
+        # Agent-task results go out bare — no "[Scheduled task] ..." label.
+        assert kwargs["content"] == "Done."
 
     async def test_scheduled_mode_and_allowlist_active_during_run(self):
         """Scheduled flag + allowlist are set while running, restored after."""

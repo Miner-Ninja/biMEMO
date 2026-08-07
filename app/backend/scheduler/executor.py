@@ -283,13 +283,16 @@ async def _deliver_to_bridge(
     if not target_conversation_id:
         return
 
-    task_name = task["name"]
-    task_type = task["task_type"]
-    label = "Reminder" if task_type == "reminder" else "Scheduled task"
     out_message_id = message_id or (
         f"sched_msg_{task['id']}_{int(datetime.now(tz=UTC).timestamp())}"
     )
-    formatted = f"[{label}] {task_name}\n\n{result_text}"
+    # An agent task's result is already a complete, self-contained answer, so
+    # send it bare (no label). A reminder carries only its reminder text, so
+    # keep a short label to mark what it is.
+    if task["task_type"] == "reminder":
+        formatted = f"[Reminder] {task['name']}\n\n{result_text}"
+    else:
+        formatted = result_text
 
     try:
         await services.bridge_service.sync_outbound_message(
