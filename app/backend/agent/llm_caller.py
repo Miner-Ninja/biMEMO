@@ -580,7 +580,13 @@ class LLMCaller:
                 seen_labels.add(target.label.casefold())
                 seen_aliases.update(alias.casefold() for alias in target.aliases)
 
-        if targets and not TARGET_LIST_SEPARATOR_PATTERN.search(message):
+        # A known market entity was recognised — trust it and do NOT run the
+        # generic phrase splitter on the rest of the sentence. Otherwise a plain
+        # conjunction ("проверь курс биткойна И сообщи результат") is mistaken
+        # for a target list and mangled into an unsatisfiable garbage target
+        # (e.g. "Проверить биткойна сообщить результат"), which the current-data
+        # guard can never cover, rejecting every answer.
+        if targets:
             return tuple(targets)
 
         generic_text = CURRENT_DATA_FILLER_PATTERN.sub(" ", message)

@@ -385,6 +385,20 @@ class TestFinalAnswerRecovery:
 
         assert decision.accepted
 
+    def test_current_data_targets_no_garbage_from_conjunction(self):
+        """A conjunction in a sentence must not manufacture a garbage target."""
+        # Pure pattern logic — no broker/LLM needed.
+        caller = LLMCaller.__new__(LLMCaller)
+
+        single = caller._current_data_targets(
+            "Проверить текущий курс биткойна и сообщить результат"
+        )
+        assert [t.label for t in single] == ["Bitcoin"]
+
+        # A genuine multi-entity list still yields both known entities.
+        multi = caller._current_data_targets("курс bitcoin и ethereum")
+        assert [t.label for t in multi] == ["Bitcoin", "Ethereum"]
+
     def test_with_current_data_targets_covered_drops_covered(self):
         """Covered targets leave the missing set; others stay (R1)."""
         satisfaction = RequirementSatisfaction(
