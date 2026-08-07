@@ -670,11 +670,11 @@ class AgentOrchestrator:
         output_result = filter_output(raw_final_text)
         filtered_structured_content = structured_content
         if structured_content is not None:
-            # A scheduled task is not an interactive dialog, so it must never
-            # carry a suggestions block. The system prompt asks the model to
-            # omit it, but models comply inconsistently — strip it here so the
-            # result is deterministic regardless of what the model emitted.
-            drop_suggestions = self.prompt_builder.scheduled_task_mode
+            # When suggestions are disabled for this turn the prompt already
+            # omits the block, but models occasionally volunteer one anyway —
+            # strip it here so the result is deterministic regardless of what
+            # the model emitted.
+            drop_suggestions = not self.prompt_builder.suggestions_enabled
             filtered_structured_content = replace(
                 structured_content,
                 answer=output_result.text,
@@ -1239,6 +1239,7 @@ class AgentOrchestrator:
             user_intent_tools=user_intent or None,
             requirements=prepared_turn.requirements,
             satisfaction=prepared_turn.satisfaction,
+            suggestions_enabled=self.prompt_builder.suggestions_enabled,
         )
 
         return await self._complete_prepared_turn(

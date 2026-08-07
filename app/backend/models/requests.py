@@ -172,6 +172,7 @@ class ChatSettingsUpdateRequest(StrictRequestModel):
 
     show_sql: bool | None = None
     show_thinking: bool | None = None
+    show_suggestions: bool | None = None
 
 
 class ChatBridgeInboundMessageRequest(StrictRequestModel):

@@ -120,7 +120,11 @@ type ConversationUpdatedEventPayload = {
   conversation_id?: string;
   title?: string;
   bridge_provider?: string | null;
-  settings?: { show_sql?: boolean; show_thinking?: boolean };
+  settings?: {
+    show_sql?: boolean;
+    show_thinking?: boolean;
+    show_suggestions?: boolean;
+  };
   processing_status?: "idle" | "active";
   processing_stage?: string;
   processing_started_at?: string | null;
@@ -421,6 +425,7 @@ export function ChatPage() {
   const chatSettings = activeChat?.settings ?? DEFAULT_CHAT_SETTINGS;
   const showSql = chatSettings.showSql;
   const showThinking = chatSettings.showThinking;
+  const showSuggestions = chatSettings.showSuggestions;
   const chatInputRef = useRef<ChatInputHandle>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const streamedContentRef = useRef("");
@@ -1032,6 +1037,7 @@ export function ChatPage() {
             ? {
                 showSql: conversationEvent.settings.show_sql ?? false,
                 showThinking: conversationEvent.settings.show_thinking ?? false,
+                showSuggestions: conversationEvent.settings.show_suggestions ?? true,
               }
             : undefined,
           processingStatus: conversationEvent?.processing_status,
@@ -1734,6 +1740,21 @@ export function ChatPage() {
     }
   }, [activeChatId, showThinking, chatSettings, updateConversation]);
 
+  const handleToggleSuggestions = useCallback(async () => {
+    if (!activeChatId) return;
+    const next = !showSuggestions;
+    updateConversation(activeChatId, {
+      settings: { ...chatSettings, showSuggestions: next },
+    });
+    try {
+      await updateChatSettings(activeChatId, { show_suggestions: next });
+    } catch {
+      updateConversation(activeChatId, {
+        settings: { ...chatSettings, showSuggestions: !next },
+      });
+    }
+  }, [activeChatId, showSuggestions, chatSettings, updateConversation]);
+
   const handleBridgeToggleRequest = useCallback(
     async (provider: string, enabled: boolean) => {
       const currentChat = await ensureActiveChat();
@@ -2080,6 +2101,8 @@ export function ChatPage() {
         onToggleSql={handleToggleSql}
         showThinking={showThinking}
         onToggleThinking={handleToggleThinking}
+        showSuggestions={showSuggestions}
+        onToggleSuggestions={handleToggleSuggestions}
       />
       <ConfirmDialog />
       {showBridgeReauth ? (

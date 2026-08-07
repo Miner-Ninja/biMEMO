@@ -905,6 +905,7 @@ class LLMCaller:
         force_web_search: bool = False,
         requirements: ResponseRequirements | None = None,
         satisfaction: RequirementSatisfaction | None = None,
+        suggestions_enabled: bool = True,
     ) -> ModelLoopResult:
         """Run the model/tool loop until a final answer is available."""
         raw_final_text = ""
@@ -1009,7 +1010,8 @@ class LLMCaller:
                     ),
                 )
             if (
-                structured_content is not None
+                suggestions_enabled
+                and structured_content is not None
                 and len(structured_content.suggestions) < 3
             ):
                 try:
