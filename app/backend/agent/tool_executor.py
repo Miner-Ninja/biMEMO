@@ -160,6 +160,20 @@ class ToolExecutor:
         """Evaluate one tool call against the action policy."""
         return self.action_decisions.decide(self._action_context(tool_call))
 
+    def _scheduled_task_preauthorized(self, call: ToolCall) -> bool:
+        """Whether an autonomous scheduled run pre-authorises this RED tool.
+
+        A scheduled task's own allowlist is the user's explicit authorization, so
+        a confirmation-required tool in it runs without an interactive
+        confirmation that can never happen in an autonomous run. Bounded to the
+        scheduler channel and the task allowlist only.
+        """
+        return (
+            self.current_context.get("channel") == "scheduler"
+            and self.allowed_tool_names is not None
+            and call.name in self.allowed_tool_names
+        )
+
     def _promote_saved_grants(
         self,
         red_calls: list[ToolCall],
@@ -173,6 +187,8 @@ class ToolExecutor:
                 immediate.append(call)
             elif decision.kind == DecisionKind.BLOCK:
                 raise PermissionError(f"Tool action blocked: {decision.reason}")
+            elif self._scheduled_task_preauthorized(call):
+                immediate.append(call)
             else:
                 still_red.append(call)
         return immediate, still_red

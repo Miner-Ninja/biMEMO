@@ -8,6 +8,8 @@ database as a stand-in for the encrypted database.
 import sqlite3
 
 import pytest
+from pydantic import ValidationError
+
 from backend.ipc.models import DBOperation
 from backend.processes.db_proxy import (
     CHANNEL_A,
@@ -52,7 +54,6 @@ from backend.security.diagnostics_schema import (
     initialize_diagnostics_schema,
     prune_memory_route_diagnostics,
 )
-from pydantic import ValidationError
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 95
@@ -1279,6 +1280,26 @@ class TestConversationOperations:
         result = await list_conversations({})
         assert len(result["conversations"]) == 1
         assert result["conversations"][0]["processing_status"] == "idle"
+
+    @pytest.mark.asyncio
+    async def test_create_conversation_honours_pinned_id(self, db: FakeDB) -> None:
+        """A caller-supplied conversation_id is used and is idempotent."""
+        create_conversation = make_create_conversation_handler(db)
+
+        result = await create_conversation(
+            {"conversation_id": "sched_task_1", "title": "[Scheduled] job"}
+        )
+        assert result["conversation_id"] == "sched_task_1"
+
+        # Repeating the same pinned id must not fail on the primary key.
+        again = await create_conversation(
+            {"conversation_id": "sched_task_1", "title": "[Scheduled] job"}
+        )
+        assert again["conversation_id"] == "sched_task_1"
+
+        list_conversations = make_list_conversations_handler(db)
+        listed = await list_conversations({})
+        assert sum(1 for c in listed["conversations"] if c["id"] == "sched_task_1") == 1
 
     @pytest.mark.asyncio
     async def test_save_message_updates_conversation_title_and_timestamp(

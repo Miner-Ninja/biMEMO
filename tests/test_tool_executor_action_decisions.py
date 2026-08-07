@@ -26,6 +26,14 @@ class _AllowingDecisions:
         return ActionDecision(DecisionKind.ALLOW)
 
 
+class _ConfirmDecisions:
+    """Fake decision service that requires confirmation for all calls."""
+
+    def decide(self, context):
+        """Return a confirmation-required decision (not ALLOW, not BLOCK)."""
+        return ActionDecision(DecisionKind.ASK_ONCE)
+
+
 class _PendingActionRecorder:
     """Fake pending-action recorder."""
 
@@ -147,3 +155,73 @@ class TestToolExecutorActionDecisions:
         assert event["status"] == "waiting_confirmation"
         assert event["tool_name"] == "email_send"
         assert event["action_id"] == executor.pending_red_calls[0].action_id
+
+
+class TestScheduledTaskPreauthorization:
+    """A scheduled task's allowlist pre-authorizes its RED tools.
+
+    In an autonomous scheduled run there is no live user to answer a RED
+    confirmation, so a confirmation-required tool that the user explicitly
+    put in the task allowlist is promoted to immediate execution — bounded
+    strictly to the scheduler channel and that allowlist, never touching
+    interactive sessions or tools outside the list, and never overriding a
+    security BLOCK.
+    """
+
+    def _executor(self, decisions):
+        """Build a ToolExecutor with the given fake decision service."""
+        return ToolExecutor(
+            MagicMock(),
+            ConfirmationManager(),
+            action_decisions=decisions,
+        )
+
+    def test_scheduler_allowlisted_red_promoted(self):
+        """channel=scheduler + tool in allowlist -> immediate (R1)."""
+        executor = self._executor(_ConfirmDecisions())
+        executor.current_context = {"channel": "scheduler"}
+        executor.allowed_tool_names = {"http_fetch"}
+
+        immediate, still_red = executor._promote_saved_grants(
+            [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
+        )
+
+        assert len(immediate) == 1
+        assert still_red == []
+
+    def test_interactive_red_not_promoted(self):
+        """Non-scheduler channel -> still queued for confirmation (R2)."""
+        executor = self._executor(_ConfirmDecisions())
+        executor.current_context = {"channel": "web"}
+        executor.allowed_tool_names = {"http_fetch"}
+
+        immediate, still_red = executor._promote_saved_grants(
+            [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
+        )
+
+        assert immediate == []
+        assert len(still_red) == 1
+
+    def test_scheduler_non_allowlisted_red_not_promoted(self):
+        """channel=scheduler but tool not in allowlist -> not promoted (R4)."""
+        executor = self._executor(_ConfirmDecisions())
+        executor.current_context = {"channel": "scheduler"}
+        executor.allowed_tool_names = {"web_search"}
+
+        immediate, still_red = executor._promote_saved_grants(
+            [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
+        )
+
+        assert immediate == []
+        assert len(still_red) == 1
+
+    def test_blocked_call_still_raises_on_scheduler(self):
+        """A security BLOCK raises even on the scheduler channel (R3)."""
+        executor = self._executor(_BlockingDecisions())
+        executor.current_context = {"channel": "scheduler"}
+        executor.allowed_tool_names = {"http_fetch"}
+
+        with pytest.raises(PermissionError, match="blocked in test"):
+            executor._promote_saved_grants(
+                [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
+            )

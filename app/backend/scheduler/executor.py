@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# A scheduled agent task's declared tools must actually be called. If the model
+# does not call them, it is reinforced and retried up to this many times.
+MAX_TOOL_ENFORCE_ATTEMPTS = 3
+
 
 @dataclass
 class SchedulerServices:
@@ -96,11 +100,12 @@ async def _execute_agent_task(
     prompt = task["prompt"]
     allowed_tools = _parse_allowed_tools(task.get("allowed_tools", "[]"))
 
-    # Create isolated conversation ID
-    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-    conversation_id = f"sched_{task_id}_{timestamp}"
+    # One stable conversation per task (bound to the task id) so every run's
+    # result accumulates in the same chat instead of spawning a new one each run.
+    conversation_id = f"sched_{task_id}"
 
-    # Create the conversation in DB
+    # Create it once; create_conversation is idempotent (INSERT OR IGNORE), so
+    # repeated runs reuse the same conversation.
     await services.db_client.send_operation(
         "create_conversation",
         {"conversation_id": conversation_id, "title": f"[Scheduled] {task_name}"},
@@ -114,25 +119,67 @@ async def _execute_agent_task(
     orch.prompt_builder.scheduled_task_mode = True
     orch.tool_executor.allowed_tool_names = allowed_set
 
-    # Run the agentic loop
+    # Run the agentic loop, requiring the task's declared tools to actually be
+    # applied. The task's allowlist IS the list of tools that must run for a
+    # successful execution; if the model does not call them, reinforce and retry
+    # (up to MAX_TOOL_ENFORCE_ATTEMPTS). After that, report transparently which
+    # tools were never applied instead of silently rejecting.
+    required_tools = set(allowed_set)
+    attempt_prompt = prompt
+    response = None
+    missing_tools: set[str] = set()
     try:
-        response = await orch.process_message(
-            message=prompt,
-            channel="scheduler",
-            llm_call=services.llm_call,
-            session_id=f"sched_{task_id}",
-            conversation_id=conversation_id,
-        )
-        result_text = response.text or ""
+        for _attempt in range(MAX_TOOL_ENFORCE_ATTEMPTS):
+            response = await orch.process_message(
+                message=attempt_prompt,
+                channel="scheduler",
+                llm_call=services.llm_call,
+                session_id=f"sched_{task_id}",
+                conversation_id=conversation_id,
+            )
+            used = set(orch.tool_executor.tool_names_used)
+            missing_tools = required_tools - used
+            if not missing_tools:
+                break
+            attempt_prompt = (
+                f"{prompt}\n\n"
+                "IMPORTANT — this is an autonomous scheduled task. You MUST "
+                "actually CALL these tools to complete it: "
+                f"{', '.join(sorted(missing_tools))}. Do not answer from memory "
+                "or earlier context — call the tools now. If a tool cannot be "
+                "used or returns nothing, state that explicitly in your answer, "
+                "naming the tool and the reason."
+            )
+        result_text = (
+            response.structured_content.answer
+            if response is not None and response.structured_content
+            else ""
+        ) or ""
         success = True
     except Exception as exc:
         logger.exception("Agent task %s (%s) failed", task_id, task_name)
         result_text = str(exc)
         success = False
+        missing_tools = set()
     finally:
         orch.prompt_builder.allowed_tool_names = None
         orch.prompt_builder.scheduled_task_mode = False
         orch.tool_executor.allowed_tool_names = None
+
+    # Transparent report: declared tools that never ran across all attempts.
+    if success and required_tools and missing_tools:
+        logger.warning(
+            "Task %s (%s): required tools not applied after %d attempts: %s",
+            task_id,
+            task_name,
+            MAX_TOOL_ENFORCE_ATTEMPTS,
+            sorted(missing_tools),
+        )
+        result_text = (
+            f"{result_text}\n\n_Note: these required tools were not applied "
+            f"after {MAX_TOOL_ENFORCE_ATTEMPTS} attempts: "
+            f"{', '.join(sorted(missing_tools))}._"
+        ).strip()
 
     # Detect [SILENT] marker — agent decided nothing is worth reporting
     is_silent = success and result_text.strip().startswith("[SILENT]")
