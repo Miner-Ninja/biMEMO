@@ -40,7 +40,6 @@ interface MessageListProps {
   className?: string;
   assistantName?: string;
   onCommandClick?: (command: string) => void;
-  showSql?: boolean;
   showThinking?: boolean;
   onEditMessage?: (messageId: string, newContent: string) => void;
   ttsAvailable?: boolean;
@@ -62,7 +61,6 @@ export const MessageList = memo(function MessageList({
   className,
   assistantName,
   onCommandClick,
-  showSql = true,
   showThinking = true,
   onEditMessage,
   ttsAvailable = false,
@@ -209,7 +207,6 @@ export const MessageList = memo(function MessageList({
               message={message}
               assistantName={assistantName}
               onCommandClick={onCommandClick}
-              showSql={showSql}
               showThinking={showThinking}
               isEditable={message.id === lastUserMessageId && !isLoading}
               onEdit={onEditMessage}

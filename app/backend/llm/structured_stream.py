@@ -1,6 +1,6 @@
 """Incremental extractor for the ``answer`` field of a streaming JSON schema.
 
-When an LLM streams ``{"answer": "...", "sql": "...", ...}`` token by token,
+When an LLM streams ``{"answer": "...", "suggestions": [...]}`` token by token,
 the browser only wants the visible answer text — not the raw JSON syntax and
 not the other schema fields. :class:`AnswerFieldStreamExtractor` eats each
 raw chunk, finds the start of the ``"answer"`` string value, and returns the

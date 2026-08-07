@@ -50,7 +50,6 @@ class StructuredAssistantContent(StrictResponseModel):
 
     answer: str
     thinking: str | None = None
-    sql: str | None = None
     suggestions: list[str] = []
 
 
@@ -133,7 +132,6 @@ class SummaryItem(StrictResponseModel):
 class ChatSettingsResponse(StrictResponseModel):
     """Per-conversation display settings."""
 
-    show_sql: bool = False
     show_thinking: bool = False
     show_suggestions: bool = True
 

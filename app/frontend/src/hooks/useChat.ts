@@ -45,7 +45,6 @@ type StoredMessageMeta = {
 export type AssistantStructuredContent = {
   answer: string;
   thinking?: string | null;
-  sql?: string | null;
   suggestions?: string[];
 };
 
@@ -68,13 +67,10 @@ function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
 }
 
 function mapSettings(
-  raw:
-    | { show_sql?: boolean; show_thinking?: boolean; show_suggestions?: boolean }
-    | undefined
+  raw: { show_thinking?: boolean; show_suggestions?: boolean } | undefined
 ): ChatSettings {
   if (!raw) return { ...DEFAULT_CHAT_SETTINGS };
   return {
-    showSql: raw.show_sql ?? DEFAULT_CHAT_SETTINGS.showSql,
     showThinking: raw.show_thinking ?? DEFAULT_CHAT_SETTINGS.showThinking,
     showSuggestions: raw.show_suggestions ?? DEFAULT_CHAT_SETTINGS.showSuggestions,
   };
@@ -124,13 +120,12 @@ export function extractMessageImages(
 
 export function buildAssistantMessageFields(
   input: AssistantMessageFieldsInput
-): Pick<Message, "content" | "images" | "thinking" | "sql" | "suggestions" | "stats"> {
+): Pick<Message, "content" | "images" | "thinking" | "suggestions" | "stats"> {
   const { fallbackContent, structuredContent, stats, images } = input;
   return {
     content: structuredContent?.answer ?? fallbackContent,
     images,
     thinking: structuredContent?.thinking ?? undefined,
-    sql: structuredContent?.sql ?? undefined,
     suggestions: structuredContent?.suggestions ?? undefined,
     stats,
   };

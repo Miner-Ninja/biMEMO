@@ -210,8 +210,6 @@ async def update_conversation_settings(
 ) -> ChatSettingsResponse:
     """Update per-conversation display settings."""
     entries: list[dict[str, str]] = []
-    if body.show_sql is not None:
-        entries.append({"key": "show_sql", "value": "1" if body.show_sql else "0"})
     if body.show_thinking is not None:
         entries.append(
             {"key": "show_thinking", "value": "1" if body.show_thinking else "0"}

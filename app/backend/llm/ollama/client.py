@@ -634,7 +634,6 @@ class OllamaClient:
             return StructuredAssistantContent(
                 answer=structured_content.answer,
                 thinking=thinking.strip() if thinking else None,
-                sql=structured_content.sql,
                 suggestions=structured_content.suggestions,
             )
 

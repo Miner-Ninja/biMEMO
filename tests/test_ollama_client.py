@@ -731,7 +731,6 @@ class TestChat:
         assert result.structured_content is not None
         assert result.structured_content.answer == "Visible answer"
         assert result.structured_content.thinking == "internal plan"
-        assert result.structured_content.sql == "SELECT 1"
         assert result.structured_content.suggestions == ["Next step"]
         await client.close()
 
@@ -1610,7 +1609,6 @@ class TestStructuredStreaming:
         )
         assert result.structured_content is not None
         assert result.structured_content.answer == "hello world"
-        assert result.structured_content.sql == "SELECT 1"
         assert result.text == "hello world"
 
     @pytest.mark.asyncio

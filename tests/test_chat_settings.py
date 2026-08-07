@@ -85,7 +85,7 @@ class TestChatSettingsHandlers:
                 {
                     "conversation_id": "conv-1",
                     "entries": [
-                        {"key": "show_sql", "value": "1"},
+                        {"key": "show_reasoning", "value": "1"},
                         {"key": "show_thinking", "value": "0"},
                     ],
                 }
@@ -93,7 +93,7 @@ class TestChatSettingsHandlers:
         )
 
         result = asyncio.run(list_handler({"conversation_id": "conv-1"}))
-        assert result["settings"] == {"show_sql": "1", "show_thinking": "0"}
+        assert result["settings"] == {"show_reasoning": "1", "show_thinking": "0"}
 
     def test_upsert_overwrites_existing_key(self, db: DatabaseManager) -> None:
         """Upserting an existing key updates its value."""
@@ -104,7 +104,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "0"}],
+                    "entries": [{"key": "show_reasoning", "value": "0"}],
                 }
             )
         )
@@ -112,14 +112,14 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "1"}],
+                    "entries": [{"key": "show_reasoning", "value": "1"}],
                 }
             )
         )
 
         list_handler = make_list_chat_settings_handler(db)
         result = asyncio.run(list_handler({"conversation_id": "conv-1"}))
-        assert result["settings"]["show_sql"] == "1"
+        assert result["settings"]["show_reasoning"] == "1"
 
     def test_upsert_returns_full_settings(self, db: DatabaseManager) -> None:
         """Upsert returns all settings for the conversation after update."""
@@ -130,7 +130,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "1"}],
+                    "entries": [{"key": "show_reasoning", "value": "1"}],
                 }
             )
         )
@@ -142,7 +142,7 @@ class TestChatSettingsHandlers:
                 }
             )
         )
-        assert result["settings"] == {"show_sql": "1", "show_thinking": "1"}
+        assert result["settings"] == {"show_reasoning": "1", "show_thinking": "1"}
 
     def test_cascade_delete_on_conversation_removal(self, db: DatabaseManager) -> None:
         """Settings are deleted when the parent conversation is removed."""
@@ -153,7 +153,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "1"}],
+                    "entries": [{"key": "show_reasoning", "value": "1"}],
                 }
             )
         )
@@ -175,7 +175,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "1"}],
+                    "entries": [{"key": "show_reasoning", "value": "1"}],
                 }
             )
         )
@@ -183,7 +183,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-2",
-                    "entries": [{"key": "show_sql", "value": "0"}],
+                    "entries": [{"key": "show_reasoning", "value": "0"}],
                 }
             )
         )
@@ -191,8 +191,8 @@ class TestChatSettingsHandlers:
         list_handler = make_list_chat_settings_handler(db)
         r1 = asyncio.run(list_handler({"conversation_id": "conv-1"}))
         r2 = asyncio.run(list_handler({"conversation_id": "conv-2"}))
-        assert r1["settings"]["show_sql"] == "1"
-        assert r2["settings"]["show_sql"] == "0"
+        assert r1["settings"]["show_reasoning"] == "1"
+        assert r2["settings"]["show_reasoning"] == "0"
 
     def test_list_all_settings(self, db: DatabaseManager) -> None:
         """List without conversation_id returns all settings grouped."""
@@ -204,7 +204,7 @@ class TestChatSettingsHandlers:
             upsert(
                 {
                     "conversation_id": "conv-1",
-                    "entries": [{"key": "show_sql", "value": "1"}],
+                    "entries": [{"key": "show_reasoning", "value": "1"}],
                 }
             )
         )
@@ -220,5 +220,5 @@ class TestChatSettingsHandlers:
         list_handler = make_list_chat_settings_handler(db)
         result = asyncio.run(list_handler({}))
         all_settings = result["all_settings"]
-        assert all_settings["conv-1"] == {"show_sql": "1"}
+        assert all_settings["conv-1"] == {"show_reasoning": "1"}
         assert all_settings["conv-2"] == {"show_thinking": "1"}

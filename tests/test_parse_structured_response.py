@@ -19,7 +19,6 @@ class TestParseStructuredResponseJsonEmptyGuard:
         result = parse_structured_response_json("")
         assert isinstance(result, StructuredAssistantContent)
         assert result.answer == ""
-        assert result.sql is None
         assert result.suggestions == []
         assert result.thinking is None
 
@@ -50,7 +49,6 @@ class TestParseStructuredResponseJsonEmptyGuard:
             '{"answer": "hi", "sql": null, "suggestions": ["next"]}'
         )
         assert result.answer == "hi"
-        assert result.sql is None
         assert result.suggestions == ["next"]
 
     def test_json_answer_suggestion_block_is_not_rendered_twice(self):
@@ -70,26 +68,8 @@ class TestParseStructuredResponseJsonEmptyGuard:
             )
         )
         assert result.answer == "Main answer."
-        assert result.sql is None
         assert result.suggestions == [
             "Open logs",
             "Check config",
             "Restart service",
         ]
-
-    def test_json_answer_sql_block_is_extracted_when_sql_field_is_empty(self):
-        """Recover SQL blocks accidentally placed inside JSON answer."""
-        result = parse_structured_response_json(
-            "\n".join(
-                [
-                    "{",
-                    '  "answer": "Main answer.\\n\\n```sql\\nSELECT 1\\n```",',
-                    '  "sql": null,',
-                    '  "suggestions": []',
-                    "}",
-                ]
-            )
-        )
-        assert result.answer == "Main answer."
-        assert result.sql == "SELECT 1"
-        assert result.suggestions == []

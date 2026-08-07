@@ -17,7 +17,6 @@ import {
   AudioLines,
   Waypoints,
   Settings,
-  Code,
   Brain,
   Lightbulb,
 } from "lucide-react";
@@ -83,8 +82,6 @@ interface ChatInputProps {
   bridgeLoadingProvider?: string | null;
   onBridgeMenuOpenChange?: (open: boolean) => void;
   onToggleBridgeProvider?: (provider: string, enabled: boolean) => void;
-  showSql?: boolean;
-  onToggleSql?: () => void;
   showThinking?: boolean;
   onToggleThinking?: () => void;
   showSuggestions?: boolean;
@@ -147,8 +144,6 @@ export const ChatInput = memo(
       bridgeLoadingProvider = null,
       onBridgeMenuOpenChange,
       onToggleBridgeProvider,
-      showSql,
-      onToggleSql,
       showThinking,
       onToggleThinking,
       showSuggestions,
@@ -553,7 +548,7 @@ export const ChatInput = memo(
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : null}
-                  {onToggleSql || onToggleThinking || onToggleSuggestions ? (
+                  {onToggleThinking || onToggleSuggestions ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -570,15 +565,6 @@ export const ChatInput = memo(
                         <DropdownMenuLabel>Chat Settings</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuGroup>
-                          {onToggleSql && (
-                            <DropdownMenuItem onClick={onToggleSql}>
-                              <span className="flex items-center gap-2">
-                                <Code className="h-4 w-4" />
-                                Show SQL
-                              </span>
-                              <Switch checked={Boolean(showSql)} />
-                            </DropdownMenuItem>
-                          )}
                           {onToggleThinking && (
                             <DropdownMenuItem onClick={onToggleThinking}>
                               <span className="flex items-center gap-2">

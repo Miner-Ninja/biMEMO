@@ -73,7 +73,6 @@ type ChatResponsePayload = {
   structured_content?: {
     answer: string;
     thinking?: string | null;
-    sql?: string | null;
     suggestions?: string[];
   };
   pending_confirmations?: {
@@ -121,7 +120,6 @@ type ConversationUpdatedEventPayload = {
   title?: string;
   bridge_provider?: string | null;
   settings?: {
-    show_sql?: boolean;
     show_thinking?: boolean;
     show_suggestions?: boolean;
   };
@@ -177,7 +175,6 @@ const MIN_PSEUDO_STREAM_CHUNK_SIZE = 1;
 type StructuredChatSections = {
   thinking: string;
   answer: string;
-  sql: string;
   suggestions?: string[];
 };
 
@@ -423,7 +420,6 @@ export function ChatPage() {
   }, [urlConversationId, isReady, chats, activeChatId, switchChat, navigate]);
 
   const chatSettings = activeChat?.settings ?? DEFAULT_CHAT_SETTINGS;
-  const showSql = chatSettings.showSql;
   const showThinking = chatSettings.showThinking;
   const showSuggestions = chatSettings.showSuggestions;
   const chatInputRef = useRef<ChatInputHandle>(null);
@@ -610,16 +606,6 @@ export function ChatPage() {
           content: visibleAnswer,
         }),
       });
-      await pseudoStreamSection({
-        assistantMessageId,
-        runId,
-        stats,
-        text: sections.sql,
-        buildUpdate: (visibleSql) => ({
-          sql: visibleSql,
-        }),
-      });
-
       if (pseudoStreamRunIdRef.current !== runId) {
         return "";
       }
@@ -627,7 +613,6 @@ export function ChatPage() {
       updateMessage(assistantMessageId, {
         content: sections.answer,
         thinking: sections.thinking || undefined,
-        sql: sections.sql || undefined,
         suggestions:
           sections.suggestions && sections.suggestions.length > 0
             ? sections.suggestions
@@ -667,7 +652,6 @@ export function ChatPage() {
             sections: {
               thinking: structuredContentForPseudoStream.thinking || "",
               answer: visibleAnswer,
-              sql: structuredContentForPseudoStream.sql || "",
               suggestions: structuredContentForPseudoStream.suggestions,
             },
             pendingConfirmations:
@@ -1035,7 +1019,6 @@ export function ChatPage() {
               : conversationEvent.bridge_provider,
           settings: conversationEvent?.settings
             ? {
-                showSql: conversationEvent.settings.show_sql ?? false,
                 showThinking: conversationEvent.settings.show_thinking ?? false,
                 showSuggestions: conversationEvent.settings.show_suggestions ?? true,
               }
@@ -1710,21 +1693,6 @@ export function ChatPage() {
     showBridgeDetails,
   ]);
 
-  const handleToggleSql = useCallback(async () => {
-    if (!activeChatId) return;
-    const next = !showSql;
-    updateConversation(activeChatId, {
-      settings: { ...chatSettings, showSql: next },
-    });
-    try {
-      await updateChatSettings(activeChatId, { show_sql: next });
-    } catch {
-      updateConversation(activeChatId, {
-        settings: { ...chatSettings, showSql: !next },
-      });
-    }
-  }, [activeChatId, showSql, chatSettings, updateConversation]);
-
   const handleToggleThinking = useCallback(async () => {
     if (!activeChatId) return;
     const next = !showThinking;
@@ -2054,7 +2022,6 @@ export function ChatPage() {
         assistantName={assistantName}
         onCommandClick={handleCommandClick}
         onEditMessage={handleEditMessage}
-        showSql={showSql}
         showThinking={showThinking}
         ttsAvailable={ttsAvailable}
         onConfirmationStatusChange={handleConfirmationStatusChange}
@@ -2097,8 +2064,6 @@ export function ChatPage() {
           }
         }}
         onToggleBridgeProvider={handleBridgeToggleRequest}
-        showSql={showSql}
-        onToggleSql={handleToggleSql}
         showThinking={showThinking}
         onToggleThinking={handleToggleThinking}
         showSuggestions={showSuggestions}
