@@ -1,9 +1,11 @@
 #!/usr/bin/env sh
-# Format staged frontend files with Prettier
-# Get list of staged files in app/frontend/
-STAGED=$(git diff --cached --name-only | grep "^app/frontend/" || true)
+# Format staged frontend files with Prettier.
+# --diff-filter=ACMR keeps only files that still exist on disk (Added, Copied,
+# Modified, Renamed) and drops Deleted paths — feeding a deleted path to
+# prettier makes it fail and aborts the commit.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR | grep "^app/frontend/" || true)
 if [ -n "$STAGED" ]; then
-  echo "$STAGED" | xargs npx --prefix app/frontend prettier --write --ignore-unknown --ignore-path app/frontend/.prettierignore 2>/dev/null
+  echo "$STAGED" | xargs -r npx --prefix app/frontend prettier --write --ignore-unknown --ignore-path app/frontend/.prettierignore 2>/dev/null
   # Re-stage the formatted files
-  echo "$STAGED" | xargs git add 2>/dev/null
+  echo "$STAGED" | xargs -r git add 2>/dev/null
 fi
