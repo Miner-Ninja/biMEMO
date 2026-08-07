@@ -48,6 +48,10 @@ class AgentResponse:
         output_filtered: True if output was redacted.
         retrieved_memories: Summaries of search-matched records.
         retrieved_messages: Debug metadata for FTS-matched messages.
+        assistant_message_id: DB id of the persisted final assistant message
+            (None when no message was persisted, e.g. a pending-confirmation
+            turn). Used by the scheduler to forward a task result through the
+            conversation's bridge under its real message id.
     """
 
     structured_content: StructuredAssistantContent
@@ -57,6 +61,7 @@ class AgentResponse:
     retrieved_memories: list[dict[str, str]] = field(default_factory=list)
     retrieved_messages: list[dict[str, str]] | None = None
     stats: ExtendedUsage | None = None
+    assistant_message_id: str | None = None
 
 
 @dataclass(frozen=True)

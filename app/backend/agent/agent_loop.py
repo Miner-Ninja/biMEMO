@@ -717,7 +717,7 @@ class AgentOrchestrator:
             zone_usage=zone_usage,
         )
 
-        await self.persistence.persist_final_turn_messages(
+        assistant_message_id = await self.persistence.persist_final_turn_messages(
             conversation_id=conversation_id,
             raw_assistant_text=raw_final_text,
             session_id=session_id,
@@ -739,6 +739,7 @@ class AgentOrchestrator:
             retrieved_memories=retrieved_memories,
             retrieved_messages=retrieved_messages,
             stats=finalized_response.stats,
+            assistant_message_id=assistant_message_id,
         )
 
     async def _build_prepared_turn_response(

@@ -193,7 +193,22 @@ async def _execute_agent_task(
 
     await _emit_result_event(services, task, result_text, success=success)
     if success:
-        await _deliver_to_bridge(services, task, result_text)
+        # Deliver through the bridge of the conversation that actually holds
+        # the result — the task's own sched_ chat — under the real persisted
+        # message id (so a bridge reconnect's history backfill dedups it and
+        # does not re-post). The origin conversation is NOT the target: the
+        # scheduler writes its messages to sched_<task_id>, so that is where a
+        # user attaches a bridge and expects results to flow out.
+        assistant_message_id = (
+            response.assistant_message_id if response is not None else None
+        )
+        await _deliver_to_bridge(
+            services,
+            task,
+            result_text,
+            conversation_id=conversation_id,
+            message_id=assistant_message_id,
+        )
     return result_text, success
 
 
@@ -228,6 +243,7 @@ async def _emit_result_event(
             "task_id": task["id"],
             "task_name": task["name"],
             "task_type": task["task_type"],
+            "conversation_id": f"sched_{task['id']}",
             "result_text": result_text[:2000],
             "status": "ok" if success else "error",
         },
@@ -243,30 +259,42 @@ async def _deliver_to_bridge(
     services: SchedulerServices,
     task: dict[str, Any],
     result_text: str,
+    *,
+    conversation_id: str | None = None,
+    message_id: str | None = None,
 ) -> None:
-    """Deliver task result to the chat bridge of the originating conversation.
+    """Deliver a task result outward through a conversation's chat bridge.
 
-    Bridges are linked to the conversation_id stored in the task. The
-    isolated scheduler conversation (sched_*) has no bridge, so we
-    target the original user conversation if one is recorded.
+    The bridge only forwards if the target conversation has an active
+    outbound bridge link; otherwise this is a no-op.
+
+    ``conversation_id`` selects which conversation's bridge to use. Agent tasks
+    pass their own sched_<task_id> chat (where the result is persisted) so the
+    bridge attached to that chat forwards it. When omitted (reminders), the
+    task's recorded origin conversation is used.
+
+    ``message_id`` should be the real persisted assistant message id so the
+    bridge's reconnect backfill dedups it; when omitted a synthetic id is used.
     """
     if services.bridge_service is None:
         return
 
-    origin_conversation_id = task.get("conversation_id") or ""
-    if not origin_conversation_id:
+    target_conversation_id = conversation_id or task.get("conversation_id") or ""
+    if not target_conversation_id:
         return
 
     task_name = task["name"]
     task_type = task["task_type"]
     label = "Reminder" if task_type == "reminder" else "Scheduled task"
-    message_id = f"sched_msg_{task['id']}_{int(datetime.now(tz=UTC).timestamp())}"
+    out_message_id = message_id or (
+        f"sched_msg_{task['id']}_{int(datetime.now(tz=UTC).timestamp())}"
+    )
     formatted = f"[{label}] {task_name}\n\n{result_text}"
 
     try:
         await services.bridge_service.sync_outbound_message(
-            conversation_id=origin_conversation_id,
-            message_id=message_id,
+            conversation_id=target_conversation_id,
+            message_id=out_message_id,
             role="assistant",
             content=formatted,
         )
@@ -274,5 +302,5 @@ async def _deliver_to_bridge(
         logger.exception(
             "Failed to deliver task %s to bridge for conversation %s",
             task["id"],
-            origin_conversation_id,
+            target_conversation_id,
         )
