@@ -32,7 +32,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { DataChart } from "./DataChart";
-import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { ResultsTable } from "./ResultsTable";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { TokenStats } from "./TokenStats";
@@ -47,7 +46,6 @@ interface ChatMessageProps {
   message: Message;
   assistantName?: string;
   onCommandClick?: (command: string) => void;
-  showSql?: boolean;
   showThinking?: boolean;
   isEditable?: boolean;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -66,14 +64,12 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   assistantName,
   onCommandClick,
-  showSql = true,
   showThinking = true,
   isEditable = false,
   onEdit,
   ttsAvailable = false,
   onConfirmationStatusChange,
 }: ChatMessageProps) {
-  const [sqlOpen, setSqlOpen] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -84,7 +80,6 @@ export const ChatMessage = memo(function ChatMessage({
 
   const isUser = message.role === "user";
   const hasError = Boolean(message.error);
-  const hasSql = Boolean(message.sql);
   const hasResults = Boolean(message.results && message.results.data.length > 0);
   const hasStats = Boolean(message.stats);
   const hasThinking = Boolean(message.thinking);
@@ -429,21 +424,6 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         ) : null}
-
-        {/* SQL Query (collapsible, hidden when showSql=false) */}
-        {hasSql && showSql && message.sql && (
-          <Collapsible open={sqlOpen} onOpenChange={setSqlOpen}>
-            <CollapsibleTrigger className="flex w-full items-center gap-2 rounded border border-border p-2 text-sm hover:bg-muted/50">
-              <ChevronRight
-                className={cn("h-4 w-4 transition-transform", sqlOpen && "rotate-90")}
-              />
-              <span>SQL Query</span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2">
-              <MarkdownCodeBlock code={message.sql} language="sql" />
-            </CollapsibleContent>
-          </Collapsible>
-        )}
 
         {/* Results (collapsible) */}
         {hasResults && (

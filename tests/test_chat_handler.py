@@ -56,7 +56,6 @@ def test_build_structured_content_extracts_sql_and_suggestions() -> None:
         )
     )
     assert structured.answer == "Main answer."
-    assert structured.sql == "SELECT 1"
     assert structured.suggestions == ["Next step", "Another step"]
 
 
@@ -99,7 +98,6 @@ def test_build_conversation_message_item_uses_saved_structured_content() -> None
     assert message_item.structured_content == StructuredAssistantContent(
         answer="Visible answer",
         thinking="Internal plan",
-        sql="SELECT 1",
         suggestions=["Next step"],
     )
 
@@ -124,7 +122,6 @@ def test_build_conversation_message_item_uses_content_as_saved_answer() -> None:
     assert message_item.structured_content == StructuredAssistantContent(
         answer="Visible answer",
         thinking="Internal plan",
-        sql="SELECT 1",
         suggestions=["Next step"],
     )
 
@@ -157,7 +154,6 @@ def test_build_conversation_message_item_normalizes_legacy_assistant_text() -> N
     assert message_item.content == "Main answer."
     assert message_item.structured_content == StructuredAssistantContent(
         answer="Main answer.",
-        sql="SELECT 1",
         suggestions=["Next step"],
     )
 
@@ -185,7 +181,6 @@ def test_build_chat_response_uses_structured_answer_as_visible_text() -> None:
 
     assert chat_response.structured_content is not None
     assert chat_response.structured_content.answer == "Main answer."
-    assert chat_response.structured_content.sql == "SELECT 1"
     assert chat_response.structured_content.suggestions == []
 
 
@@ -253,7 +248,6 @@ def test_build_http_chat_response_creates_structured_answer_from_text() -> None:
     assert http_response.structured_content == StructuredAssistantContent(
         answer="Plain answer",
         thinking=None,
-        sql=None,
         suggestions=[],
     )
     assert http_response.stream_enabled is True
@@ -266,7 +260,6 @@ def test_chat_response_final_event_data_mirrors_chat_payload() -> None:
         structured_content=IPCStructuredAssistantContent(
             answer="Visible answer",
             thinking="Internal plan",
-            sql="SELECT 1",
             suggestions=["Next step"],
         ),
         input_filtered=False,
@@ -309,7 +302,6 @@ def test_chat_response_final_event_data_mirrors_chat_payload() -> None:
         "structured_content": {
             "answer": "Visible answer",
             "thinking": "Internal plan",
-            "sql": "SELECT 1",
             "suggestions": ["Next step"],
         },
         "stream_enabled": True,

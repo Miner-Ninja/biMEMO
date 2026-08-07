@@ -187,7 +187,6 @@ class StructuredAssistantContent(IPCModel):
 
     answer: str
     thinking: str | None = None
-    sql: str | None = None
     suggestions: list[str] = []
 
 

@@ -38,7 +38,6 @@ class TestChatResponse:
             "structured_content": {
                 "answer": "Hello",
                 "thinking": None,
-                "sql": None,
                 "suggestions": [],
             },
             "stream_enabled": False,
@@ -69,7 +68,6 @@ class TestChatResponse:
             pending_confirmations=[],
             structured_content=StructuredAssistantContent(
                 answer="Answer",
-                sql="SELECT 1",
                 suggestions=["Next step"],
             ),
         )
@@ -77,7 +75,6 @@ class TestChatResponse:
         assert data["structured_content"] == {
             "answer": "Answer",
             "thinking": None,
-            "sql": "SELECT 1",
             "suggestions": ["Next step"],
         }
 

@@ -6,8 +6,7 @@ Contract summary for assistant replies:
 - Stored assistant messages keep that same final reply text in
   ``messages.content``.
 - ``messages.meta["structured_content"]`` keeps only extra sections that are
-  not duplicated in ``messages.content``: ``thinking``, ``sql``, and
-  ``suggestions``.
+  not duplicated in ``messages.content``: ``thinking`` and ``suggestions``.
 - ``raw_final_text`` means the raw model output before output filtering.
 - ``response_text`` means the final reply text after output filtering.
 
@@ -29,7 +28,6 @@ MAX_STRUCTURED_SUGGESTIONS = 3
 SCRIPT_DOMINANCE_THRESHOLD = 0.8
 LATIN_SCRIPT_PATTERN = re.compile(r"[A-Za-z]")
 CYRILLIC_SCRIPT_PATTERN = re.compile(r"[\u0400-\u04FF]")
-SQL_BLOCK_PATTERN = re.compile(r"```sql\s*([\s\S]*?)```", re.IGNORECASE)
 SUGGESTIONS_BLOCK_PATTERN = re.compile(
     r"```suggestions\s*\n([\s\S]*?)```",
     re.IGNORECASE,
@@ -40,22 +38,20 @@ STRUCTURED_RESPONSE_SCHEMA_NAME = "assistant_response"
 STRUCTURED_RESPONSE_INSTRUCTION = (
     "When you return a final answer, return only one JSON object that matches "
     'the requested schema. Put the visible user-facing answer into "answer". '
-    'Put one SQL query into "sql" or null when no SQL is needed. Put up to '
-    'three follow-up suggestions into "suggestions" as plain strings. Do not '
-    "wrap the JSON in markdown. When you need a tool, call the tool and leave "
-    "the final answer empty until the tool results are available."
+    'Put up to three follow-up suggestions into "suggestions" as plain strings. '
+    "Do not wrap the JSON in markdown. When you need a tool, call the tool and "
+    "leave the final answer empty until the tool results are available."
 )
 STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
-        "sql": {"type": ["string", "null"]},
         "suggestions": {
             "type": "array",
             "items": {"type": "string"},
         },
     },
-    "required": ["answer", "sql", "suggestions"],
+    "required": ["answer", "suggestions"],
     "additionalProperties": False,
 }
 OPENAI_STRUCTURED_RESPONSE_FORMAT: dict[str, object] = {
@@ -163,7 +159,6 @@ class StructuredAssistantContent:
 
     answer: str
     thinking: str | None = None
-    sql: str | None = None
     suggestions: list[str] = field(default_factory=list)
 
 
@@ -203,16 +198,6 @@ def _trim_suggestions(suggestions: list[str]) -> list[str]:
     return suggestions[:MAX_STRUCTURED_SUGGESTIONS]
 
 
-def _split_sql_block(text: str) -> tuple[str, str | None]:
-    """Split one SQL fenced block out of the final assistant text."""
-    sql_match = SQL_BLOCK_PATTERN.search(text)
-    if sql_match is None:
-        return text, None
-    sql = sql_match.group(1).strip()
-    answer = SQL_BLOCK_PATTERN.sub("", text).strip()
-    return answer, sql or None
-
-
 def _split_suggestions_block(text: str) -> tuple[str, list[str]]:
     """Split one suggestions fenced block out of the final assistant text."""
     suggestions_found: list[str] = []
@@ -235,11 +220,9 @@ def _split_suggestions_block(text: str) -> tuple[str, list[str]]:
 
 def normalize_legacy_response_text(text: str) -> StructuredAssistantContent:
     """Normalize one markdown-style assistant answer into typed sections."""
-    answer_without_sql, sql = _split_sql_block(text)
-    answer, suggestions = _split_suggestions_block(answer_without_sql)
+    answer, suggestions = _split_suggestions_block(text)
     return StructuredAssistantContent(
         answer=answer,
-        sql=sql,
         suggestions=suggestions,
     )
 
@@ -265,14 +248,7 @@ def parse_structured_response_json(
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
     raw_answer = str(raw_data.get("answer", ""))
-    raw_sql = raw_data.get("sql")
-    answer_without_sql, extracted_sql = _split_sql_block(raw_answer)
-    answer, extracted_suggestions = _split_suggestions_block(answer_without_sql)
-    sql = (
-        str(raw_sql).strip()
-        if isinstance(raw_sql, str) and raw_sql.strip()
-        else extracted_sql
-    )
+    answer, extracted_suggestions = _split_suggestions_block(raw_answer)
     raw_suggestions = raw_data.get("suggestions", [])
     if not isinstance(raw_suggestions, list):
         raise ValueError("Structured response suggestions must be a list")
@@ -292,6 +268,5 @@ def parse_structured_response_json(
     return StructuredAssistantContent(
         answer=answer.strip(),
         thinking=thinking.strip() if thinking else None,
-        sql=sql,
         suggestions=trimmed_suggestions,
     )

@@ -469,7 +469,6 @@ class TestChat:
         assert result.llm_response_format is LlmResponseFormat.JSON_SCHEMA
         assert result.structured_content is not None
         assert result.structured_content.answer == STRUCTURED_ANSWER_TEXT
-        assert result.structured_content.sql == STRUCTURED_SQL_TEXT
         assert result.structured_content.suggestions == [STRUCTURED_SUGGESTION_TEXT]
         assert result.structured_content.thinking == "Internal plan"
         assert result.usage is not None

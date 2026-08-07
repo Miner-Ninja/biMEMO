@@ -69,8 +69,6 @@ export interface Message {
   thinking?: string;
   /** Current tool execution status */
   toolStatus?: ToolStatus;
-  /** Generated SQL query (assistant messages only) */
-  sql?: string;
   /** Follow-up suggestions shown after the final answer */
   suggestions?: string[];
   /** Query execution results (assistant messages only) */
@@ -105,8 +103,6 @@ export interface PendingConfirmation {
  * Per-conversation display settings
  */
 export interface ChatSettings {
-  /** Show SQL query blocks in assistant messages */
-  showSql: boolean;
   /** Show LLM thinking blocks in assistant messages */
   showThinking: boolean;
   /** Ask the model to produce a suggestions block (on by default) */
@@ -117,7 +113,6 @@ export interface ChatSettings {
  * Default chat settings for new conversations
  */
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
-  showSql: false,
   showThinking: false,
   showSuggestions: true,
 };

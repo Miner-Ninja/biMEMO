@@ -89,9 +89,8 @@ async def create_persisted_conversation(
 def chat_settings_from_raw(raw: dict[str, str]) -> ChatSettingsResponse:
     """Convert raw key-value dict from DB into a typed settings response."""
     return ChatSettingsResponse(
-        show_sql=raw.get("show_sql") == "1",
         show_thinking=raw.get("show_thinking") == "1",
-        # Suggestions default ON when unset (unlike sql/thinking which default off).
+        # Suggestions default ON when unset (unlike thinking which defaults off).
         show_suggestions=raw.get("show_suggestions", "1") == "1",
     )
 
@@ -301,7 +300,6 @@ def build_http_structured_content(
             fallback_response_text,
         )
         thinking_value = structured_content.get("thinking")
-        raw_sql = structured_content.get("sql")
         raw_suggestions = structured_content.get("suggestions", [])
     else:
         response_value = getattr(
@@ -310,7 +308,6 @@ def build_http_structured_content(
             fallback_response_text,
         )
         thinking_value = getattr(structured_content, "thinking", None)
-        raw_sql = getattr(structured_content, "sql", None)
         raw_suggestions = getattr(structured_content, "suggestions", [])
     response_text = str(response_value).strip()
     thinking = (
@@ -318,7 +315,6 @@ def build_http_structured_content(
         if isinstance(thinking_value, str) and thinking_value.strip()
         else None
     )
-    sql = str(raw_sql).strip() if isinstance(raw_sql, str) and raw_sql.strip() else None
     suggestions = (
         [
             str(suggestion).strip()
@@ -331,7 +327,6 @@ def build_http_structured_content(
     return HTTPStructuredAssistantContent(
         answer=response_text,
         thinking=thinking,
-        sql=sql,
         suggestions=suggestions,
     )
 

@@ -224,7 +224,6 @@ def _copy_structured_content(
     return StructuredAssistantContent(
         answer=structured_content.answer,
         thinking=structured_content.thinking,
-        sql=structured_content.sql,
         suggestions=structured_content.suggestions,
     )
 

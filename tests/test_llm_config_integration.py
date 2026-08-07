@@ -3619,7 +3619,7 @@ class TestMemoryTimeline:
         resp = client.get("/chat/conversations")
 
         assert resp.status_code == 200, resp.text
-        default_settings = {"show_sql": False, "show_thinking": False}
+        default_settings = {"show_thinking": False}
         assert resp.json() == [
             {
                 "id": "conversation-2",
@@ -3722,7 +3722,7 @@ class TestMemoryTimeline:
             "id": "conversation-1",
             "title": "Renamed chat",
             "bridge_provider": None,
-            "settings": {"show_sql": False, "show_thinking": False},
+            "settings": {"show_thinking": False},
             "processing_status": "idle",
             "processing_stage": "",
             "processing_started_at": None,

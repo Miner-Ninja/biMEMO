@@ -170,7 +170,6 @@ class ConversationUpdateRequest(StrictRequestModel):
 class ChatSettingsUpdateRequest(StrictRequestModel):
     """Update per-conversation display settings."""
 
-    show_sql: bool | None = None
     show_thinking: bool | None = None
     show_suggestions: bool | None = None
 

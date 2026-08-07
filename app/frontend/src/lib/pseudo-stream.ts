@@ -15,7 +15,6 @@ export type StructuredAssistantContentLike =
   | {
       answer?: string;
       thinking?: string | null;
-      sql?: string | null;
     }
   | null
   | undefined;
@@ -35,7 +34,5 @@ export function shouldUseStructuredPseudoStream(
   if (streamedContent || streamedThinking) {
     return false;
   }
-  return Boolean(
-    structuredContent.answer || structuredContent.thinking || structuredContent.sql
-  );
+  return Boolean(structuredContent.answer || structuredContent.thinking);
 }
