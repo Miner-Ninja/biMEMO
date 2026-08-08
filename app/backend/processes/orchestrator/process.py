@@ -125,6 +125,27 @@ async def _start_runtime_event_forwarder(
     )
 
 
+async def _maybe_migrate_graph_memory(db_client: object) -> None:
+    """Run the legacy-summaries graph migration when the flag is on.
+
+    The migration is idempotent; failures only warn — graph storage is
+    inert at this stage and must never block orchestrator startup.
+    """
+    from backend.security.policy import get_policy
+
+    if not get_policy().get_bool("graph_memory.enabled"):
+        return
+    try:
+        result = await db_client.migrate_summaries_to_assertions()
+        logger.info(
+            "Graph memory migration: %s of %s summaries migrated",
+            result.get("migrated"),
+            result.get("total_summaries"),
+        )
+    except Exception:
+        logger.warning("Graph memory migration failed", exc_info=True)
+
+
 async def _connect_db(
     socket_path: str,
     secret: bytes,
@@ -1000,6 +1021,7 @@ async def _start_runtime_process(
         db_proxy_secret_a,
     )
     stuck_reset_count = await db_client.reset_stuck_processing_states()
+    await _maybe_migrate_graph_memory(db_client)
     if stuck_reset_count > 0:
         logger.info(
             "Cleared %d stuck processing states on startup",

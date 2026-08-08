@@ -414,6 +414,51 @@ class AdminDBClient(_BaseIPCClient):
         """Count messages, records, and summaries."""
         return await self.send_operation("count_memory_entries")
 
+    async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
+        """Load one graph entity by id."""
+        result = await self.send_operation(
+            "get_entity",
+            {"entity_id": entity_id},
+        )
+        return result.get("entity")
+
+    async def find_entities(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Find graph entities by full-text query."""
+        result = await self.send_operation(
+            "find_entities",
+            {"query": query, "limit": limit},
+        )
+        return result["entities"]
+
+    async def list_assertions_for_entity(
+        self,
+        entity_id: str,
+        valid_only: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List assertions where the entity is subject or object."""
+        result = await self.send_operation(
+            "list_assertions_for_entity",
+            {"entity_id": entity_id, "valid_only": valid_only, "limit": limit},
+        )
+        return result["assertions"]
+
+    async def find_graph_entry_points(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Find labeled graph entry points for a query."""
+        result = await self.send_operation(
+            "find_graph_entry_points",
+            {"query": query, "limit": limit},
+        )
+        return result["entry_points"]
+
     async def create_backup(self) -> dict[str, Any]:
         """Write consistent encrypted copies of every open database.
 

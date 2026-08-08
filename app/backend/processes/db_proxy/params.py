@@ -226,6 +226,67 @@ class GetMemoryTimelineParams(LimitOffsetParams):
     offset: int = 0
 
 
+class SaveEntityParams(ForbidExtraParams):
+    """Parameters for save_entity operation (get-or-create)."""
+
+    entity_type: str
+    canonical_name: str
+    aliases: list[str] = Field(default_factory=list)
+
+
+class SaveAssertionParams(ForbidExtraParams):
+    """Parameters for save_assertion operation."""
+
+    subject_entity_id: str
+    relation: str
+    object_entity_id: str | None = None
+    object_value: str | None = None
+    assertion_text: str
+    trust_level: str = "medium"
+    assertion_scope: str = "long_term"
+    valid_from: str | None = None
+    source_record_ids: list[str] = Field(default_factory=list)
+
+
+class InvalidateAssertionParams(ForbidExtraParams):
+    """Parameters for invalidate_assertion operation."""
+
+    assertion_id: str
+    invalidated_by_assertion_id: str | None = None
+
+
+class GetEntityParams(ForbidExtraParams):
+    """Parameters for get_entity operation."""
+
+    entity_id: str
+
+
+class FindEntitiesParams(ForbidExtraParams):
+    """Parameters for find_entities operation."""
+
+    query: str
+    limit: int = 20
+
+
+class ListAssertionsForEntityParams(ForbidExtraParams):
+    """Parameters for list_assertions_for_entity operation."""
+
+    entity_id: str
+    valid_only: bool = False
+    limit: int = 100
+
+
+class FindGraphEntryPointsParams(ForbidExtraParams):
+    """Parameters for find_graph_entry_points operation."""
+
+    query: str
+    limit: int = 20
+
+
+class MigrateSummariesToAssertionsParams(ForbidExtraParams):
+    """Parameters for migrate_summaries_to_assertions operation."""
+
+
 class SaveQueuedRecordParams(ForbidExtraParams):
     """Parameters for save_queued_record operation."""
 

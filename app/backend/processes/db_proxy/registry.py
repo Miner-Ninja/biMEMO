@@ -101,6 +101,16 @@ from .handlers.file import (
     make_save_file_context_handler,
     make_save_file_context_usage_handler,
 )
+from .handlers.graph import (
+    make_find_entities_handler,
+    make_find_graph_entry_points_handler,
+    make_get_entity_handler,
+    make_invalidate_assertion_handler,
+    make_list_assertions_for_entity_handler,
+    make_migrate_summaries_to_assertions_handler,
+    make_save_assertion_handler,
+    make_save_entity_handler,
+)
 from .handlers.integration import (
     make_activate_llm_config_handler,
     make_create_integration_handler,
@@ -196,6 +206,14 @@ SOCKET_A_OPERATIONS = {
     "verify_chain",
     "save_record",
     "save_queued_record",
+    "save_entity",
+    "save_assertion",
+    "invalidate_assertion",
+    "migrate_summaries_to_assertions",
+    "get_entity",
+    "find_entities",
+    "list_assertions_for_entity",
+    "find_graph_entry_points",
     "delete_queued_records",
     "list_queued_records",
     "bump_queued_record_attempts",
@@ -358,6 +376,10 @@ SOCKET_B_ONLY_OPERATIONS = {
 }
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
+    "get_entity",
+    "find_entities",
+    "list_assertions_for_entity",
+    "find_graph_entry_points",
     "fulltext_search",   # MCP search_memory tool (read-only; writes go via Socket A)
     "mcp_memory_recent",  # MCP recent_memory (read-only)
     "mcp_memory_get",   # MCP get_memory (read-only)
@@ -487,6 +509,33 @@ def _register_memory_debug_operations(
     registry.register(
         "get_memory_timeline",
         make_get_memory_timeline_handler(db),
+    )
+
+
+def _register_graph_operations(
+    registry: OperationRegistry,
+    db: DatabaseManager,
+) -> None:
+    """Register graph entity/assertion storage operations."""
+    registry.register("save_entity", make_save_entity_handler(db))
+    registry.register("save_assertion", make_save_assertion_handler(db))
+    registry.register(
+        "invalidate_assertion",
+        make_invalidate_assertion_handler(db),
+    )
+    registry.register(
+        "migrate_summaries_to_assertions",
+        make_migrate_summaries_to_assertions_handler(db),
+    )
+    registry.register("get_entity", make_get_entity_handler(db))
+    registry.register("find_entities", make_find_entities_handler(db))
+    registry.register(
+        "list_assertions_for_entity",
+        make_list_assertions_for_entity_handler(db),
+    )
+    registry.register(
+        "find_graph_entry_points",
+        make_find_graph_entry_points_handler(db),
     )
 
 
@@ -865,6 +914,7 @@ def build_registry(
     )
     _register_memory_debug_operations(registry, core_db)
     _register_memory_operations(registry, core_db)
+    _register_graph_operations(registry, core_db)
     _register_conversation_and_bridge_operations(registry, core_db)
     _register_permission_operations(registry, core_db, runtime_db)
     _register_integration_operations(registry, core_db)

@@ -574,6 +574,99 @@ class DBProxyClient:
         """Increment the attempt counter on pending queue rows."""
         await mem_ops.bump_queued_record_attempts(self, queue_ids)
 
+    # --- Graph operations (delegated to client_memory_ops) ---
+
+    async def save_entity(
+        self,
+        entity_type: str,
+        canonical_name: str,
+        aliases: list[str] | None = None,
+    ) -> str:
+        """Get or create one graph entity; returns its id."""
+        return await mem_ops.save_entity(
+            self,
+            entity_type,
+            canonical_name,
+            aliases,
+        )
+
+    async def save_assertion(
+        self,
+        *,
+        subject_entity_id: str,
+        relation: str,
+        assertion_text: str,
+        object_entity_id: str | None = None,
+        object_value: str | None = None,
+        trust_level: str = "medium",
+        assertion_scope: str = "long_term",
+        valid_from: str | None = None,
+        source_record_ids: list[str] | None = None,
+    ) -> str:
+        """Store one assertion edge; returns its id."""
+        return await mem_ops.save_assertion(
+            self,
+            subject_entity_id=subject_entity_id,
+            relation=relation,
+            assertion_text=assertion_text,
+            object_entity_id=object_entity_id,
+            object_value=object_value,
+            trust_level=trust_level,
+            assertion_scope=assertion_scope,
+            valid_from=valid_from,
+            source_record_ids=source_record_ids,
+        )
+
+    async def invalidate_assertion(
+        self,
+        assertion_id: str,
+        invalidated_by_assertion_id: str | None = None,
+    ) -> bool:
+        """Mark one assertion as no longer valid."""
+        return await mem_ops.invalidate_assertion(
+            self,
+            assertion_id,
+            invalidated_by_assertion_id,
+        )
+
+    async def migrate_summaries_to_assertions(self) -> dict[str, object]:
+        """Run the idempotent legacy-summaries migration."""
+        return await mem_ops.migrate_summaries_to_assertions(self)
+
+    async def get_entity(self, entity_id: str) -> dict[str, object] | None:
+        """Load one entity by id."""
+        return await mem_ops.get_entity(self, entity_id)
+
+    async def find_entities(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        """Find entities by full-text query."""
+        return await mem_ops.find_entities(self, query, limit)
+
+    async def list_assertions_for_entity(
+        self,
+        entity_id: str,
+        valid_only: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, object]]:
+        """List assertions where the entity is subject or object."""
+        return await mem_ops.list_assertions_for_entity(
+            self,
+            entity_id,
+            valid_only,
+            limit,
+        )
+
+    async def find_graph_entry_points(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        """Find labeled entity/assertion entry points for a query."""
+        return await mem_ops.find_graph_entry_points(self, query, limit)
+
     async def store_embedding(
         self,
         record_id: str,
