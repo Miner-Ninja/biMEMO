@@ -1,11 +1,11 @@
 export type MemoryDebugSection =
-  "overview" | "diagnostics" | "memory-data" | "processing-logs" | "summaries";
+  "overview" | "diagnostics" | "memory-data" | "processing-logs" | "assertions";
 
 export type DiagnosticsView = "routing" | "quality" | "audit";
 
 export type MemoryDataView = "context" | "timeline" | "links" | "files";
 
-export type ProcessingLogsView = "records-log" | "summaries-log";
+export type ProcessingLogsView = "records-log";
 
 export interface PipelineData {
   messages: number;

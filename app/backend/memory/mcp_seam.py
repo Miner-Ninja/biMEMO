@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 MCP_CHANNEL_NAME = "agent"
 DEFAULT_SEARCH_LIMIT = 20
-MEMORY_SEARCH_TABLES = ("messages", "records", "summaries")
+MEMORY_SEARCH_TABLES = ("messages", "records")
 
 # ── Hard limits (R5, R12) ──
 MAX_READ_LIMIT = 50
@@ -96,14 +96,11 @@ async def resolve_relevant_memory(
         return recent
 
     results: list[dict[str, Any]] = []
-    from backend.security.policy import get_policy
-
-    if get_policy().get_bool("graph_memory.enabled"):
-        graph_hits = await admin_client.find_graph_entry_points(query, limit)
-        for hit in graph_hits:
-            hit["table"] = "graph"
-            hit["agent_identity"] = agent_identity
-        results.extend(graph_hits)
+    graph_hits = await admin_client.find_graph_entry_points(query, limit)
+    for hit in graph_hits:
+        hit["table"] = "graph"
+        hit["agent_identity"] = agent_identity
+    results.extend(graph_hits)
     for table in MEMORY_SEARCH_TABLES:
         table_results = await admin_client.fulltext_search(
             query=query,

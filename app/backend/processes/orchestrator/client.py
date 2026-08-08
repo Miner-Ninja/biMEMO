@@ -629,9 +629,6 @@ class DBProxyClient:
             invalidated_by_assertion_id,
         )
 
-    async def migrate_summaries_to_assertions(self) -> dict[str, object]:
-        """Run the idempotent legacy-summaries migration."""
-        return await mem_ops.migrate_summaries_to_assertions(self)
 
     async def get_entity(self, entity_id: str) -> dict[str, object] | None:
         """Load one entity by id."""
@@ -674,6 +671,14 @@ class DBProxyClient:
         """Fetch untainted records not yet extracted into the graph."""
         return await mem_ops.fetch_unextracted_records(self, limit)
 
+    async def prune_graph(self) -> dict[str, object]:
+        """Run one graph maintenance pass."""
+        return await mem_ops.prune_graph(self)
+
+    async def get_graph_stats(self) -> dict[str, object]:
+        """Return the graph statistics snapshot."""
+        return await mem_ops.get_graph_stats(self)
+
     async def store_embedding(
         self,
         record_id: str,
@@ -682,70 +687,12 @@ class DBProxyClient:
         """Store an embedding vector for an record."""
         return await mem_ops.store_embedding(self, record_id, embedding)
 
-    async def fetch_untainted_records(
-        self,
-        limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        """Fetch untainted records for distiller."""
-        return await mem_ops.fetch_untainted_records(self, limit)
 
-    async def count_distillations(self) -> int:
-        """Count total summaries in the database."""
-        return await mem_ops.count_distillations(self)
 
     # --- Summary operations (delegated to client_memory_ops) ---
 
-    async def save_summary(
-        self,
-        main_point: str,
-        based_on: list[str] | None = None,
-        trust_level: str = "",
-        summary_scope: str = "long_term",
-        source_record_ids: list[str] | None = None,
-        record_relations: list[dict[str, str]] | None = None,
-    ) -> str:
-        """Save a summary."""
-        return await mem_ops.save_summary(
-            self,
-            main_point,
-            based_on,
-            trust_level,
-            summary_scope,
-            source_record_ids,
-            record_relations,
-        )
 
-    async def merge_summary_sources(
-        self,
-        summary_id: str,
-        main_point: str = "",
-        based_on: list[str] | None = None,
-        trust_level: str = "",
-        summary_scope: str = "long_term",
-        trust_level_score: int | None = None,
-        source_record_ids: list[str] | None = None,
-        record_relations: list[dict[str, str]] | None = None,
-    ) -> bool:
-        """Attach new source records to an existing summary."""
-        return await mem_ops.merge_summary_sources(
-            self,
-            summary_id,
-            main_point,
-            based_on,
-            trust_level,
-            summary_scope,
-            trust_level_score,
-            source_record_ids,
-            record_relations,
-        )
 
-    async def list_summaries(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """List summaries."""
-        return await mem_ops.list_summaries(self, limit, offset)
 
     async def list_records(
         self,
@@ -755,13 +702,6 @@ class DBProxyClient:
         """List records with full metadata."""
         return await mem_ops.list_records(self, limit, offset)
 
-    async def list_summaries_full(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """List summaries with source record metadata."""
-        return await mem_ops.list_summaries_full(self, limit, offset)
 
     async def count_memory_entries(self) -> dict[str, int]:
         """Return counts for messages, records, and summaries."""

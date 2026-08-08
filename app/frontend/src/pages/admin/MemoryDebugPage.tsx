@@ -6,7 +6,7 @@ import { MemoryDiagnosticsSection } from "@/components/admin/memory-debug/Memory
 import { MemoryDataSection } from "@/components/admin/memory-debug/MemoryDataSection";
 import { MemoryOverviewSection } from "@/components/admin/memory-debug/MemoryOverviewSection";
 import { MemoryProcessingLogsSection } from "@/components/admin/memory-debug/MemoryProcessingLogsSection";
-import { SummariesViewPanel } from "@/components/admin/memory-debug/SummariesViewPanel";
+import { AssertionsViewPanel } from "@/components/admin/memory-debug/AssertionsViewPanel";
 import type { MemoryDebugSection } from "@/components/admin/memory-debug/types";
 import { Button } from "@/components/ui/button";
 
@@ -30,7 +30,7 @@ export function MemoryDebugPage() {
         <div className="flex items-center justify-between">
           <p className="max-w-3xl text-sm text-muted-foreground">
             Review memory health, inspect stored data, and trace how messages become
-            records and summaries.
+            records and graph assertions.
           </p>
           <div className="flex items-center gap-2 shrink-0">
             <div className="text-xs text-muted-foreground">{lastUpdatedLabel}</div>
@@ -60,8 +60,8 @@ export function MemoryDebugPage() {
           <MemoryProcessingLogsSection refreshToken={refreshToken} />
         ) : null}
 
-        {activeSection === "summaries" ? (
-          <SummariesViewPanel refreshToken={refreshToken} />
+        {activeSection === "assertions" ? (
+          <AssertionsViewPanel refreshToken={refreshToken} />
         ) : null}
       </div>
     </AdminLayout>

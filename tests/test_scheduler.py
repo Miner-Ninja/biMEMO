@@ -17,9 +17,9 @@ from backend.memory.runtime.scheduler import (
     DialogRecorderScheduler,
     SchedulingMode,
     _count_source_message_coverage,
-    _should_run_distiller,
+    _should_run_extraction,
     run_dialog_recorder_loop,
-    run_distiller_loop,
+    run_graph_extractor_loop,
 )
 
 
@@ -320,7 +320,7 @@ class TestDistillerCoverage:
 
     def test_idle_trigger_runs_immediately_when_message_coverage_is_high(self):
         """Wide message coverage should trigger summary without another poll."""
-        should_run, next_stable_poll_count = _should_run_distiller(
+        should_run, next_stable_poll_count = _should_run_extraction(
             unreflected_count=2,
             threshold=20,
             previous_unreflected_count=None,
@@ -332,10 +332,10 @@ class TestDistillerCoverage:
 
 
 class TestRunDistillerLoop:
-    """Tests for run_distiller_loop background task."""
+    """Tests for run_graph_extractor_loop background task."""
 
     @patch(
-        "backend.memory.runtime.scheduler.process_summary",
+        "backend.memory.graph_extractor.process_graph_extraction",
         new_callable=AsyncMock,
         return_value="ref-1",
     )
@@ -352,7 +352,7 @@ class TestRunDistillerLoop:
         scheduler = DialogRecorderScheduler(SchedulingMode.PARALLEL)
         provider = MagicMock()
         db_client = AsyncMock()
-        db_client.fetch_untainted_records.return_value = [{"id": "obs"}] * 25
+        db_client.fetch_unextracted_records.return_value = [{"id": "obs"}] * 25
 
         call_count = 0
 
@@ -365,12 +365,12 @@ class TestRunDistillerLoop:
         mock_sleep.side_effect = sleep_then_cancel
 
         with contextlib.suppress(asyncio.CancelledError):
-            await run_distiller_loop(provider, db_client, scheduler, threshold=20)
+            await run_graph_extractor_loop(provider, db_client, scheduler, threshold=20)
 
         mock_proc.assert_awaited_once()
 
     @patch(
-        "backend.memory.runtime.scheduler.process_summary",
+        "backend.memory.graph_extractor.process_graph_extraction",
         new_callable=AsyncMock,
     )
     @patch(
@@ -386,7 +386,7 @@ class TestRunDistillerLoop:
         scheduler = DialogRecorderScheduler(SchedulingMode.PARALLEL)
         provider = MagicMock()
         db_client = AsyncMock()
-        db_client.fetch_untainted_records.return_value = [{"id": "obs"}] * 5
+        db_client.fetch_unextracted_records.return_value = [{"id": "obs"}] * 5
 
         call_count = 0
 
@@ -399,13 +399,13 @@ class TestRunDistillerLoop:
         mock_sleep.side_effect = sleep_then_cancel
 
         with contextlib.suppress(asyncio.CancelledError):
-            await run_distiller_loop(provider, db_client, scheduler, threshold=20)
+            await run_graph_extractor_loop(provider, db_client, scheduler, threshold=20)
 
         mock_proc.assert_not_awaited()
 
     def test_idle_trigger_runs_after_stable_polls(self):
         """Stable unreflected records should trigger a smaller summary."""
-        should_run, stable_poll_count = _should_run_distiller(
+        should_run, stable_poll_count = _should_run_extraction(
             unreflected_count=3,
             threshold=20,
             previous_unreflected_count=None,
@@ -414,7 +414,7 @@ class TestRunDistillerLoop:
         assert not should_run
         assert stable_poll_count == 1
 
-        should_run, stable_poll_count = _should_run_distiller(
+        should_run, stable_poll_count = _should_run_extraction(
             unreflected_count=3,
             threshold=20,
             previous_unreflected_count=3,
@@ -429,7 +429,7 @@ class TestRunDistillerLoop:
         provider = MagicMock()
         db_client = AsyncMock()
 
-        task = asyncio.create_task(run_distiller_loop(provider, db_client, scheduler))
+        task = asyncio.create_task(run_graph_extractor_loop(provider, db_client, scheduler))
         await asyncio.sleep(0.01)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -441,7 +441,7 @@ class TestRunDistillerLoopRepeatedPolls:
     """Tests for repeated distiller polling on the canonical runtime path."""
 
     @patch(
-        "backend.memory.runtime.scheduler.process_summary",
+        "backend.memory.graph_extractor.process_graph_extraction",
         new_callable=AsyncMock,
         return_value="ref-3",
     )
@@ -452,13 +452,13 @@ class TestRunDistillerLoopRepeatedPolls:
     async def test_requests_only_new_unreflected_observations(
         self,
         mock_sleep,
-        mock_process_summary,
+        mock_process_extraction,
     ):
         """Verify the loop triggers from a fixed batch of new records."""
         scheduler = DialogRecorderScheduler(SchedulingMode.PARALLEL)
         provider = MagicMock()
         db_client = AsyncMock()
-        db_client.fetch_untainted_records.return_value = [{"id": "obs"}] * 20
+        db_client.fetch_unextracted_records.return_value = [{"id": "obs"}] * 20
 
         call_count = 0
 
@@ -471,18 +471,18 @@ class TestRunDistillerLoopRepeatedPolls:
         mock_sleep.side_effect = sleep_then_cancel
 
         with contextlib.suppress(asyncio.CancelledError):
-            await run_distiller_loop(
+            await run_graph_extractor_loop(
                 provider=provider,
                 db_client=db_client,
                 scheduler=scheduler,
                 threshold=20,
             )
 
-        db_client.fetch_untainted_records.assert_awaited_once_with(limit=20)
-        mock_process_summary.assert_awaited_once()
+        db_client.fetch_unextracted_records.assert_awaited_once_with(limit=20)
+        mock_process_extraction.assert_awaited_once()
 
     @patch(
-        "backend.memory.runtime.scheduler.process_summary",
+        "backend.memory.graph_extractor.process_graph_extraction",
         new_callable=AsyncMock,
         return_value="ref-4",
     )
@@ -493,13 +493,13 @@ class TestRunDistillerLoopRepeatedPolls:
     async def test_runs_after_stable_idle_batch_below_threshold(
         self,
         mock_sleep,
-        mock_process_summary,
+        mock_process_extraction,
     ):
         """The loop should synthesize after a stable idle batch below threshold."""
         scheduler = DialogRecorderScheduler(SchedulingMode.PARALLEL)
         provider = MagicMock()
         db_client = AsyncMock()
-        db_client.fetch_untainted_records.side_effect = [
+        db_client.fetch_unextracted_records.side_effect = [
             [{"id": "obs"}] * 6,
             [{"id": "obs"}] * 6,
         ]
@@ -515,12 +515,12 @@ class TestRunDistillerLoopRepeatedPolls:
         mock_sleep.side_effect = sleep_then_cancel
 
         with contextlib.suppress(asyncio.CancelledError):
-            await run_distiller_loop(
+            await run_graph_extractor_loop(
                 provider=provider,
                 db_client=db_client,
                 scheduler=scheduler,
                 threshold=20,
             )
 
-        assert db_client.fetch_untainted_records.await_count == 2
-        mock_process_summary.assert_awaited_once()
+        assert db_client.fetch_unextracted_records.await_count == 2
+        mock_process_extraction.assert_awaited_once()

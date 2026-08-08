@@ -1,8 +1,7 @@
 """Graph extractor: turns dialog records into entities and assertions.
 
-Stage-2 replacement for prose summary distillation, active when the
-graph_memory.enabled policy is on. Reuses the distiller loop machinery;
-writes go through the stage-1 graph operations on Socket A.
+The memory extraction pipeline: dialog records become entities and
+assertions. Writes go through the stage-1 graph operations on Socket A.
 """
 
 from .parsing import (

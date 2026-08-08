@@ -17,7 +17,6 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from backend.memory.dialog_recorder import process_record
-from backend.memory.summary_distiller import process_summary
 
 
 if TYPE_CHECKING:
@@ -167,7 +166,7 @@ async def _run_scheduled_background_task(
         scheduler.release_background_slot()
 
 
-def _should_run_distiller(
+def _should_run_extraction(
     unreflected_count: int,
     threshold: int,
     previous_unreflected_count: int | None,
@@ -352,70 +351,6 @@ async def run_dialog_recorder_loop(
         raise
 
 
-async def run_distiller_loop(
-    provider: OllamaProvider,
-    db_client: object,
-    scheduler: DialogRecorderScheduler,
-    threshold: int = 20,
-    event_bus: object | None = None,
-) -> None:
-    """Run the Summary Distiller background task loop through DB proxy calls."""
-    logger.info("Summary Distiller background loop started")
-    previous_unreflected_count: int | None = None
-    stable_poll_count = 0
-    try:
-        while True:
-            await asyncio.sleep(DISTILLER_POLL_INTERVAL_SECONDS)
-            await scheduler.wait_for_primary()
-            untainted = await db_client.fetch_untainted_records(
-                limit=threshold,
-            )
-            unreflected_count = len(untainted)
-            source_message_coverage = _count_source_message_coverage(untainted)
-            should_run, stable_poll_count = _should_run_distiller(
-                unreflected_count=unreflected_count,
-                threshold=threshold,
-                previous_unreflected_count=previous_unreflected_count,
-                stable_poll_count=stable_poll_count,
-                source_message_coverage=source_message_coverage,
-            )
-            logger.debug(
-                "Distiller poll: unreflected=%d, coverage=%d, "
-                "should_run=%s, stable_polls=%d",
-                unreflected_count,
-                source_message_coverage,
-                should_run,
-                stable_poll_count,
-            )
-            previous_unreflected_count = unreflected_count
-            if should_run:
-                distiller_task = asyncio.create_task(
-                    process_summary(
-                        provider=provider,
-                        db_client=db_client,
-                        event_bus=event_bus,
-                    )
-                )
-                try:
-                    await _run_scheduled_background_task(
-                        scheduler,
-                        distiller_task,
-                        failure_log_message="Summary Distiller processing failed",
-                    )
-                except asyncio.CancelledError:
-                    current_task = asyncio.current_task()
-                    if current_task is not None and current_task.cancelling():
-                        raise
-                finally:
-                    previous_unreflected_count = None
-                    stable_poll_count = 0
-    except asyncio.CancelledError:
-        logger.info("Summary Distiller background loop cancelled")
-        raise
-
-
-PRUNING_INTERVAL_SECONDS = 3600.0
-
 
 async def run_graph_extractor_loop(
     provider: OllamaProvider,
@@ -446,7 +381,7 @@ async def run_graph_extractor_loop(
             source_message_coverage = _count_source_message_coverage(
                 unextracted,
             )
-            should_run, stable_poll_count = _should_run_distiller(
+            should_run, stable_poll_count = _should_run_extraction(
                 unreflected_count=unextracted_count,
                 threshold=threshold,
                 previous_unreflected_count=previous_count,
@@ -480,6 +415,9 @@ async def run_graph_extractor_loop(
     except asyncio.CancelledError:
         logger.info("Graph extractor background loop cancelled")
         raise
+
+
+PRUNING_INTERVAL_SECONDS = 3600.0
 
 
 async def run_pruning_loop(db_client: object) -> None:

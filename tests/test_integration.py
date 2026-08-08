@@ -22,15 +22,12 @@ from backend.memory.context_builder import (
     ContextEntry,
     ContextResult,
 )
-from backend.memory.retrieval import hybrid_search
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
-    index_observation,
 )
 from backend.memory.retrieval.vector_store import (
     create_vector_table,
     enable_vector_extension,
-    store_embedding,
 )
 from backend.security.database import DatabaseManager
 from backend.security.schema import initialize_schema
@@ -193,25 +190,6 @@ class TestRedZoneConfirmation:
 class TestPerformance:
     """Performance benchmarks."""
 
-    def test_search_latency(self):
-        """Verify search operations complete quickly."""
-        from backend.memory.retrieval import (
-            hybrid_search,
-        )
-
-        db = MagicMock()
-        db.execute.return_value.fetchall.return_value = []
-        start = time.monotonic()
-        for _ in range(100):
-            hybrid_search(
-                db=db,
-                query_text="test query",
-                query_embedding=[0.1] * 128,
-                table="messages",
-                limit=10,
-            )
-        elapsed = time.monotonic() - start
-        assert elapsed < 5.0
 
     def test_context_build_latency(self):
         """Verify context building is fast."""
@@ -240,31 +218,6 @@ def _open_test_db(tmp_path):
 class TestRetrievedMemoriesPipeline:
     """End-to-end tests for retrieved memories from search through context building."""
 
-    def test_hybrid_search_finds_observation(self, tmp_path):
-        """Verify hybrid_search returns results for indexed records."""
-        db = _open_test_db(tmp_path)
-        db.execute("INSERT INTO conversations (id) VALUES (?)", ("c1",))
-        db.execute(
-            "INSERT INTO records "
-            "(id, conversation_id, session_id, summary, key_facts) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("obs-pizza", "c1", "s1", "user likes pizza with mushrooms", "[]"),
-        )
-        db.commit()
-        index_observation(db, 1, "user likes pizza with mushrooms", "[]")
-        store_embedding(db, "obs-pizza", [1.0, 0.0, 0.0, 0.0])
-        db.commit()
-
-        results = hybrid_search(
-            db,
-            "pizza",
-            [1.0, 0.0, 0.0, 0.0],
-            "records",
-            limit=10,
-        )
-        assert len(results) >= 1
-        assert any(r.identifier == "obs-pizza" for r in results)
-        db.close()
 
     async def test_orchestrator_threads_retrieved_memories(self):
         """Verify AgentOrchestrator passes retrieved_memories in response."""

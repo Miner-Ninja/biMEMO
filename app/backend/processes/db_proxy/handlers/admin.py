@@ -21,7 +21,6 @@ from ..params import (
     ListAuditLogParams,
     ListMessagesParams,
     ListRecordsParams,
-    ListSummariesFullParams,
     RecordRateLimitCallParams,
     StoreAvatarParams,
     StorePasswordHashParams,
@@ -38,14 +37,14 @@ RATE_LIMIT_RETENTION_SECONDS = 120.0
 MEMORY_COUNT_QUERIES = {
     "messages": "SELECT count(*) FROM messages",
     "records": "SELECT count(*) FROM records",
-    "summaries": "SELECT count(*) FROM summaries",
+    "assertions": "SELECT count(*) FROM assertions",
 }
 
 STATS_COUNT_QUERIES = {
     "messages": "SELECT count(*) FROM messages",
     "conversations": "SELECT count(*) FROM conversations",
     "records": "SELECT count(*) FROM records",
-    "summaries": "SELECT count(*) FROM summaries",
+    "assertions": "SELECT count(*) FROM assertions",
     "reminders": "SELECT count(*) FROM reminders",
     "audit_log": "SELECT count(*) FROM audit_log",
     "integrations": "SELECT count(*) FROM integrations",
@@ -106,23 +105,6 @@ def _record_entry(row: tuple[object, ...]) -> dict[str, object]:
         "memory_kinds": _json_list_cell(row[8]),
     }
 
-
-def _summary_full_entry(row: dict[str, object]) -> dict[str, object]:
-    """Build one full summary listing entry."""
-    return {
-        "id": row["id"],
-        "main_point": row["main_point"],
-        "based_on": row["based_on"],
-        "trust_level": row["trust_level"],
-        "scope": row["scope"],
-        "created_at": row["created_at"],
-        "record_ids": row["source_record_ids"],
-        "record_relations": row["record_relations"],
-        "effective_trust_level_score": row["effective_trust_level_score"],
-        "revalidation_status": row["revalidation_status"],
-        "active_support_count": row["active_support_count"],
-        "supporting_record_count": row["supporting_record_count"],
-    }
 
 
 def _message_entry(row: tuple[object, ...]) -> dict[str, object]:
@@ -504,21 +486,6 @@ def make_list_records_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-def make_list_summaries_full_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for list_summaries_full operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """List summaries with full metadata."""
-        p = validate_params(params, ListSummariesFullParams)
-        from backend.memory.summary_distiller.store import (
-            list_revalidated_distillations,
-        )
-
-        rows = list_revalidated_distillations(db, limit=p.limit, offset=p.offset)
-        return {"summaries": [_summary_full_entry(row) for row in rows]}
-
-    return handle
-
 
 def make_list_messages_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for list_messages operation."""
@@ -553,9 +520,10 @@ RECENT_MEMORY_SQL = """
            conversation_id, created_at, NULL AS meta
     FROM records
     UNION ALL
-    SELECT 'summary' AS table_type, id, NULL AS role, main_point AS content,
-           NULL AS conversation_id, created_at, NULL AS meta
-    FROM summaries
+    SELECT 'assertion' AS table_type, id, NULL AS role,
+           assertion_text AS content, NULL AS conversation_id,
+           created_at, NULL AS meta
+    FROM assertions
     ORDER BY created_at DESC
 """
 
@@ -563,7 +531,7 @@ RECENT_MEMORY_SQL = """
 def make_mcp_memory_recent_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for mcp_memory_recent operation.
 
-    Returns newest-first entries across messages/records/summaries,
+    Returns newest-first entries across messages/records/assertions,
     bounded by MAX_RECENT_WINDOW (50).
     """
 
@@ -606,7 +574,7 @@ def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
         entry_id = p.entry_id
 
         # Validate table name
-        allowed_tables = {"messages", "records", "summaries"}
+        allowed_tables = {"messages", "records", "assertions"}
         if table not in allowed_tables:
             return {"entry": None, "note": f"Invalid table: {table}"}
 
@@ -631,25 +599,29 @@ def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
                 return {"entry": None}
             return {"entry": _record_entry(row)}
 
-        # summaries
+        # assertions
         row = db.execute(
-            "SELECT id, main_point, based_on, trust_level, summary_scope, "
-            "trust_level_score, source_record_ids, record_relations, created_at "
-            "FROM summaries WHERE id = ?",
+            "SELECT id, subject_entity_id, relation, object_entity_id, "
+            "object_value, assertion_text, trust_level, assertion_scope, "
+            "valid_from, invalid_from, source_record_ids, created_at "
+            "FROM assertions WHERE id = ?",
             (entry_id,),
         ).fetchone()
         if row is None:
             return {"entry": None}
         return {"entry": {
             "id": row[0],
-            "main_point": row[1],
-            "based_on": row[2],
-            "trust_level": row[3],
-            "scope": row[4],
-            "trust_level_score": row[5],
-            "source_record_ids": row[6],
-            "record_relations": row[7],
-            "created_at": row[8],
+            "subject_entity_id": row[1],
+            "relation": row[2],
+            "object_entity_id": row[3],
+            "object_value": row[4],
+            "assertion_text": row[5],
+            "trust_level": row[6],
+            "scope": row[7],
+            "valid_from": row[8],
+            "invalid_from": row[9],
+            "source_record_ids": row[10],
+            "created_at": row[11],
         }}
 
     return handle
@@ -671,14 +643,14 @@ def make_mcp_memory_stats_handler(db: DatabaseManager) -> OperationHandler:
         min_row = db.execute(
             "SELECT min(created_at) FROM messages "
             "UNION ALL SELECT min(created_at) FROM records "
-            "UNION ALL SELECT min(created_at) FROM summaries"
+            "UNION ALL SELECT min(created_at) FROM assertions"
         ).fetchall()
         min_ts = min((r[0] for r in min_row if r[0] is not None), default=None)
 
         max_row = db.execute(
             "SELECT max(created_at) FROM messages "
             "UNION ALL SELECT max(created_at) FROM records "
-            "UNION ALL SELECT max(created_at) FROM summaries"
+            "UNION ALL SELECT max(created_at) FROM assertions"
         ).fetchall()
         max_ts = max((r[0] for r in max_row if r[0] is not None), default=None)
 

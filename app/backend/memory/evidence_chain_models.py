@@ -27,24 +27,14 @@ class EvidenceBundle:
 
 
 class EvidenceAdminClient(Protocol):
-    """Minimal admin client surface needed for evidence bundle loading."""
-
-    async def count_memory_entries(self) -> dict[str, int]:
-        """Return counts for messages, records, and summaries."""
-
-    async def list_summaries_full(
-        self,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """Return full summary records."""
+    """Minimal client surface needed for evidence bundle loading."""
 
     async def list_records(
         self,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Return record records."""
+        """Return record rows."""
 
     async def list_messages(
         self,
@@ -52,4 +42,4 @@ class EvidenceAdminClient(Protocol):
         offset: int = 0,
         conversation_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return message records."""
+        """Return message rows."""

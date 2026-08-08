@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -137,20 +137,6 @@ ON assertions(invalid_from)
 CREATE_ASSERTIONS_CREATED_IDX = """
 CREATE INDEX IF NOT EXISTS idx_assertions_created_at
 ON assertions(created_at)
-"""
-
-CREATE_SUMMARIES_TABLE = """
-CREATE TABLE IF NOT EXISTS summaries (
-    id TEXT PRIMARY KEY,
-    main_point TEXT NOT NULL,
-    based_on TEXT NOT NULL DEFAULT '[]',
-    trust_level TEXT NOT NULL DEFAULT 'medium',
-    summary_scope TEXT NOT NULL DEFAULT 'long_term',
-    trust_level_score INTEGER NOT NULL DEFAULT 2,
-    source_record_ids TEXT NOT NULL DEFAULT '[]',
-    record_relations TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-)
 """
 
 CREATE_SCHEMA_VERSION_TABLE = """
@@ -506,7 +492,6 @@ SCHEMA_STATEMENTS = [
     CREATE_ASSERTIONS_OBJECT_IDX,
     CREATE_ASSERTIONS_INVALID_IDX,
     CREATE_ASSERTIONS_CREATED_IDX,
-    CREATE_SUMMARIES_TABLE,
     CREATE_MESSAGES_CONVERSATION_IDX,
     CREATE_MESSAGES_CREATED_AT_IDX,
     CREATE_NOTES_CONVERSATION_IDX,
@@ -626,29 +611,35 @@ def _ensure_records_schema(
         )
 
 
-def _ensure_summaries_schema(
-    db: DatabaseManager,
-) -> None:
-    """Validate or migrate the summaries table to the current schema."""
-    summary_columns = _table_columns(db, "summaries")
-    missing_summary_columns = {
-        "main_point",
-        "based_on",
-        "trust_level",
-        "summary_scope",
-        "trust_level_score",
-        "record_relations",
-    } - summary_columns
-    if missing_summary_columns == {"summary_scope"}:
-        db.execute(
-            "ALTER TABLE summaries "
-            "ADD COLUMN summary_scope TEXT NOT NULL DEFAULT 'long_term'"
-        )
-    elif missing_summary_columns:
+def _table_exists(db: DatabaseManager, table_name: str) -> bool:
+    """Return whether one table exists in the current schema."""
+    row = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_summaries_removed(db: DatabaseManager) -> None:
+    """Drop the legacy summaries table (schema v18).
+
+    Refuses with an explicit error when unmigrated rows remain: run the
+    previous release once (graph migration enabled) before upgrading.
+    """
+    if not _table_exists(db, "summaries"):
+        return
+    unmigrated = db.execute(
+        "SELECT COUNT(*) FROM summaries s WHERE NOT EXISTS ("
+        "SELECT 1 FROM assertions a WHERE a.migrated_from_summary_id = s.id)",
+    ).fetchone()[0]
+    if unmigrated > 0:
         raise RuntimeError(
-            "Summaries table uses an outdated schema. "
-            "Delete and recreate the database with the current schema."
+            f"Cannot drop legacy summaries table: {unmigrated} rows are "
+            "not migrated into graph assertions. Run the previous release "
+            "once so the startup migration completes, then upgrade."
         )
+    db.execute("DROP TABLE summaries")
+    db.commit()
 
 
 def _ensure_file_context_schema(
@@ -803,7 +794,7 @@ def initialize_schema(
     _ensure_messages_schema(db)
     _ensure_conversations_schema(db)
     _ensure_records_schema(db)
-    _ensure_summaries_schema(db)
+    _ensure_summaries_removed(db)
     _ensure_file_context_schema(db)
     _ensure_chat_bridge_schema(db)
     _ensure_skills_schema(db)

@@ -307,15 +307,11 @@ def make_evidence_bundle_fn(db_client: DBProxyClient) -> Callable:
     With graph memory enabled the bundle chains assertion → evidence
     records → source messages; otherwise the legacy summary chain runs.
     """
-    from backend.memory.evidence_chain import load_evidence_bundle_for_query
     from backend.memory.graph_recall import load_graph_evidence_bundle
-    from backend.security.policy import get_policy
 
     async def evidence_bundle_fn(query_text: str) -> object | None:
         """Load one evidence bundle for the current user question."""
-        if get_policy().get_bool("graph_memory.enabled"):
-            return await load_graph_evidence_bundle(db_client, query_text)
-        return await load_evidence_bundle_for_query(query_text, db_client)
+        return await load_graph_evidence_bundle(db_client, query_text)
 
     return evidence_bundle_fn
 

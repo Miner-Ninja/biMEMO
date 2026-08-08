@@ -1,6 +1,6 @@
 """Tests for narrow evidence-backed recall helpers."""
 
-from backend.memory.evidence_chain import EvidenceBundle
+from backend.memory.evidence_chain_models import EvidenceBundle
 from backend.memory.evidence_recall import (
     build_evidence_recall_context,
     is_evidence_recall_question,

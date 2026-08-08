@@ -5,7 +5,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from backend.files import FileContextManager
 from backend.tools.handlers.registration import get_recall_stats
@@ -126,7 +126,7 @@ async def get_pipeline_status(
     return {
         "messages": counts.get("messages", 0),
         "records": counts.get("records", 0),
-        "summaries": counts.get("summaries", 0),
+        "assertions": counts.get("assertions", 0),
     }
 
 
@@ -192,8 +192,9 @@ async def get_observations_view(
     )
 
 
-@memory_router.get("/summaries")
-async def get_reflections_view(
+@memory_router.get("/assertions")
+async def get_assertions_view(
+    query: str = "",
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
@@ -201,23 +202,21 @@ async def get_reflections_view(
         ge=1,
         le=MAX_MEMORY_LIST_LIMIT,
     ),
-    offset: int = Query(default=0, ge=0),
 ) -> dict:
-    """Return full summary entries for diagnostic tooling.
+    """Return graph assertions for diagnostic tooling.
 
-    Args:
-        admin: Database admin client.
-        limit: Maximum number of entries to return.
-        offset: Pagination offset.
-
-    Returns:
-        Dict with summary entries.
+    With a query — matching entry points; without — newest assertions
+    via the timeline report.
     """
     del _claims
-    return _memory_list_response(
-        "summaries",
-        await admin.list_summaries_full(limit=limit, offset=offset),
+    if query:
+        hits = await admin.find_graph_entry_points(query, limit)
+        return {"assertions": [h for h in hits if h.get("kind") == "assertion"]}
+    timeline = await admin.get_memory_timeline(
+        entry_type="assertion",
+        limit=limit,
     )
+    return {"assertions": timeline.get("entries", [])}
 
 
 @memory_router.get("/context")
@@ -450,7 +449,7 @@ async def get_memory_health(
         "pipeline": {
             "messages": counts.get("messages", 0),
             "records": counts.get("records", 0),
-            "summaries": counts.get("summaries", 0),
+            "assertions": counts.get("assertions", 0),
         },
         "zones": {
             "num_ctx": num_ctx,
@@ -463,4 +462,34 @@ async def get_memory_health(
             "total_available": budget.total_available,
         },
         "retrieval": get_recall_stats(),
+        "graph": await admin.get_graph_stats(),
     }
+
+
+@memory_router.get("/graph/entities")
+async def search_graph_entities(
+    query: str = "",
+    limit: int = 20,
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Search graph entities by name or alias."""
+    del _claims
+    limit = max(1, min(limit, 100))
+    entities = await admin.find_entities(query, limit) if query else []
+    return {"entities": entities}
+
+
+@memory_router.get("/graph/entities/{entity_id}")
+async def get_graph_entity(
+    entity_id: str,
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Return one entity with its assertions in both roles."""
+    del _claims
+    entity = await admin.get_entity(entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    assertions = await admin.list_assertions_for_entity(entity_id)
+    return {"entity": entity, "assertions": assertions}

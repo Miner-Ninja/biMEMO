@@ -18,7 +18,7 @@ export const MEMORY_DEBUG_SECTIONS: Array<{
   {
     id: "memory-data",
     label: "Memory data",
-    description: "Stored messages, records, summaries, and how they connect.",
+    description: "Stored messages, records, graph assertions, and how they connect.",
   },
   {
     id: "diagnostics",
@@ -28,10 +28,10 @@ export const MEMORY_DEBUG_SECTIONS: Array<{
   {
     id: "processing-logs",
     label: "Processing logs",
-    description: "Detailed record and summary processing records.",
+    description: "Detailed record processing records.",
   },
   {
-    id: "summaries",
+    id: "assertions",
     label: "Summaries",
     description: "Learned main points and insights extracted from conversations.",
   },
@@ -75,12 +75,12 @@ export const MEMORY_DATA_VIEWS: Array<{
   {
     id: "timeline",
     label: "Timeline",
-    description: "Messages, records, and summaries arranged in time order.",
+    description: "Messages, records, and assertions arranged in time order.",
   },
   {
     id: "links",
     label: "Memory links",
-    description: "How messages, records, and summaries connect to each other.",
+    description: "How assertions, records, and messages connect to each other.",
   },
   {
     id: "files",
@@ -100,11 +100,6 @@ export const PROCESSING_LOG_VIEWS: Array<{
     label: "Records log",
     description: "Detailed records for record creation, skips, and failures.",
   },
-  {
-    id: "summaries-log",
-    label: "Summaries log",
-    description: "Detailed records for summary creation, skips, and failures.",
-  },
 ];
 
 export const TYPE_COLORS: Record<string, string> = {
@@ -112,7 +107,7 @@ export const TYPE_COLORS: Record<string, string> = {
   assistant: "bg-green-500/10 text-green-400 border-green-500/20",
   message: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   record: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  summary: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  assertion: "bg-violet-500/10 text-violet-400 border-violet-500/20",
   file: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
 };
 

@@ -28,20 +28,6 @@ class AdminDBClient(_BaseIPCClient):
         """Retrieve HKDF-derived key material from DB Proxy."""
         return await self.send_operation("get_signing_material")
 
-    async def list_summaries(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """List summaries with pagination."""
-        return await self._send_list_operation(
-            "list_summaries",
-            result_key="summaries",
-            parameters={
-                "limit": limit,
-                "offset": offset,
-            },
-        )
 
     async def create_conversation(self, title: str = "") -> str:
         """Create one persisted conversation."""
@@ -379,20 +365,6 @@ class AdminDBClient(_BaseIPCClient):
             },
         )
 
-    async def list_summaries_full(
-        self,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """List summaries with full metadata."""
-        return await self._send_list_operation(
-            "list_summaries_full",
-            result_key="summaries",
-            parameters={
-                "limit": limit,
-                "offset": offset,
-            },
-        )
 
     async def list_messages(
         self,
@@ -458,6 +430,10 @@ class AdminDBClient(_BaseIPCClient):
             {"query": query, "limit": limit},
         )
         return result["entry_points"]
+
+    async def get_graph_stats(self) -> dict[str, Any]:
+        """Return the graph statistics snapshot."""
+        return await self.send_operation("get_graph_stats")
 
     async def create_backup(self) -> dict[str, Any]:
         """Write consistent encrypted copies of every open database.

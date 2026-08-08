@@ -6,8 +6,6 @@ import {
   ContentDisplay,
   normalizeStringArray,
   RecordRelationBadge,
-  SummaryScopeBadge,
-  SummaryStatusBadge,
   TypeBadge,
 } from "@/components/admin/memory-debug/shared";
 import {
@@ -38,7 +36,7 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
 
   const messageEntries = data.tiers?.recent_messages?.entries || [];
   const recordEntries = data.tiers?.records?.entries || [];
-  const summaryEntries = data.tiers?.summaries?.entries || [];
+  const assertionEntries = data.tiers?.assertions?.entries || [];
   const messagesById = new Map(
     messageEntries.map((entry) => [String(entry.id || ""), entry])
   );
@@ -50,18 +48,16 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Summary to record to message chain</CardTitle>
+          <CardTitle>Assertion to record to message chain</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {summaryEntries.map((summaryEntry) => {
-            const recordRelations = Array.isArray(summaryEntry.record_relations)
-              ? summaryEntry.record_relations
-              : normalizeStringArray(
-                  summaryEntry.record_ids ?? summaryEntry.source_record_ids
-                ).map((recordId) => ({
-                  record_id: recordId,
-                  relation: "supports",
-                }));
+          {assertionEntries.map((summaryEntry) => {
+            const recordRelations = normalizeStringArray(
+              summaryEntry.source_record_ids
+            ).map((recordId) => ({
+              record_id: recordId,
+              relation: String(summaryEntry.relation || "supports"),
+            }));
             const linkedRecords = recordRelations
               .map((link) => {
                 const recordId = String(link.record_id || "");
@@ -85,19 +81,18 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
                 <CollapsibleTrigger className="w-full p-4 text-left">
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <TypeBadge type="summary" />
-                      {typeof summaryEntry.revalidation_status === "string" ? (
-                        <SummaryStatusBadge status={summaryEntry.revalidation_status} />
-                      ) : null}
-                      {typeof summaryEntry.scope === "string" ? (
-                        <SummaryScopeBadge scope={summaryEntry.scope} />
+                      <TypeBadge type="assertion" />
+                      {summaryEntry.invalid_from ? (
+                        <span className="text-xs text-red-400">invalidated</span>
                       ) : null}
                       <span className="ml-auto text-xs text-muted-foreground">
                         {String(summaryEntry.created_at || "")}
                       </span>
                     </div>
                     <div className="line-clamp-3 text-sm whitespace-pre-wrap text-left">
-                      {String(summaryEntry.main_point || summaryEntry.content || "")}
+                      {String(
+                        summaryEntry.assertion_text || summaryEntry.content || ""
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {linkedRecords.length} linked record
@@ -163,9 +158,9 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
               </Collapsible>
             );
           })}
-          {summaryEntries.length === 0 ? (
+          {assertionEntries.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No summary chains are available yet.
+              No assertion chains are available yet.
             </div>
           ) : null}
         </CardContent>

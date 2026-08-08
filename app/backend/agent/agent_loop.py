@@ -788,12 +788,7 @@ class AgentOrchestrator:
         graph facts; an empty graph (or any lookup failure) falls back
         to the legacy template answer.
         """
-        from backend.security.policy import get_policy
-
-        if (
-            self.graph_facts_fn is not None
-            and get_policy().get_bool("graph_memory.enabled")
-        ):
+        if self.graph_facts_fn is not None:
             try:
                 fact_lines = await self.graph_facts_fn()
             except Exception:
@@ -806,15 +801,15 @@ class AgentOrchestrator:
                 import re
 
                 header = (
-                    "Вот что я сейчас помню о тебе:"
+                    "Вот что я сейчас помню о тебе:"  # noqa: RUF001
                     if re.search(
-                        r"[а-яё]",
+                        r"[а-яё]",  # noqa: RUF001
                         prepared_turn.filtered_message,
                         re.IGNORECASE,
                     )
                     else "Here is what I currently remember about you:"
                 )
-                return "\n".join([header] + fact_lines)
+                return "\n".join([header, *fact_lines])
         return LongTermMemoryResolver().build_response(
             prepared_turn.prepared_context.entries,
             session_id=session_id,

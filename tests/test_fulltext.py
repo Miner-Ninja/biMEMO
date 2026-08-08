@@ -7,19 +7,17 @@ and morphological matching for messages, records, and summaries.
 import secrets
 
 import pytest
+
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
     delete_message_index,
     delete_record_index,
-    delete_summary_index,
     index_message,
     index_observation,
-    index_reflection,
     rebuild_fts_index,
     sanitize_fts_query,
     search_messages,
     search_observations,
-    search_reflections,
     stem_text,
 )
 from backend.security.database import DatabaseManager
@@ -51,13 +49,6 @@ class TestCreateFtsTables:
         """Verify records_fts table exists."""
         cursor = fts_db.execute(
             "SELECT count(*) FROM sqlite_master WHERE name='records_fts'"
-        )
-        assert cursor.fetchone()[0] == 1
-
-    def test_summaries_fts_created(self, fts_db):
-        """Verify summaries_fts table exists."""
-        cursor = fts_db.execute(
-            "SELECT count(*) FROM sqlite_master WHERE name='summaries_fts'"
         )
         assert cursor.fetchone()[0] == 1
 
@@ -204,38 +195,7 @@ class TestRecordIndexing:
 class TestSummaryIndexing:
     """Tests for summary FTS5 indexing and search."""
 
-    def test_index_and_search_reflection(self, fts_db):
-        """Verify indexed summary is found by search."""
-        index_reflection(
-            fts_db,
-            1,
-            "User prefers dark terminal themes",
-            '["Prefers high-contrast code blocks"]',
-        )
-        fts_db.commit()
-        results = search_reflections(fts_db, "terminal", 10)
-        assert len(results) > 0
 
-    def test_search_summary_by_based_on(self, fts_db):
-        """Verify summary search works on the based_on field."""
-        index_reflection(
-            fts_db,
-            1,
-            "User values concise answers",
-            '["Asked for shorter replies in review"]',
-        )
-        fts_db.commit()
-        results = search_reflections(fts_db, "shorter", 10)
-        assert len(results) > 0
-
-    def test_delete_summary_index(self, fts_db):
-        """Verify deleted summary is no longer found."""
-        index_reflection(fts_db, 1, "Removable summary", "[]")
-        fts_db.commit()
-        delete_summary_index(fts_db, 1)
-        fts_db.commit()
-        results = search_reflections(fts_db, "removable", 10)
-        assert len(results) == 0
 
 
 class TestSanitizeFtsQuery:

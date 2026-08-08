@@ -47,7 +47,7 @@ from backend.llm.call_factory import LLMResponse, LLMToolCall
 from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import ContextEntry, ContextResult
-from backend.memory.evidence_chain import EvidenceBundle
+from backend.memory.evidence_chain_models import EvidenceBundle
 from backend.security.content_scanning_models import FilterResult
 from backend.tools.broker import ToolResult
 from backend.trust.confirmation import PendingAction

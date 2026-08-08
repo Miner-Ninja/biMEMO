@@ -15,6 +15,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from starlette.testclient import TestClient
+
 from backend.channels.endpoints import EndpointRateLimiter, ReauthManager
 from backend.channels.jwt_auth import SessionManager
 from backend.channels.realtime import RealtimeConnectionManager
@@ -46,8 +49,6 @@ from backend.processes.fastapi_app.routes import (
     memory_router,
 )
 from backend.processes.fastapi_app.routes.chat import chat_router
-from fastapi import FastAPI
-from starlette.testclient import TestClient
 
 
 # ---------------------------------------------------------------------------
@@ -3511,30 +3512,6 @@ class TestProfileContract:
 class TestSummariesContract:
     """Integration tests for the active summaries route contract."""
 
-    def test_reflections_route_returns_paginated_list_items(self) -> None:
-        """Summaries route should match the active frontend list contract."""
-        app, token, session_manager, signing_client, _ = _build_test_app()
-        app.state.admin_client = FakeAdminClient()
-        client, _ = _authed_client_with_csrf(
-            app,
-            token,
-            session_manager,
-            signing_client,
-        )
-
-        resp = client.get("/admin/summaries?page=1&per_page=1")
-
-        assert resp.status_code == 200, resp.text
-        assert resp.json() == [
-            {
-                "main_point": "summary-1",
-                "trust_level": "medium",
-                "scope": "long_term",
-                "based_on_count": 2,
-                "created_at": "2026-03-12T10:00:01Z",
-            }
-        ]
-
 
 class TestMemoryTimeline:
     """Integration tests for merged memory timeline pagination."""
@@ -3793,43 +3770,6 @@ class TestMemoryTimeline:
             ]
         }
 
-    def test_reflections_route_returns_full_relation_data(self) -> None:
-        """Summaries route should expose typed memory graph relations."""
-        app, token, session_manager, signing_client, _ = _build_test_app()
-        app.state.admin_client = FakeAdminClient()
-        client, _ = _authed_client_with_csrf(
-            app,
-            token,
-            session_manager,
-            signing_client,
-        )
-
-        resp = client.get("/admin/memory/summaries?limit=1")
-
-        assert resp.status_code == 200, resp.text
-        assert resp.json() == {
-            "summaries": [
-                {
-                    "id": "r1",
-                    "main_point": "summary-1",
-                    "created_at": "2026-03-12T10:00:01Z",
-                    "based_on": [],
-                    "record_ids": ["o1"],
-                    "scope": "long_term",
-                    "record_relations": [
-                        {
-                            "record_id": "o1",
-                            "relation": "supports",
-                        }
-                    ],
-                    "revalidation_status": "fresh",
-                    "effective_trust_level_score": 3,
-                    "active_support_count": 1,
-                    "supporting_record_count": 1,
-                    "trust_level": "medium",
-                }
-            ]
-        }
 
     def test_route_diagnostics_route_returns_structured_records(self) -> None:
         """Route diagnostics route should expose stored routing decisions."""

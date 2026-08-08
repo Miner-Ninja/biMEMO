@@ -8,6 +8,7 @@ and behavior on lost connections. Uses mock IPC to avoid actual sockets.
 import asyncio
 
 import pytest
+
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ChatRequest as IPCChatRequest,
@@ -514,33 +515,7 @@ class TestAdminDBClient:
         assert fake_ipc.sent_operations[0].operation == "get_signing_material"
 
     @pytest.mark.asyncio
-    async def test_list_summaries(
-        self,
-        admin_client: AdminDBClient,
-        fake_ipc: FakeDBProxyIPC,
-    ) -> None:
-        """Lists summaries through socket B."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "summaries": [
-                        {
-                            "main_point": "likes Python",
-                            "trust_level": "high",
-                            "based_on_count": 3,
-                            "created_at": "2026-01-01",
-                        }
-                    ]
-                },
-            )
-        )
-        items = await admin_client.list_summaries()
-        assert len(items) == 1
-        assert items[0]["main_point"] == "likes Python"
 
-    @pytest.mark.asyncio
     async def test_delete_conversation(
         self,
         admin_client: AdminDBClient,
