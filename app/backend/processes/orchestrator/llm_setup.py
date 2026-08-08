@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from .factories import (
     make_evidence_bundle_fn,
+    make_graph_facts_fn,
     make_memory_route_diagnostic_fn,
     make_save_fn,
     make_save_record_fn,
@@ -61,6 +62,7 @@ def _build_gateway_orchestrator(
             capabilities_resolver=None,
         ),
         evidence_bundle_fn=make_evidence_bundle_fn(db_client),
+        graph_facts_fn=make_graph_facts_fn(db_client),
         save_fn=make_save_fn(db_client),
         save_record_fn=make_save_record_fn(db_client),
         write_memory_route_diagnostic_fn=make_memory_route_diagnostic_fn(

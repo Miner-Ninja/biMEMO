@@ -180,6 +180,7 @@ class AgentOrchestrator:
     concurrency: AgentConcurrency
     context_fn: Callable
     evidence_bundle_fn: Callable | None = None
+    graph_facts_fn: Callable | None = None
     save_fn: Callable | None = None
     save_record_fn: Callable | None = None
     write_memory_route_diagnostic_fn: Callable | None = None
@@ -775,13 +776,45 @@ class AgentOrchestrator:
             zone_usage=prepared_turn.prepared_context.zone_usage,
         )
 
-    def _build_long_term_memory_answer_text(
+    async def _build_long_term_memory_answer_text(
         self,
         *,
         prepared_turn: TurnPreparation,
         session_id: str,
     ) -> str:
-        """Build the answer text for a long-term memory question."""
+        """Build the answer text for a long-term memory question.
+
+        With graph memory enabled the answer lists the user's valid
+        graph facts; an empty graph (or any lookup failure) falls back
+        to the legacy template answer.
+        """
+        from backend.security.policy import get_policy
+
+        if (
+            self.graph_facts_fn is not None
+            and get_policy().get_bool("graph_memory.enabled")
+        ):
+            try:
+                fact_lines = await self.graph_facts_fn()
+            except Exception:
+                logger.warning(
+                    "Graph facts lookup failed; using template answer",
+                    exc_info=True,
+                )
+                fact_lines = []
+            if fact_lines:
+                import re
+
+                header = (
+                    "Вот что я сейчас помню о тебе:"
+                    if re.search(
+                        r"[а-яё]",
+                        prepared_turn.filtered_message,
+                        re.IGNORECASE,
+                    )
+                    else "Here is what I currently remember about you:"
+                )
+                return "\n".join([header] + fact_lines)
         return LongTermMemoryResolver().build_response(
             prepared_turn.prepared_context.entries,
             session_id=session_id,
@@ -797,7 +830,7 @@ class AgentOrchestrator:
         loop: AgenticLoop,
     ) -> AgentResponse:
         """Build the final response for a long-term memory question."""
-        raw_final_text = self._build_long_term_memory_answer_text(
+        raw_final_text = await self._build_long_term_memory_answer_text(
             prepared_turn=prepared_turn,
             session_id=session_id,
         )
@@ -983,10 +1016,16 @@ class AgentOrchestrator:
                     satisfaction = satisfaction.with_success("web_search")
         forced_recall_tokens = 0
         if "memory_recall" not in requirements.required_tools:
+            recall_zone_budget = (
+                prepared_context.zone_budget.get("recall_results")
+                if prepared_context.zone_budget is not None
+                else None
+            )
             forced_recall_tokens = (
                 await self.llm_caller.append_forced_memory_recall_context(
                     filtered_message=turn_input.filtered_message,
                     messages=messages,
+                    recall_token_budget=recall_zone_budget,
                 )
             )
         if forced_recall_tokens > 0 and prepared_context.zone_usage is not None:

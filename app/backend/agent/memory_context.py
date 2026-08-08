@@ -124,6 +124,7 @@ class MemoryContextLoader:
                 retrieved_messages=context_raw.retrieved_messages,
                 memory_guidance=context_raw.memory_guidance,
                 zone_usage=context_raw.zone_usage,
+                zone_budget=context_raw.zone_budget,
             )
         return PreparedContext(
             entries=context_raw,
