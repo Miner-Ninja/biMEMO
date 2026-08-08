@@ -82,3 +82,18 @@ class TestSearchExcludesTainted:
         db.close()
 
 
+
+
+class TestSummariesTableGone:
+    """S6.3 — the summaries search table no longer exists."""
+
+    async def test_summaries_search_rejected(self, tmp_path):
+        """Asking full-text search for summaries is an explicit error."""
+        import pytest
+
+        db = _open_db(tmp_path)
+        create_fts_tables(db)
+        handler = make_fulltext_search_handler(db)
+        with pytest.raises(ValueError, match="Invalid search table"):
+            await handler({"query": "anything", "table": "summaries"})
+        db.close()

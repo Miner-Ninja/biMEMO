@@ -187,13 +187,13 @@ async def count_memory_entries(
         client: DB Proxy client instance.
 
     Returns:
-        Dict with counts for messages, records, and summaries.
+        Dict with counts for messages, records, and assertions.
     """
     result = await client.send_operation("count_memory_entries")
     return {
         "messages": int(result.get("messages", 0)),
         "records": int(result.get("records", 0)),
-        "summaries": int(result.get("summaries", 0)),
+        "assertions": int(result.get("assertions", 0)),
     }
 
 

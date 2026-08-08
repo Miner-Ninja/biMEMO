@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 
 # The migration parks legacy summaries under one placeholder entity until
 # the stage-2 extractor re-attributes them to real entities.
+# Lifecycle maintenance retention. Named constants, not config keys —
+# same policy as the record retention constants.
+GRAPH_PRUNE_INVALIDATED_DAYS = 90
+GRAPH_ORPHAN_GRACE_HOURS = 24
+
 MIGRATION_ENTITY_TYPE = "unresolved"
 MIGRATION_ENTITY_NAME = "legacy_summaries"
 MIGRATION_RELATION = "states"
@@ -435,12 +440,6 @@ def make_fetch_unextracted_records_handler(
 
     return handle
 
-
-
-# Lifecycle maintenance (stage 4). Named constants, not config keys —
-# same policy as the record/summary retention constants.
-GRAPH_PRUNE_INVALIDATED_DAYS = 90
-GRAPH_ORPHAN_GRACE_HOURS = 24
 
 
 def make_prune_graph_handler(db: DatabaseManager) -> OperationHandler:

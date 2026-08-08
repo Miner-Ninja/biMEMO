@@ -259,7 +259,7 @@ def make_fulltext_search_handler(db: DatabaseManager) -> OperationHandler:
     """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Search messages, records, or summaries via FTS5.
+        """Search messages or records via FTS5.
 
         Returns the ORIGINAL source text for each hit. The FTS index
         stores pre-stemmed tokens, so FTS snippets would surface stems

@@ -21,7 +21,7 @@ class AdminDBClient(_BaseIPCClient):
     """Typed async client for DB Proxy Socket B (admin operations).
 
     Provides methods for admin operations: signing material,
-    stats, backups, summaries, conversations.
+    stats, backups, graph reads, conversations.
     """
 
     async def get_signing_material(self) -> dict[str, Any]:
@@ -383,7 +383,7 @@ class AdminDBClient(_BaseIPCClient):
         )
 
     async def count_memory_entries(self) -> dict[str, int]:
-        """Count messages, records, and summaries."""
+        """Count messages, records, and assertions."""
         return await self.send_operation("count_memory_entries")
 
     async def get_entity(self, entity_id: str) -> dict[str, Any] | None:
@@ -664,19 +664,18 @@ class AdminDBClient(_BaseIPCClient):
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Search messages, records, or summaries via FTS5.
+        """Search messages or records via FTS5.
 
         Args:
             query: Full-text search query string.
-            table: Table to search ("messages", "records", or "summaries").
+            table: Table to search ("messages" or "records").
             limit: Maximum results to return.
             offset: Pagination offset.
 
         Returns:
             List of result dicts with "id", "rowid", "created_at", and the
             source text of the hit ("content" plus "role" for messages,
-            "summary" for records, "main_point" plus "trust_level" for
-            summaries).
+            "summary" for records).
         """
         result = await self.send_operation(
             "fulltext_search",
@@ -696,7 +695,7 @@ class AdminDBClient(_BaseIPCClient):
     ) -> list[dict[str, Any]]:
         """Return the most recently created memory entries, newest-first.
 
-        Reads across messages/records/summaries via Socket B.
+        Reads across messages/records/assertions via Socket B.
         Bounded by the handler's MAX_RECENT_WINDOW.
 
         Args:
@@ -721,7 +720,7 @@ class AdminDBClient(_BaseIPCClient):
 
         Args:
             entry_id: The entry's id.
-            table: One of "messages", "records", "summaries".
+            table: One of "messages", "records", "assertions".
 
         Returns:
             Entry dict or None if not found.

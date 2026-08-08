@@ -11,15 +11,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ..common import validate_params
+from ..common import OperationHandler, validate_params
 from ..params import GetMemoryTimelineParams
 
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
-
-
-OperationHandler = Any
 
 _TIMELINE_TYPES = ("message", "record", "assertion")
 

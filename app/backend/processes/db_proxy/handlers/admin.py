@@ -504,7 +504,7 @@ def make_count_memory_entries_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for count_memory_entries operation."""
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Count messages, records, and summaries."""
+        """Count messages, records, and assertions."""
         validate_params(params, CountMemoryEntriesParams)
         return _table_counts(db, MEMORY_COUNT_QUERIES)
 

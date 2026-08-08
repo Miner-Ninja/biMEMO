@@ -158,13 +158,13 @@ class TestDBProxyClient:
             DBResult(
                 request_id="r3",
                 status="success",
-                data={"messages": 4, "records": 2, "summaries": 1},
+                data={"messages": 4, "records": 2, "assertions": 1},
             )
         )
 
         counts = await db_client.count_memory_entries()
 
-        assert counts == {"messages": 4, "records": 2, "summaries": 1}
+        assert counts == {"messages": 4, "records": 2, "assertions": 1}
         assert fake_ipc.sent_operations[0].operation == "count_memory_entries"
 
 

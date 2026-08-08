@@ -423,7 +423,8 @@ PRUNING_INTERVAL_SECONDS = 3600.0
 async def run_pruning_loop(db_client: object) -> None:
     """Run periodic memory pruning in the background.
 
-    Deletes stale summaries and unlinked records hourly.
+    Deletes uncited old records, long-invalidated assertions, and
+    orphaned entities hourly.
 
     Args:
         db_client: DB proxy client for storage operations.
@@ -435,14 +436,18 @@ async def run_pruning_loop(db_client: object) -> None:
         while True:
             await asyncio.sleep(PRUNING_INTERVAL_SECONDS)
             try:
-                summaries, records, conflicts = await run_pruning_cycle(db_client)
-                if summaries or records or conflicts:
+                (
+                    assertions_deleted,
+                    records_deleted,
+                    entities_deleted,
+                ) = await run_pruning_cycle(db_client)
+                if assertions_deleted or records_deleted or entities_deleted:
                     logger.info(
-                        "Maintenance cycle: %d summaries, %d records, "
-                        "%d conflicts surfaced",
-                        summaries,
-                        records,
-                        conflicts,
+                        "Maintenance cycle: %d assertions, %d records, "
+                        "%d entities removed",
+                        assertions_deleted,
+                        records_deleted,
+                        entities_deleted,
                     )
             except Exception:
                 logger.warning("Pruning cycle failed", exc_info=True)
