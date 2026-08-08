@@ -226,6 +226,12 @@ class GetMemoryTimelineParams(LimitOffsetParams):
     offset: int = 0
 
 
+class FetchUnextractedRecordsParams(ForbidExtraParams):
+    """Parameters for fetch_unextracted_records operation."""
+
+    limit: int = 20
+
+
 class SaveEntityParams(ForbidExtraParams):
     """Parameters for save_entity operation (get-or-create)."""
 

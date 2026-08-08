@@ -533,3 +533,15 @@ async def find_graph_entry_points(
         {"query": query, "limit": limit},
     )
     return result["entry_points"]
+
+
+async def fetch_unextracted_records(
+    client: DBProxyClient,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Fetch untainted records not yet extracted into the graph."""
+    result = await client.send_operation(
+        "fetch_unextracted_records",
+        {"limit": limit},
+    )
+    return result["records"]

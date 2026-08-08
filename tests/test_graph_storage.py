@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlcipher3
-
 from pydantic import ValidationError
 
 from backend.memory.retrieval.fulltext import create_fts_tables
@@ -371,6 +370,40 @@ class TestMigration:
             "SELECT id, main_point FROM summaries ORDER BY id"
         ).fetchall()
         assert before == after
+        db.close()
+
+
+class TestFetchUnextracted:
+    """R2 (этап 2) — eligibility for the graph extractor."""
+
+    async def test_eligibility_filtering(self, tmp_path):
+        """S2.1-S2.3 — cited and tainted records excluded, fresh included."""
+        from backend.processes.db_proxy.handlers.graph import (
+            make_fetch_unextracted_records_handler,
+        )
+
+        db = _open_db(tmp_path)
+        db.execute("INSERT INTO conversations (id) VALUES ('c1')")
+        for rid, tainted in (("r-fresh", 0), ("r-cited", 0), ("r-bad", 1)):
+            db.execute(
+                "INSERT INTO records "
+                "(id, conversation_id, session_id, summary, tainted) "
+                "VALUES (?, 'c1', 's1', 'text', ?)",
+                (rid, tainted),
+            )
+        db.commit()
+        subject = await _save_entity(db)
+        await _save_assertion(
+            db,
+            subject,
+            source_record_ids=["r-cited"],
+        )
+        handler = make_fetch_unextracted_records_handler(db)
+        result = await handler({})
+        ids = [r["id"] for r in result["records"]]
+        assert "r-fresh" in ids
+        assert "r-cited" not in ids
+        assert "r-bad" not in ids
         db.close()
 
 
