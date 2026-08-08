@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from backend.ipc.models import (
@@ -180,6 +181,14 @@ def make_zone_context_fn(
             conversation_summary=prev_summary,
             zone_budget=budget,
         )
+        result = replace(
+            result,
+            zone_budget={
+                "working_memory": budget.working_memory,
+                "recall_results": budget.recall_results,
+                "conversation_summary": budget.conversation_summary,
+            },
+        )
 
         if result.evicted_messages:
             _schedule_background_compression(
@@ -293,14 +302,37 @@ def make_zone_context_fn(
 
 
 def make_evidence_bundle_fn(db_client: DBProxyClient) -> Callable:
-    """Create an async evidence bundle loader for narrow source-backed recall."""
+    """Create an async evidence bundle loader for narrow source-backed recall.
+
+    With graph memory enabled the bundle chains assertion → evidence
+    records → source messages; otherwise the legacy summary chain runs.
+    """
     from backend.memory.evidence_chain import load_evidence_bundle_for_query
+    from backend.memory.graph_recall import load_graph_evidence_bundle
+    from backend.security.policy import get_policy
 
     async def evidence_bundle_fn(query_text: str) -> object | None:
         """Load one evidence bundle for the current user question."""
+        if get_policy().get_bool("graph_memory.enabled"):
+            return await load_graph_evidence_bundle(db_client, query_text)
         return await load_evidence_bundle_for_query(query_text, db_client)
 
     return evidence_bundle_fn
+
+
+def make_graph_facts_fn(db_client: DBProxyClient) -> Callable:
+    """Create an async loader of the user's valid graph facts.
+
+    Feeds the deterministic long-term-memory answer when graph memory is
+    enabled; returns dated fact lines about the user entity.
+    """
+    from backend.memory.graph_recall import build_user_fact_lines
+
+    async def graph_facts_fn() -> list[str]:
+        """List the user's currently-valid graph facts."""
+        return await build_user_fact_lines(db_client)
+
+    return graph_facts_fn
 
 
 def make_save_fn(db_client: DBProxyClient) -> Callable:

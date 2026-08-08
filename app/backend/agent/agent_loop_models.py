@@ -73,6 +73,7 @@ class PreparedContext:
     retrieved_messages: list[dict[str, str]] | None
     memory_guidance: str | None
     zone_usage: dict[str, int] | None = None
+    zone_budget: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)

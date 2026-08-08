@@ -232,7 +232,21 @@ class _FakeMemoryRecallDBClient:
 
 
 class TestMemoryRecallHandler:
-    """Tests for the memory recall tool handler."""
+    """Tests for the memory recall tool handler (legacy, flag-off path).
+
+    Graph-enabled behaviour is covered by tests/test_graph_recall.py.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _force_graph_memory_off(self):
+        """Pin these legacy-path tests to graph_memory.enabled=False."""
+        from unittest.mock import patch as _patch
+
+        with _patch(
+            "backend.security.policy.AssistantPolicy.get_bool",
+            return_value=False,
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_general_query_uses_fast_recall_only(self) -> None:

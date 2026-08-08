@@ -58,6 +58,7 @@ class ContextResult:
     retrieved_reflections: list[RetrievedItem] | None = None
     evicted_messages: list[tuple[str, str]] | None = None
     zone_usage: dict[str, int] | None = None
+    zone_budget: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)

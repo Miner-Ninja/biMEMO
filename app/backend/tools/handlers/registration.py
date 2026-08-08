@@ -399,12 +399,28 @@ async def _build_fast_recall_result(
     query: str,
     max_message_chars: int,
 ) -> str:
-    """Run the lightweight memory recall search across all three tiers."""
-    summaries = await db_client.fulltext_search(
-        query=query,
-        table="summaries",
-        limit=MEMORY_RECALL_RESULT_LIMIT,
-    )
+    """Run the lightweight memory recall search.
+
+    With graph memory enabled the graph section (dated, trust-labeled
+    valid assertions) leads and the frozen summaries tier is skipped —
+    its content lives in the graph. Records and messages remain the
+    episodic tier in both modes.
+    """
+    from backend.security.policy import get_policy
+
+    graph_enabled = get_policy().get_bool("graph_memory.enabled")
+    graph_lines: list[str] = []
+    summaries: list[dict[str, object]] = []
+    if graph_enabled:
+        from backend.memory.graph_recall import build_graph_recall_lines
+
+        graph_lines = await build_graph_recall_lines(db_client, query)
+    else:
+        summaries = await db_client.fulltext_search(
+            query=query,
+            table="summaries",
+            limit=MEMORY_RECALL_RESULT_LIMIT,
+        )
     records = await db_client.fulltext_search(
         query=query,
         table="records",
@@ -415,7 +431,7 @@ async def _build_fast_recall_result(
         table="messages",
         limit=MEMORY_RECALL_RESULT_LIMIT,
     )
-    parts = _fast_recall_parts(
+    parts = graph_lines + _fast_recall_parts(
         summaries=summaries,
         records=records,
         messages=messages,
@@ -483,7 +499,14 @@ async def _build_evidence_recall_result(
     max_message_chars: int,
 ) -> str:
     """Run source-backed memory recall and fall back to fast recall if needed."""
-    evidence_bundle = await load_evidence_bundle_for_query(query, db_client)
+    from backend.security.policy import get_policy
+
+    if get_policy().get_bool("graph_memory.enabled"):
+        from backend.memory.graph_recall import load_graph_evidence_bundle
+
+        evidence_bundle = await load_graph_evidence_bundle(db_client, query)
+    else:
+        evidence_bundle = await load_evidence_bundle_for_query(query, db_client)
     if evidence_bundle is None:
         return await _build_fast_recall_result(
             db_client=db_client,

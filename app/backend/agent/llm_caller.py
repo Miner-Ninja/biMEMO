@@ -844,6 +844,7 @@ class LLMCaller:
         *,
         filtered_message: str,
         messages: list[dict[str, object]],
+        recall_token_budget: int | None = None,
     ) -> int:
         """Run memory_recall early for questions about past conversations.
 
@@ -878,6 +879,13 @@ class LLMCaller:
         result_text = str(recall_result.result)
         if not result_text.strip():
             return 0
+        if recall_token_budget is not None:
+            from backend.memory.graph_recall import trim_lines_to_token_budget
+
+            result_text = trim_lines_to_token_budget(
+                result_text,
+                recall_token_budget,
+            )
         recall_content = (
             f"Memory recall results from past conversations:\n{result_text}"
         )
