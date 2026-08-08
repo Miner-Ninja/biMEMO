@@ -139,40 +139,30 @@ async def load_context(
     client: DBProxyClient,
     session_id: str,
     conversation_id: str = "",
-    summary_limit: int = 10,
     record_limit: int = 20,
     message_limit: int = 50,
-    query: str | None = None,
-    query_embedding: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Load combined context: summaries, records, messages.
+    """Load baseline context: records, messages, S-zone summary.
 
     Args:
         client: DB Proxy client instance.
         session_id: Current session identifier.
         conversation_id: Conversation identifier for raw message history.
-        summary_limit: Max summaries.
         record_limit: Max records.
         message_limit: Max messages.
-        query: Optional text query for hybrid search.
-        query_embedding: Optional embedding for vector search.
 
     Returns:
-        Dict with "summaries", "records", "messages" keys,
-        plus "search_results" when query is provided.
+        Dict with "records", "messages", and "conversation_summary" keys.
     """
-    params: dict[str, Any] = {
-        "session_id": session_id,
-        "conversation_id": conversation_id,
-        "summary_limit": summary_limit,
-        "record_limit": record_limit,
-        "message_limit": message_limit,
-    }
-    if query is not None:
-        params["query"] = query
-    if query_embedding is not None:
-        params["query_embedding"] = query_embedding
-    return await client.send_operation("load_context", params)
+    return await client.send_operation(
+        "load_context",
+        {
+            "session_id": session_id,
+            "conversation_id": conversation_id,
+            "record_limit": record_limit,
+            "message_limit": message_limit,
+        },
+    )
 
 
 # --- Conversation operations ---

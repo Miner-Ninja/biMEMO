@@ -308,22 +308,16 @@ class DBProxyClient:
         self,
         session_id: str,
         conversation_id: str = "",
-        summary_limit: int = 10,
         record_limit: int = 20,
         message_limit: int = 50,
-        query: str | None = None,
-        query_embedding: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Load combined context: summaries, records, messages."""
+        """Load baseline context: records, messages, S-zone summary."""
         return await conv_ops.load_context(
             self,
             session_id,
             conversation_id,
-            summary_limit,
             record_limit,
             message_limit,
-            query,
-            query_embedding,
         )
 
     # --- Audit operations ---

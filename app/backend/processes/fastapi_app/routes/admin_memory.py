@@ -441,17 +441,14 @@ async def get_memory_health(
 
     cred = getattr(request.app.state, "credential_client", None)
     num_ctx = await _resolve_num_ctx(cred)
-    budget = ContextZoneBudget.from_context_window(
-        num_ctx=num_ctx,
-    )
-
-    return {
-        "pipeline": {
-            "messages": counts.get("messages", 0),
-            "records": counts.get("records", 0),
-            "assertions": counts.get("assertions", 0),
-        },
-        "zones": {
+    # num_ctx is unknown until an LLM config with a context size exists;
+    # health must degrade to zones=None rather than fail.
+    zones = None
+    if num_ctx > 0:
+        budget = ContextZoneBudget.from_context_window(
+            num_ctx=num_ctx,
+        )
+        zones = {
             "num_ctx": num_ctx,
             "working_memory": {"budget": budget.working_memory},
             "recall_results": {"budget": budget.recall_results},
@@ -460,7 +457,15 @@ async def get_memory_health(
             },
             "response_reserve": budget.response_reserve,
             "total_available": budget.total_available,
+        }
+
+    return {
+        "pipeline": {
+            "messages": counts.get("messages", 0),
+            "records": counts.get("records", 0),
+            "assertions": counts.get("assertions", 0),
         },
+        "zones": zones,
         "retrieval": get_recall_stats(),
         "graph": await admin.get_graph_stats(),
     }
