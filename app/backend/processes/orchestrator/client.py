@@ -667,6 +667,13 @@ class DBProxyClient:
         """Find labeled entity/assertion entry points for a query."""
         return await mem_ops.find_graph_entry_points(self, query, limit)
 
+    async def fetch_unextracted_records(
+        self,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        """Fetch untainted records not yet extracted into the graph."""
+        return await mem_ops.fetch_unextracted_records(self, limit)
+
     async def store_embedding(
         self,
         record_id: str,

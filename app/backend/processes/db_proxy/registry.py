@@ -102,6 +102,7 @@ from .handlers.file import (
     make_save_file_context_usage_handler,
 )
 from .handlers.graph import (
+    make_fetch_unextracted_records_handler,
     make_find_entities_handler,
     make_find_graph_entry_points_handler,
     make_get_entity_handler,
@@ -214,6 +215,7 @@ SOCKET_A_OPERATIONS = {
     "find_entities",
     "list_assertions_for_entity",
     "find_graph_entry_points",
+    "fetch_unextracted_records",
     "delete_queued_records",
     "list_queued_records",
     "bump_queued_record_attempts",
@@ -526,6 +528,10 @@ def _register_graph_operations(
     registry.register(
         "migrate_summaries_to_assertions",
         make_migrate_summaries_to_assertions_handler(db),
+    )
+    registry.register(
+        "fetch_unextracted_records",
+        make_fetch_unextracted_records_handler(db),
     )
     registry.register("get_entity", make_get_entity_handler(db))
     registry.register("find_entities", make_find_entities_handler(db))

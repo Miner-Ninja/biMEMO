@@ -417,6 +417,71 @@ async def run_distiller_loop(
 PRUNING_INTERVAL_SECONDS = 3600.0
 
 
+async def run_graph_extractor_loop(
+    provider: OllamaProvider,
+    db_client: object,
+    scheduler: DialogRecorderScheduler,
+    threshold: int = 20,
+    event_bus: object | None = None,
+) -> None:
+    """Run the graph extractor loop (stage-2 replacement for the distiller).
+
+    Same poll cadence, trigger thresholds, and background-slot rules as
+    the summary distiller; only the eligibility source and the processing
+    function differ.
+    """
+    from backend.memory.graph_extractor import process_graph_extraction
+
+    logger.info("Graph extractor background loop started")
+    previous_count: int | None = None
+    stable_poll_count = 0
+    try:
+        while True:
+            await asyncio.sleep(DISTILLER_POLL_INTERVAL_SECONDS)
+            await scheduler.wait_for_primary()
+            unextracted = await db_client.fetch_unextracted_records(
+                limit=threshold,
+            )
+            unextracted_count = len(unextracted)
+            source_message_coverage = _count_source_message_coverage(
+                unextracted,
+            )
+            should_run, stable_poll_count = _should_run_distiller(
+                unreflected_count=unextracted_count,
+                threshold=threshold,
+                previous_unreflected_count=previous_count,
+                stable_poll_count=stable_poll_count,
+                source_message_coverage=source_message_coverage,
+            )
+            previous_count = unextracted_count
+            if not should_run:
+                continue
+            extraction_task = asyncio.create_task(
+                process_graph_extraction(
+                    provider,
+                    db_client,
+                    unextracted,
+                    event_bus=event_bus,
+                )
+            )
+            try:
+                await _run_scheduled_background_task(
+                    scheduler,
+                    extraction_task,
+                    failure_log_message="Graph extraction failed",
+                )
+            except asyncio.CancelledError:
+                current_task = asyncio.current_task()
+                if current_task is not None and current_task.cancelling():
+                    raise
+            finally:
+                previous_count = None
+                stable_poll_count = 0
+    except asyncio.CancelledError:
+        logger.info("Graph extractor background loop cancelled")
+        raise
+
+
 async def run_pruning_loop(db_client: object) -> None:
     """Run periodic memory pruning in the background.
 

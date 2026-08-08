@@ -59,7 +59,7 @@ from backend.security.diagnostics_schema import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 110
+EXPECTED_SOCKET_A_OPERATION_COUNT = 111
 EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 63
 EXPECTED_SOCKET_B_OPERATION_COUNT = 96
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
@@ -1728,6 +1728,11 @@ class TestAllowlistEnforcement:
             assert allowlist.is_allowed(CHANNEL_A, operation), (
                 f"Socket A should allow {operation}"
             )
+
+    def test_fetch_unextracted_socket_a_only(self) -> None:
+        """S7.1 — extractor eligibility read stays off the web channel."""
+        assert "fetch_unextracted_records" in SOCKET_A_OPERATIONS
+        assert "fetch_unextracted_records" not in SOCKET_B_OPERATIONS
 
     def test_socket_b_has_no_graph_writes(self) -> None:
         """S6.1 — graph writes stay off the web-tier channel."""

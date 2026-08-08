@@ -30,6 +30,7 @@ from ..common import (
     validate_params,
 )
 from ..params import (
+    FetchUnextractedRecordsParams,
     FindEntitiesParams,
     FindGraphEntryPointsParams,
     GetEntityParams,
@@ -388,6 +389,48 @@ def make_find_graph_entry_points_handler(
             hit["kind"] = "assertion"
             entry_points.append(hit)
         return {"entry_points": entry_points}
+
+    return handle
+
+
+def make_fetch_unextracted_records_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for fetch_unextracted_records operation.
+
+    Returns untainted records whose ids are not cited as evidence by any
+    assertion — the graph extractor's eligibility set.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Fetch untainted records not yet extracted into the graph."""
+        p = _validate(params, FetchUnextractedRecordsParams)
+        cited: set[str] = set()
+        for (source_ids_json,) in db.execute(
+            "SELECT source_record_ids FROM assertions",
+        ).fetchall():
+            try:
+                cited.update(json.loads(source_ids_json))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        rows = db.execute(
+            "SELECT id, summary, key_facts, action_items, "
+            "source_message_ids, created_at FROM records "
+            "WHERE tainted = 0 ORDER BY created_at ASC",
+        ).fetchall()
+        records = [
+            {
+                "id": r[0],
+                "summary": r[1],
+                "key_facts": json.loads(r[2]),
+                "action_items": json.loads(r[3]),
+                "source_message_ids": json.loads(r[4]),
+                "created_at": r[5],
+            }
+            for r in rows
+            if r[0] not in cited
+        ][: p.limit]
+        return {"records": records}
 
     return handle
 

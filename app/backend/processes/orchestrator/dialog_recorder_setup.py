@@ -116,7 +116,6 @@ async def _setup_dialog_recorder_pipeline(
         DialogRecorderScheduler,
         SchedulingMode,
         run_dialog_recorder_loop,
-        run_distiller_loop,
         run_pruning_loop,
         run_reembed_loop,
     )
@@ -190,7 +189,7 @@ async def _setup_dialog_recorder_pipeline(
         event_bus=event_bus,
         service_type=service_type,
         run_dialog_recorder_loop_fn=run_dialog_recorder_loop,
-        run_distiller_loop_fn=run_distiller_loop,
+        run_distiller_loop_fn=_select_distiller_loop_fn(),
         run_pruning_loop_fn=run_pruning_loop,
         run_reembed_loop_fn=run_reembed_loop,
     )
@@ -363,6 +362,24 @@ def _build_dialog_recorder_scheduler(
         scheduling_mode_cls(scheduling_mode_name),
         idle_grace_period_seconds=grace_period_seconds,
     )
+
+
+def _select_distiller_loop_fn() -> object:
+    """Choose the distillation loop by the graph_memory.enabled policy.
+
+    Read once at startup: the graph extractor replaces the summary
+    distiller entirely while the flag is on — the two never run together.
+    """
+    from backend.memory.runtime.scheduler import (
+        run_distiller_loop,
+        run_graph_extractor_loop,
+    )
+    from backend.security.policy import get_policy
+
+    if get_policy().get_bool("graph_memory.enabled"):
+        logger.info("Graph memory enabled: using graph extractor loop")
+        return run_graph_extractor_loop
+    return run_distiller_loop
 
 
 def _apply_dialog_recorder_runtime_hooks(
