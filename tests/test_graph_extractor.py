@@ -290,10 +290,14 @@ class TestLoopSelection:
     """R1 — flag chooses the pipeline at startup."""
 
     def test_flag_off_selects_legacy_distiller(self):
-        """S1.1 — default flag wires the summary distiller."""
+        """S1.1 — with the flag off the summary distiller is wired."""
         from backend.memory.runtime.scheduler import run_distiller_loop
 
-        assert _select_distiller_loop_fn() is run_distiller_loop
+        with patch(
+            "backend.security.policy.AssistantPolicy.get_bool",
+            return_value=False,
+        ):
+            assert _select_distiller_loop_fn() is run_distiller_loop
 
     def test_flag_on_selects_graph_extractor(self):
         """S1.2 — enabled flag wires the graph extractor loop."""
