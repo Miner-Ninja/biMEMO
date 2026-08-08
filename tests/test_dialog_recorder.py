@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import (
     ComputeConfig,
@@ -251,7 +252,6 @@ class TestProcessRecord:
             }
         )
         db_client.save_record = AsyncMock(return_value="obs-1")
-        db_client.mark_tainted_record = AsyncMock()
         db_client.store_embedding = AsyncMock(return_value=True)
         return db_client
 
@@ -307,6 +307,7 @@ class TestProcessRecord:
             action_items=["action1"],
             memory_kinds=["fact", "action"],
             source_message_ids=["m-user-1"],
+            tainted=False,
         )
         mock_provider.embed.assert_awaited_once_with(
             build_record_payload_text(_make_observation())
@@ -354,7 +355,6 @@ class TestProcessRecord:
         mock_compress.assert_called_once()
         assert mock_fo.call_count == 3
         mock_db_client.save_record.assert_awaited_once()
-        mock_db_client.mark_tainted_record.assert_not_awaited()
         mock_provider.embed.assert_not_awaited()
         mock_db_client.store_embedding.assert_not_awaited()
 
@@ -487,7 +487,7 @@ class TestProcessRecord:
         mock_db_client,
         rate_limiter,
     ):
-        """Verify injection_flagged=True marks record tainted."""
+        """Verify injection_flagged=True stores the record as tainted."""
         result = await process_record(
             provider=mock_provider,
             db_client=mock_db_client,
@@ -499,7 +499,9 @@ class TestProcessRecord:
             injection_flagged=True,
         )
         assert result is not None
-        mock_db_client.mark_tainted_record.assert_awaited_once_with(result)
+        save_kwargs = mock_db_client.save_record.await_args.kwargs
+        assert save_kwargs["tainted"] is True
+        mock_db_client.store_embedding.assert_not_awaited()
 
     @patch(
         "backend.memory.dialog_recorder.runtime.filter_output",

@@ -284,7 +284,7 @@ def build_mcp_server(
         description=(
             "Search biMEMO's memory for relevant records, summaries, or "
             "messages matching the query. Returns structured results with "
-            "evidence snippets. Read-only operation. Empty/wildcard query "
+            "the matched source text. Read-only operation. Empty/wildcard query "
             "returns recent entries with a note. Zero matches returns empty "
             "with guidance note."
         ),

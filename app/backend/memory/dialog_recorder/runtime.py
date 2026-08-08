@@ -62,6 +62,11 @@ if TYPE_CHECKING:
     from backend.memory.runtime.rate_limiter import RecordRateLimiter
 logger = logging.getLogger(__name__)
 
+
+class DialogRecorderTransientError(Exception):
+    """Transient dialog-recorder failure (LLM call error) worth retrying."""
+
+
 __all__ = [
     "_build_synthetic_action_items",
     "_enrich_observation",
@@ -399,21 +404,6 @@ async def _load_recent_memory_for_dedup(
     )
 
 
-async def _mark_record_tainted_if_needed(
-    *,
-    db_client: object,
-    record_id: str,
-    injection_flagged: bool,
-) -> None:
-    """Mark one stored record tainted when the session input was flagged."""
-    if not injection_flagged:
-        return
-    try:
-        await db_client.mark_tainted_record(record_id)
-    except Exception:
-        logger.warning("Failed to mark record tainted", exc_info=True)
-
-
 async def _store_record_embedding_if_available(
     *,
     db_client: object,
@@ -501,6 +491,13 @@ async def process_record(
             trace_context=trace_context,
             injection_flagged=injection_flagged,
         )
+        if decision == TRACE_DECISION_LLM_ERROR:
+            # The model call itself failed (provider down, timeout) — the
+            # dialog step is still recoverable. Raise so the recorder loop
+            # can retry the queued item instead of dropping it forever.
+            raise DialogRecorderTransientError(
+                str(trace_context.get("error", "dialog recorder LLM error"))
+            )
         return None
     record = _enrich_observation(record, text_messages)
     if not _is_memory_worthy_observation(record, messages):
@@ -567,6 +564,7 @@ async def process_record(
             memory_kind.value for memory_kind in filtered_observation.memory_kinds
         ],
         source_message_ids=source_message_ids,
+        tainted=injection_flagged,
     )
     if not record_id:
         logger.info(
@@ -598,17 +596,15 @@ async def process_record(
             }
         )
 
-    await _mark_record_tainted_if_needed(
-        db_client=db_client,
-        record_id=record_id,
-        injection_flagged=injection_flagged,
-    )
-    await _store_record_embedding_if_available(
-        db_client=db_client,
-        embed_fn=embed_fn,
-        record_id=record_id,
-        record=filtered_observation,
-    )
+    # Tainted records get no embedding: they must stay unreachable via
+    # vector search, just like FTS and distillation.
+    if not injection_flagged:
+        await _store_record_embedding_if_available(
+            db_client=db_client,
+            embed_fn=embed_fn,
+            record_id=record_id,
+            record=filtered_observation,
+        )
 
     await _write_dialog_recorder_trace(
         TRACE_DECISION_STORED,

@@ -526,6 +526,7 @@ class DBProxyClient:
         action_items: list[str] | None = None,
         memory_kinds: list[str] | None = None,
         source_message_ids: list[str] | None = None,
+        tainted: bool = False,
     ) -> str:
         """Save an record."""
         return await mem_ops.save_record(
@@ -537,11 +538,41 @@ class DBProxyClient:
             action_items,
             memory_kinds,
             source_message_ids,
+            tainted,
         )
 
-    async def mark_tainted_record(self, record_id: str) -> None:
-        """Mark an record as tainted."""
-        await mem_ops.mark_tainted_record(self, record_id)
+    async def save_queued_record(
+        self,
+        conversation_id: str,
+        session_id: str,
+        messages: list[str],
+        source_message_ids: list[str] | None = None,
+        injection_flagged: bool = False,
+    ) -> str:
+        """Persist one pending dialog-recorder queue item."""
+        return await mem_ops.save_queued_record(
+            self,
+            conversation_id,
+            session_id,
+            messages,
+            source_message_ids,
+            injection_flagged,
+        )
+
+    async def delete_queued_records(self, queue_ids: list[str]) -> None:
+        """Delete processed dialog-recorder queue rows."""
+        await mem_ops.delete_queued_records(self, queue_ids)
+
+    async def list_queued_records(
+        self,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        """List pending dialog-recorder queue rows, oldest first."""
+        return await mem_ops.list_queued_records(self, limit)
+
+    async def bump_queued_record_attempts(self, queue_ids: list[str]) -> None:
+        """Increment the attempt counter on pending queue rows."""
+        await mem_ops.bump_queued_record_attempts(self, queue_ids)
 
     async def store_embedding(
         self,

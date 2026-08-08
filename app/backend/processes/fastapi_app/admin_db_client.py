@@ -414,6 +414,14 @@ class AdminDBClient(_BaseIPCClient):
         """Count messages, records, and summaries."""
         return await self.send_operation("count_memory_entries")
 
+    async def create_backup(self) -> dict[str, Any]:
+        """Write consistent encrypted copies of every open database.
+
+        Returns:
+            Dict with "backup_paths" mapping database name to file path.
+        """
+        return await self.send_operation("create_backup")
+
     async def get_memory_context_view(self) -> dict[str, Any]:
         """Return the memory context snapshot through DB proxy."""
         return await self.send_operation("get_memory_context_view")
@@ -644,7 +652,10 @@ class AdminDBClient(_BaseIPCClient):
             offset: Pagination offset.
 
         Returns:
-            List of result dicts with "id", "rowid", and "snippet" keys.
+            List of result dicts with "id", "rowid", "created_at", and the
+            source text of the hit ("content" plus "role" for messages,
+            "summary" for records, "main_point" plus "trust_level" for
+            summaries).
         """
         result = await self.send_operation(
             "fulltext_search",

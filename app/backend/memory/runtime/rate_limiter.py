@@ -211,6 +211,8 @@ def _coalesce_dialog_recorder_items(
             current.source_message_ids + new_item.source_message_ids
         ),
         injection_flagged=current.injection_flagged or new_item.injection_flagged,
+        queue_ids=current.queue_ids + new_item.queue_ids,
+        attempts=max(current.attempts, new_item.attempts),
     )
 
 

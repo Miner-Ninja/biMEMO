@@ -363,8 +363,10 @@ def make_mcp_memory_remember_fn(
     (records → summaries) without weakening the existing ``save_dialog_record``
     guard on assistant-only turns.
 
-    Applies two content-blind guards: a content-size cap (8192 bytes) and a
-    DB-backed write rate-limit (20/min, survives restart). There is no
+    Applies two content-blind guards — a content-size cap (8192 bytes) and a
+    DB-backed write rate-limit (20/min, survives restart) — plus an
+    injection screen on the raw content: flagged writes are rejected before
+    anything reaches the messages table or the FTS index. There is no
     content dedup — repeated writes are legitimate reinforcement and must
     reach the distillation pipeline. Rejections return stored=false with a
     reason.
@@ -378,6 +380,8 @@ def make_mcp_memory_remember_fn(
     Returns:
         Async callable(McpMemoryRememberRequest) -> McpMemoryRememberResponse.
     """
+    from backend.security.content_filter import filter_input
+
     from .agent_session import resolve_agent_session
 
     async def mcp_memory_remember_fn(
@@ -393,6 +397,22 @@ def make_mcp_memory_remember_fn(
                     request_id=request.request_id,
                     stored=False,
                     reason=f"oversized: content exceeds {_MAX_CONTENT_BYTES} bytes",
+                )
+
+            # Injection screen on the raw agent content. Messages carry no
+            # tainted column, so a flagged write must be rejected here —
+            # otherwise it would land in messages and the FTS index
+            # unfiltered and stay retrievable by every reader.
+            if filter_input(request.content).injection_flagged:
+                logger.warning(
+                    "MCP remember rejected: injection-flagged content "
+                    "from agent %s",
+                    request.agent_id,
+                )
+                return McpMemoryRememberResponse(
+                    request_id=request.request_id,
+                    stored=False,
+                    reason="injection_flagged",
                 )
 
             # R7.3 — rate-limit via the shared DB limiter (Socket A). Count our

@@ -6,11 +6,12 @@ tainted records from context and Summary Distiller.
 
 import os
 
+from backend.memory.retrieval.fulltext import create_fts_tables, index_observation
 from backend.memory.storage.tainted import (
     fetch_untainted_for_distiller,
     fetch_untainted_records,
-    mark_record_tainted,
 )
+from backend.processes.db_proxy.handlers.message import make_fulltext_search_handler
 from backend.security.database import DatabaseManager
 from backend.security.schema import initialize_schema
 
@@ -54,19 +55,38 @@ def _seed_observations(db):
     db.commit()
 
 
-class TestMarkTainted:
-    """Tests for marking records as tainted."""
+class TestSearchExcludesTainted:
+    """Tainted records must never surface via full-text search."""
 
-    def test_marks_observation(self, tmp_path):
-        """Verify record is marked tainted."""
+    async def test_fulltext_search_filters_tainted(self, tmp_path):
+        """A tainted record stays hidden even when it sits in the FTS index."""
         db = _open_db(tmp_path)
-        _seed_observations(db)
-        mark_record_tainted(db, "o1")
-        cursor = db.execute(
-            "SELECT tainted FROM records WHERE id = ?",
-            ("o1",),
-        )
-        assert cursor.fetchone()[0] == 1
+        create_fts_tables(db)
+        db.execute("INSERT INTO conversations (id) VALUES (?)", ("c1",))
+        seeded = [
+            ("clean-1", "user preference for dark themes", 0),
+            ("dirty-1", "injected preference payload", 1),
+        ]
+        for record_id, summary, tainted in seeded:
+            db.execute(
+                "INSERT INTO records "
+                "(id, conversation_id, session_id, summary, key_facts, tainted) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (record_id, "c1", "s1", summary, "[]", tainted),
+            )
+            row = db.execute(
+                "SELECT rowid FROM records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            index_observation(db, row[0], summary, "[]")
+        db.commit()
+
+        handler = make_fulltext_search_handler(db)
+        result = await handler({"query": "preference", "table": "records"})
+
+        found_ids = {r["id"] for r in result["results"]}
+        assert "clean-1" in found_ids
+        assert "dirty-1" not in found_ids
         db.close()
 
 

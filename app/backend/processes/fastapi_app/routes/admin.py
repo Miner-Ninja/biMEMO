@@ -19,6 +19,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
+from backend.channels.endpoints import BackupRateLimiter
 from backend.chat_bridge import BridgeProvider, ChatBridgeService
 from backend.ipc.models import StreamEventType
 from backend.models.requests import (  # noqa: TC001
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
 
 
 admin_router = APIRouter(prefix="/admin")
+_backup_rate_limiter = BackupRateLimiter()
 FRONTEND_DIST = Path(os.environ.get("PYTHONPATH", "/app")) / "frontend" / "dist"
 
 
@@ -196,6 +198,31 @@ def _bridge_link_updated_event_data(
         "conversation_id": bridge_link.conversation_id,
         "bridge_link": bridge_link.model_dump(),
     }
+
+
+@admin_router.post("/backup")
+async def create_backup(
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Write consistent encrypted copies of every open database.
+
+    Uses VACUUM INTO through the DB proxy, so the copies are taken from
+    the live connections and cannot capture a torn WAL state. Limited to
+    3 runs per hour.
+
+    Raises:
+        HTTPException: 429 when the hourly backup limit is exhausted.
+    """
+    del claims
+    if not _backup_rate_limiter.is_allowed():
+        raise HTTPException(
+            status_code=429,
+            detail="Backup limit reached (3 per hour)",
+        )
+    result = await admin.create_backup()
+    _backup_rate_limiter.record()
+    return {"backup_paths": result.get("backup_paths", {})}
 
 
 @admin_router.post("/reauth")

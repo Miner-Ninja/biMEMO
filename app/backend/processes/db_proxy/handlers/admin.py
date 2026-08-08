@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -278,18 +277,36 @@ def make_get_stats_handler(db: DatabaseManager) -> OperationHandler:
 
 
 def make_create_backup_handler(
-    db: DatabaseManager,
+    databases: dict[str, DatabaseManager],
     database_path: str,
 ) -> OperationHandler:
-    """Create handler for create_backup operation."""
+    """Create handler for create_backup operation.
+
+    Uses ``VACUUM INTO`` on each open database, which writes a consistent,
+    still-encrypted copy through the live connection — unlike a raw file
+    copy of a WAL-mode database, which can capture a torn state.
+
+    Args:
+        databases: Open DatabaseManager instances keyed by short name
+            (e.g. "core", "runtime", "diagnostics").
+        database_path: Path of the core database file; backups land in a
+            ``backups/`` directory next to it.
+    """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Create a database backup file."""
-        backup_dir = os.path.dirname(database_path)
+        """Write consistent encrypted copies of every open database."""
+        backup_dir = os.path.join(os.path.dirname(database_path), "backups")
+        os.makedirs(backup_dir, mode=0o700, exist_ok=True)
         timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(backup_dir, f"backup_{timestamp}.db")
-        shutil.copy2(database_path, backup_path)
-        return {"backup_path": backup_path}
+        backup_paths: dict[str, str] = {}
+        for name, database in databases.items():
+            backup_path = os.path.join(
+                backup_dir,
+                f"backup_{name}_{timestamp}.db",
+            )
+            database.execute("VACUUM INTO ?", (backup_path,))
+            backup_paths[name] = backup_path
+        return {"backup_paths": backup_paths}
 
     return handle
 

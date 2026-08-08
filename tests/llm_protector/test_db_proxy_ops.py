@@ -24,10 +24,12 @@ from backend.processes.db_proxy import (
     WriteAuditParams,
     build_allowlist,
     build_registry,
+    make_bump_queued_record_attempts_handler,
     make_create_conversation_handler,
     make_create_integration_handler,
     make_delete_conversation_handler,
     make_delete_integration_handler,
+    make_delete_queued_records_handler,
     make_fetch_unembedded_records_handler,
     make_get_credential_handler,
     make_get_memory_route_diagnostics_summary_handler,
@@ -36,11 +38,12 @@ from backend.processes.db_proxy import (
     make_list_conversations_handler,
     make_list_integrations_handler,
     make_list_memory_route_diagnostics_handler,
+    make_list_queued_records_handler,
     make_list_summaries_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
-    make_mark_tainted_handler,
     make_save_message_handler,
+    make_save_queued_record_handler,
     make_save_record_handler,
     make_save_summary_handler,
     make_store_credential_handler,
@@ -56,9 +59,9 @@ from backend.security.diagnostics_schema import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 95
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 62
-EXPECTED_SOCKET_B_OPERATION_COUNT = 87
+EXPECTED_SOCKET_A_OPERATION_COUNT = 102
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 63
+EXPECTED_SOCKET_B_OPERATION_COUNT = 92
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -116,6 +119,17 @@ class FakeDB:
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
                 FOREIGN KEY (conversation_id)
                     REFERENCES conversations(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE record_queue (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                messages TEXT NOT NULL DEFAULT '[]',
+                source_message_ids TEXT NOT NULL DEFAULT '[]',
+                injection_flagged INTEGER NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+                    DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
             )""",
             """CREATE TABLE summaries (
                 id TEXT PRIMARY KEY,
@@ -1191,24 +1205,91 @@ class TestRecordOperations:
         assert row is None
 
     @pytest.mark.asyncio
-    async def test_mark_tainted(self, db: FakeDB) -> None:
-        """Marks an record as tainted."""
+    async def test_save_record_tainted_at_insert(self, db: FakeDB) -> None:
+        """Stores a tainted record with the flag set at insert time."""
         db.execute("INSERT INTO conversations (id) VALUES (?)", ("c1",))
-        db.execute(
-            "INSERT INTO records (id, conversation_id, session_id, summary) "
-            "VALUES (?, ?, ?, ?)",
-            ("o1", "c1", "s1", "test"),
-        )
         db.commit()
 
-        handler = make_mark_tainted_handler(db)
-        await handler({"record_id": "o1"})
+        handler = make_save_record_handler(db)
+        result = await handler(
+            {
+                "conversation_id": "c1",
+                "session_id": "s1",
+                "summary": "flagged content",
+                "tainted": True,
+            }
+        )
 
         row = db.execute(
             "SELECT tainted FROM records WHERE id = ?",
-            ("o1",),
+            (result["record_id"],),
         ).fetchone()
         assert row[0] == 1
+
+
+class TestCreateBackup:
+    """Verify consistent backups via VACUUM INTO."""
+
+    @pytest.mark.asyncio
+    async def test_backup_writes_every_database(self, tmp_path) -> None:
+        """Each open database gets its own consistent backup file."""
+        from backend.processes.db_proxy.handlers.admin import (
+            make_create_backup_handler,
+        )
+
+        core = FakeDB()
+        runtime = FakeDB()
+        core.execute("INSERT INTO conversations (id) VALUES (?)", ("c1",))
+        core.commit()
+
+        handler = make_create_backup_handler(
+            {"core": core, "runtime": runtime},
+            str(tmp_path / "bimemo.db"),
+        )
+        result = await handler({})
+
+        assert set(result["backup_paths"]) == {"core", "runtime"}
+        core_backup = result["backup_paths"]["core"]
+        copy = sqlite3.connect(core_backup)
+        rows = copy.execute("SELECT id FROM conversations").fetchall()
+        copy.close()
+        assert rows == [("c1",)]
+
+
+class TestRecordQueueOperations:
+    """Verify durable dialog-recorder queue rows."""
+
+    @pytest.mark.asyncio
+    async def test_queue_roundtrip(self, db: FakeDB) -> None:
+        """Persist, list, bump, and delete pending queue rows."""
+        save_handler = make_save_queued_record_handler(db)
+        saved = await save_handler(
+            {
+                "conversation_id": "c1",
+                "session_id": "s1",
+                "messages": ["User: hello", "Assistant: hi"],
+                "source_message_ids": ["m1"],
+            }
+        )
+        queue_id = saved["queue_id"]
+
+        list_handler = make_list_queued_records_handler(db)
+        listed = await list_handler({})
+        assert len(listed["items"]) == 1
+        item = listed["items"][0]
+        assert item["queue_id"] == queue_id
+        assert item["messages"] == ["User: hello", "Assistant: hi"]
+        assert item["attempts"] == 0
+
+        bump_handler = make_bump_queued_record_attempts_handler(db)
+        await bump_handler({"queue_ids": [queue_id]})
+        listed = await list_handler({})
+        assert listed["items"][0]["attempts"] == 1
+
+        delete_handler = make_delete_queued_records_handler(db)
+        await delete_handler({"queue_ids": [queue_id]})
+        listed = await list_handler({})
+        assert listed["items"] == []
 
 
 class TestSummaryOperations:

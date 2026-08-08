@@ -22,6 +22,10 @@ class DialogRecorderQueueItem:
         source_message_ids: Source message IDs used for compression.
         injection_flagged: Whether the session has an
             active injection warning.
+        queue_ids: IDs of the persisted record_queue rows backing this
+            item (several after coalescing). Deleted once processed.
+        attempts: How many times processing this item failed with a
+            transient LLM error and was retried.
     """
 
     messages: list[str] = field(default_factory=list)
@@ -29,3 +33,5 @@ class DialogRecorderQueueItem:
     session_id: str = ""
     source_message_ids: list[str] = field(default_factory=list)
     injection_flagged: bool = False
+    queue_ids: tuple[str, ...] = ()
+    attempts: int = 0
