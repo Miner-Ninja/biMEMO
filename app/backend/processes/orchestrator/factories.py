@@ -11,8 +11,6 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import httpx
-
 from backend.ipc.models import (
     McpAskRequest,
     McpAskResponse,
@@ -25,18 +23,11 @@ from .client import DBProxyClient, DBProxyError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-    from zoneinfo import ZoneInfo
 
     from backend.memory.context_builder import ContextResult
 
 
 logger = logging.getLogger(__name__)
-RECOVERABLE_EMBEDDING_ERRORS = (
-    RuntimeError,
-    ValueError,
-    DBProxyError,
-    httpx.HTTPError,
-)
 LOAD_CONTEXT_COMPRESSION_SESSION_ID = "s-zone-compression"
 
 # ── Write guard constants (R7) ──
@@ -96,209 +87,9 @@ def _normalized_route_section(
     return dict(route_data)
 
 
-def _summary_row_tuple(summary_row: object) -> object:
-    """Normalize one summary row from DB proxy output."""
-    if not isinstance(summary_row, dict):
-        return summary_row
-    return (
-        summary_row.get("id", ""),
-        summary_row.get("main_point", ""),
-        (
-            json.loads(summary_row["source_record_ids"])
-            if isinstance(summary_row.get("source_record_ids"), str)
-            else summary_row.get("source_record_ids", [])
-        ),
-        summary_row.get("created_at", ""),
-        summary_row.get("revalidation_status", ""),
-        summary_row.get("effective_trust_level_score", 0),
-        summary_row.get("record_relations", []),
-        summary_row.get("scope", "long_term"),
-    )
-
-
-def _record_row_tuple(record: dict[str, object]) -> tuple[object, ...]:
-    """Normalize one record row from DB proxy output."""
-    return (
-        record["id"],
-        record["summary"],
-        record.get("key_facts", []),
-        record.get("action_items", []),
-        record.get("created_at", ""),
-        record.get("source_message_ids", []),
-        record.get("tainted", False),
-    )
-
-
 def _message_row_tuple(message: dict[str, object]) -> tuple[object, object]:
     """Normalize one message row from DB proxy output."""
     return (message["role"], message["content"])
-
-
-def make_context_fn(
-    db_client: DBProxyClient,
-    *,
-    llm_context_window: int,
-    embed_fn: Callable | None = None,
-    user_tz: ZoneInfo | None = None,
-) -> Callable:
-    """Create an async context_fn for the orchestrator.
-
-    Loads summaries, records, and messages via DB Proxy IPC.
-    When a query is provided, runs hybrid search to rank records
-    by relevance before assembling context.
-
-    Args:
-        db_client: Connected DBProxyClient.
-        llm_context_window: Active LLM context window size in tokens.
-            Required: the silent fallback to a default constant has been
-            removed. Resolve via the capabilities registry before calling.
-        embed_fn: Optional async callable(text) -> list[float] for
-            generating query embeddings. If None, vector search is skipped.
-        user_tz: User's timezone for converting UTC timestamps in
-            memory entries. If None, timestamps stay as UTC.
-
-    Returns:
-        Async callable(session_id, query=None) -> list of ContextEntry.
-    """
-    from backend.memory.classification.question_classifier import is_memory_query
-    from backend.memory.context_builder import (
-        build_context_with_ids,
-    )
-    from backend.memory.retrieval import SearchResult
-
-    async def _maybe_embed_query(query: str | None) -> list[float] | None:
-        """Generate an embedding for the query when embedding is available."""
-        if not query or embed_fn is None:
-            return None
-        try:
-            return await embed_fn(query)
-        except RECOVERABLE_EMBEDDING_ERRORS:
-            logger.debug("Embedding generation failed, using keyword-only search")
-            return None
-
-    def _context_load_params(
-        session_id: str,
-        conversation_id: str,
-        query: str | None,
-        query_embedding: list[float] | None,
-    ) -> dict[str, object]:
-        """Build DB proxy load_context parameters for one query."""
-        load_params: dict[str, object] = {
-            "session_id": session_id,
-            "conversation_id": conversation_id,
-        }
-        if query:
-            load_params["query"] = query
-            if query_embedding is not None:
-                load_params["query_embedding"] = query_embedding
-        return load_params
-
-    def _search_results(
-        raw_results: list[dict[str, object]] | None,
-    ) -> list[SearchResult] | None:
-        """Convert DB proxy search result dicts back into SearchResult objects."""
-        if raw_results is None:
-            return None
-        return [
-            SearchResult(
-                identifier=result["identifier"],
-                source=result["source"],
-                score=result["score"],
-            )
-            for result in raw_results
-        ]
-
-    def _retrieved_messages(
-        raw_messages: list[dict[str, object]] | None,
-    ) -> list[tuple[object, ...]] | None:
-        """Normalize retrieved messages for context builder input."""
-        if not raw_messages:
-            return None
-        return [
-            (
-                message["id"],
-                message["role"],
-                message["content"],
-                message["conversation_id"],
-                message.get("created_at", ""),
-            )
-            for message in raw_messages
-        ]
-
-    def _context_builder_inputs(
-        data: dict[str, object],
-    ) -> tuple[
-        list[object],
-        list[tuple[object, ...]],
-        list[tuple[object, object]],
-        list[SearchResult] | None,
-        list[tuple[object, ...]] | None,
-        list[SearchResult] | None,
-    ]:
-        """Normalize DB proxy context payload into context-builder inputs."""
-        summaries = [_summary_row_tuple(summary) for summary in data["summaries"]]
-        records = [_record_row_tuple(record) for record in data["records"]]
-        messages = [_message_row_tuple(message) for message in data["messages"]]
-        search_results = _search_results(data.get("search_results"))
-        retrieved_messages = _retrieved_messages(data.get("retrieved_messages"))
-        summary_search_results = _search_results(data.get("summary_search_results"))
-        return (
-            summaries,
-            records,
-            messages,
-            search_results,
-            retrieved_messages,
-            summary_search_results,
-        )
-
-    async def context_fn(
-        session_id: str,
-        query: str | None = None,
-        conversation_id: str = "",
-    ) -> ContextResult:
-        """Build LLM context via DB Proxy IPC.
-
-        Args:
-            session_id: Current session identifier.
-            query: Optional user query for search-ranked context.
-            conversation_id: Conversation identifier for raw message history.
-
-        Returns:
-            ContextResult with entries and retrieved memory summaries.
-        """
-        memory_query = is_memory_query(query) if query else False
-        query_embedding = await _maybe_embed_query(query)
-        data = await db_client.load_context(
-            **_context_load_params(
-                session_id,
-                conversation_id,
-                query,
-                query_embedding,
-            )
-        )
-        (
-            summaries,
-            records,
-            messages,
-            search_results,
-            retrieved_messages,
-            summary_search_results,
-        ) = _context_builder_inputs(data)
-
-        return build_context_with_ids(
-            summaries,
-            records,
-            messages,
-            search_results=search_results,
-            llm_context_window=llm_context_window,
-            retrieved_messages=retrieved_messages,
-            summary_search_results=summary_search_results,
-            memory_query=memory_query,
-            session_id=session_id,
-            user_tz=user_tz,
-        )
-
-    return context_fn
 
 
 def make_zone_context_fn(

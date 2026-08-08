@@ -17,7 +17,6 @@ from .client import (
 )
 from .factories import (
     make_audit_fn,
-    make_context_fn,
     make_evidence_bundle_fn,
     make_save_fn,
     make_save_record_fn,
@@ -39,7 +38,6 @@ __all__ = [
     "_setup_tools",
     "_start_bot",
     "make_audit_fn",
-    "make_context_fn",
     "make_evidence_bundle_fn",
     "make_save_fn",
     "make_save_record_fn",
