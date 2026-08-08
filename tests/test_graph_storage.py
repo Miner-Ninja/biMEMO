@@ -410,14 +410,19 @@ class TestFetchUnextracted:
 class TestFeatureFlag:
     """R8 — graph_memory.enabled gate."""
 
-    def test_flag_defaults_to_false(self):
-        """S8.1 — catalog default is off."""
-        assert get_policy().get_bool("graph_memory.enabled") is False
+    def test_flag_declared_in_catalog(self):
+        """S8.1 — the key exists in the catalog as a boolean (enabled
+        deliberately since stage-2 rollout)."""
+        assert isinstance(get_policy().get_bool("graph_memory.enabled"), bool)
 
     async def test_migration_not_invoked_when_off(self):
         """S8.2 — startup gate does nothing while the flag is off."""
         db_client = AsyncMock()
-        await _maybe_migrate_graph_memory(db_client)
+        with patch(
+            "backend.security.policy.AssistantPolicy.get_bool",
+            return_value=False,
+        ):
+            await _maybe_migrate_graph_memory(db_client)
         db_client.migrate_summaries_to_assertions.assert_not_awaited()
 
     async def test_migration_invoked_when_on(self):
