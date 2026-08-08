@@ -59,9 +59,9 @@ from backend.security.diagnostics_schema import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 102
+EXPECTED_SOCKET_A_OPERATION_COUNT = 110
 EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 63
-EXPECTED_SOCKET_B_OPERATION_COUNT = 92
+EXPECTED_SOCKET_B_OPERATION_COUNT = 96
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -130,6 +130,37 @@ class FakeDB:
                 attempts INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
                     DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+            )""",
+            """CREATE TABLE entities (
+                id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                canonical_name TEXT NOT NULL,
+                aliases TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+                    DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+                UNIQUE (entity_type, canonical_name)
+            )""",
+            """CREATE TABLE assertions (
+                id TEXT PRIMARY KEY,
+                subject_entity_id TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                object_entity_id TEXT,
+                object_value TEXT,
+                assertion_text TEXT NOT NULL,
+                trust_level TEXT NOT NULL DEFAULT 'medium',
+                assertion_scope TEXT NOT NULL DEFAULT 'long_term',
+                valid_from TEXT,
+                invalid_from TEXT,
+                invalidated_by_assertion_id TEXT,
+                source_record_ids TEXT NOT NULL DEFAULT '[]',
+                migrated_from_summary_id TEXT UNIQUE,
+                created_at TEXT NOT NULL
+                    DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+                CHECK (object_entity_id IS NULL OR object_value IS NULL),
+                FOREIGN KEY (subject_entity_id) REFERENCES entities(id)
+                    ON DELETE RESTRICT,
+                FOREIGN KEY (object_entity_id) REFERENCES entities(id)
+                    ON DELETE RESTRICT
             )""",
             """CREATE TABLE summaries (
                 id TEXT PRIMARY KEY,
@@ -1697,6 +1728,25 @@ class TestAllowlistEnforcement:
             assert allowlist.is_allowed(CHANNEL_A, operation), (
                 f"Socket A should allow {operation}"
             )
+
+    def test_socket_b_has_no_graph_writes(self) -> None:
+        """S6.1 — graph writes stay off the web-tier channel."""
+        graph_writes = {
+            "save_entity",
+            "save_assertion",
+            "invalidate_assertion",
+            "migrate_summaries_to_assertions",
+        }
+        graph_reads = {
+            "get_entity",
+            "find_entities",
+            "list_assertions_for_entity",
+            "find_graph_entry_points",
+        }
+        assert not graph_writes & SOCKET_B_OPERATIONS
+        assert graph_writes <= SOCKET_A_OPERATIONS
+        assert graph_reads <= SOCKET_B_OPERATIONS
+        assert graph_reads <= SOCKET_A_OPERATIONS
 
     def test_total_operation_count(self) -> None:
         """Keeps expected operation counts per socket."""

@@ -409,3 +409,127 @@ async def fetch_unembedded_records(
             "limit": limit,
         },
     )
+
+
+async def save_entity(
+    client: DBProxyClient,
+    entity_type: str,
+    canonical_name: str,
+    aliases: list[str] | None = None,
+) -> str:
+    """Get or create one graph entity; returns its id."""
+    return await client._send_identifier_operation(
+        "save_entity",
+        result_key="entity_id",
+        parameters={
+            "entity_type": entity_type,
+            "canonical_name": canonical_name,
+            "aliases": aliases or [],
+        },
+    )
+
+
+async def save_assertion(
+    client: DBProxyClient,
+    *,
+    subject_entity_id: str,
+    relation: str,
+    assertion_text: str,
+    object_entity_id: str | None = None,
+    object_value: str | None = None,
+    trust_level: str = "medium",
+    assertion_scope: str = "long_term",
+    valid_from: str | None = None,
+    source_record_ids: list[str] | None = None,
+) -> str:
+    """Store one assertion edge; returns its id."""
+    return await client._send_identifier_operation(
+        "save_assertion",
+        result_key="assertion_id",
+        parameters={
+            "subject_entity_id": subject_entity_id,
+            "relation": relation,
+            "assertion_text": assertion_text,
+            "object_entity_id": object_entity_id,
+            "object_value": object_value,
+            "trust_level": trust_level,
+            "assertion_scope": assertion_scope,
+            "valid_from": valid_from,
+            "source_record_ids": source_record_ids or [],
+        },
+    )
+
+
+async def invalidate_assertion(
+    client: DBProxyClient,
+    assertion_id: str,
+    invalidated_by_assertion_id: str | None = None,
+) -> bool:
+    """Mark one assertion as no longer valid."""
+    result = await client.send_operation(
+        "invalidate_assertion",
+        {
+            "assertion_id": assertion_id,
+            "invalidated_by_assertion_id": invalidated_by_assertion_id,
+        },
+    )
+    return bool(result.get("invalidated", False))
+
+
+async def migrate_summaries_to_assertions(
+    client: DBProxyClient,
+) -> dict[str, Any]:
+    """Run the idempotent legacy-summaries migration."""
+    return await client.send_operation("migrate_summaries_to_assertions")
+
+
+async def get_entity(
+    client: DBProxyClient,
+    entity_id: str,
+) -> dict[str, Any] | None:
+    """Load one entity by id."""
+    result = await client.send_operation(
+        "get_entity",
+        {"entity_id": entity_id},
+    )
+    return result.get("entity")
+
+
+async def find_entities(
+    client: DBProxyClient,
+    query: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Find entities by full-text query over names and aliases."""
+    result = await client.send_operation(
+        "find_entities",
+        {"query": query, "limit": limit},
+    )
+    return result["entities"]
+
+
+async def list_assertions_for_entity(
+    client: DBProxyClient,
+    entity_id: str,
+    valid_only: bool = False,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """List assertions where the entity is subject or object."""
+    result = await client.send_operation(
+        "list_assertions_for_entity",
+        {"entity_id": entity_id, "valid_only": valid_only, "limit": limit},
+    )
+    return result["assertions"]
+
+
+async def find_graph_entry_points(
+    client: DBProxyClient,
+    query: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Find labeled entity/assertion entry points for a query."""
+    result = await client.send_operation(
+        "find_graph_entry_points",
+        {"query": query, "limit": limit},
+    )
+    return result["entry_points"]

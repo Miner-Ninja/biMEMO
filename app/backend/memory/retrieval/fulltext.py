@@ -176,12 +176,16 @@ _FTS_DELETE_SQL = {
     "messages_fts": "DELETE FROM messages_fts WHERE rowid = ?",
     "records_fts": "DELETE FROM records_fts WHERE rowid = ?",
     "summaries_fts": "DELETE FROM summaries_fts WHERE rowid = ?",
+    "entities_fts": "DELETE FROM entities_fts WHERE rowid = ?",
+    "assertions_fts": "DELETE FROM assertions_fts WHERE rowid = ?",
 }
 
 _FTS_CLEAR_SQL = (
     "DELETE FROM messages_fts",
     "DELETE FROM records_fts",
     "DELETE FROM summaries_fts",
+    "DELETE FROM entities_fts",
+    "DELETE FROM assertions_fts",
 )
 
 _FTS_INSERT_SQL = {
@@ -192,6 +196,12 @@ _FTS_INSERT_SQL = {
     "summaries_fts": (
         "INSERT INTO summaries_fts (rowid, main_point, based_on) VALUES (?, ?, ?)"
     ),
+    "entities_fts": (
+        "INSERT INTO entities_fts (rowid, canonical_name, aliases) VALUES (?, ?, ?)"
+    ),
+    "assertions_fts": (
+        "INSERT INTO assertions_fts (rowid, assertion_text) VALUES (?, ?)"
+    ),
 }
 
 _FTS_TABLE_CREATE_SQL = (
@@ -199,6 +209,10 @@ _FTS_TABLE_CREATE_SQL = (
     "USING fts5(content, content_rowid='rowid')",
     "CREATE VIRTUAL TABLE IF NOT EXISTS records_fts "
     "USING fts5(summary, key_facts, content_rowid='rowid')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts "
+    "USING fts5(canonical_name, aliases, content_rowid='rowid')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS assertions_fts "
+    "USING fts5(assertion_text, content_rowid='rowid')",
 )
 
 _FTS_REBUILD_SOURCES = (
@@ -589,3 +603,32 @@ def delete_summary_index(db: DatabaseManager, rowid: int) -> None:
         rowid: Row ID of the summary to remove.
     """
     _delete_index_row(db, table="summaries_fts", rowid=rowid)
+
+
+def index_entity(
+    db: DatabaseManager,
+    rowid: int,
+    canonical_name: str,
+    aliases_json: str,
+) -> None:
+    """Add one entity to the full-text index (name and aliases stemmed)."""
+    _replace_index_row(
+        db,
+        table="entities_fts",
+        rowid=rowid,
+        values=(canonical_name, aliases_json),
+    )
+
+
+def index_assertion(
+    db: DatabaseManager,
+    rowid: int,
+    assertion_text: str,
+) -> None:
+    """Add one assertion to the full-text index (text stemmed)."""
+    _replace_index_row(
+        db,
+        table="assertions_fts",
+        rowid=rowid,
+        values=(assertion_text,),
+    )

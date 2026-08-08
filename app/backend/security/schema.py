@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -78,6 +78,65 @@ CREATE TABLE IF NOT EXISTS record_queue (
     attempts INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
 )
+"""
+
+CREATE_ENTITIES_TABLE = """
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    canonical_name TEXT NOT NULL,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+)
+"""
+
+CREATE_ENTITIES_UNIQUE_IDX = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_type_name
+ON entities(entity_type, canonical_name)
+"""
+
+CREATE_ASSERTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS assertions (
+    id TEXT PRIMARY KEY,
+    subject_entity_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    object_entity_id TEXT,
+    object_value TEXT,
+    assertion_text TEXT NOT NULL,
+    trust_level TEXT NOT NULL DEFAULT 'medium',
+    assertion_scope TEXT NOT NULL DEFAULT 'long_term',
+    valid_from TEXT,
+    invalid_from TEXT,
+    invalidated_by_assertion_id TEXT,
+    source_record_ids TEXT NOT NULL DEFAULT '[]',
+    migrated_from_summary_id TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    CHECK (object_entity_id IS NULL OR object_value IS NULL),
+    FOREIGN KEY (subject_entity_id) REFERENCES entities(id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (object_entity_id) REFERENCES entities(id)
+        ON DELETE RESTRICT
+)
+"""
+
+CREATE_ASSERTIONS_SUBJECT_IDX = """
+CREATE INDEX IF NOT EXISTS idx_assertions_subject
+ON assertions(subject_entity_id)
+"""
+
+CREATE_ASSERTIONS_OBJECT_IDX = """
+CREATE INDEX IF NOT EXISTS idx_assertions_object
+ON assertions(object_entity_id)
+"""
+
+CREATE_ASSERTIONS_INVALID_IDX = """
+CREATE INDEX IF NOT EXISTS idx_assertions_invalid_from
+ON assertions(invalid_from)
+"""
+
+CREATE_ASSERTIONS_CREATED_IDX = """
+CREATE INDEX IF NOT EXISTS idx_assertions_created_at
+ON assertions(created_at)
 """
 
 CREATE_SUMMARIES_TABLE = """
@@ -440,6 +499,13 @@ SCHEMA_STATEMENTS = [
     CREATE_MESSAGES_TABLE,
     CREATE_NOTES_TABLE,
     CREATE_RECORD_QUEUE_TABLE,
+    CREATE_ENTITIES_TABLE,
+    CREATE_ENTITIES_UNIQUE_IDX,
+    CREATE_ASSERTIONS_TABLE,
+    CREATE_ASSERTIONS_SUBJECT_IDX,
+    CREATE_ASSERTIONS_OBJECT_IDX,
+    CREATE_ASSERTIONS_INVALID_IDX,
+    CREATE_ASSERTIONS_CREATED_IDX,
     CREATE_SUMMARIES_TABLE,
     CREATE_MESSAGES_CONVERSATION_IDX,
     CREATE_MESSAGES_CREATED_AT_IDX,

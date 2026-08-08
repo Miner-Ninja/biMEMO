@@ -162,6 +162,7 @@ DEFAULT_POLICY: dict[str, PolicyValue] = {
     "agent_limits.web_search_window.max_calls": 30,
     "agent_limits.web_search_window.seconds": 60,
     "memory.enable_long_term_memory": True,
+    "graph_memory.enabled": False,
     "memory.sanitize_before_save": True,
     "memory.respect_tainted_flag": True,
     "memory.memory_ttl_days": 365,
