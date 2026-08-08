@@ -24,6 +24,7 @@ async def save_record(
     action_items: list[str] | None = None,
     memory_kinds: list[str] | None = None,
     source_message_ids: list[str] | None = None,
+    tainted: bool = False,
 ) -> str:
     """Save an record.
 
@@ -36,6 +37,9 @@ async def save_record(
         action_items: List of action items.
         memory_kinds: Dialog Recorder memory categories for this record.
         source_message_ids: Source message IDs used for compression.
+        tainted: Whether the source input was injection-flagged. Tainted
+            records are stored for session-scoped reads but excluded from
+            distillation and search.
 
     Returns:
         Record ID.
@@ -51,25 +55,72 @@ async def save_record(
             "action_items": action_items or [],
             "memory_kinds": memory_kinds or [],
             "source_message_ids": source_message_ids or [],
+            "tainted": tainted,
         },
     )
 
 
-async def mark_tainted_record(
+async def save_queued_record(
     client: DBProxyClient,
-    record_id: str,
-) -> None:
-    """Mark an record as tainted.
+    conversation_id: str,
+    session_id: str,
+    messages: list[str],
+    source_message_ids: list[str] | None = None,
+    injection_flagged: bool = False,
+) -> str:
+    """Persist one pending dialog-recorder queue item.
 
-    Args:
-        client: DB Proxy client instance.
-        record_id: Record to mark.
+    Returns:
+        Queue row ID.
     """
-    await client.send_operation(
-        "mark_tainted_record",
-        {
-            "record_id": record_id,
+    return await client._send_identifier_operation(
+        "save_queued_record",
+        result_key="queue_id",
+        parameters={
+            "conversation_id": conversation_id,
+            "session_id": session_id,
+            "messages": messages,
+            "source_message_ids": source_message_ids or [],
+            "injection_flagged": injection_flagged,
         },
+    )
+
+
+async def delete_queued_records(
+    client: DBProxyClient,
+    queue_ids: list[str],
+) -> None:
+    """Delete processed dialog-recorder queue rows."""
+    if not queue_ids:
+        return
+    await client.send_operation(
+        "delete_queued_records",
+        {"queue_ids": queue_ids},
+    )
+
+
+async def list_queued_records(
+    client: DBProxyClient,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List pending dialog-recorder queue rows, oldest first."""
+    result = await client.send_operation(
+        "list_queued_records",
+        {"limit": limit},
+    )
+    return result["items"]
+
+
+async def bump_queued_record_attempts(
+    client: DBProxyClient,
+    queue_ids: list[str],
+) -> None:
+    """Increment the attempt counter on pending queue rows."""
+    if not queue_ids:
+        return
+    await client.send_operation(
+        "bump_queued_record_attempts",
+        {"queue_ids": queue_ids},
     )
 
 

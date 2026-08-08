@@ -10,6 +10,7 @@ from backend.ipc.db_proxy import (
 
 from .handlers.admin import (
     make_count_memory_entries_handler,
+    make_create_backup_handler,
     make_delete_avatar_handler,
     make_get_avatar_handler,
     make_get_password_hash_handler,
@@ -57,21 +58,24 @@ from .handlers.conversation import (
     make_update_conversation_title_handler,
 )
 from .handlers.core import (
+    make_bump_queued_record_attempts_handler,
     make_count_distillations_handler,
+    make_delete_queued_records_handler,
     make_fetch_unembedded_records_handler,
     make_fetch_untainted_records_handler,
     make_fulltext_search_handler,
     make_init_vector_table_handler,
     make_list_conflicted_summaries_handler,
+    make_list_queued_records_handler,
     make_list_summaries_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
-    make_mark_tainted_handler,
     make_merge_summary_sources_handler,
     make_prune_stale_summaries_handler,
     make_prune_unlinked_records_handler,
     make_save_conversation_summary_handler,
     make_save_message_handler,
+    make_save_queued_record_handler,
     make_save_record_handler,
     make_save_summary_handler,
     make_store_embedding_handler,
@@ -191,7 +195,10 @@ SOCKET_A_OPERATIONS = {
     "write_audit",
     "verify_chain",
     "save_record",
-    "mark_tainted",
+    "save_queued_record",
+    "delete_queued_records",
+    "list_queued_records",
+    "bump_queued_record_attempts",
     "store_embedding",
     "fetch_untainted_records",
     "save_summary",
@@ -286,6 +293,7 @@ SOCKET_A_OPERATIONS = {
 # Socket B adds admin, auth, schema (no credentials — those go via Socket C)
 SOCKET_B_ONLY_OPERATIONS = {
     "create_conversation",
+    "create_backup",
     "get_stats",
     "get_signing_material",
     "store_password_hash",
@@ -488,7 +496,22 @@ def _register_memory_operations(
 ) -> None:
     """Register records, summaries, and reminders operations."""
     registry.register("save_record", make_save_record_handler(db))
-    registry.register("mark_tainted", make_mark_tainted_handler(db))
+    registry.register(
+        "save_queued_record",
+        make_save_queued_record_handler(db),
+    )
+    registry.register(
+        "delete_queued_records",
+        make_delete_queued_records_handler(db),
+    )
+    registry.register(
+        "list_queued_records",
+        make_list_queued_records_handler(db),
+    )
+    registry.register(
+        "bump_queued_record_attempts",
+        make_bump_queued_record_attempts_handler(db),
+    )
     registry.register("store_embedding", make_store_embedding_handler(db))
     registry.register(
         "fetch_untainted_records",
@@ -824,9 +847,15 @@ def build_registry(
     Returns:
         Configured OperationRegistry with all operations registered.
     """
-    del database_path
     runtime_db = runtime_db or core_db
     registry = OperationRegistry()
+    backup_databases = {"core": core_db, "runtime": runtime_db}
+    if diagnostics_db is not None:
+        backup_databases["diagnostics"] = diagnostics_db
+    registry.register(
+        "create_backup",
+        make_create_backup_handler(backup_databases, database_path),
+    )
     _register_message_operations(registry, core_db)
     _register_diagnostic_operations(
         registry,

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
 from backend.ipc.models import (
     BridgeInboundSyncRequest,
@@ -29,7 +30,6 @@ from backend.processes.orchestrator import (
     DBProxyError,
     OrchestratorIPCServer,
     make_audit_fn,
-    make_context_fn,
     make_save_fn,
 )
 from backend.processes.orchestrator.bridge_handler import (
@@ -481,55 +481,6 @@ class TestBridgeInboundUrl:
         client = DBProxyClient(fake_ipc, timeout=0.05)
         with pytest.raises(DBProxyError, match="timed out"):
             await client.save_message("c1", "user", "hi")
-
-
-class TestContextFn:
-    """Verify ``make_context_fn`` behavior."""
-
-    @pytest.mark.asyncio
-    async def test_context_fn_builds_entries(
-        self,
-        db_client: DBProxyClient,
-        fake_ipc: FakeIPCClient,
-    ) -> None:
-        """Builds context entries from DB proxy payloads."""
-        fake_ipc.queue_response(
-            DBResult(
-                request_id="r1",
-                status="success",
-                data={
-                    "summaries": [
-                        {
-                            "main_point": "user likes Python",
-                            "created_at": "2026-01-10T12:00:00.000",
-                        }
-                    ],
-                    "records": [
-                        {
-                            "id": "o1",
-                            "summary": "discussed async",
-                            "key_facts": "[]",
-                        }
-                    ],
-                    "messages": [{"role": "user", "content": "hello"}],
-                },
-            )
-        )
-
-        context_fn = make_context_fn(
-            db_client,
-            llm_context_window=TEST_LLM_CONTEXT_WINDOW,
-        )
-        result = await context_fn("s1")
-        entries = result.entries
-
-        assert len(entries) == 3
-        assert entries[0].role == "user"
-        assert entries[0].content == "hello"
-        assert entries[1].role == "record"
-        assert entries[2].role == "summary"
-        assert "[2026-01-10 12:00:00]" in entries[2].content
-        assert "user likes Python" in entries[2].content
 
 
 class TestSaveFn:

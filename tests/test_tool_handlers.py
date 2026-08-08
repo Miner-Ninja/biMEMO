@@ -8,6 +8,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from backend.tools.builtin import (
     MemoryRecallInput,
     SystemStatusInput,
@@ -163,10 +164,12 @@ class _FakeMemoryRecallDBClient:
         summaries: list[dict[str, object]] | None = None,
         records: list[dict[str, object]] | None = None,
         messages: list[dict[str, object]] | None = None,
+        summary_results: list[dict[str, object]] | None = None,
     ) -> None:
         """Store fixed responses and collect calls."""
         self.record_results = record_results or []
         self.message_results = message_results or []
+        self.summary_results = summary_results or []
         self.counts = counts or {"messages": 0, "records": 0, "summaries": 0}
         self.summaries = summaries or []
         self.records = records or []
@@ -190,6 +193,8 @@ class _FakeMemoryRecallDBClient:
             return self.record_results
         if table == "messages":
             return self.message_results
+        if table == "summaries":
+            return self.summary_results
         return []
 
     async def count_memory_entries(self) -> dict[str, int]:
@@ -233,8 +238,13 @@ class TestMemoryRecallHandler:
     async def test_general_query_uses_fast_recall_only(self) -> None:
         """General recall should stay on the current full-text path."""
         db_client = _FakeMemoryRecallDBClient(
-            record_results=[{"summary": "User works with Docker."}],
+            record_results=[
+                {"summary": "User works with Docker.", "created_at": "2026-07-01"}
+            ],
             message_results=[{"role": "user", "content": "We use Compose in prod."}],
+            summary_results=[
+                {"main_point": "User runs a containerized stack."}
+            ],
         )
         handler = _make_memory_recall_handler(db_client)
 
@@ -242,10 +252,12 @@ class TestMemoryRecallHandler:
             MemoryRecallInput(query="What do you remember about my stack?"),
         )
 
-        assert "User works with Docker." in result["result"]
+        assert "User runs a containerized stack." in result["result"]
+        assert "[2026-07-01] User works with Docker." in result["result"]
         assert "[user] We use Compose in prod." in result["result"]
         assert db_client.count_calls == 0
         assert db_client.fulltext_calls == [
+            ("What do you remember about my stack?", "summaries", 5),
             ("What do you remember about my stack?", "records", 5),
             ("What do you remember about my stack?", "messages", 5),
         ]
@@ -319,6 +331,7 @@ class TestMemoryRecallHandler:
         assert result["result"] == "- We picked CSV for exports."
         assert db_client.count_calls == 1
         assert db_client.fulltext_calls == [
+            ("Why did we choose CSV?", "summaries", 5),
             ("Why did we choose CSV?", "records", 5),
             ("Why did we choose CSV?", "messages", 5),
         ]

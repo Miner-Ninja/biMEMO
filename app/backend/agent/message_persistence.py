@@ -181,9 +181,8 @@ class MessagePersistence:
         source_message_ids: list[str],
     ) -> None:
         """Write one dialog-step record through the configured save callback."""
-        # Skip dialog recorder for scheduler sessions — prevents memory pollution
-        # from repetitive scheduled tasks. Agents can still use memory_save
-        # explicitly if the task requires persisting findings.
+        # Skip dialog recorder for scheduler sessions — prevents memory
+        # pollution from repetitive scheduled tasks.
         if session_id.startswith("sched_") or conversation_id.startswith("sched_"):
             return
         if inspect.iscoroutinefunction(self.save_record_fn):

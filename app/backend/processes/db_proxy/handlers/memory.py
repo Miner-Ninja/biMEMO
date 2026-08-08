@@ -1,6 +1,6 @@
 """Handler factories for memory record, summary, and embedding operations.
 
-Provides make_save_record_handler, make_mark_tainted_handler,
+Provides make_save_record_handler,
 make_save_summary_handler, make_merge_summary_sources_handler,
 make_store_embedding_handler, make_fetch_untainted_records_handler,
 make_count_distillations_handler, make_list_summaries_handler,
@@ -33,14 +33,17 @@ from ..common import (
     validate_params,
 )
 from ..params import (
+    BumpQueuedRecordAttemptsParams,
+    DeleteQueuedRecordsParams,
     FetchUnembeddedRecordsParams,
     FetchUntaintedRecordsParams,
     InitVectorTableParams,
+    ListQueuedRecordsParams,
     ListSummariesParams,
-    MarkTaintedParams,
     MergeSummarySourcesParams,
     PruneStaleSummariesParams,
     PruneUnlinkedRecordsParams,
+    SaveQueuedRecordParams,
     SaveRecordParams,
     SaveSummaryParams,
     StoreEmbeddingParams,
@@ -67,6 +70,119 @@ def _validate_params(
 def _table_exists(db: DatabaseManager, table_name: str) -> bool:
     """Return whether a table exists in the current SQLite schema."""
     return table_exists(db, table_name)
+
+
+# Pending queue rows older than this are dropped by the self-pruning read:
+# they survived multiple restarts without being processed and retrying them
+# weeks later would only pollute memory with stale dialog steps.
+QUEUED_RECORD_RETENTION_DAYS = 7
+
+
+def make_save_queued_record_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for save_queued_record operation.
+
+    Persists one pending dialog-recorder queue item so a crash or restart
+    of the orchestrator does not lose un-recorded dialog steps.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Persist one pending dialog-recorder queue item."""
+        p = _validate_params(params, SaveQueuedRecordParams)
+        queue_id = str(uuid.uuid4())
+        db.execute(
+            "INSERT INTO record_queue "
+            "(id, conversation_id, session_id, messages, "
+            "source_message_ids, injection_flagged) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                queue_id,
+                p.conversation_id,
+                p.session_id,
+                json.dumps(p.messages),
+                json.dumps(p.source_message_ids),
+                int(p.injection_flagged),
+            ),
+        )
+        db.commit()
+        return {"queue_id": queue_id}
+
+    return handle
+
+
+def make_delete_queued_records_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for delete_queued_records operation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Delete processed queue rows by id."""
+        p = _validate_params(params, DeleteQueuedRecordsParams)
+        for queue_id in p.queue_ids:
+            db.execute(
+                "DELETE FROM record_queue WHERE id = ?",
+                (queue_id,),
+            )
+        db.commit()
+        return {"deleted": len(p.queue_ids)}
+
+    return handle
+
+
+def make_list_queued_records_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_queued_records operation.
+
+    Self-prunes rows older than the retention window before reading, so
+    perpetually unprocessed items cannot accumulate without bound.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """List pending queue rows, oldest first."""
+        p = _validate_params(params, ListQueuedRecordsParams)
+        db.execute(
+            "DELETE FROM record_queue WHERE created_at < "
+            "strftime('%Y-%m-%dT%H:%M:%f', 'now', ?)",
+            (f"-{QUEUED_RECORD_RETENTION_DAYS} days",),
+        )
+        db.commit()
+        rows = db.execute(
+            "SELECT id, conversation_id, session_id, messages, "
+            "source_message_ids, injection_flagged, attempts "
+            "FROM record_queue ORDER BY created_at ASC LIMIT ?",
+            (p.limit,),
+        ).fetchall()
+        return {
+            "items": [
+                {
+                    "queue_id": r[0],
+                    "conversation_id": r[1],
+                    "session_id": r[2],
+                    "messages": json.loads(r[3]),
+                    "source_message_ids": json.loads(r[4]),
+                    "injection_flagged": bool(r[5]),
+                    "attempts": r[6],
+                }
+                for r in rows
+            ]
+        }
+
+    return handle
+
+
+def make_bump_queued_record_attempts_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for bump_queued_record_attempts operation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Increment the attempt counter on pending queue rows."""
+        p = _validate_params(params, BumpQueuedRecordAttemptsParams)
+        for queue_id in p.queue_ids:
+            db.execute(
+                "UPDATE record_queue SET attempts = attempts + 1 WHERE id = ?",
+                (queue_id,),
+            )
+        db.commit()
+        return {"bumped": len(p.queue_ids)}
+
+    return handle
 
 
 def make_save_record_handler(db: DatabaseManager) -> OperationHandler:
@@ -104,9 +220,10 @@ def make_save_record_handler(db: DatabaseManager) -> OperationHandler:
             "INSERT INTO records "
             "("
             "id, conversation_id, session_id, summary, "
-            "key_facts, action_items, memory_kinds, source_message_ids"
+            "key_facts, action_items, memory_kinds, source_message_ids, "
+            "tainted"
             ") "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record_id,
                 p.conversation_id,
@@ -116,35 +233,16 @@ def make_save_record_handler(db: DatabaseManager) -> OperationHandler:
                 json.dumps(p.action_items),
                 memory_kinds_json,
                 json.dumps(p.source_message_ids),
+                int(p.tainted),
             ),
         )
         db.commit()
-        index_observation(db, cursor.lastrowid, p.summary, key_facts_json)
-        db.commit()
+        # Tainted records stay out of the FTS index entirely: they are
+        # excluded from distillation and must not surface via search either.
+        if not p.tainted:
+            index_observation(db, cursor.lastrowid, p.summary, key_facts_json)
+            db.commit()
         return {"record_id": record_id}
-
-    return handle
-
-
-def make_mark_tainted_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for mark_tainted_record operation.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Mark an record as tainted."""
-        p = _validate_params(params, MarkTaintedParams)
-        db.execute(
-            "UPDATE records SET tainted = 1 WHERE id = ?",
-            (p.record_id,),
-        )
-        db.commit()
-        return {"ok": True}
 
     return handle
 

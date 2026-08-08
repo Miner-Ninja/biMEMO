@@ -226,6 +226,34 @@ class GetMemoryTimelineParams(LimitOffsetParams):
     offset: int = 0
 
 
+class SaveQueuedRecordParams(ForbidExtraParams):
+    """Parameters for save_queued_record operation."""
+
+    conversation_id: str
+    session_id: str
+    messages: list[str] = Field(default_factory=list)
+    source_message_ids: list[str] = Field(default_factory=list)
+    injection_flagged: bool = False
+
+
+class DeleteQueuedRecordsParams(ForbidExtraParams):
+    """Parameters for delete_queued_records operation."""
+
+    queue_ids: list[str]
+
+
+class ListQueuedRecordsParams(ForbidExtraParams):
+    """Parameters for list_queued_records operation."""
+
+    limit: int = 50
+
+
+class BumpQueuedRecordAttemptsParams(ForbidExtraParams):
+    """Parameters for bump_queued_record_attempts operation."""
+
+    queue_ids: list[str]
+
+
 class SaveRecordParams(ForbidExtraParams):
     """Parameters for save_record operation."""
 
@@ -236,12 +264,7 @@ class SaveRecordParams(ForbidExtraParams):
     action_items: list[str] = Field(default_factory=list)
     memory_kinds: list[str] = Field(default_factory=list)
     source_message_ids: list[str] = Field(default_factory=list)
-
-
-class MarkTaintedParams(ForbidExtraParams):
-    """Parameters for mark_tainted_record operation."""
-
-    record_id: str
+    tainted: bool = False
 
 
 class RecordRelationParams(ForbidExtraParams):

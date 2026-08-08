@@ -58,22 +58,6 @@ def _record_row_query(
     )
 
 
-def mark_record_tainted(
-    db: DatabaseManager,
-    record_id: str,
-) -> None:
-    """Mark an record as tainted."""
-    db.execute(
-        "UPDATE records SET tainted = 1 WHERE id = ?",
-        (record_id,),
-    )
-    db.commit()
-    logger.warning(
-        "Record %s marked as tainted",
-        record_id,
-    )
-
-
 def fetch_untainted_records(
     db: DatabaseManager,
     session_id: str | None = None,

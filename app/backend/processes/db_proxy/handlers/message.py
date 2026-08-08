@@ -46,6 +46,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Cap for message content returned by fulltext_search hits. Full text of a
+# hit is available via get_memory; search results only need enough to read.
+SEARCH_RESULT_CONTENT_CHARS = 2000
+
 
 def _validate_params(
     params: dict[str, Any] | None,
@@ -601,7 +605,13 @@ def make_fulltext_search_handler(db: DatabaseManager) -> OperationHandler:
     """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Search messages or records via FTS5."""
+        """Search messages, records, or summaries via FTS5.
+
+        Returns the ORIGINAL source text for each hit. The FTS index
+        stores pre-stemmed tokens, so FTS snippets would surface stems
+        ("clean ob") instead of readable text — every consumer needs
+        the real row content.
+        """
         from backend.memory.retrieval.fulltext import sanitize_fts_query
 
         p = _validate_params(params, FulltextSearchParams)
@@ -612,41 +622,67 @@ def make_fulltext_search_handler(db: DatabaseManager) -> OperationHandler:
         # FTS rowid, so an agent can pass a search result to get_memory.
         if p.table == "messages":
             rows = db.execute(
-                "SELECT m.id, messages_fts.rowid, "
-                "snippet(messages_fts, 0, '', '', '...', 32) "
+                "SELECT m.id, messages_fts.rowid, m.role, "
+                "substr(m.content, 1, ?), m.created_at "
                 "FROM messages_fts "
                 "JOIN messages m ON m.rowid = messages_fts.rowid "
                 "WHERE messages_fts MATCH ? "
                 "ORDER BY rank LIMIT ? OFFSET ?",
-                (safe_query, p.limit, p.offset),
+                (SEARCH_RESULT_CONTENT_CHARS, safe_query, p.limit, p.offset),
             ).fetchall()
+            results = [
+                {
+                    "id": r[0],
+                    "rowid": r[1],
+                    "role": r[2],
+                    "content": r[3],
+                    "created_at": r[4],
+                }
+                for r in rows
+            ]
         elif p.table == "records":
+            # Tainted records are barred from search results, mirroring
+            # their exclusion from distillation.
             rows = db.execute(
-                "SELECT r.id, records_fts.rowid, "
-                "snippet(records_fts, 0, '', '', '...', 32) "
+                "SELECT r.id, records_fts.rowid, r.summary, r.created_at "
                 "FROM records_fts "
                 "JOIN records r ON r.rowid = records_fts.rowid "
-                "WHERE records_fts MATCH ? "
+                "WHERE records_fts MATCH ? AND r.tainted = 0 "
                 "ORDER BY rank LIMIT ? OFFSET ?",
                 (safe_query, p.limit, p.offset),
             ).fetchall()
+            results = [
+                {
+                    "id": r[0],
+                    "rowid": r[1],
+                    "summary": r[2],
+                    "created_at": r[3],
+                }
+                for r in rows
+            ]
         elif p.table == "summaries":
             rows = db.execute(
-                "SELECT s.id, summaries_fts.rowid, "
-                "snippet(summaries_fts, 0, '', '', '...', 32) "
+                "SELECT s.id, summaries_fts.rowid, s.main_point, "
+                "s.trust_level, s.created_at "
                 "FROM summaries_fts "
                 "JOIN summaries s ON s.rowid = summaries_fts.rowid "
                 "WHERE summaries_fts MATCH ? "
                 "ORDER BY rank LIMIT ? OFFSET ?",
                 (safe_query, p.limit, p.offset),
             ).fetchall()
+            results = [
+                {
+                    "id": r[0],
+                    "rowid": r[1],
+                    "main_point": r[2],
+                    "trust_level": r[3],
+                    "created_at": r[4],
+                }
+                for r in rows
+            ]
         else:
             raise ValueError(f"Invalid search table: '{p.table}'")
-        return {
-            "results": [
-                {"id": r[0], "rowid": r[1], "snippet": r[2]} for r in rows
-            ]
-        }
+        return {"results": results}
 
     return handle
 

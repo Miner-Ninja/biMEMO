@@ -41,7 +41,7 @@ class ContextEntry:
 
 @dataclass(frozen=True)
 class ContextResult:
-    """Result from build_context_with_ids with metadata.
+    """Assembled context with metadata, produced by build_zone_context.
 
     Attributes:
         entries: Assembled context entries.

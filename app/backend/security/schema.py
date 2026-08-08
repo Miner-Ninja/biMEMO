@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS records (
     tainted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_RECORD_QUEUE_TABLE = """
+CREATE TABLE IF NOT EXISTS record_queue (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    messages TEXT NOT NULL DEFAULT '[]',
+    source_message_ids TEXT NOT NULL DEFAULT '[]',
+    injection_flagged INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now'))
 )
 """
 
@@ -426,6 +439,7 @@ SCHEMA_STATEMENTS = [
     CREATE_CONVERSATIONS_TABLE,
     CREATE_MESSAGES_TABLE,
     CREATE_NOTES_TABLE,
+    CREATE_RECORD_QUEUE_TABLE,
     CREATE_SUMMARIES_TABLE,
     CREATE_MESSAGES_CONVERSATION_IDX,
     CREATE_MESSAGES_CREATED_AT_IDX,

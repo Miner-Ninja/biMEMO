@@ -425,8 +425,12 @@ class OllamaProvider:
             model: Model to use (defaults to primary_model).
             max_tokens: Optional hard cap for generated output tokens.
             temperature: Optional sampling temperature override.
-            enable_thinking: Optional placeholder for provider parity.
-                Ollama does not use this flag directly.
+            enable_thinking: When False, thinking is disabled via the
+                native Ollama ``think`` request field. Prompt-level
+                directives like ``/no_think`` are model-family-specific
+                (qwen3 honors them, qwen3.5 does not) — a thinking model
+                that ignores them puts its entire output into
+                ``message.thinking`` and returns empty ``content``.
 
         Returns:
             Chat completion response.
@@ -435,7 +439,6 @@ class OllamaProvider:
             OllamaError: If request fails.
         """
         target_model = model or self.primary_model
-        _ = enable_thinking
         capabilities = await self._resolve_for_chat(target_model)
         payload = self._chat_payload(
             target_model=target_model,
@@ -445,6 +448,8 @@ class OllamaProvider:
             max_tokens=max_tokens,
             temperature=temperature,
         )
+        if enable_thinking is False:
+            payload["think"] = False
         try:
             data = await self._post_json(
                 client=self._get_client_for_model(target_model),
@@ -452,6 +457,22 @@ class OllamaProvider:
                 payload=payload,
             )
             return self._chat_response(data, default_model=target_model)
+        except httpx.HTTPStatusError as e:
+            if payload.pop("think", None) is not None and e.response.status_code == 400:
+                # Older Ollama servers and models without a thinking mode
+                # reject the ``think`` field — retry once without it.
+                try:
+                    data = await self._post_json(
+                        client=self._get_client_for_model(target_model),
+                        path="/api/chat",
+                        payload=payload,
+                    )
+                    return self._chat_response(data, default_model=target_model)
+                except httpx.HTTPError as retry_error:
+                    raise OllamaError(
+                        f"Chat request failed: {retry_error}"
+                    ) from retry_error
+            raise OllamaError(f"Chat request failed: {e}") from e
         except httpx.HTTPError as e:
             raise OllamaError(f"Chat request failed: {e}") from e
 

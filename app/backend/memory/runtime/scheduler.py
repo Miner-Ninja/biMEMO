@@ -251,6 +251,55 @@ def _count_source_message_coverage(rows: list[tuple] | list[dict]) -> int:
     return len(source_message_ids)
 
 
+MAX_QUEUED_RECORD_ATTEMPTS = 3
+
+
+async def _resolve_processed_queue_item(
+    queue: DialogRecorderQueue,
+    db_client: object,
+    item: object,
+    record_task: asyncio.Task,
+) -> None:
+    """Acknowledge or retry one processed queue item.
+
+    A transient LLM failure re-queues the item (bounded attempts); every
+    other outcome — success or a permanent skip — deletes the persisted
+    queue rows.
+    """
+    from dataclasses import replace
+
+    from backend.memory.dialog_recorder.runtime import DialogRecorderTransientError
+
+    transient = (
+        record_task.done()
+        and not record_task.cancelled()
+        and isinstance(record_task.exception(), DialogRecorderTransientError)
+    )
+    if transient and item.attempts + 1 < MAX_QUEUED_RECORD_ATTEMPTS:
+        retry_item = replace(item, attempts=item.attempts + 1)
+        try:
+            await db_client.bump_queued_record_attempts(list(item.queue_ids))
+        except Exception:
+            logger.warning(
+                "Failed to bump queued record attempts",
+                exc_info=True,
+            )
+        queue.put_front(retry_item)
+        return
+    if transient:
+        logger.warning(
+            "Dialog Recorder giving up on queue item after %d attempts",
+            item.attempts + 1,
+        )
+    try:
+        await db_client.delete_queued_records(list(item.queue_ids))
+    except Exception:
+        logger.warning(
+            "Failed to delete processed queue rows",
+            exc_info=True,
+        )
+
+
 async def run_dialog_recorder_loop(
     queue: DialogRecorderQueue,
     provider: OllamaProvider,
@@ -291,6 +340,13 @@ async def run_dialog_recorder_loop(
                 if current_task is not None and current_task.cancelling():
                     raise
                 queue.put_front(item)
+                continue
+            await _resolve_processed_queue_item(
+                queue,
+                db_client,
+                item,
+                record_task,
+            )
     except asyncio.CancelledError:
         logger.info("Dialog Recorder background loop cancelled")
         raise

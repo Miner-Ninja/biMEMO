@@ -353,25 +353,43 @@ def _record_result_count(parts: list[str]) -> None:
     _recall_stats["total_results"] += len(parts)
 
 
+def _memory_date_prefix(entry: dict[str, object]) -> str:
+    """Return a ``[YYYY-MM-DD] `` prefix when the entry carries a date."""
+    created_at = _clean_memory_text(entry.get("created_at", ""))
+    if not created_at:
+        return ""
+    return f"[{created_at[:10]}] "
+
+
 def _fast_recall_parts(
     *,
+    summaries: list[dict[str, object]],
     records: list[dict[str, object]],
     messages: list[dict[str, object]],
     max_message_chars: int,
 ) -> list[str]:
-    """Build the current flat memory recall output from FTS results."""
+    """Build the flat memory recall output from FTS results.
+
+    Distilled summaries lead (highest-trust tier), then records, then
+    raw message excerpts. Each line carries the entry date so the model
+    can weigh recency.
+    """
     parts: list[str] = []
+    for summary in summaries:
+        main_point = _clean_memory_text(summary.get("main_point", ""))
+        if main_point:
+            parts.append(f"- {_memory_date_prefix(summary)}{main_point}")
     for record in records:
-        summary = _clean_memory_text(record.get("summary", ""))
-        if summary:
-            parts.append(f"- {summary}")
+        summary_text = _clean_memory_text(record.get("summary", ""))
+        if summary_text:
+            parts.append(f"- {_memory_date_prefix(record)}{summary_text}")
     for message in messages:
         role = _clean_memory_text(message.get("role", ""))
         content = _clean_memory_text(message.get("content", ""))
         if not content:
             continue
-        snippet = content[:max_message_chars]
-        parts.append(f"- [{role}] {snippet}")
+        excerpt = content[:max_message_chars]
+        parts.append(f"- {_memory_date_prefix(message)}[{role}] {excerpt}")
     return parts
 
 
@@ -381,7 +399,12 @@ async def _build_fast_recall_result(
     query: str,
     max_message_chars: int,
 ) -> str:
-    """Run the existing lightweight memory recall search."""
+    """Run the lightweight memory recall search across all three tiers."""
+    summaries = await db_client.fulltext_search(
+        query=query,
+        table="summaries",
+        limit=MEMORY_RECALL_RESULT_LIMIT,
+    )
     records = await db_client.fulltext_search(
         query=query,
         table="records",
@@ -393,6 +416,7 @@ async def _build_fast_recall_result(
         limit=MEMORY_RECALL_RESULT_LIMIT,
     )
     parts = _fast_recall_parts(
+        summaries=summaries,
         records=records,
         messages=messages,
         max_message_chars=max_message_chars,

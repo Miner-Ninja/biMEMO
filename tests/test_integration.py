@@ -21,7 +21,6 @@ from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import (
     ContextEntry,
     ContextResult,
-    build_context_with_ids,
 )
 from backend.memory.retrieval import hybrid_search
 from backend.memory.retrieval.fulltext import (
@@ -266,75 +265,6 @@ class TestRetrievedMemoriesPipeline:
         assert len(results) >= 1
         assert any(r.identifier == "obs-pizza" for r in results)
         db.close()
-
-    def test_context_builder_populates_retrieved_memories(self, tmp_path):
-        """Verify build_context_with_ids labels search-matched records."""
-        db = _open_test_db(tmp_path)
-        db.execute("INSERT INTO conversations (id) VALUES (?)", ("c1",))
-        for index, (record_id, summary) in enumerate(
-            [
-                ("obs-pizza", "user likes pizza with mushrooms"),
-                ("obs-code", "user prefers Python over Java"),
-                ("obs-music", "user listens to jazz"),
-            ]
-        ):
-            db.execute(
-                "INSERT INTO records "
-                "(id, conversation_id, session_id, summary, key_facts) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (record_id, "c1", "s1", summary, "[]"),
-            )
-            index_observation(db, index + 1, summary, "[]")
-            vec = [0.0] * 4
-            vec[index % 4] = 1.0
-            store_embedding(db, record_id, vec)
-        db.commit()
-
-        search_results = hybrid_search(
-            db,
-            "pizza",
-            [1.0, 0.0, 0.0, 0.0],
-            "records",
-            limit=10,
-        )
-        db.close()
-
-        records = [
-            ("obs-pizza", "user likes pizza with mushrooms", "2025-06-01T12:00:00"),
-            ("obs-code", "user prefers Python over Java", "2025-06-02T12:00:00"),
-            ("obs-music", "user listens to jazz", "2025-06-03T12:00:00"),
-        ]
-
-        result = build_context_with_ids(
-            summaries=[],
-            records=records,
-            recent_messages=[("user", "What food do I like?")],
-            search_results=search_results,
-            token_budget=10000,
-        )
-        assert isinstance(result, ContextResult)
-        assert len(result.retrieved_memories) >= 1
-        summaries = [m["summary"] for m in result.retrieved_memories]
-        assert "user likes pizza with mushrooms" in summaries
-
-        obs_entries = [e for e in result.entries if e.role == "record"]
-        labeled = [e for e in obs_entries if "[Retrieved memory" in e.content]
-        assert len(labeled) >= 1
-
-    def test_empty_query_returns_no_retrieved_memories(self):
-        """Verify no search results means empty retrieved_memories."""
-        result = build_context_with_ids(
-            summaries=[],
-            records=[
-                ("o1", "some record"),
-            ],
-            recent_messages=[("user", "hello")],
-            search_results=None,
-            token_budget=10000,
-        )
-        assert result.retrieved_memories == []
-        obs_entries = [e for e in result.entries if e.role == "record"]
-        assert all(not e.content.startswith("[Retrieved memory]") for e in obs_entries)
 
     async def test_orchestrator_threads_retrieved_memories(self):
         """Verify AgentOrchestrator passes retrieved_memories in response."""

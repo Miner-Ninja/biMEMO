@@ -101,8 +101,16 @@ def init_tts_client(settings: Settings) -> object | None:
 
 def build_queue_record_fn(
     queue: DialogRecorderQueueProtocol,
+    db_client: object | None = None,
 ) -> Callable[[str, str, str, list[str] | None], Awaitable[None]]:
-    """Build the queue-backed record writer for the dialog recorder pipeline."""
+    """Build the queue-backed record writer for the dialog recorder pipeline.
+
+    When ``db_client`` is provided, every item is also persisted to the
+    record_queue table BEFORE entering the in-memory queue, so a crash of
+    the orchestrator cannot lose un-recorded dialog steps. Persistence is
+    best-effort: a DB failure is logged and the item still enters the
+    in-memory queue.
+    """
     from backend.memory.runtime.rate_limiter_models import DialogRecorderQueueItem
 
     async def queue_record_fn(
@@ -112,12 +120,29 @@ def build_queue_record_fn(
         source_message_ids: list[str] | None = None,
     ) -> None:
         """Queue one dialog recorder record for background processing."""
+        queue_ids: tuple[str, ...] = ()
+        if db_client is not None:
+            try:
+                queue_id = await db_client.save_queued_record(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    messages=[summary],
+                    source_message_ids=source_message_ids or [],
+                )
+                queue_ids = (queue_id,)
+            except Exception:
+                logger.warning(
+                    "Failed to persist dialog-recorder queue item; "
+                    "continuing with in-memory queue only",
+                    exc_info=True,
+                )
         queue.put(
             DialogRecorderQueueItem(
                 messages=[summary],
                 conversation_id=conversation_id,
                 session_id=session_id,
                 source_message_ids=source_message_ids or [],
+                queue_ids=queue_ids,
             )
         )
 

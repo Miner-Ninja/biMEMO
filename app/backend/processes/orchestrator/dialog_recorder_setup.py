@@ -169,7 +169,9 @@ async def _setup_dialog_recorder_pipeline(
         orchestrator=orchestrator,
         dialog_recorder_queue=dialog_recorder_queue,
         dialog_recorder_scheduler=dialog_recorder_scheduler,
+        db_client=db_client,
     )
+    await _reload_pending_queue_items(dialog_recorder_queue, db_client)
     embed_fn, vector_ready = await _prepare_dialog_recorder_vector_runtime(
         orchestrator=orchestrator,
         db_client=db_client,
@@ -368,6 +370,7 @@ def _apply_dialog_recorder_runtime_hooks(
     orchestrator: object,
     dialog_recorder_queue: object,
     dialog_recorder_scheduler: object,
+    db_client: object,
 ) -> None:
     """Attach dialog recorder callbacks and queue-backed persistence hooks."""
     from .process_helpers import build_queue_record_fn
@@ -376,7 +379,47 @@ def _apply_dialog_recorder_runtime_hooks(
     orchestrator.notify_primary_finished = dialog_recorder_scheduler.signal_primary_done
     orchestrator.save_record_fn = build_queue_record_fn(
         dialog_recorder_queue,
+        db_client,
     )
+
+
+async def _reload_pending_queue_items(
+    dialog_recorder_queue: object,
+    db_client: object,
+) -> None:
+    """Refill the in-memory recorder queue from persisted pending rows.
+
+    Restores dialog steps that were queued but not yet processed when the
+    orchestrator last stopped. Best-effort: a failure only logs — the
+    recorder starts with an empty queue as before.
+    """
+    from backend.memory.runtime.rate_limiter_models import DialogRecorderQueueItem
+
+    try:
+        pending_items = await db_client.list_queued_records()
+    except Exception:
+        logger.warning(
+            "Failed to reload pending dialog-recorder queue items",
+            exc_info=True,
+        )
+        return
+    for pending in pending_items:
+        dialog_recorder_queue.put(
+            DialogRecorderQueueItem(
+                messages=list(pending.get("messages", [])),
+                conversation_id=str(pending.get("conversation_id", "")),
+                session_id=str(pending.get("session_id", "")),
+                source_message_ids=list(pending.get("source_message_ids", [])),
+                injection_flagged=bool(pending.get("injection_flagged", False)),
+                queue_ids=(str(pending.get("queue_id", "")),),
+                attempts=int(pending.get("attempts", 0)),
+            )
+        )
+    if pending_items:
+        logger.info(
+            "Reloaded %d pending dialog-recorder queue items",
+            len(pending_items),
+        )
 
 
 async def _probe_vector_embedding_support(
