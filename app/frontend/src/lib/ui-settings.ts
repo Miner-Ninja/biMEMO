@@ -28,12 +28,16 @@ const LEGACY_VOICE_KEY = "bm-voice-mode";
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 
+function isSettingsObject(value: unknown): value is UiSettings {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function readCache(): UiSettings {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as UiSettings) : {};
+    return isSettingsObject(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -79,11 +83,32 @@ function removeLegacyKeys(): void {
   }
 }
 
-async function pushToServer(settings: UiSettings): Promise<void> {
+async function pushToServer(
+  settings: UiSettings,
+  options: { keepalive?: boolean } = {}
+): Promise<void> {
   await apiRequest("/admin/settings/ui", {
     method: "PUT",
     body: JSON.stringify({ settings }),
+    keepalive: options.keepalive ?? false,
   });
+}
+
+/** Push a pending debounced change immediately (used on page hide). */
+function flushPendingPush(): void {
+  if (pushTimer === null) return;
+  clearTimeout(pushTimer);
+  pushTimer = null;
+  pushToServer(readCache(), { keepalive: true }).catch((error) => {
+    console.warn("UI settings flush failed; cache stays local:", error);
+  });
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingPush();
+  });
+  window.addEventListener("pagehide", flushPendingPush);
 }
 
 function schedulePush(): void {

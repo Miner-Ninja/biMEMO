@@ -214,11 +214,12 @@ async def store_ui_settings(
     del claims
     try:
         await admin.store_ui_settings(body.settings)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        if "exceeds" in str(exc):
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except HTTPException as exc:
+        # The DB-proxy client wraps operation errors into HTTPException(500)
+        # with the operation's message in detail — surface the size-cap
+        # rejection as 413 so the client can react specifically.
+        if "exceeds" in str(exc.detail):
+            raise HTTPException(status_code=413, detail=str(exc.detail)) from exc
         raise
     return {"ok": True}
 

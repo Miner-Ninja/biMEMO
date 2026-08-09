@@ -395,7 +395,7 @@ def make_get_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
         try:
             settings = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            logger.warning("Stored UI settings are not valid JSON; resetting")
+            logger.warning("Stored UI settings are not valid JSON; returning empty")
             return {"settings": {}}
         if not isinstance(settings, dict):
             return {"settings": {}}
