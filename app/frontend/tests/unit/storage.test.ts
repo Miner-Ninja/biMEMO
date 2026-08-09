@@ -1,12 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  STORAGE_KEYS,
-  saveTheme,
-  loadTheme,
-  getInitialTheme,
-  saveAuthUser,
-  clearAuth,
-} from "@/lib/storage";
+import { STORAGE_KEYS, saveAuthUser, clearAuth } from "@/lib/storage";
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -43,51 +36,7 @@ Object.defineProperty(window, "matchMedia", {
 
 describe("STORAGE_KEYS", () => {
   it("has all required keys", () => {
-    expect(STORAGE_KEYS.THEME).toBe("theme");
     expect(STORAGE_KEYS.AUTH_USER).toBe("authUser");
-  });
-});
-
-describe("saveTheme / loadTheme", () => {
-  beforeEach(() => {
-    localStorageMock.clear();
-    vi.clearAllMocks();
-  });
-
-  it("saves and loads dark theme", () => {
-    saveTheme("dark");
-    expect(loadTheme()).toBe("dark");
-  });
-
-  it("saves and loads light theme", () => {
-    saveTheme("light");
-    expect(loadTheme()).toBe("light");
-  });
-
-  it("returns null for invalid theme", () => {
-    localStorageMock.setItem(STORAGE_KEYS.THEME, "invalid");
-    expect(loadTheme()).toBeNull();
-  });
-
-  it("returns null when no theme saved", () => {
-    expect(loadTheme()).toBeNull();
-  });
-});
-
-describe("getInitialTheme", () => {
-  beforeEach(() => {
-    localStorageMock.clear();
-    vi.clearAllMocks();
-  });
-
-  it("returns stored theme if available", () => {
-    saveTheme("light");
-    expect(getInitialTheme()).toBe("light");
-  });
-
-  it("returns dark if system prefers dark", () => {
-    // matchMedia mock returns true for dark scheme
-    expect(getInitialTheme()).toBe("dark");
   });
 });
 

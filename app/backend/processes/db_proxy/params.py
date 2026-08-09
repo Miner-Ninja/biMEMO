@@ -495,6 +495,16 @@ class FetchUnembeddedRecordsParams(LimitOnlyParams):
     limit: int = 50
 
 
+class GetUiSettingsParams(ForbidExtraParams):
+    """Parameters for get_ui_settings operation."""
+
+
+class StoreUiSettingsParams(ForbidExtraParams):
+    """Parameters for store_ui_settings operation."""
+
+    settings: dict[str, Any]
+
+
 class StoreUserProfileParams(ForbidExtraParams):
     """Parameters for store_user_profile operation."""
 

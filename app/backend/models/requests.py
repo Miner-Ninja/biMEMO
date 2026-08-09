@@ -59,6 +59,12 @@ class ChatRequest(StrictRequestModel):
         return self
 
 
+class UiSettingsRequest(StrictRequestModel):
+    """Web-tier UI settings blob replacement request."""
+
+    settings: dict[str, Any]
+
+
 class ConfirmRequest(StrictRequestModel):
     """Trust confirmation decision request.
 

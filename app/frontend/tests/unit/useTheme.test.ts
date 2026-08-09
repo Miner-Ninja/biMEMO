@@ -2,11 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTheme } from "@/hooks/useTheme";
 
-// Mock storage module
-vi.mock("@/lib/storage", () => ({
-  getInitialTheme: vi.fn(() => "dark"),
-  saveTheme: vi.fn(),
+// Mock the settings store; matchMedia for the system-preference path.
+vi.mock("@/lib/ui-settings", () => ({
+  getUiSetting: vi.fn(() => "dark"),
+  setUiSetting: vi.fn(),
 }));
+Object.defineProperty(window, "matchMedia", {
+  value: vi.fn(() => ({ matches: true })),
+});
 
 describe("useTheme", () => {
   beforeEach(() => {

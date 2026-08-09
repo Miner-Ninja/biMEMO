@@ -5,6 +5,8 @@ and duplicate detection.
 """
 
 import pytest
+from pydantic import BaseModel
+
 from backend.tools.builtin import SkillCreateInput
 from backend.tools.registry import (
     ToolDefinition,
@@ -12,7 +14,6 @@ from backend.tools.registry import (
     WorkerTarget,
 )
 from backend.trust.zones import TrustZone
-from pydantic import BaseModel
 
 
 class _DummyInput(BaseModel, extra="forbid"):

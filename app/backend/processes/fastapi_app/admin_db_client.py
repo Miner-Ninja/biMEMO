@@ -431,6 +431,18 @@ class AdminDBClient(_BaseIPCClient):
         )
         return result["entry_points"]
 
+    async def get_ui_settings(self) -> dict[str, Any]:
+        """Read the web-tier UI settings blob."""
+        result = await self.send_operation("get_ui_settings")
+        return result.get("settings", {})
+
+    async def store_ui_settings(self, settings: dict[str, Any]) -> None:
+        """Replace the web-tier UI settings blob."""
+        await self.send_operation(
+            "store_ui_settings",
+            {"settings": settings},
+        )
+
     async def get_graph_stats(self) -> dict[str, Any]:
         """Return the graph statistics snapshot."""
         return await self.send_operation("get_graph_stats")

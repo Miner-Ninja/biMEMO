@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { Theme } from "@/types/chat";
-import { saveTheme, getInitialTheme } from "@/lib/storage";
+import { getUiSetting, setUiSetting } from "@/lib/ui-settings";
 
 const FADE_DURATION_MS = 200;
 
+function getInitialTheme(): Theme {
+  const stored = getUiSetting("theme");
+  if (stored === "dark" || stored === "light") return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 /**
- * Hook for managing theme state with localStorage persistence
+ * Hook for managing theme state persisted via the UI settings store
  */
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
@@ -17,7 +23,7 @@ export function useTheme() {
       isInitialMount.current = false;
       document.documentElement.classList.remove("dark", "light");
       document.documentElement.classList.add(theme);
-      saveTheme(theme);
+      setUiSetting("theme", theme);
       return;
     }
 
@@ -26,7 +32,7 @@ export function useTheme() {
     const timer = setTimeout(() => {
       document.documentElement.classList.remove("dark", "light");
       document.documentElement.classList.add(theme);
-      saveTheme(theme);
+      setUiSetting("theme", theme);
       document.documentElement.style.opacity = "1";
     }, FADE_DURATION_MS);
 
