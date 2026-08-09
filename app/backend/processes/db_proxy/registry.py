@@ -102,6 +102,7 @@ from .handlers.graph import (
     make_get_graph_stats_handler,
     make_invalidate_assertion_handler,
     make_list_assertions_for_entity_handler,
+    make_list_entities_handler,
     make_prune_graph_handler,
     make_save_assertion_handler,
     make_save_entity_handler,
@@ -309,6 +310,7 @@ SOCKET_B_ONLY_OPERATIONS = {
     "store_user_profile",
     "get_ui_settings",
     "store_ui_settings",
+    "list_entities",
     "get_avatar",
     "store_avatar",
     "delete_avatar",
@@ -516,6 +518,7 @@ def _register_graph_operations(
     registry.register("get_graph_stats", make_get_graph_stats_handler(db))
     registry.register("get_entity", make_get_entity_handler(db))
     registry.register("find_entities", make_find_entities_handler(db))
+    registry.register("list_entities", make_list_entities_handler(db))
     registry.register(
         "list_assertions_for_entity",
         make_list_assertions_for_entity_handler(db),

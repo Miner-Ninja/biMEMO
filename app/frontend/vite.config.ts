@@ -7,16 +7,14 @@ import tailwindcss from "@tailwindcss/vite";
 
 const devProxyTarget = process.env.BIMEMO_DEV_PROXY_TARGET || "http://localhost:8000";
 const FRONTEND_ALLOWED_HOSTS = [".mesh.lan"];
-const FRONTEND_APP_ROUTES = new Set([
-  "/",
-  "/admin",
-  "/admin/integrations",
-  "/admin/backups",
-  "/admin/summaries",
-  "/admin/llm",
-  "/admin/profile",
-  "/admin/memory-debug",
-]);
+
+// Document navigations to SPA pages must be answered by the dev server
+// itself, not proxied to the backend (whose baked dist has different
+// asset hashes). Matched by prefix so new admin pages need no edits
+// here; API calls are not document requests and still hit the proxy.
+function isFrontendAppRoute(pathname: string): boolean {
+  return pathname === "/" || pathname === "/admin" || pathname.startsWith("/admin/");
+}
 
 function frontendRouteFallbackPlugin() {
   return {
@@ -31,7 +29,7 @@ function frontendRouteFallbackPlugin() {
 
         const rawUrl = req.url || "/";
         const pathname = rawUrl.split("?")[0];
-        if (!FRONTEND_APP_ROUTES.has(pathname)) {
+        if (!isFrontendAppRoute(pathname)) {
           next();
           return;
         }

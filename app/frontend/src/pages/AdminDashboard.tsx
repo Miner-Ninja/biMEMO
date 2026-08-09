@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Settings, Database, Cpu, User, Bug, Sparkles } from "lucide-react";
+import { Settings, Database, Cpu, User, Bug, Brain, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { TranslationKey } from "@/i18n";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -22,6 +22,12 @@ const adminLinks: Array<{
     icon: User,
     titleKey: "admin.userProfile",
     descriptionKey: "admin.profileDescription",
+  },
+  {
+    to: "/admin/memory",
+    icon: Brain,
+    titleKey: "memory.title",
+    descriptionKey: "memory.dashboardDescription",
   },
   {
     to: "/admin/integrations",

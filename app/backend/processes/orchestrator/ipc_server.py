@@ -22,6 +22,8 @@ from backend.ipc.models import (
     McpAskResponse,
     McpMemoryRememberRequest,
     McpMemoryRememberResponse,
+    MemoryInvalidateRequest,
+    MemoryInvalidateResponse,
     ReloadLLMRequest,
     ReloadLLMResponse,
     StopRequest,
@@ -45,6 +47,7 @@ FRONTEND_TYPE_MAP = {
     "ListAgentRunEventsRequest": ListAgentRunEventsRequest,
     "McpAskRequest": McpAskRequest,
     "McpMemoryRememberRequest": McpMemoryRememberRequest,
+    "MemoryInvalidateRequest": MemoryInvalidateRequest,
     "ReloadLLMRequest": ReloadLLMRequest,
     "StopRequest": StopRequest,
     "ConfirmRequest": ConfirmRequest,
@@ -75,6 +78,7 @@ class OrchestratorIPCServer:
         list_run_events_fn: Callable | None = None,
         mcp_memory_remember_fn: Callable | None = None,
         mcp_ask_fn: Callable | None = None,
+        memory_invalidate_fn: Callable | None = None,
     ) -> None:
         """Initialize the orchestrator IPC server.
 
@@ -95,6 +99,8 @@ class OrchestratorIPCServer:
                 external-agent memory (store-only) and returns its ids.
             mcp_ask_fn: Optional async callable that resolves an agent session,
                 runs the LLM agentic loop, and returns the answer.
+            memory_invalidate_fn: Optional async callable that invalidates one
+                graph assertion on user request (Socket-A write).
         """
         self._orchestrator_fn = orchestrator_fn
         self._confirm_fn = confirm_fn
@@ -104,6 +110,7 @@ class OrchestratorIPCServer:
         self._list_run_events_fn = list_run_events_fn
         self._mcp_memory_remember_fn = mcp_memory_remember_fn
         self._mcp_ask_fn = mcp_ask_fn
+        self._memory_invalidate_fn = memory_invalidate_fn
         self._active_task: asyncio.Task | None = None
 
         self._server = IPCSocketServer(
@@ -175,7 +182,23 @@ class OrchestratorIPCServer:
             "BridgeInboundSyncRequest": self._handle_bridge_inbound,
             "McpMemoryRememberRequest": self._handle_mcp_memory_remember,
             "McpAskRequest": self._handle_mcp_ask,
+            "MemoryInvalidateRequest": self._handle_memory_invalidate,
         }
+
+    async def _handle_memory_invalidate(
+        self,
+        request: MemoryInvalidateRequest,
+    ) -> MemoryInvalidateResponse:
+        """Invalidate one graph assertion on user request.
+
+        Memory writes are reserved for the orchestrator (Socket A); the
+        web-facing FastAPI process only forwards the request here.
+        """
+        if self._memory_invalidate_fn is None:
+            return MemoryInvalidateResponse(
+                request_id=request.request_id, invalidated=False
+            )
+        return await self._memory_invalidate_fn(request)
 
     async def _handle_mcp_memory_remember(
         self,

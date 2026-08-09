@@ -37,6 +37,7 @@ from ..params import (
     GetGraphStatsParams,
     InvalidateAssertionParams,
     ListAssertionsForEntityParams,
+    ListEntitiesParams,
     PruneGraphParams,
     SaveAssertionParams,
     SaveEntityParams,
@@ -320,6 +321,35 @@ def make_find_entities_handler(db: DatabaseManager) -> OperationHandler:
             (safe_query, p.limit),
         ).fetchall()
         return {"entities": [_entity_row_dict(row) for row in rows]}
+
+    return handle
+
+
+def make_list_entities_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_entities operation (paged, with counts)."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """List entities newest-first with active-assertion counts."""
+        p = _validate(params, ListEntitiesParams)
+        limit = max(1, min(p.limit, 200))
+        offset = max(0, p.offset)
+        rows = db.execute(
+            "SELECT e.id, e.entity_type, e.canonical_name, e.aliases, "
+            "e.created_at, "
+            "(SELECT COUNT(*) FROM assertions a "
+            " WHERE (a.subject_entity_id = e.id OR a.object_entity_id = e.id) "
+            " AND a.invalid_from IS NULL) AS active_assertions "
+            "FROM entities e "
+            "ORDER BY e.created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        total = db.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
+        entities = []
+        for row in rows:
+            entry = _entity_row_dict(row)
+            entry["active_assertions"] = row[5]
+            entities.append(entry)
+        return {"entities": entities, "total": total}
 
     return handle
 

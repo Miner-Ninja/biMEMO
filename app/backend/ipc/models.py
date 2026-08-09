@@ -121,6 +121,24 @@ class McpMemoryRememberRequest(IPCModel):
     agent_id: str
 
 
+class MemoryInvalidateRequest(IPCModel):
+    """Request from the admin UI to invalidate one graph assertion.
+
+    The write is executed in the orchestrator process (Socket A) so the
+    web-facing FastAPI process never writes memory content directly.
+
+    Attributes:
+        request_id: Unique identifier for this request.
+        assertion_id: Assertion to invalidate.
+        reason: User-stated reason ("forget" or "incorrect"), logged for
+            diagnostics only.
+    """
+
+    request_id: str
+    assertion_id: str
+    reason: str
+
+
 class McpAskRequest(IPCModel):
     """Request from the MCP endpoint to ask biMEMO a question.
 
@@ -281,6 +299,19 @@ class McpMemoryRememberResponse(IPCModel):
     conversation_id: str = ""
     stored: bool = False
     reason: str = ""
+
+
+class MemoryInvalidateResponse(IPCModel):
+    """Response confirming one assertion-invalidation attempt.
+
+    Attributes:
+        request_id: Matching request identifier.
+        invalidated: True when the assertion was active and is now
+            invalidated; False for unknown or already-invalid ids.
+    """
+
+    request_id: str
+    invalidated: bool = False
 
 
 class McpAskResponse(IPCModel):

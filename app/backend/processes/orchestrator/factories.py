@@ -17,6 +17,8 @@ from backend.ipc.models import (
     McpAskResponse,
     McpMemoryRememberRequest,
     McpMemoryRememberResponse,
+    MemoryInvalidateRequest,
+    MemoryInvalidateResponse,
 )
 
 from .client import DBProxyClient, DBProxyError
@@ -495,6 +497,47 @@ def make_mcp_memory_remember_fn(
             )
 
     return mcp_memory_remember_fn
+
+
+def make_memory_invalidate_fn(db_client: DBProxyClient) -> Callable:
+    """Create the handler for user-requested assertion invalidation.
+
+    The write runs in the orchestrator process (Socket A); the web tier
+    only forwards the request over IPC. Manual invalidation has no
+    superseding assertion, so invalidated_by stays empty; the user's
+    reason ("forget"/"incorrect") is recorded in the diagnostic log.
+
+    Returns:
+        Async callable(MemoryInvalidateRequest) -> MemoryInvalidateResponse.
+    """
+
+    async def memory_invalidate_fn(
+        request: MemoryInvalidateRequest,
+    ) -> MemoryInvalidateResponse:
+        try:
+            invalidated = await db_client.invalidate_assertion(
+                request.assertion_id,
+            )
+        except DBProxyError:
+            logger.exception(
+                "User invalidation failed for assertion %s",
+                request.assertion_id,
+            )
+            return MemoryInvalidateResponse(
+                request_id=request.request_id, invalidated=False
+            )
+        logger.info(
+            "User invalidated assertion %s (reason=%s, result=%s)",
+            request.assertion_id,
+            request.reason,
+            invalidated,
+        )
+        return MemoryInvalidateResponse(
+            request_id=request.request_id,
+            invalidated=invalidated,
+        )
+
+    return memory_invalidate_fn
 
 
 

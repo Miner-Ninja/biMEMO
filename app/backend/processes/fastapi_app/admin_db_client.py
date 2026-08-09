@@ -406,6 +406,17 @@ class AdminDBClient(_BaseIPCClient):
         )
         return result["entities"]
 
+    async def list_entities(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List graph entities newest-first with active-assertion counts."""
+        return await self.send_operation(
+            "list_entities",
+            {"limit": limit, "offset": offset},
+        )
+
     async def list_assertions_for_entity(
         self,
         entity_id: str,

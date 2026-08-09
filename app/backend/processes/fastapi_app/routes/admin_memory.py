@@ -5,22 +5,26 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from backend.files import FileContextManager
 from backend.tools.handlers.registration import get_recall_stats
 
 from ..deps import (
     _get_admin_client,
+    _get_orchestrator_client,
+    _get_reauth_manager,
     _require_auth,
 )
 from . import files as files_routes
 
 
 if TYPE_CHECKING:
+    from backend.channels.endpoints import ReauthManager
     from backend.channels.jwt_auth import TokenClaims
 
     from ..clients import AdminDBClient, CredentialClient
+    from ..orchestrator_client import OrchestratorClient
 
 
 memory_router = APIRouter(prefix="/admin/memory")
@@ -478,11 +482,13 @@ async def search_graph_entities(
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
-    """Search graph entities by name or alias."""
+    """Search graph entities by name or alias; no query lists them all."""
     del _claims
     limit = max(1, min(limit, 100))
-    entities = await admin.find_entities(query, limit) if query else []
-    return {"entities": entities}
+    if query:
+        return {"entities": await admin.find_entities(query, limit)}
+    listed = await admin.list_entities(limit=limit)
+    return {"entities": listed["entities"], "total": listed["total"]}
 
 
 @memory_router.get("/graph/entities/{entity_id}")
@@ -496,5 +502,62 @@ async def get_graph_entity(
     entity = await admin.get_entity(entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
-    assertions = await admin.list_assertions_for_entity(entity_id)
+    assertions = await admin.list_assertions_for_entity(entity_id, valid_only=False)
     return {"entity": entity, "assertions": assertions}
+
+
+@memory_router.get("/records/{record_id}")
+async def get_memory_record(
+    record_id: str,
+    _claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Resolve one source record to its conversation reference."""
+    del _claims
+    entry = await admin.mcp_memory_get(record_id, "records")
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {
+        "record": {
+            "id": entry.get("id"),
+            "conversation_id": entry.get("conversation_id"),
+            "created_at": entry.get("created_at"),
+            "summary": entry.get("summary"),
+        }
+    }
+
+
+MEMORY_INVALIDATE_REASONS = ("forget", "incorrect")
+
+
+@memory_router.post("/assertions/{assertion_id}/invalidate")
+async def invalidate_memory_assertion(
+    assertion_id: str,
+    reason: str,
+    request: Request,
+    reauth_token: str | None = Header(None, alias="X-Reauth-Token"),
+    reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
+) -> dict:
+    """Invalidate one assertion on user request.
+
+    Destructive action: requires a valid single-use re-authentication
+    token. The write itself is forwarded to the orchestrator over IPC —
+    the web tier holds no memory-write operation (Socket-A invariant).
+    """
+    _require_auth(request)
+    if not reauth_token or not reauth_mgr.validate_and_consume(reauth_token):
+        raise HTTPException(
+            status_code=403,
+            detail="Valid re-authentication required to change memory.",
+        )
+    if reason not in MEMORY_INVALIDATE_REASONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Reason must be one of: forget, incorrect.",
+        )
+    response = await orchestrator.memory_invalidate(
+        assertion_id=assertion_id,
+        reason=reason,
+    )
+    return {"invalidated": response.invalidated}

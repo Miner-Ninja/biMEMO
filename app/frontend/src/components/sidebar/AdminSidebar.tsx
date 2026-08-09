@@ -9,6 +9,7 @@ import {
   Cpu,
   User,
   Bug,
+  Brain,
   Sparkles,
   MessageSquare,
   Shield,
@@ -30,6 +31,7 @@ import {
 const adminLinks: Array<{ to: string; icon: LucideIcon; labelKey: TranslationKey }> = [
   { to: "/admin", icon: Shield, labelKey: "admin.dashboard" },
   { to: "/admin/profile", icon: User, labelKey: "admin.userProfile" },
+  { to: "/admin/memory", icon: Brain, labelKey: "memory.title" },
   {
     to: "/admin/scheduled-tasks",
     icon: CalendarClock,
