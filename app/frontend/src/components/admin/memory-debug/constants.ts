@@ -4,101 +4,98 @@ import type {
   MemoryDebugSection,
   ProcessingLogsView,
 } from "@/components/admin/memory-debug/types";
+import type { TranslationKey } from "@/i18n";
 
 export const MEMORY_DEBUG_SECTIONS: Array<{
   id: MemoryDebugSection;
-  label: string;
-  description: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
 }> = [
   {
     id: "overview",
-    label: "Overview",
-    description: "Current memory state and the main things that need attention.",
+    labelKey: "memoryDebug.sectionOverview",
+    descriptionKey: "memoryDebug.sectionOverviewDescription",
   },
   {
     id: "memory-data",
-    label: "Memory data",
-    description: "Stored messages, records, graph assertions, and how they connect.",
+    labelKey: "memoryDebug.sectionMemoryData",
+    descriptionKey: "memoryDebug.sectionMemoryDataDescription",
   },
   {
     id: "diagnostics",
-    label: "Diagnostics",
-    description: "Why the system made its decisions and where drift appears.",
+    labelKey: "memoryDebug.sectionDiagnostics",
+    descriptionKey: "memoryDebug.sectionDiagnosticsDescription",
   },
   {
     id: "processing-logs",
-    label: "Processing logs",
-    description: "Detailed record processing records.",
+    labelKey: "memoryDebug.sectionProcessingLogs",
+    descriptionKey: "memoryDebug.sectionProcessingLogsDescription",
   },
   {
     id: "assertions",
-    label: "Assertions",
-    description: "Graph knowledge: dated, trust-labeled facts with search.",
+    labelKey: "memoryDebug.sectionAssertions",
+    descriptionKey: "memoryDebug.sectionAssertionsDescription",
   },
 ];
 
 export const DIAGNOSTICS_VIEWS: Array<{
   id: DiagnosticsView;
-  label: string;
-  description: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
 }> = [
   {
     id: "routing",
-    label: "Routing",
-    description:
-      "How memory questions were classified and when the backup classifier intervened.",
+    labelKey: "memoryDebug.viewRouting",
+    descriptionKey: "memoryDebug.viewRoutingDescription",
   },
   {
     id: "quality",
-    label: "Quality",
-    description:
-      "Coverage, missing links, and other signals that lower memory reliability.",
+    labelKey: "memoryDebug.viewQuality",
+    descriptionKey: "memoryDebug.viewQualityDescription",
   },
   {
     id: "audit",
-    label: "Audit",
-    description:
-      "Recent system events, tool calls, and technical results tied to memory behavior.",
+    labelKey: "memoryDebug.viewAudit",
+    descriptionKey: "memoryDebug.viewAuditDescription",
   },
 ];
 
 export const MEMORY_DATA_VIEWS: Array<{
   id: MemoryDataView;
-  label: string;
-  description: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
 }> = [
   {
     id: "context",
-    label: "Context snapshot",
-    description: "What the system is currently pulling into memory context.",
+    labelKey: "memoryDebug.viewContext",
+    descriptionKey: "memoryDebug.viewContextDescription",
   },
   {
     id: "timeline",
-    label: "Timeline",
-    description: "Messages, records, and assertions arranged in time order.",
+    labelKey: "memoryDebug.viewTimeline",
+    descriptionKey: "memoryDebug.viewTimelineDescription",
   },
   {
     id: "links",
-    label: "Memory links",
-    description: "How assertions, records, and messages connect to each other.",
+    labelKey: "memoryDebug.viewLinks",
+    descriptionKey: "memoryDebug.viewLinksDescription",
   },
   {
     id: "files",
-    label: "File context",
-    description:
-      "Stored summaries and chunks for attached files that were too large to inline safely.",
+    labelKey: "memoryDebug.viewFiles",
+    descriptionKey: "memoryDebug.viewFilesDescription",
   },
 ];
 
 export const PROCESSING_LOG_VIEWS: Array<{
   id: ProcessingLogsView;
-  label: string;
-  description: string;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
 }> = [
   {
     id: "records-log",
-    label: "Records log",
-    description: "Detailed records for record creation, skips, and failures.",
+    labelKey: "memoryDebug.viewRecordsLog",
+    descriptionKey: "memoryDebug.viewRecordsLogDescription",
   },
 ];
 
@@ -165,7 +162,10 @@ export const SUMMARIES_LOG_COLORS: Record<string, string> = {
   unsafe_output: "bg-red-500/10 text-red-400 border-red-500/20",
 };
 
-export const SORT_OPTIONS = [
-  { value: "desc", label: "Newest first" },
-  { value: "asc", label: "Oldest first" },
+export const SORT_OPTIONS: ReadonlyArray<{
+  value: "desc" | "asc";
+  labelKey: TranslationKey;
+}> = [
+  { value: "desc", labelKey: "memoryDebug.sortNewestFirst" },
+  { value: "asc", labelKey: "memoryDebug.sortOldestFirst" },
 ] as const;

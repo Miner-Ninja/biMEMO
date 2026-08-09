@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { AuditEntry } from "@/components/admin/memory-debug/types";
 import {
   AuditEventBadge,
   SectionIntro,
   formatTimestamp,
+  AutoRefreshBadge,
 } from "@/components/admin/memory-debug/shared";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +18,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
 
 export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,8 +51,8 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
   return (
     <div className="space-y-6">
       <SectionIntro
-        title="Audit diagnostics"
-        description="Review recent system events, tool activity, and technical results tied to memory processing."
+        title={t("memoryDebug.auditDiagnosticsTitle")}
+        description={t("memoryDebug.auditDiagnosticsDescription")}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,7 +62,7 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
             size="sm"
             onClick={() => setFilter("")}
           >
-            All
+            {t("memoryDebug.all")}
           </Button>
           {eventTypes.map((eventType) => (
             <Button
@@ -72,15 +75,13 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
             </Button>
           ))}
         </div>
-        <div className="text-xs text-muted-foreground">
-          Auto-refreshes every 5 seconds {loading ? "(loading...)" : ""}
-        </div>
+        <AutoRefreshBadge seconds={5} />
       </div>
 
       <div className="space-y-3">
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <Card key={entry.id}>
-            <Collapsible>
+            <Collapsible defaultOpen={index === 0}>
               <CollapsibleTrigger className="w-full">
                 <CardHeader className="pb-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -109,7 +110,7 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
                   {entry.parameters ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                        Parameters
+                        {t("memoryDebug.parameters")}
                       </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {entry.parameters}
@@ -119,7 +120,7 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
                   {entry.result ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                        Result
+                        {t("memoryDebug.result")}
                       </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {entry.result.slice(0, 1000)}
@@ -134,8 +135,8 @@ export function AuditDiagnosticsPanel({ refreshToken }: { refreshToken: number }
         ))}
         {entries.length === 0 && !loading ? (
           <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              No audit entries match the current filter.
+            <CardContent className="font-prose p-4 text-sm text-muted-foreground">
+              {t("memoryDebug.noAuditEntries")}
             </CardContent>
           </Card>
         ) : null}

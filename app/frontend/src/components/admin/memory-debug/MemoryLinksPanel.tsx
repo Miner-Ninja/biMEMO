@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PanelSkeleton } from "@/components/ui/skeletons";
+import { AssertionCard } from "@/components/admin/memory-debug/AssertionCard";
 import type { ContextData } from "@/components/admin/memory-debug/types";
 import {
   ContentDisplay,
@@ -17,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
 
 export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<ContextData | null>(null);
   const [error, setError] = useState("");
 
@@ -29,7 +32,7 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
   if (error)
     return (
       <div className="p-4 text-sm text-red-400">
-        Memory links could not be loaded: {error}
+        {t("memoryDebug.linksLoadError", { error })}
       </div>
     );
   if (!data) return <PanelSkeleton />;
@@ -48,10 +51,10 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Assertion to record to message chain</CardTitle>
+          <CardTitle>{t("memoryDebug.assertionChainTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {assertionEntries.map((summaryEntry) => {
+          {assertionEntries.map((summaryEntry, index) => {
             const recordRelations = normalizeStringArray(
               summaryEntry.source_record_ids
             ).map((recordId) => ({
@@ -76,29 +79,32 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
             return (
               <Collapsible
                 key={String(summaryEntry.id)}
+                defaultOpen={index === 0}
                 className="rounded-xl border border-border bg-muted/10"
               >
                 <CollapsibleTrigger className="w-full p-4 text-left">
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <TypeBadge type="assertion" />
-                      {summaryEntry.invalid_from ? (
-                        <span className="text-xs text-red-400">invalidated</span>
-                      ) : null}
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {String(summaryEntry.created_at || "")}
-                      </span>
-                    </div>
-                    <div className="line-clamp-3 text-sm whitespace-pre-wrap text-left">
-                      {String(
+                  <AssertionCard
+                    data={{
+                      id: String(summaryEntry.id),
+                      text: String(
                         summaryEntry.assertion_text || summaryEntry.content || ""
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {linkedRecords.length} linked record
-                      {linkedRecords.length === 1 ? "" : "s"}
-                    </div>
-                  </div>
+                      ),
+                      relation:
+                        typeof summaryEntry.relation === "string"
+                          ? summaryEntry.relation
+                          : undefined,
+                      trustLevel:
+                        typeof summaryEntry.trust_level === "string"
+                          ? summaryEntry.trust_level
+                          : undefined,
+                      invalidFrom:
+                        typeof summaryEntry.invalid_from === "string"
+                          ? summaryEntry.invalid_from
+                          : null,
+                      createdAt: String(summaryEntry.created_at || ""),
+                      linkedRecordCount: linkedRecords.length,
+                    }}
+                  />
                 </CollapsibleTrigger>
                 <CollapsibleContent className="border-t border-border p-4 pt-4">
                   <div className="space-y-3 border-l border-border pl-4">
@@ -149,8 +155,8 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
                       );
                     })}
                     {linkedRecords.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">
-                        No linked records are currently available for this summary.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noLinkedRecords")}
                       </div>
                     ) : null}
                   </div>
@@ -159,8 +165,8 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
             );
           })}
           {assertionEntries.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No assertion chains are available yet.
+            <div className="font-prose text-sm text-muted-foreground">
+              {t("memoryDebug.noAssertionChains")}
             </div>
           ) : null}
         </CardContent>

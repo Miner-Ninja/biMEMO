@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { RecordsLogEntry } from "@/components/admin/memory-debug/types";
-import { RecordsLogBadge } from "@/components/admin/memory-debug/shared";
+import {
+  RecordsLogBadge,
+  AutoRefreshBadge,
+} from "@/components/admin/memory-debug/shared";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -21,6 +25,7 @@ function shortId(value: string | undefined): string {
 }
 
 export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<RecordsLogEntry[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,7 +60,7 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
           variant={filter === "" ? "default" : "outline"}
           onClick={() => setFilter("")}
         >
-          All
+          {t("memoryDebug.all")}
         </Button>
         {decisions.map((decision) => (
           <Button
@@ -67,15 +72,15 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
             {decision.replace(/_/g, " ")}
           </Button>
         ))}
-        <span className="ml-auto text-xs text-muted-foreground">
-          Refreshes every 5 seconds{loading ? " · loading..." : ""}
+        <span className="ml-auto">
+          <AutoRefreshBadge seconds={5} />
         </span>
       </div>
 
       <div className="space-y-3">
         {entries.map((entry, index) => (
           <Card key={`${entry.timestamp}-${index}`}>
-            <Collapsible>
+            <Collapsible defaultOpen={index === 0}>
               <CollapsibleTrigger className="w-full">
                 <CardHeader className="space-y-3 pb-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -85,13 +90,23 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
                     </span>
                     {entry.record_id ? (
                       <span className="text-xs text-muted-foreground">
-                        record {shortId(entry.record_id)}
+                        {t("memoryDebug.recordShortId", {
+                          id: shortId(entry.record_id),
+                        })}
                       </span>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>messages {entry.message_count}</span>
-                    <span>source IDs {entry.source_message_ids?.length ?? 0}</span>
+                    <span>
+                      {t("memoryDebug.messagesCountLabel", {
+                        value: entry.message_count,
+                      })}
+                    </span>
+                    <span>
+                      {t("memoryDebug.sourceIdsLabel", {
+                        value: entry.source_message_ids?.length ?? 0,
+                      })}
+                    </span>
                   </div>
                   {entry.summary ? (
                     <div className="line-clamp-3 text-sm leading-6 whitespace-pre-wrap text-left">
@@ -104,21 +119,33 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
                 <CardContent className="space-y-3">
                   {entry.model ? (
                     <div className="text-xs text-muted-foreground">
-                      model: {entry.model}
+                      {t("memoryDebug.modelLabel", { value: entry.model })}
                     </div>
                   ) : null}
                   <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                    <div>conversation: {entry.conversation_id || "n/a"}</div>
-                    <div>session: {entry.session_id || "n/a"}</div>
+                    <div>
+                      {t("memoryDebug.conversationLabel", {
+                        value: entry.conversation_id || t("memoryDebug.notAvailable"),
+                      })}
+                    </div>
+                    <div>
+                      {t("memoryDebug.sessionLabel", {
+                        value: entry.session_id || t("memoryDebug.notAvailable"),
+                      })}
+                    </div>
                   </div>
                   {entry.key_facts?.length ? (
                     <div className="text-xs text-muted-foreground">
-                      key facts: {entry.key_facts.join(" | ")}
+                      {t("memoryDebug.keyFactsLabel", {
+                        value: entry.key_facts.join(" | "),
+                      })}
                     </div>
                   ) : null}
                   {entry.action_items?.length ? (
                     <div className="text-xs text-muted-foreground">
-                      action items: {entry.action_items.join(" | ")}
+                      {t("memoryDebug.actionItemsLabel", {
+                        value: entry.action_items.join(" | "),
+                      })}
                     </div>
                   ) : null}
                   {entry.error ? (
@@ -129,7 +156,7 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
                   ) : null}
                   <details className="text-xs">
                     <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                      Input messages
+                      {t("memoryDebug.inputMessages")}
                     </summary>
                     <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                       {entry.messages.join("\n---\n")}
@@ -138,7 +165,7 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
                   {entry.prompt?.length ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                        Prompt
+                        {t("memoryDebug.promptLabel")}
                       </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {JSON.stringify(entry.prompt, null, 2)}
@@ -148,7 +175,7 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
                   {entry.raw_output ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                        Raw output
+                        {t("memoryDebug.rawOutput")}
                       </summary>
                       <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-foreground">
                         {entry.raw_output}
@@ -162,8 +189,8 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
         ))}
         {entries.length === 0 && !loading ? (
           <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              No record log entries match the current filter.
+            <CardContent className="font-prose p-4 text-sm text-muted-foreground">
+              {t("memoryDebug.noRecordLogEntries")}
             </CardContent>
           </Card>
         ) : null}

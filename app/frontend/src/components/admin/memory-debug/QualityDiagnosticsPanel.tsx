@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PanelSkeleton } from "@/components/ui/skeletons";
 import type { QualityData } from "@/components/admin/memory-debug/types";
 import { SummaryCard } from "@/components/admin/memory-debug/shared";
+import { buildQualityIssues } from "@/components/admin/memory-debug/quality-issues";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
 
 export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<QualityData | null>(null);
   const [error, setError] = useState("");
 
@@ -19,7 +22,7 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
   if (error)
     return (
       <div className="p-4 text-sm text-red-400">
-        Quality diagnostics could not be loaded: {error}
+        {t("memoryDebug.qualityLoadError", { error })}
       </div>
     );
   if (!data) return <PanelSkeleton />;
@@ -32,43 +35,55 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
         ? "text-amber-400"
         : "text-red-400";
 
-  const issues: string[] = [];
-  if (data.assertions_with_missing_evidence > 0) {
-    issues.push(
-      `${data.assertions_with_missing_evidence} valid assertions cite records that were already pruned.`
-    );
-  }
-  if (data.assertions_without_evidence > 0) {
-    issues.push(
-      `${data.assertions_without_evidence} valid assertions carry no evidence records at all.`
-    );
-  }
-  if (data.duplicate_assertion_texts > 0) {
-    issues.push(
-      `${data.duplicate_assertion_texts} assertions repeat the same statement text.`
-    );
-  }
-  if (data.orphan_entities > 0) {
-    issues.push(`${data.orphan_entities} entities have no assertions in either role.`);
-  }
+  const issues = buildQualityIssues(data);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* The score and its reasons sit side by side (audit: the big
+          number appeared without any "why" next to it). */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_2fr]">
         <SummaryCard
-          title="Quality score"
+          title={t("memoryDebug.qualityScore")}
           value={`${scorePercent}%`}
-          detail="Graph memory health."
+          detail={t("memoryDebug.graphMemoryHealth")}
           toneClassName={scoreTone}
         />
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("memoryDebug.issuesTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {issues.length > 0 ? (
+              <div className="space-y-2">
+                {issues.map((issue) => (
+                  <div
+                    key={issue}
+                    className="font-prose rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-200"
+                  >
+                    {issue}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="font-prose rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                {t("memoryDebug.noIssues")}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
-          title="Valid assertions"
+          title={t("memoryDebug.validAssertions")}
           value={data.assertions_valid}
-          detail={`${data.assertions_invalidated} invalidated kept as history`}
+          detail={t("memoryDebug.invalidatedKeptAsHistory", {
+            count: data.assertions_invalidated,
+          })}
           toneClassName="text-violet-400"
         />
         <SummaryCard
-          title="Evidence integrity"
+          title={t("memoryDebug.evidenceIntegrity")}
           value={
             data.assertions_valid > 0
               ? `${Math.round(
@@ -80,13 +95,13 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 )}%`
               : "—"
           }
-          detail="Valid assertions whose cited records still exist."
+          detail={t("memoryDebug.evidenceIntegrityDetail")}
           toneClassName="text-blue-400"
         />
         <SummaryCard
-          title="Orphan entities"
+          title={t("memoryDebug.orphanEntities")}
           value={data.orphan_entities}
-          detail="Nodes without any assertions (pruned after 24h)."
+          detail={t("memoryDebug.orphanEntitiesDetail")}
           toneClassName="text-orange-400"
         />
       </div>
@@ -94,51 +109,33 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
       <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Current quality issues</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {issues.length > 0 ? (
-              <div className="space-y-2">
-                {issues.map((issue) => (
-                  <div
-                    key={issue}
-                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-200"
-                  >
-                    {issue}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-                No major quality issues are visible in the current snapshot.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Tier counts</CardTitle>
+            <CardTitle>{t("memoryDebug.tierCounts")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Messages</span>
+              <span className="text-muted-foreground">{t("memoryDebug.messages")}</span>
               <span>{data.counts.message}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Records</span>
+              <span className="text-muted-foreground">{t("memoryDebug.records")}</span>
               <span>{data.counts.record}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Assertions</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.assertions")}
+              </span>
               <span>{data.counts.assertion}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Assertions without evidence</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.assertionsWithoutEvidence")}
+              </span>
               <span>{data.assertions_without_evidence}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Duplicate assertion texts</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.duplicateAssertionTexts")}
+              </span>
               <span>{data.duplicate_assertion_texts}</span>
             </div>
           </CardContent>

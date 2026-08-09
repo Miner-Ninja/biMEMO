@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText, ImageIcon, Mic } from "lucide-react";
 
 import {
@@ -73,6 +74,7 @@ export function formatTimestamp(timestamp: number): string {
 }
 
 export function ContentDisplay({ content }: { content: unknown }) {
+  const { t } = useTranslation();
   const { text, hasImages, imageCount } = formatContent(content);
   const display = text.slice(0, 500) + (text.length > 500 ? "..." : "");
 
@@ -81,7 +83,7 @@ export function ContentDisplay({ content }: { content: unknown }) {
       {hasImages && (
         <span className="mr-2 inline-flex items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-400">
           <ImageIcon className="h-3 w-3" />
-          {imageCount > 1 ? `${imageCount} images` : "image"}
+          {t("memoryDebug.imageCount", { count: imageCount })}
         </span>
       )}
       {display}
@@ -90,6 +92,7 @@ export function ContentDisplay({ content }: { content: unknown }) {
 }
 
 export function MetaBadges({ meta }: { meta: unknown }) {
+  const { t } = useTranslation();
   const parsed = parseMeta(meta);
   const source = parsed.source as string | undefined;
   const imagesCount = parsed.images_count as number | undefined;
@@ -107,7 +110,7 @@ export function MetaBadges({ meta }: { meta: unknown }) {
           variant="outline"
         >
           <Mic className="h-3 w-3" />
-          voice
+          {t("memoryDebug.voice")}
         </Badge>
       )}
       {imagesCount != null && imagesCount > 0 && (
@@ -116,7 +119,7 @@ export function MetaBadges({ meta }: { meta: unknown }) {
           variant="outline"
         >
           <ImageIcon className="h-3 w-3" />
-          {imagesCount > 1 ? `${imagesCount} images` : "image"}
+          {t("memoryDebug.imageCount", { count: imagesCount })}
         </Badge>
       )}
       {files.map((name) => (
@@ -193,6 +196,18 @@ export function SummariesLogBadge({ decision }: { decision: string }) {
   return <NamedBadge value={decision} colors={SUMMARIES_LOG_COLORS} />;
 }
 
+/** Honest polling indicator (audit: only some panels auto-poll and the
+ * page-level "Last refreshed" label did not reflect that). */
+export function AutoRefreshBadge({ seconds }: { seconds: number }) {
+  const { t } = useTranslation();
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+      {t("memoryDebug.autoRefreshEverySeconds", { seconds })}
+    </span>
+  );
+}
+
 export function SectionIntro({
   title,
   description,
@@ -206,7 +221,7 @@ export function SectionIntro({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="font-prose text-sm text-muted-foreground">{description}</p>
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
@@ -243,7 +258,7 @@ export function SummaryCard({
       </CardHeader>
       {detail ? (
         <CardContent>
-          <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+          <p className="font-prose text-sm leading-6 text-muted-foreground">{detail}</p>
         </CardContent>
       ) : null}
     </Card>
@@ -261,7 +276,7 @@ export function EmptyStateCard({
     <Card className="border-dashed">
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardDescription className="font-prose">{description}</CardDescription>
       </CardHeader>
     </Card>
   );

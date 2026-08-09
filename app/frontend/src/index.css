@@ -349,3 +349,11 @@
       0 0 20px 6px rgb(239 68 68 / 0.6);
   }
 }
+
+/* Memory-debug tool: prose in a regular face while the app stays mono.
+   Data, ids and traces keep the global JetBrains Mono. */
+@layer utilities {
+  .font-prose {
+    font-family: "Inter Variable", sans-serif;
+  }
+}

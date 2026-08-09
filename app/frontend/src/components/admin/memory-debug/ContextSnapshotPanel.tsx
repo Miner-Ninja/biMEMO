@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PanelSkeleton } from "@/components/ui/skeletons";
 import type { ContextData } from "@/components/admin/memory-debug/types";
@@ -41,6 +42,7 @@ function sortEntries(
 }
 
 export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [data, setData] = useState<ContextData | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -55,7 +57,7 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
   if (error)
     return (
       <div className="p-4 text-sm text-red-400">
-        Context snapshot could not be loaded: {error}
+        {t("memoryDebug.contextLoadError", { error })}
       </div>
     );
   if (!data) return <PanelSkeleton />;
@@ -68,19 +70,19 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
           variant={sortOrder === "desc" ? "default" : "outline"}
           onClick={() => setSortOrder("desc")}
         >
-          Newest first
+          {t("memoryDebug.sortNewestFirst")}
         </Button>
         <Button
           size="sm"
           variant={sortOrder === "asc" ? "default" : "outline"}
           onClick={() => setSortOrder("asc")}
         >
-          Oldest first
+          {t("memoryDebug.sortOldestFirst")}
         </Button>
       </div>
 
       <div className="space-y-4">
-        {Object.entries(data.tiers || {}).map(([tierName, tier]) => {
+        {Object.entries(data.tiers || {}).map(([tierName, tier], tierIndex) => {
           const isMessages = tierName === "recent_messages";
           const entries = sortEntries(tier.entries, isMessages, sortOrder);
           const badgeType =
@@ -89,7 +91,9 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
               : tierName === "records"
                 ? "record"
                 : "assertion";
-          const isExpanded = expanded[tierName] ?? false;
+          // The first tier opens by itself so the first screen shows data
+          // (audit: collapsed bars carry zero information).
+          const isExpanded = expanded[tierName] ?? tierIndex === 0;
 
           return (
             <Card key={tierName}>
@@ -110,7 +114,9 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
                     </CardTitle>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {tier.count ?? tier.entries.length} entries
+                    {t("memoryDebug.entriesCount", {
+                      count: tier.count ?? tier.entries.length,
+                    })}
                   </div>
                 </button>
               </CardHeader>
@@ -146,8 +152,8 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
                     </div>
                   ))}
                   {entries.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                      No entries in this context tier.
+                    <div className="font-prose text-sm text-muted-foreground">
+                      {t("memoryDebug.noEntriesInTier")}
                     </div>
                   ) : null}
                 </CardContent>

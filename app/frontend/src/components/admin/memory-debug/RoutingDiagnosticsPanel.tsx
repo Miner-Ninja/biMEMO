@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
+import type { TranslationKey } from "@/i18n";
 import { PanelSkeleton } from "@/components/ui/skeletons";
 import type {
   RouteDiagnosticEntry,
@@ -8,6 +11,7 @@ import type {
 import {
   RouteMismatchBadge,
   SummaryCard,
+  AutoRefreshBadge,
 } from "@/components/admin/memory-debug/shared";
 import {
   Collapsible,
@@ -18,8 +22,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
 
+const TIME_WINDOWS: ReadonlyArray<{
+  labelKey: TranslationKey;
+  value: number | null;
+}> = [
+  { labelKey: "memoryDebug.lastHour", value: 1 },
+  { labelKey: "memoryDebug.last24h", value: 24 },
+  { labelKey: "memoryDebug.last7d", value: 168 },
+  { labelKey: "memoryDebug.allRetained", value: null },
+];
+
 function buildTopProblems(
-  summary: RouteDiagnosticsSummaryData
+  summary: RouteDiagnosticsSummaryData,
+  t: TFunction
 ): Array<{ label: string; count: number; toneClassName: string }> {
   const problems: Array<{ label: string; count: number; toneClassName: string }> = [];
   const topMismatch = summary.mismatch_labels.find(
@@ -27,7 +42,9 @@ function buildTopProblems(
   );
   if (topMismatch) {
     problems.push({
-      label: `Top route change: ${topMismatch.label.replace(/_/g, " ")}`,
+      label: t("memoryDebug.topRouteChange", {
+        value: topMismatch.label.replace(/_/g, " "),
+      }),
       count: topMismatch.count,
       toneClassName: "text-orange-400",
     });
@@ -35,7 +52,9 @@ function buildTopProblems(
   const topFallbackReason = summary.fallback_reasons[0];
   if (topFallbackReason) {
     problems.push({
-      label: `Top fallback reason: ${topFallbackReason.reason}`,
+      label: t("memoryDebug.topFallbackReason", {
+        value: topFallbackReason.reason,
+      }),
       count: topFallbackReason.count,
       toneClassName: "text-amber-400",
     });
@@ -46,7 +65,7 @@ function buildTopProblems(
   );
   if (fallbackWithoutChange > 0) {
     problems.push({
-      label: "Fallback ran without changing the route",
+      label: t("memoryDebug.fallbackWithoutRouteChange"),
       count: fallbackWithoutChange,
       toneClassName: "text-sky-400",
     });
@@ -55,6 +74,7 @@ function buildTopProblems(
 }
 
 export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<RouteDiagnosticsSummaryData | null>(null);
   const [entries, setEntries] = useState<RouteDiagnosticEntry[]>([]);
   const [recentHours, setRecentHours] = useState<number | null>(24);
@@ -89,7 +109,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
   if (error) {
     return (
       <div className="p-4 text-sm text-red-400">
-        Routing diagnostics could not be loaded: {error}
+        {t("memoryDebug.routingLoadError", { error })}
       </div>
     );
   }
@@ -97,7 +117,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
     return <PanelSkeleton />;
   }
 
-  const topProblems = buildTopProblems(summary);
+  const topProblems = buildTopProblems(summary, t);
 
   const exportSummaryJson = (): void => {
     const payload = {
@@ -126,44 +146,42 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2">
-        {[
-          { label: "Last hour", value: 1 },
-          { label: "Last 24h", value: 24 },
-          { label: "Last 7d", value: 168 },
-          { label: "All retained", value: null as number | null },
-        ].map((option) => (
+        {TIME_WINDOWS.map((option) => (
           <Button
-            key={option.label}
+            key={option.labelKey}
             size="sm"
             variant={recentHours === option.value ? "default" : "outline"}
             onClick={() => setRecentHours(option.value)}
           >
-            {option.label}
+            {t(option.labelKey)}
           </Button>
         ))}
         <Button size="sm" variant="outline" onClick={exportSummaryJson}>
-          Export JSON
+          {t("memoryDebug.exportJson")}
         </Button>
+        <span className="ml-auto">
+          <AutoRefreshBadge seconds={5} />
+        </span>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          title="Stored decisions"
+          title={t("memoryDebug.storedDecisions")}
           value={summary.totals.total_rows}
           toneClassName="text-blue-400"
         />
         <SummaryCard
-          title="Fallback used"
+          title={t("memoryDebug.fallbackUsed")}
           value={summary.totals.fallback_rows}
           toneClassName="text-amber-400"
         />
         <SummaryCard
-          title="Route changed"
+          title={t("memoryDebug.routeChanged")}
           value={summary.totals.mismatch_rows}
           toneClassName="text-orange-400"
         />
         <SummaryCard
-          title="Long-term mode"
+          title={t("memoryDebug.longTermMode")}
           value={summary.totals.long_term_rows}
           toneClassName="text-violet-400"
         />
@@ -171,7 +189,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
 
       <Card>
         <CardHeader>
-          <CardTitle>Top current problems</CardTitle>
+          <CardTitle>{t("memoryDebug.topCurrentProblems")}</CardTitle>
         </CardHeader>
         <CardContent>
           {topProblems.length > 0 ? (
@@ -189,8 +207,8 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-              No clear routing problems are visible in this time window.
+            <div className="font-prose rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+              {t("memoryDebug.noRoutingProblems")}
             </div>
           )}
         </CardContent>
@@ -199,7 +217,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>Route changes</CardTitle>
+            <CardTitle>{t("memoryDebug.routeChanges")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {summary.mismatch_labels.length > 0 ? (
@@ -213,8 +231,8 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No route changes recorded.
+              <p className="font-prose text-sm text-muted-foreground">
+                {t("memoryDebug.noRouteChangesRecorded")}
               </p>
             )}
           </CardContent>
@@ -222,7 +240,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
 
         <Card>
           <CardHeader>
-            <CardTitle>Final route types</CardTitle>
+            <CardTitle>{t("memoryDebug.finalRouteTypes")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {summary.final_intents.length > 0 ? (
@@ -236,14 +254,16 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">No route data recorded.</p>
+              <p className="font-prose text-sm text-muted-foreground">
+                {t("memoryDebug.noRouteDataRecorded")}
+              </p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Fallback reasons</CardTitle>
+            <CardTitle>{t("memoryDebug.fallbackReasons")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {summary.fallback_reasons.length > 0 ? (
@@ -257,8 +277,8 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No fallback activity recorded.
+              <p className="font-prose text-sm text-muted-foreground">
+                {t("memoryDebug.noFallbackActivity")}
               </p>
             )}
           </CardContent>
@@ -267,12 +287,13 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent route decisions</CardTitle>
+          <CardTitle>{t("memoryDebug.recentRouteDecisions")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {entries.map((entry) => (
+          {entries.map((entry, index) => (
             <Collapsible
               key={entry.id}
+              defaultOpen={index === 0}
               className="rounded-lg border border-border bg-muted/10"
             >
               <CollapsibleTrigger className="w-full p-4 text-left">
@@ -281,12 +302,12 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                     <RouteMismatchBadge label={entry.mismatch_label} />
                     {entry.fallback.attempted ? (
                       <span className="inline-flex items-center rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
-                        fallback used
+                        {t("memoryDebug.fallbackUsedBadge")}
                       </span>
                     ) : null}
                     {entry.used_long_term_mode ? (
                       <span className="inline-flex items-center rounded-md border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-400">
-                        long-term mode
+                        {t("memoryDebug.longTermModeBadge")}
                       </span>
                     ) : null}
                     <span className="ml-auto text-xs text-muted-foreground">
@@ -295,19 +316,25 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                   </div>
                   <div className="grid gap-2 md:grid-cols-3">
                     <div className="rounded-lg border border-border bg-background p-3">
-                      <div className="text-xs text-muted-foreground">Initial route</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("memoryDebug.initialRoute")}
+                      </div>
                       <div className="mt-1 font-medium">
                         {entry.initial_route.intent}
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background p-3">
-                      <div className="text-xs text-muted-foreground">Fallback</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("memoryDebug.fallbackLabel")}
+                      </div>
                       <div className="mt-1 font-medium">
-                        {entry.fallback.intent || "not used"}
+                        {entry.fallback.intent || t("memoryDebug.notUsed")}
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background p-3">
-                      <div className="text-xs text-muted-foreground">Final route</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("memoryDebug.finalRoute")}
+                      </div>
                       <div className="mt-1 font-medium">{entry.final_route.intent}</div>
                     </div>
                   </div>
@@ -317,7 +344,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 <div className="grid gap-2 pt-4 md:grid-cols-3">
                   <div className="rounded-lg border border-border bg-background p-3">
                     <div className="text-xs text-muted-foreground">
-                      Initial route details
+                      {t("memoryDebug.initialRouteDetails")}
                     </div>
                     <div className="mt-1 font-medium">{entry.initial_route.intent}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
@@ -326,18 +353,18 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                   </div>
                   <div className="rounded-lg border border-border bg-background p-3">
                     <div className="text-xs text-muted-foreground">
-                      Fallback details
+                      {t("memoryDebug.fallbackDetails")}
                     </div>
                     <div className="mt-1 font-medium">
-                      {entry.fallback.intent || "not used"}
+                      {entry.fallback.intent || t("memoryDebug.notUsed")}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {entry.fallback.reason || "none"}
+                      {entry.fallback.reason || t("memoryDebug.none")}
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-background p-3">
                     <div className="text-xs text-muted-foreground">
-                      Final route details
+                      {t("memoryDebug.finalRouteDetails")}
                     </div>
                     <div className="mt-1 font-medium">{entry.final_route.intent}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
@@ -346,17 +373,33 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                   </div>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                  <div>conversation: {entry.conversation_id || "n/a"}</div>
-                  <div>session: {entry.session_id || "n/a"}</div>
-                  <div>message: {entry.message_id || "n/a"}</div>
-                  <div>channel: {entry.channel || "n/a"}</div>
+                  <div>
+                    {t("memoryDebug.conversationLabel", {
+                      value: entry.conversation_id || t("memoryDebug.notAvailable"),
+                    })}
+                  </div>
+                  <div>
+                    {t("memoryDebug.sessionLabel", {
+                      value: entry.session_id || t("memoryDebug.notAvailable"),
+                    })}
+                  </div>
+                  <div>
+                    {t("memoryDebug.messageLabel", {
+                      value: entry.message_id || t("memoryDebug.notAvailable"),
+                    })}
+                  </div>
+                  <div>
+                    {t("memoryDebug.channelLabel", {
+                      value: entry.channel || t("memoryDebug.notAvailable"),
+                    })}
+                  </div>
                 </div>
               </CollapsibleContent>
             </Collapsible>
           ))}
           {entries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No route diagnostics have been stored yet.
+            <p className="font-prose text-sm text-muted-foreground">
+              {t("memoryDebug.noRouteDiagnostics")}
             </p>
           ) : null}
         </CardContent>
