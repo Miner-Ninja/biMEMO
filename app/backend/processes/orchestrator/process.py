@@ -184,7 +184,12 @@ def _build_runtime_ipc_server(
     """Build the IPC server that exposes the runtime to FastAPI."""
     from .bridge_handler import _build_bridge_inbound_handler
     from .chat_handler import _build_orchestrator_request_handler
-    from .factories import make_mcp_ask_fn, make_mcp_memory_remember_fn, make_save_fn
+    from .factories import (
+        make_mcp_ask_fn,
+        make_mcp_memory_remember_fn,
+        make_memory_invalidate_fn,
+        make_save_fn,
+    )
 
     # Reuse the orchestrator's existing queue-backed record writer so one-way
     # remember facts enter the normal memory pipeline (row 8). It is set during
@@ -229,6 +234,7 @@ def _build_runtime_ipc_server(
             db_client, save_record_fn=save_record_fn
         ),
         mcp_ask_fn=mcp_ask_fn,
+        memory_invalidate_fn=make_memory_invalidate_fn(db_client),
     )
 
 

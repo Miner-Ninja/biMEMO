@@ -271,6 +271,13 @@ class FindEntitiesParams(ForbidExtraParams):
     limit: int = 20
 
 
+class ListEntitiesParams(ForbidExtraParams):
+    """Parameters for list_entities operation."""
+
+    limit: int = 50
+    offset: int = 0
+
+
 class ListAssertionsForEntityParams(ForbidExtraParams):
     """Parameters for list_assertions_for_entity operation."""
 

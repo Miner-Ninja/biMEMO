@@ -58,6 +58,12 @@ from backend.ipc.models import (
     McpMemoryRememberResponse as IPCMcpMemoryRememberResponse,
 )
 from backend.ipc.models import (
+    MemoryInvalidateRequest as IPCMemoryInvalidateRequest,
+)
+from backend.ipc.models import (
+    MemoryInvalidateResponse as IPCMemoryInvalidateResponse,
+)
+from backend.ipc.models import (
     ReloadLLMRequest as IPCReloadLLMRequest,
 )
 from backend.ipc.models import (
@@ -380,6 +386,38 @@ class OrchestratorClient:
             content=content,
             channel=channel,
             agent_id=agent_id,
+        )
+        return await self._send_request_and_wait(
+            request=request,
+            timeout=timeout,
+        )
+
+    async def memory_invalidate(
+        self,
+        *,
+        assertion_id: str,
+        reason: str,
+        timeout: float = 10.0,
+    ) -> IPCMemoryInvalidateResponse:
+        """Invalidate one graph assertion via the Orchestrator.
+
+        The write executes in the orchestrator process (Socket A); the
+        web-facing FastAPI process never writes memory content directly.
+
+        Args:
+            assertion_id: Assertion to invalidate.
+            reason: User-stated reason ("forget" or "incorrect"), logged
+                for diagnostics.
+            timeout: Maximum wait time in seconds.
+
+        Returns:
+            MemoryInvalidateResponse with the invalidation result.
+        """
+        self._require_connected()
+        request = IPCMemoryInvalidateRequest(
+            request_id=str(uuid.uuid4()),
+            assertion_id=assertion_id,
+            reason=reason,
         )
         return await self._send_request_and_wait(
             request=request,
