@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   ChevronDown,
@@ -121,25 +122,29 @@ function renderTree(
 }
 
 export function WorkspaceFileTree({ onFileSelect }: WorkspaceFileTreeProps) {
+  const { t } = useTranslation();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDir = useCallback(async (path: string) => {
-    try {
-      const data = await fetchWorkspaceTree(path);
-      const nodes: TreeNode[] = data.items.map((item) => ({
-        ...item,
-        expanded: false,
-        loading: false,
-      }));
-      return nodes;
-    } catch (err) {
-      console.error(`Failed to load directory ${path}:`, err);
-      setError(err instanceof Error ? err.message : "Failed to load");
-      return null;
-    }
-  }, []);
+  const loadDir = useCallback(
+    async (path: string) => {
+      try {
+        const data = await fetchWorkspaceTree(path);
+        const nodes: TreeNode[] = data.items.map((item) => ({
+          ...item,
+          expanded: false,
+          loading: false,
+        }));
+        return nodes;
+      } catch (err) {
+        console.error(`Failed to load directory ${path}:`, err);
+        setError(err instanceof Error ? err.message : t("sidebar.failedToLoad"));
+        return null;
+      }
+    },
+    [t]
+  );
 
   // Load root on mount
   useEffect(() => {
@@ -218,7 +223,9 @@ export function WorkspaceFileTree({ onFileSelect }: WorkspaceFileTreeProps) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-2 px-3 py-2">
-          <SidebarSectionLabel className="mr-auto">Workspace</SidebarSectionLabel>
+          <SidebarSectionLabel className="mr-auto">
+            {t("sidebar.workspace")}
+          </SidebarSectionLabel>
           <Loader2 className="h-3.5 w-3.5 animate-spin text-sidebar-foreground/40" />
         </div>
         <div className="flex flex-1 items-center justify-center">
@@ -232,7 +239,9 @@ export function WorkspaceFileTree({ onFileSelect }: WorkspaceFileTreeProps) {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <SidebarSectionLabel className="mr-auto">Workspace</SidebarSectionLabel>
+        <SidebarSectionLabel className="mr-auto">
+          {t("sidebar.workspace")}
+        </SidebarSectionLabel>
         <Button
           variant="ghost"
           size="sm"
@@ -259,7 +268,7 @@ export function WorkspaceFileTree({ onFileSelect }: WorkspaceFileTreeProps) {
       <div className="flex-1 min-h-0 overflow-y-auto px-1 py-1">
         {tree.length === 0 ? (
           <p className="px-3 py-4 text-center text-sm text-sidebar-foreground/50">
-            No workspace configured
+            {t("sidebar.noWorkspaceConfigured")}
           </p>
         ) : (
           renderTree(tree, "", onFileSelect, loadDir, handleToggle, 0)

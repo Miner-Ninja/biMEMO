@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthContext, useAuthState, useAuth } from "@/hooks/useAuth";
 import { syncUiSettings } from "@/lib/ui-settings";
+import { applyStoredLanguage } from "@/i18n";
 import { AppSkeleton } from "@/components/ui/skeletons";
 import { ChatPage } from "@/pages/ChatPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -29,7 +30,9 @@ function AppRoutes() {
 
   useEffect(() => {
     if (authenticated) {
-      void syncUiSettings();
+      void syncUiSettings().then(() => {
+        applyStoredLanguage();
+      });
     }
   }, [authenticated]);
   const navigate = useNavigate();

@@ -1,4 +1,5 @@
 import { Info } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { BridgeProviderIcon } from "@/components/icons/BridgeProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ export function Header({
   onOpenBridgeDetails,
   className,
 }: HeaderProps) {
+  const { t } = useTranslation();
   return (
     <header
       className={cn(
@@ -35,13 +37,15 @@ export function Header({
       <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
           <h1 className="truncate text-[15px] font-semibold tracking-tight sm:text-lg">
-            {title || "CEO AI Assistant"}
+            {title || t("layout.appTitle")}
           </h1>
           {bridgeProvider ? (
             <Badge
               variant="info"
               className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px] sm:gap-1.5 sm:px-2 sm:text-xs"
-              title={`${bridgeProviderLabel(bridgeProvider)} bridge connected`}
+              title={t("layout.bridgeConnected", {
+                provider: bridgeProviderLabel(bridgeProvider),
+              })}
             >
               <BridgeProviderIcon provider={bridgeProvider} className="h-3 w-3" />
               <span className="hidden sm:inline">
@@ -59,7 +63,7 @@ export function Header({
           size="icon"
           onClick={onOpenBridgeDetails}
           className="h-7.5 w-7.5 sm:h-9 sm:w-9"
-          aria-label="Chat bridge details"
+          aria-label={t("layout.chatBridgeDetails")}
         >
           <Info className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
         </Button>

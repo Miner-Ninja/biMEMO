@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,7 @@ export function ConfirmationCard({
   timeoutSeconds,
   onConfirm,
 }: ConfirmationCardProps) {
+  const { t } = useTranslation();
   const [remaining, setRemaining] = useState(timeoutSeconds);
   const [decided, setDecided] = useState(false);
 
@@ -46,11 +48,11 @@ export function ConfirmationCard({
         <div className="flex-1 space-y-3">
           <div>
             <h3 className="font-semibold text-amber-900 dark:text-amber-200">
-              Action Confirmation Required
+              {t("chat.actionConfirmationRequired")}
             </h3>
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              <span className="font-mono font-medium">{toolName}</span> wants to execute
-              with these parameters:
+              <span className="font-mono font-medium">{toolName}</span>{" "}
+              {t("chat.wantsToExecute")}
             </p>
           </div>
 
@@ -73,7 +75,7 @@ export function ConfirmationCard({
                 onClick={() => handleDecision(true)}
                 disabled={decided || remaining <= 0}
               >
-                Approve
+                {t("chat.approve")}
               </Button>
               <Button
                 variant="destructive"
@@ -81,16 +83,16 @@ export function ConfirmationCard({
                 onClick={() => handleDecision(false)}
                 disabled={decided || remaining <= 0}
               >
-                Deny
+                {t("chat.deny")}
               </Button>
             </div>
             {!decided && remaining > 0 && (
               <span className="text-xs text-amber-700 dark:text-amber-400">
-                Expires in {remaining}s
+                {t("chat.expiresIn", { seconds: remaining })}
               </span>
             )}
             {remaining <= 0 && !decided && (
-              <span className="text-xs text-destructive">Timed out</span>
+              <span className="text-xs text-destructive">{t("chat.timedOut")}</span>
             )}
           </div>
         </div>

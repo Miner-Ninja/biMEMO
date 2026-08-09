@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CheckCircle2, Clock3, OctagonAlert, ShieldAlert, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -6,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { confirmAction, denyAction } from "@/lib/bimemo-api";
+import type { TranslationKey } from "@/i18n";
 import type { PendingConfirmation } from "@/types/chat";
 import { cn } from "@/lib/utils";
 
-const TOOL_LABELS: Record<string, string> = {
-  http_fetch: "Fetch URL",
-  email_send: "Send Email",
+// Values are translation keys, resolved with t() at render time.
+const TOOL_LABEL_KEYS: Record<string, TranslationKey> = {
+  http_fetch: "chat.toolFetchUrl",
+  email_send: "chat.toolSendEmail",
 };
 
 const CONFIRMATION_TIMEOUT_MS = 300_000;
@@ -37,16 +40,19 @@ function getConfirmationStatusVariant(
   }
 }
 
-function getConfirmationStatusLabel(status: PendingConfirmation["status"]): string {
+// Returns a translation key, resolved with t() at render time.
+function getConfirmationStatusLabelKey(
+  status: PendingConfirmation["status"]
+): TranslationKey {
   switch (status) {
     case "approved":
-      return "Approved";
+      return "chat.approved";
     case "denied":
-      return "Denied";
+      return "chat.denied";
     case "expired":
-      return "Expired";
+      return "chat.expired";
     case "pending":
-      return "Pending approval";
+      return "chat.pendingApproval";
   }
 }
 
@@ -74,10 +80,12 @@ export default function ConfirmationCard({
   confirmation,
   onStatusChange,
 }: ConfirmationCardProps) {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
   const isResolved = confirmation.status !== "pending";
-  const label = TOOL_LABELS[confirmation.tool_name] || confirmation.tool_name;
+  const labelKey = TOOL_LABEL_KEYS[confirmation.tool_name];
+  const label = labelKey ? t(labelKey) : confirmation.tool_name;
   const parameterSummary = buildParameterSummary(confirmation.parameters);
   const StatusIcon = getConfirmationStatusIcon(confirmation.status);
 
@@ -137,7 +145,7 @@ export default function ConfirmationCard({
             </div>
           </div>
           <Badge variant={getConfirmationStatusVariant(confirmation.status)}>
-            {getConfirmationStatusLabel(confirmation.status)}
+            {t(getConfirmationStatusLabelKey(confirmation.status))}
           </Badge>
         </div>
       </CardHeader>
@@ -146,15 +154,15 @@ export default function ConfirmationCard({
         {isResolved ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <OctagonAlert className="h-4 w-4" />
-            Decision is already recorded for this action.
+            {t("chat.decisionRecorded")}
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleApprove} disabled={isLoading}>
-              Allow
+              {t("chat.allow")}
             </Button>
             <Button variant="outline" onClick={handleDeny} disabled={isLoading}>
-              Deny
+              {t("chat.deny")}
             </Button>
           </div>
         )}

@@ -1,16 +1,18 @@
 import { AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
 export function ErrorAlert({ error }: { error: string }) {
+  const { t } = useTranslation();
   if (!error) return null;
   return (
     <Card className="border-destructive/20 bg-destructive/5 shadow-none">
       <CardContent className="flex items-start gap-3 p-4">
         <Badge variant="danger" className="shrink-0 gap-1.5">
           <AlertTriangle className="h-3.5 w-3.5" />
-          Error
+          {t("common.error")}
         </Badge>
         <div className="text-sm text-destructive">{error}</div>
       </CardContent>

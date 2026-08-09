@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { BridgeProviderIcon } from "@/components/icons/BridgeProviderIcon";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ export function ChatItem({
   onDelete,
   onRename,
 }: ChatItemProps) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(chat.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,7 +89,9 @@ export function ChatItem({
   };
 
   const bridgeTitle = bridgeProvider
-    ? `${bridgeProvider.charAt(0).toUpperCase() + bridgeProvider.slice(1)} bridge connected`
+    ? t("sidebar.bridgeConnected", {
+        provider: bridgeProvider.charAt(0).toUpperCase() + bridgeProvider.slice(1),
+      })
     : "";
 
   return (
@@ -143,7 +147,7 @@ export function ChatItem({
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                aria-label="Chat actions"
+                aria-label={t("sidebar.chatActions")}
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -151,14 +155,14 @@ export function ChatItem({
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={handleStartEdit}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Rename
+                {t("sidebar.rename")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleDelete}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {t("common.delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

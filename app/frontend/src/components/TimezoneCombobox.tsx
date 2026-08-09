@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import { getTimezones } from "@/lib/timezones";
 
@@ -10,6 +11,7 @@ interface TimezoneComboboxProps {
 const MAX_ITEMS = 80;
 
 export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,7 +93,7 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
           setHighlighted(-1);
         }}
         onKeyDown={handleKeyDown}
-        placeholder="Search timezone, for example Europe/Vilnius"
+        placeholder={t("admin.searchTimezonePlaceholder")}
         autoComplete="off"
       />
 
@@ -102,7 +104,7 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
         >
           {filtered.length === 0 ? (
             <li className="px-3 py-2 text-sm text-muted-foreground">
-              No timezones found
+              {t("admin.noTimezonesFound")}
             </li>
           ) : (
             filtered.map((timezone, index) => (

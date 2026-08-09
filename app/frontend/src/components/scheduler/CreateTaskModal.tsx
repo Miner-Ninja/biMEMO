@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { Bell, Bot, Loader2 } from "lucide-react";
 import {
   type CreateScheduledTaskPayload,
@@ -71,19 +73,22 @@ function formFromTask(task: ScheduledTask): FormState {
 
 const ZONE_ORDER: TrustZone[] = ["green", "yellow", "red"];
 
-const ZONE_STYLES: Record<TrustZone, { label: string; chip: string; dot: string }> = {
+const ZONE_STYLES: Record<
+  TrustZone,
+  { labelKey: TranslationKey; chip: string; dot: string }
+> = {
   green: {
-    label: "Safe",
+    labelKey: "scheduler.zoneSafe",
     chip: "border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400",
     dot: "bg-emerald-500",
   },
   yellow: {
-    label: "Caution",
+    labelKey: "scheduler.zoneCaution",
     chip: "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400",
     dot: "bg-amber-500",
   },
   red: {
-    label: "Restricted",
+    labelKey: "scheduler.zoneRestricted",
     chip: "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400",
     dot: "bg-red-500",
   },
@@ -96,6 +101,7 @@ export function CreateTaskModal({
   onError,
   task,
 }: CreateTaskModalProps) {
+  const { t } = useTranslation();
   const isEdit = task != null;
   const [form, setForm] = useState<FormState>(makeInitialForm);
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
@@ -144,14 +150,14 @@ export function CreateTaskModal({
 
   const validate = (): boolean => {
     const next: Partial<Record<keyof FormState, string>> = {};
-    if (!form.name.trim()) next.name = "Name is required";
-    if (!form.prompt.trim()) next.prompt = "Prompt is required";
+    if (!form.name.trim()) next.name = t("scheduler.nameRequired");
+    if (!form.prompt.trim()) next.prompt = t("scheduler.promptRequired");
     const scheduleExpr = buildScheduleExpression(form.schedule);
-    if (!scheduleExpr) next.schedule = "Schedule is incomplete";
+    if (!scheduleExpr) next.schedule = t("scheduler.scheduleIncomplete");
     if (form.repeat_limit) {
       const n = Number(form.repeat_limit);
       if (!Number.isFinite(n) || n < 1) {
-        next.repeat_limit = "Must be a positive number";
+        next.repeat_limit = t("scheduler.positiveNumberRequired");
       }
     }
     setErrors(next);
@@ -190,8 +196,10 @@ export function CreateTaskModal({
       }
       onClose();
     } catch (err) {
-      const action = isEdit ? "update" : "create";
-      onError(err instanceof Error ? err.message : `Failed to ${action} task`);
+      const fallback = isEdit
+        ? t("scheduler.updateTaskFailed")
+        : t("scheduler.createTaskFailed");
+      onError(err instanceof Error ? err.message : fallback);
     } finally {
       setSubmitting(false);
     }
@@ -207,12 +215,12 @@ export function CreateTaskModal({
       <DialogContent className="max-w-5xl gap-3 p-5">
         <DialogHeader className="gap-1">
           <DialogTitle>
-            {isEdit ? "Edit Scheduled Task" : "Create Scheduled Task"}
+            {isEdit ? t("scheduler.editTaskTitle") : t("scheduler.createTaskTitle")}
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update task name, prompt, schedule, or allowed tools."
-              : "Configure when and how this task will run."}
+              ? t("scheduler.editTaskDescription")
+              : t("scheduler.createTaskDescription")}
           </DialogDescription>
         </DialogHeader>
         <form id="create-task-form" className="space-y-3" onSubmit={handleSubmit}>
@@ -221,15 +229,15 @@ export function CreateTaskModal({
             <div className="grid grid-cols-2 gap-2 rounded-md border border-input bg-background p-1">
               <TypeOption
                 icon={<Bot className="h-3.5 w-3.5" />}
-                label="AI Agent Task"
-                hint="Runs full agent loop with tools"
+                label={t("scheduler.agentTaskType")}
+                hint={t("scheduler.agentTaskTypeHint")}
                 active={form.task_type === "agent_task"}
                 onClick={() => update("task_type", "agent_task")}
               />
               <TypeOption
                 icon={<Bell className="h-3.5 w-3.5" />}
-                label="Reminder"
-                hint="Sends a notification only"
+                label={t("scheduler.reminderType")}
+                hint={t("scheduler.reminderTypeHint")}
                 active={form.task_type === "reminder"}
                 onClick={() => update("task_type", "reminder")}
               />
@@ -240,11 +248,11 @@ export function CreateTaskModal({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Left column: name + schedule builder */}
             <div className="space-y-3">
-              <Field label="Name" error={errors.name}>
+              <Field label={t("scheduler.nameLabel")} error={errors.name}>
                 <input
                   type="text"
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-ring/40 focus-visible:ring-[3px]"
-                  placeholder="Daily exchange rate report"
+                  placeholder={t("scheduler.namePlaceholder")}
                   value={form.name}
                   onChange={(e) => update("name", e.target.value)}
                   disabled={submitting}
@@ -252,7 +260,7 @@ export function CreateTaskModal({
                 />
               </Field>
 
-              <Field label="Schedule" error={errors.schedule}>
+              <Field label={t("scheduler.scheduleLabel")} error={errors.schedule}>
                 <ScheduleBuilder
                   value={form.schedule}
                   onChange={(next) => update("schedule", next)}
@@ -264,15 +272,19 @@ export function CreateTaskModal({
             {/* Right column: prompt + tools + repeat */}
             <div className="space-y-3">
               <Field
-                label={isAgent ? "Task instructions" : "Reminder text"}
+                label={
+                  isAgent
+                    ? t("scheduler.taskInstructionsLabel")
+                    : t("scheduler.reminderTextLabel")
+                }
                 error={errors.prompt}
               >
                 <textarea
                   className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed outline-none focus-visible:border-ring focus-visible:ring-ring/40 focus-visible:ring-[3px] min-h-[80px]"
                   placeholder={
                     isAgent
-                      ? "Search the web for current USD/EUR rates and summarize the change since yesterday."
-                      : "Take medication at 9am."
+                      ? t("scheduler.agentPromptPlaceholder")
+                      : t("scheduler.reminderPromptPlaceholder")
                   }
                   value={form.prompt}
                   onChange={(e) => update("prompt", e.target.value)}
@@ -284,14 +296,18 @@ export function CreateTaskModal({
               {isAgent && (
                 <div className="space-y-2 rounded-md border border-input bg-background/40 p-3">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium">Allowed tools</span>
+                    <span className="text-sm font-medium">
+                      {t("scheduler.allowedToolsLabel")}
+                    </span>
                     <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {form.allowed_tools.size} selected
+                      {t("scheduler.toolsSelected", {
+                        count: form.allowed_tools.size,
+                      })}
                     </span>
                   </div>
                   {tools.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
-                      No tools available. The task will run without tool access.
+                      {t("scheduler.noToolsAvailable")}
                     </p>
                   ) : (
                     <div className="max-h-[160px] space-y-2 overflow-y-auto pr-1">
@@ -305,7 +321,7 @@ export function CreateTaskModal({
                               <span
                                 className={cn("h-1.5 w-1.5 rounded-full", styles.dot)}
                               />
-                              {styles.label}
+                              {t(styles.labelKey)}
                             </span>
                             <div className="flex flex-1 flex-wrap gap-1">
                               {items.map((tool) => {
@@ -338,8 +354,8 @@ export function CreateTaskModal({
               )}
 
               <Field
-                label="Repeat limit"
-                hint="Leave empty to run forever"
+                label={t("scheduler.repeatLimitLabel")}
+                hint={t("scheduler.repeatLimitHint")}
                 error={errors.repeat_limit}
               >
                 <input
@@ -362,7 +378,7 @@ export function CreateTaskModal({
             onClick={onClose}
             disabled={submitting}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="submit"
@@ -373,11 +389,11 @@ export function CreateTaskModal({
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {submitting
               ? isEdit
-                ? "Saving..."
-                : "Creating..."
+                ? t("scheduler.savingButton")
+                : t("scheduler.creatingButton")
               : isEdit
-                ? "Save changes"
-                : "Create task"}
+                ? t("scheduler.saveChangesButton")
+                : t("scheduler.createTaskButton")}
           </button>
         </DialogFooter>
       </DialogContent>

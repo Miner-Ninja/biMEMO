@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
 import { authLogin, authSetup, waitForApplicationReady } from "@/lib/bimemo-api";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ErrorAlert } from "@/components/ui/error-alert";
 
 export function SetupPage() {
+  const { t } = useTranslation();
   const { setAuthenticated } = useAuth();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -28,7 +30,7 @@ export function SetupPage() {
     try {
       const result = await authSetup(password);
       if (result.status === "starting") {
-        setStartupMessage("Starting encrypted services. This can take a few seconds.");
+        setStartupMessage(t("auth.startingServices"));
         await waitForApplicationReady();
         await authLogin(password);
       }
@@ -36,9 +38,9 @@ export function SetupPage() {
     } catch (err: unknown) {
       const apiErr = err as { status?: number; message?: string };
       if (apiErr.status === 409) {
-        setError("Password already configured.");
+        setError(t("auth.passwordAlreadyConfigured"));
       } else {
-        setError(apiErr.message || "Failed to set up password");
+        setError(apiErr.message || t("auth.setupFailed"));
       }
     } finally {
       setLoading(false);
@@ -51,19 +53,17 @@ export function SetupPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold">biMEMO</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Create a password to get started
+            {t("auth.createPasswordToStart")}
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            This same password unlocks the encrypted database and signs you in. To
-            enable automatic server startup later, store this password in the local
-            Docker secret file; that file is plaintext and must stay private.
+            {t("auth.setupPasswordNote")}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label htmlFor="password" className="text-sm font-medium">
-              Password
+              {t("auth.password")}
             </label>
             <Input
               id="password"
@@ -75,17 +75,17 @@ export function SetupPage() {
             />
             {passwordTooShort && (
               <p className="text-xs text-muted-foreground">
-                Minimum 8 characters ({8 - password.length} more needed)
+                {t("auth.minCharacters", { count: 8 - password.length })}
               </p>
             )}
             {password.length >= 8 && (
-              <p className="text-xs text-green-600">Password length OK</p>
+              <p className="text-xs text-green-600">{t("auth.passwordLengthOk")}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
             <label htmlFor="confirm" className="text-sm font-medium">
-              Confirm Password
+              {t("auth.confirmPassword")}
             </label>
             <Input
               id="confirm"
@@ -95,7 +95,9 @@ export function SetupPage() {
               disabled={loading}
             />
             {confirm.length > 0 && !passwordsMatch && (
-              <p className="text-xs text-destructive">Passwords do not match</p>
+              <p className="text-xs text-destructive">
+                {t("auth.passwordsDoNotMatch")}
+              </p>
             )}
           </div>
 
@@ -105,7 +107,7 @@ export function SetupPage() {
           )}
 
           <Button type="submit" className="w-full" disabled={!canSubmit}>
-            {loading ? "Setting up..." : "Create Password"}
+            {loading ? t("auth.settingUp") : t("auth.createPassword")}
           </Button>
         </form>
       </div>

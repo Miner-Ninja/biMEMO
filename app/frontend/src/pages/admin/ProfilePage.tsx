@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Save, Upload, Trash2, User, Bot } from "lucide-react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { TimezoneCombobox } from "@/components/TimezoneCombobox";
@@ -12,6 +13,7 @@ import {
 } from "@/api/profile";
 
 export function ProfilePage() {
+  const { t } = useTranslation();
   const [profile, setProfile] = useState<UserProfile>({
     first_name: "",
     last_name: "",
@@ -58,10 +60,10 @@ export function ProfilePage() {
         setAiAvatarUrl(aiUrl);
       })
       .catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to load profile")
+        setError(err instanceof Error ? err.message : t("admin.loadProfileFailed"))
       )
       .finally(() => setLoading(false));
-  }, [checkAvatar]);
+  }, [checkAvatar, t]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -69,11 +71,9 @@ export function ProfilePage() {
     setSuccess("");
     try {
       await saveProfile(profile);
-      setSuccess(
-        "Profile saved. Restart the application to apply changes to the system prompt."
-      );
+      setSuccess(t("admin.profileSaved"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save profile");
+      setError(err instanceof Error ? err.message : t("admin.saveProfileFailed"));
     } finally {
       setSaving(false);
     }
@@ -87,7 +87,7 @@ export function ProfilePage() {
       if (type === "user") setUserAvatarUrl(url);
       else setAiAvatarUrl(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload avatar");
+      setError(err instanceof Error ? err.message : t("admin.uploadAvatarFailed"));
     }
   };
 
@@ -98,13 +98,13 @@ export function ProfilePage() {
       if (type === "user") setUserAvatarUrl(null);
       else setAiAvatarUrl(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete avatar");
+      setError(err instanceof Error ? err.message : t("admin.deleteAvatarFailed"));
     }
   };
 
   if (loading) {
     return (
-      <AdminLayout title="User Profile">
+      <AdminLayout title={t("admin.userProfile")}>
         <div className="flex-1 overflow-y-auto p-6 max-w-2xl">
           <FormSkeleton fields={4} />
         </div>
@@ -113,11 +113,9 @@ export function ProfilePage() {
   }
 
   return (
-    <AdminLayout title="User Profile">
+    <AdminLayout title={t("admin.userProfile")}>
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-2xl">
-        <p className="text-muted-foreground">
-          Configure how the AI assistant addresses you and responds
-        </p>
+        <p className="text-muted-foreground">{t("admin.profileSubtitle")}</p>
 
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
@@ -133,13 +131,13 @@ export function ProfilePage() {
 
         <div className="grid grid-cols-2 gap-6">
           <div className="space-y-3">
-            <span className="text-sm font-medium">Your Avatar</span>
+            <span className="text-sm font-medium">{t("admin.yourAvatar")}</span>
             <div className="flex items-center gap-4">
               <div className="h-16 w-16 shrink-0 rounded-full border border-input bg-muted flex items-center justify-center overflow-hidden">
                 {userAvatarUrl ? (
                   <img
                     src={userAvatarUrl}
-                    alt="User avatar"
+                    alt={t("admin.userAvatarAlt")}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -153,7 +151,7 @@ export function ProfilePage() {
                   onClick={() => userFileRef.current?.click()}
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  Upload
+                  {t("admin.upload")}
                 </button>
                 {userAvatarUrl && (
                   <button
@@ -162,7 +160,7 @@ export function ProfilePage() {
                     onClick={() => handleAvatarDelete("user")}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    Remove
+                    {t("admin.remove")}
                   </button>
                 )}
               </div>
@@ -181,13 +179,13 @@ export function ProfilePage() {
           </div>
 
           <div className="space-y-3">
-            <span className="text-sm font-medium">AI Avatar</span>
+            <span className="text-sm font-medium">{t("admin.aiAvatar")}</span>
             <div className="flex items-center gap-4">
               <div className="h-16 w-16 shrink-0 rounded-full border border-input bg-muted flex items-center justify-center overflow-hidden">
                 {aiAvatarUrl ? (
                   <img
                     src={aiAvatarUrl}
-                    alt="AI avatar"
+                    alt={t("admin.aiAvatarAlt")}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -201,7 +199,7 @@ export function ProfilePage() {
                   onClick={() => aiFileRef.current?.click()}
                 >
                   <Upload className="h-3.5 w-3.5" />
-                  Upload
+                  {t("admin.upload")}
                 </button>
                 {aiAvatarUrl && (
                   <button
@@ -210,7 +208,7 @@ export function ProfilePage() {
                     onClick={() => handleAvatarDelete("ai")}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    Remove
+                    {t("admin.remove")}
                   </button>
                 )}
               </div>
@@ -232,13 +230,13 @@ export function ProfilePage() {
         <div className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="assistant_name" className="text-sm font-medium">
-              Assistant Name
+              {t("admin.assistantName")}
             </label>
             <input
               id="assistant_name"
               type="text"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              placeholder="How should the assistant be called? (default: Assistant)"
+              placeholder={t("admin.assistantNamePlaceholder")}
               value={profile.assistant_name}
               onChange={(e) =>
                 setProfile({ ...profile, assistant_name: e.target.value })
@@ -249,26 +247,26 @@ export function ProfilePage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label htmlFor="first_name" className="text-sm font-medium">
-                First Name
+                {t("admin.firstName")}
               </label>
               <input
                 id="first_name"
                 type="text"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="First name"
+                placeholder={t("admin.firstNamePlaceholder")}
                 value={profile.first_name}
                 onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
               />
             </div>
             <div className="space-y-2">
               <label htmlFor="last_name" className="text-sm font-medium">
-                Last Name
+                {t("admin.lastName")}
               </label>
               <input
                 id="last_name"
                 type="text"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Last name"
+                placeholder={t("admin.lastNamePlaceholder")}
                 value={profile.last_name}
                 onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
               />
@@ -277,13 +275,13 @@ export function ProfilePage() {
 
           <div className="space-y-2">
             <label htmlFor="display_name" className="text-sm font-medium">
-              Display Name
+              {t("admin.displayName")}
             </label>
             <input
               id="display_name"
               type="text"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              placeholder="How should the AI call you?"
+              placeholder={t("admin.displayNamePlaceholder")}
               value={profile.display_name}
               onChange={(e) => setProfile({ ...profile, display_name: e.target.value })}
             />
@@ -291,7 +289,7 @@ export function ProfilePage() {
 
           <div className="space-y-2">
             <label htmlFor="timezone" className="text-sm font-medium">
-              Timezone
+              {t("admin.timezone")}
             </label>
             <TimezoneCombobox
               value={profile.timezone}
@@ -301,7 +299,7 @@ export function ProfilePage() {
 
           <div className="space-y-2">
             <label htmlFor="language" className="text-sm font-medium">
-              Language
+              {t("admin.language")}
             </label>
             <input
               id="language"
@@ -315,12 +313,12 @@ export function ProfilePage() {
 
           <div className="space-y-2">
             <label htmlFor="custom_instructions" className="text-sm font-medium">
-              Custom Instructions
+              {t("admin.customInstructions")}
             </label>
             <textarea
               id="custom_instructions"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-y"
-              placeholder="Any specific instructions for the AI assistant..."
+              placeholder={t("admin.customInstructionsPlaceholder")}
               maxLength={2000}
               value={profile.custom_instructions}
               onChange={(e) =>
@@ -340,7 +338,7 @@ export function ProfilePage() {
           disabled={saving}
         >
           <Save className="h-4 w-4" />
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("admin.saving") : t("common.save")}
         </button>
       </div>
     </AdminLayout>

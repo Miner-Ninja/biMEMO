@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Download,
   Plus,
@@ -26,6 +27,7 @@ import {
 import { apiRequest, ApiError } from "@/lib/bimemo-api";
 
 export function AgentConnectionPage() {
+  const { t } = useTranslation();
   // ── CA root download ────────────────────────────────────────────
   const [caCert, setCaCert] = useState<string | null>(null);
   const [caLoading, setCaLoading] = useState(false);
@@ -56,26 +58,20 @@ export function AgentConnectionPage() {
   // ── Global error ────────────────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
 
-  // Load tokens and the CA cert once, on mount.
-  useEffect(() => {
-    loadTokens();
-    loadCaRoot();
-  }, []);
-
-  async function loadTokens() {
+  const loadTokens = useCallback(async () => {
     setTokensLoading(true);
     setTokensError(null);
     try {
       const data = await listAgentTokens();
       setTokens(data);
     } catch (err) {
-      setTokensError(err instanceof Error ? err.message : "Failed to load tokens");
+      setTokensError(err instanceof Error ? err.message : t("admin.loadTokensFailed"));
     } finally {
       setTokensLoading(false);
     }
-  }
+  }, [t]);
 
-  async function loadCaRoot() {
+  const loadCaRoot = useCallback(async () => {
     setCaLoading(true);
     setCaError(null);
     try {
@@ -83,14 +79,21 @@ export function AgentConnectionPage() {
       setCaCert(data.certificate);
     } catch (err) {
       if (err instanceof ApiError && err.status === 503) {
-        setCaError("CA root certificate is not configured on the server.");
+        setCaError(t("admin.caRootNotConfigured"));
       } else {
-        setCaError(err instanceof Error ? err.message : "Failed to load CA root");
+        setCaError(err instanceof Error ? err.message : t("admin.loadCaRootFailed"));
       }
     } finally {
       setCaLoading(false);
     }
-  }
+  }, [t]);
+
+  // Load tokens and the CA cert on mount (and on language change, so
+  // load-error texts follow the interface language).
+  useEffect(() => {
+    void loadTokens();
+    void loadCaRoot();
+  }, [loadTokens, loadCaRoot]);
 
   async function handleDownloadCa() {
     if (!caCert) return;
@@ -169,9 +172,9 @@ export function AgentConnectionPage() {
         await loadTokens();
       } catch (err) {
         if (err instanceof ApiError && err.status === 403) {
-          setError("Re-authentication required");
+          setError(t("admin.reauthRequired"));
         } else {
-          setError(err instanceof Error ? err.message : "Failed to issue token");
+          setError(err instanceof Error ? err.message : t("admin.issueTokenFailed"));
         }
       } finally {
         setIssuing(false);
@@ -186,9 +189,9 @@ export function AgentConnectionPage() {
         await loadTokens();
       } catch (err) {
         if (err instanceof ApiError && err.status === 403) {
-          setError("Re-authentication required");
+          setError(t("admin.reauthRequired"));
         } else {
-          setError(err instanceof Error ? err.message : "Failed to revoke");
+          setError(err instanceof Error ? err.message : t("admin.revokeFailed"));
         }
       } finally {
         setDeleteTarget(null);
@@ -198,7 +201,7 @@ export function AgentConnectionPage() {
   }
 
   return (
-    <AdminLayout title="Agent Connection">
+    <AdminLayout title={t("admin.agentConnection")}>
       <div className="flex-1 overflow-y-auto p-6 space-y-8 max-w-3xl">
         <ErrorAlert error={error ?? ""} />
 
@@ -206,20 +209,19 @@ export function AgentConnectionPage() {
         <section className="space-y-3">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-lg font-semibold">1. Trust the CA Certificate</h2>
+            <h2 className="text-lg font-semibold">{t("admin.trustCaTitle")}</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Download the CA root certificate and install it in your system's trusted
-            certificate store so your agent can connect over TLS without trust errors.
+            {t("admin.trustCaDescription")}
           </p>
           {caLoading ? (
-            <p className="text-sm text-muted-foreground">Loading CA cert…</p>
+            <p className="text-sm text-muted-foreground">{t("admin.loadingCaCert")}</p>
           ) : caError ? (
             <p className="text-sm text-destructive">{caError}</p>
           ) : caCert ? (
             <Button size="sm" onClick={handleDownloadCa}>
               <Download className="mr-1 h-4 w-4" />
-              Download CA Root
+              {t("admin.downloadCaRoot")}
             </Button>
           ) : null}
         </section>
@@ -230,14 +232,14 @@ export function AgentConnectionPage() {
         <section className="space-y-3">
           <div className="flex items-center gap-2">
             <Key className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-lg font-semibold">2. Manage Agent Tokens</h2>
+            <h2 className="text-lg font-semibold">{t("admin.manageTokensTitle")}</h2>
           </div>
 
           {/* Issued token display */}
           {issuedToken && (
             <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-2">
               <p className="text-sm font-medium text-green-800">
-                Token issued for "{issuedToken.label}"
+                {t("admin.tokenIssuedFor", { label: issuedToken.label })}
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 font-mono text-sm font-medium text-green-900 bg-white border border-green-300 rounded px-2 py-1 break-all select-all">
@@ -259,13 +261,11 @@ export function AgentConnectionPage() {
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-green-600">
-                ⚠ This is the only time the token is shown. Save it securely.
-              </p>
+              <p className="text-xs text-green-600">{t("admin.tokenShownOnce")}</p>
 
               <div className="pt-1 space-y-1">
                 <p className="text-xs font-medium text-green-800">
-                  Ready-to-paste agent config (token included):
+                  {t("admin.readyConfigLabel")}
                 </p>
                 <pre className="text-xs text-green-900 bg-white border border-green-300 rounded p-2 overflow-x-auto">
                   {agentConfigJson(issuedToken.token)}
@@ -275,7 +275,7 @@ export function AgentConnectionPage() {
                   size="sm"
                   onClick={() => copyText(agentConfigJson(issuedToken.token))}
                 >
-                  <Copy className="mr-1 h-4 w-4" /> Copy config
+                  <Copy className="mr-1 h-4 w-4" /> {t("admin.copyConfig")}
                 </Button>
               </div>
             </div>
@@ -285,7 +285,7 @@ export function AgentConnectionPage() {
           <div className="flex justify-end">
             <Button size="sm" onClick={() => setShowIssue(!showIssue)}>
               <Plus className="mr-1 h-4 w-4" />
-              Issue Token
+              {t("admin.issueToken")}
             </Button>
           </div>
 
@@ -295,7 +295,7 @@ export function AgentConnectionPage() {
               className="space-y-3 rounded-lg border border-border p-4"
             >
               <Input
-                placeholder="Label (e.g., claude)"
+                placeholder={t("admin.tokenLabelPlaceholder")}
                 value={issueLabel}
                 onChange={(e) => setIssueLabel(e.target.value)}
                 required
@@ -305,11 +305,11 @@ export function AgentConnectionPage() {
                 onChange={(e) => setIssueCapability(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="read">Read</option>
-                <option value="read-write">Read-Write</option>
+                <option value="read">{t("admin.readOption")}</option>
+                <option value="read-write">{t("admin.readWriteOption")}</option>
               </select>
               <Button type="submit" disabled={issuing} size="sm">
-                {issuing ? "Issuing..." : "Issue"}
+                {issuing ? t("admin.issuing") : t("admin.issue")}
               </Button>
             </form>
           )}
@@ -320,27 +320,27 @@ export function AgentConnectionPage() {
           ) : tokensError ? (
             <p className="text-sm text-destructive">{tokensError}</p>
           ) : tokens.length === 0 ? (
-            <p className="text-muted-foreground">No agent tokens configured.</p>
+            <p className="text-muted-foreground">{t("admin.noTokensConfigured")}</p>
           ) : (
             <div className="space-y-2">
-              {tokens.map((t) => (
+              {tokens.map((entry) => (
                 <div
-                  key={t.label}
+                  key={entry.label}
                   className="flex items-center justify-between rounded-lg border border-border p-4"
                 >
                   <div>
-                    <p className="font-medium">{t.label}</p>
+                    <p className="font-medium">{entry.label}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t.capability} · {t.created_at}
+                      {entry.capability} · {entry.created_at}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDeleteClick(t.label)}
-                      disabled={deleteTarget === t.label}
-                      aria-label={`Revoke ${t.label}`}
+                      onClick={() => handleDeleteClick(entry.label)}
+                      disabled={deleteTarget === entry.label}
+                      aria-label={t("admin.revokeNamed", { name: entry.label })}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -357,31 +357,25 @@ export function AgentConnectionPage() {
         <section className="space-y-3">
           <div className="flex items-center gap-2">
             <Settings className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-lg font-semibold">3. Connection Configuration</h2>
+            <h2 className="text-lg font-semibold">
+              {t("admin.connectionConfigTitle")}
+            </h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            To connect an external agent (e.g. the pi agent via pi-mcp-adapter):
+            {t("admin.connectAgentIntro")}
           </p>
           <ol className="list-decimal pl-5 text-sm text-muted-foreground space-y-1">
+            <li>{t("admin.connectStep1")}</li>
+            <li>{t("admin.connectStep2")}</li>
             <li>
-              On the agent's machine, install the CA root from step 1 into its trusted
-              certificate store.
+              {t("admin.connectStep3Before")} <code>~/.config/mcp/mcp.json</code>{" "}
+              {t("admin.connectStep3After")}
             </li>
-            <li>
-              Issue a token in step 2 and copy its ready-to-paste config (the token is
-              shown only once).
-            </li>
-            <li>
-              Save that config as <code>~/.config/mcp/mcp.json</code> on the agent's
-              machine (pi reads it from there).
-            </li>
-            <li>Start the agent — it can now read and write biMEMO memory over MCP.</li>
+            <li>{t("admin.connectStep4")}</li>
           </ol>
 
           <div className="rounded-lg border border-border p-4 space-y-2">
-            <p className="text-xs font-medium">
-              Config template (paste your token from step 2):
-            </p>
+            <p className="text-xs font-medium">{t("admin.configTemplateLabel")}</p>
             <pre className="text-sm bg-muted p-3 rounded overflow-x-auto">
               {agentConfigJson("<paste-your-token>")}
             </pre>
@@ -392,18 +386,17 @@ export function AgentConnectionPage() {
             >
               {copied ? (
                 <>
-                  <Check className="mr-1 h-4 w-4" /> Copied
+                  <Check className="mr-1 h-4 w-4" /> {t("admin.copied")}
                 </>
               ) : (
                 <>
-                  <Copy className="mr-1 h-4 w-4" /> Copy template
+                  <Copy className="mr-1 h-4 w-4" /> {t("admin.copyTemplate")}
                 </>
               )}
             </Button>
             <p className="text-xs text-muted-foreground">
-              Endpoint: <code>{mcpUrl()}</code> — this reflects the address you opened
-              biMEMO with. Open the panel by biMEMO's network address if the agent runs
-              on another machine.
+              {t("admin.endpointLabel")} <code>{mcpUrl()}</code>{" "}
+              {t("admin.endpointNote")}
             </p>
           </div>
         </section>

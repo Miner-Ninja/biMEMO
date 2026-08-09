@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Clock, Cpu, Database, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { ExtendedUsage } from "@/types/stats";
@@ -13,6 +14,7 @@ interface TokenStatsProps {
  * Shows: tokens in/out, time, context usage with warning.
  */
 export function TokenStats({ stats, className }: TokenStatsProps) {
+  const { t } = useTranslation();
   const stages = stats.timing.stages;
   const contextUsage = stats.context;
   const hasContextUsage = Boolean(contextUsage && contextUsage.total > 0);
@@ -44,9 +46,11 @@ export function TokenStats({ stats, className }: TokenStatsProps) {
     >
       <Badge variant="secondary" className="gap-1 whitespace-nowrap tabular-nums">
         <Cpu className="h-3 w-3 shrink-0" />
-        <span title="Input / Output tokens" className="whitespace-nowrap">
-          {formatTokens(stats.prompt_tokens)} in /{" "}
-          {formatTokens(stats.completion_tokens)} out
+        <span title={t("chat.inputOutputTokens")} className="whitespace-nowrap">
+          {t("chat.tokensInOut", {
+            in: formatTokens(stats.prompt_tokens),
+            out: formatTokens(stats.completion_tokens),
+          })}
         </span>
       </Badge>
 
@@ -56,14 +60,17 @@ export function TokenStats({ stats, className }: TokenStatsProps) {
         title={
           stages && stages.length > 0
             ? stages.map((s) => `${s.label}  ${formatTime(s.duration_ms)}`).join("\n")
-            : `Prompt: ${formatTime(stats.timing.prompt_ms)}, Generation: ${formatTime(stats.timing.generation_ms)}`
+            : t("chat.promptGenerationTiming", {
+                prompt: formatTime(stats.timing.prompt_ms),
+                generation: formatTime(stats.timing.generation_ms),
+              })
         }
       >
         <Clock className="h-3 w-3 shrink-0" />
         <span className="whitespace-nowrap">{formatTime(stats.timing.total_ms)}</span>
         {stats.iterations > 1 && (
           <span className="whitespace-nowrap text-muted-foreground/70">
-            ({stats.iterations} iter)
+            {t("chat.iterations", { count: stats.iterations })}
           </span>
         )}
       </Badge>
@@ -72,9 +79,11 @@ export function TokenStats({ stats, className }: TokenStatsProps) {
         <Badge
           variant="secondary"
           className="gap-1 whitespace-nowrap tabular-nums"
-          title={`Generation speed: ${tokensPerSecond.toFixed(1)} tokens per second`}
+          title={t("chat.generationSpeed", { value: tokensPerSecond.toFixed(1) })}
         >
-          <span className="whitespace-nowrap">{tokensPerSecond.toFixed(1)} tok/s</span>
+          <span className="whitespace-nowrap">
+            {t("chat.tokensPerSecond", { value: tokensPerSecond.toFixed(1) })}
+          </span>
         </Badge>
       )}
 
@@ -82,12 +91,19 @@ export function TokenStats({ stats, className }: TokenStatsProps) {
         <Badge
           variant={isContextWarning ? "warning" : "secondary"}
           className="gap-1 whitespace-nowrap tabular-nums"
-          title={`Context: ${contextUsage.used} / ${contextUsage.total} tokens (${contextUsage.free} free)`}
+          title={t("chat.contextTooltip", {
+            used: contextUsage.used,
+            total: contextUsage.total,
+            free: contextUsage.free,
+          })}
         >
           <Database className="h-3 w-3 shrink-0" />
           <span className="whitespace-nowrap">
-            {formatTokens(contextUsage.used)} / {formatTokens(contextUsage.total)} ctx (
-            {Math.round(contextPercent)}%)
+            {t("chat.contextUsage", {
+              used: formatTokens(contextUsage.used),
+              total: formatTokens(contextUsage.total),
+              percent: Math.round(contextPercent),
+            })}
           </span>
         </Badge>
       )}
@@ -96,16 +112,27 @@ export function TokenStats({ stats, className }: TokenStatsProps) {
         <Badge
           variant="secondary"
           className="gap-1 whitespace-nowrap tabular-nums"
-          title={`Working: ${stats.memory_zones.working_memory.used}/${stats.memory_zones.working_memory.budget}, Summary: ${stats.memory_zones.conversation_summary.used}/${stats.memory_zones.conversation_summary.budget}, Recall: ${stats.memory_zones.recall_results.used}/${stats.memory_zones.recall_results.budget}`}
+          title={t("chat.memoryZonesTooltip", {
+            workingUsed: stats.memory_zones.working_memory.used,
+            workingBudget: stats.memory_zones.working_memory.budget,
+            summaryUsed: stats.memory_zones.conversation_summary.used,
+            summaryBudget: stats.memory_zones.conversation_summary.budget,
+            recallUsed: stats.memory_zones.recall_results.used,
+            recallBudget: stats.memory_zones.recall_results.budget,
+          })}
         >
           <Layers className="h-3 w-3 shrink-0" />
           <span className="whitespace-nowrap">
-            W:{formatTokens(stats.memory_zones.working_memory.used)}/
-            {formatTokens(stats.memory_zones.working_memory.budget)} S:
-            {formatTokens(stats.memory_zones.conversation_summary.used)}/
-            {formatTokens(stats.memory_zones.conversation_summary.budget)} R:
-            {formatTokens(stats.memory_zones.recall_results.used)}/
-            {formatTokens(stats.memory_zones.recall_results.budget)}
+            {t("chat.memoryZonesShort", {
+              workingUsed: formatTokens(stats.memory_zones.working_memory.used),
+              workingBudget: formatTokens(stats.memory_zones.working_memory.budget),
+              summaryUsed: formatTokens(stats.memory_zones.conversation_summary.used),
+              summaryBudget: formatTokens(
+                stats.memory_zones.conversation_summary.budget
+              ),
+              recallUsed: formatTokens(stats.memory_zones.recall_results.used),
+              recallBudget: formatTokens(stats.memory_zones.recall_results.budget),
+            })}
           </span>
         </Badge>
       )}

@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Search, ChevronRight, List, LayoutGrid } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -23,11 +25,17 @@ interface SkillListItem {
 const FILTERS = ["All", "Active", "Disabled"] as const;
 type Filter = (typeof FILTERS)[number];
 
+const FILTER_LABEL_KEYS: Record<Filter, TranslationKey> = {
+  All: "admin.filterAll",
+  Active: "admin.filterActive",
+  Disabled: "admin.filterDisabled",
+};
+
 const SORT_OPTIONS = [
-  { value: "usage", label: "By usage" },
-  { value: "name", label: "By name" },
-  { value: "date", label: "By date" },
-  { value: "lastrun", label: "By last run" },
+  { value: "usage", labelKey: "admin.sortByUsage" },
+  { value: "name", labelKey: "admin.sortByName" },
+  { value: "date", labelKey: "admin.sortByDate" },
+  { value: "lastrun", labelKey: "admin.sortByLastRun" },
 ] as const;
 type SortKey = (typeof SORT_OPTIONS)[number]["value"];
 
@@ -94,6 +102,7 @@ function formatDate(iso: string | null): string {
  * Admin page listing all saved skills with stats, filters, sorting, and dual view.
  */
 export function SkillsPage() {
+  const { t } = useTranslation();
   const [skills, setSkills] = useState<SkillListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,14 +153,22 @@ export function SkillsPage() {
   const totalUses = skills.reduce((a, s) => a + s.use_count, 0);
 
   return (
-    <AdminLayout title="Skills">
+    <AdminLayout title={t("admin.skills")}>
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { val: skills.length, label: "Total skills", color: "text-primary" },
-            { val: totalActive, label: "Active", color: "text-emerald-400" },
-            { val: totalUses, label: "Total runs", color: "text-amber-400" },
+            {
+              val: skills.length,
+              label: t("admin.totalSkills"),
+              color: "text-primary",
+            },
+            {
+              val: totalActive,
+              label: t("admin.filterActive"),
+              color: "text-emerald-400",
+            },
+            { val: totalUses, label: t("admin.totalRuns"), color: "text-amber-400" },
           ].map((s, i) => (
             <div
               key={i}
@@ -169,7 +186,7 @@ export function SkillsPage() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by name, ID or tool..."
+              placeholder={t("admin.searchSkillsPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -190,7 +207,7 @@ export function SkillsPage() {
                     : "border-border text-muted-foreground hover:text-foreground"
                 )}
               >
-                {f}
+                {t(FILTER_LABEL_KEYS[f])}
               </button>
             ))}
           </div>
@@ -203,7 +220,7 @@ export function SkillsPage() {
           >
             {SORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
-                {o.label}
+                {t(o.labelKey)}
               </option>
             ))}
           </select>
@@ -239,7 +256,7 @@ export function SkillsPage() {
 
         {/* Results count */}
         <div className="text-xs text-muted-foreground/60">
-          {filtered.length} of {skills.length} skills
+          {t("admin.skillsCount", { filtered: filtered.length, count: skills.length })}
         </div>
 
         {/* Loading */}
@@ -248,15 +265,14 @@ export function SkillsPage() {
         {/* Empty */}
         {!loading && skills.length === 0 && (
           <p className="text-center text-muted-foreground py-12">
-            No skills saved yet. Skills are created automatically when the agent solves
-            complex tasks.
+            {t("admin.noSkillsSaved")}
           </p>
         )}
 
         {/* No results */}
         {!loading && filtered.length === 0 && skills.length > 0 && (
           <p className="text-center text-muted-foreground py-8">
-            No skills match your filters
+            {t("admin.noSkillsMatch")}
           </p>
         )}
 
@@ -318,7 +334,9 @@ export function SkillsPage() {
                     <div className="text-sm font-semibold text-muted-foreground">
                       {skill.use_count}
                     </div>
-                    <div className="text-[9px] text-muted-foreground/50">uses</div>
+                    <div className="text-[9px] text-muted-foreground/50">
+                      {t("admin.usesLabel")}
+                    </div>
                   </div>
 
                   {/* Chevron */}
@@ -388,7 +406,7 @@ export function SkillsPage() {
                           {skill.use_count}
                         </span>
                         <span className="text-[10px] text-muted-foreground/50">
-                          uses
+                          {t("admin.usesLabel")}
                         </span>
                       </div>
                       {skill.last_used_at && (

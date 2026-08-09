@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -16,6 +17,7 @@ import {
 import type { LLMConfigEntry, ProviderType } from "@/api/llm";
 
 export function LLMConfigPage() {
+  const { t } = useTranslation();
   const [configs, setConfigs] = useState<LLMConfigEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -34,18 +36,18 @@ export function LLMConfigPage() {
   >({});
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     try {
       const data = await listLLMConfigs();
       setConfigs(data.configs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load configurations");
+      setError(err instanceof Error ? err.message : t("admin.loadConfigsFailed"));
     }
-  };
+  }, [t]);
 
   useEffect(() => {
-    reload().finally(() => setLoading(false));
-  }, []);
+    void reload().finally(() => setLoading(false));
+  }, [reload]);
 
   const handleCreate = () => {
     setEditConfig(null);
@@ -70,15 +72,15 @@ export function LLMConfigPage() {
     try {
       if (editConfig) {
         await updateLLMConfig(editConfig.id, data);
-        setSuccess("Configuration updated.");
+        setSuccess(t("admin.configUpdated"));
       } else {
         await createLLMConfig(data);
-        setSuccess("Configuration created.");
+        setSuccess(t("admin.configCreated"));
       }
       setDialogOpen(false);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save configuration");
+      setError(err instanceof Error ? err.message : t("admin.saveConfigFailed"));
     }
   };
 
@@ -92,11 +94,11 @@ export function LLMConfigPage() {
     setSuccess("");
     try {
       await deleteLLMConfig(deleteTarget.id);
-      setSuccess("Configuration deleted.");
+      setSuccess(t("admin.configDeleted"));
       setDeleteTarget(null);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete configuration");
+      setError(err instanceof Error ? err.message : t("admin.deleteConfigFailed"));
     }
   };
 
@@ -106,19 +108,19 @@ export function LLMConfigPage() {
     try {
       const result = await activateLLMConfig(config.id);
       if (result.reload?.success) {
-        const provider = result.reload.active_provider ?? "unknown";
+        const provider = result.reload.active_provider ?? t("admin.unknown");
         const model = result.reload.model ?? "";
-        setSuccess(`Configuration applied — ${provider}: ${model}`);
+        setSuccess(t("admin.configApplied", { provider, model }));
       } else if (result.reload?.error) {
         setSuccess(
-          `Activated, but reload failed: ${result.reload.error}. Restart to apply.`
+          t("admin.configActivatedReloadFailed", { error: result.reload.error })
         );
       } else {
-        setSuccess("Configuration activated. Restart the service to apply.");
+        setSuccess(t("admin.configActivated"));
       }
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to activate configuration");
+      setError(err instanceof Error ? err.message : t("admin.activateConfigFailed"));
     }
   };
 
@@ -137,7 +139,7 @@ export function LLMConfigPage() {
         ...prev,
         [config.id]: {
           ok: false,
-          error: err instanceof Error ? err.message : "Test failed",
+          error: err instanceof Error ? err.message : t("admin.testFailed"),
         },
       }));
     } finally {
@@ -152,19 +154,22 @@ export function LLMConfigPage() {
   const activeConfig = configs.find((c) => c.enabled);
 
   return (
-    <AdminLayout title="LLM Configuration">
+    <AdminLayout title={t("admin.llmConfiguration")}>
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-2xl">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {loading
-              ? "Loading…"
+              ? t("common.loading")
               : activeConfig
-                ? `Active: ${activeConfig.service_type} — ${activeConfig.model || "no model"}`
-                : "No active provider"}
+                ? t("admin.activeProviderLine", {
+                    provider: activeConfig.service_type,
+                    model: activeConfig.model || t("admin.noModel"),
+                  })
+                : t("admin.noActiveProvider")}
           </p>
           <Button onClick={handleCreate} size="sm">
             <Plus className="h-4 w-4 mr-1" />
-            Add Provider
+            {t("admin.addProvider")}
           </Button>
         </div>
 
@@ -176,10 +181,10 @@ export function LLMConfigPage() {
 
         {!loading && configs.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-8 text-center space-y-3">
-            <p className="text-muted-foreground">No LLM providers configured</p>
+            <p className="text-muted-foreground">{t("admin.noProvidersConfigured")}</p>
             <Button onClick={handleCreate}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Provider
+              {t("admin.addProvider")}
             </Button>
           </div>
         )}
@@ -216,19 +221,20 @@ export function LLMConfigPage() {
               onClick={() => setDeleteTarget(null)}
             />
             <div className="relative z-50 w-full max-w-sm rounded-lg border border-border bg-background p-6 shadow-lg mx-4">
-              <h3 className="font-semibold mb-2">Delete Configuration</h3>
+              <h3 className="font-semibold mb-2">{t("admin.deleteConfigTitle")}</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Are you sure you want to delete the {deleteTarget.service_type}{" "}
-                configuration
-                {deleteTarget.model ? ` (${deleteTarget.model})` : ""}?
-                {deleteTarget.enabled && " This is the active provider."}
+                {t("admin.deleteConfigConfirm", {
+                  provider: deleteTarget.service_type,
+                  model: deleteTarget.model ? ` (${deleteTarget.model})` : "",
+                })}
+                {deleteTarget.enabled && t("admin.deleteConfigActiveWarning")}
               </p>
               <div className="flex gap-3 justify-end">
                 <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button variant="destructive" onClick={confirmDelete}>
-                  Delete
+                  {t("common.delete")}
                 </Button>
               </div>
             </div>

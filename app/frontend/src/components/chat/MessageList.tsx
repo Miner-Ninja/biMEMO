@@ -1,4 +1,5 @@
 import { useEffect, useRef, useMemo, memo } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatMessage } from "./ChatMessage";
@@ -66,6 +67,7 @@ export const MessageList = memo(function MessageList({
   ttsAvailable = false,
   onConfirmationStatusChange,
 }: MessageListProps) {
+  const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   // Signature of the last rendered message set. Lets the auto-scroll effect
@@ -185,7 +187,7 @@ export const MessageList = memo(function MessageList({
           <Card className="pointer-events-auto w-full max-w-sm shadow-none">
             <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
               <h2 className="text-xl font-semibold">biMEMO</h2>
-              <p className="text-muted-foreground">Your personal AI assistant</p>
+              <p className="text-muted-foreground">{t("chat.personalAssistant")}</p>
             </CardContent>
           </Card>
         </div>

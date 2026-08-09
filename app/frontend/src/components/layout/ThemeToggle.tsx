@@ -1,4 +1,5 @@
 import { Sun, Moon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useThemeContext } from "./ThemeProvider";
 
@@ -6,6 +7,7 @@ import { useThemeContext } from "./ThemeProvider";
  * Button to toggle between dark and light themes
  */
 export function ThemeToggle() {
+  const { t } = useTranslation();
   const { isDark, toggleTheme } = useThemeContext();
 
   return (
@@ -13,7 +15,7 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       onClick={toggleTheme}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={isDark ? t("layout.switchToLightMode") : t("layout.switchToDarkMode")}
       className="h-7.5 w-7.5 sm:h-9 sm:w-9"
     >
       {isDark ? (

@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { LiveTimer } from "./LiveTimer";
@@ -43,6 +44,7 @@ export const ProcessingStages = memo(function ProcessingStages({
   stages,
   className,
 }: ProcessingStagesProps) {
+  const { t } = useTranslation();
   if (stages.length === 0) return null;
 
   const current = stages[stages.length - 1];
@@ -73,7 +75,7 @@ export const ProcessingStages = memo(function ProcessingStages({
               <span
                 key={`${current.id}-ok`}
                 className="shrink-0 text-sm text-muted-foreground animate-in fade-in zoom-in-50 duration-300"
-                aria-label="completed"
+                aria-label={t("chat.stageCompleted")}
               >
                 ✓
               </span>
@@ -82,7 +84,7 @@ export const ProcessingStages = memo(function ProcessingStages({
               <span
                 key={`${current.id}-err`}
                 className="shrink-0 text-sm text-destructive animate-in fade-in zoom-in-50 duration-300"
-                aria-label="error"
+                aria-label={t("chat.stageError")}
               >
                 ✕
               </span>

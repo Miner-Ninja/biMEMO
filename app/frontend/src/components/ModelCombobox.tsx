@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 
 interface ModelComboboxProps {
@@ -18,6 +19,7 @@ export function ModelCombobox({
   loading,
   placeholder,
 }: ModelComboboxProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,7 +90,7 @@ export function ModelCombobox({
             }
           }}
           onKeyDown={handleKeyDown}
-          placeholder={loading ? "Loading models…" : placeholder}
+          placeholder={loading ? t("admin.loadingModels") : placeholder}
           disabled={loading}
           autoComplete="off"
         />
@@ -105,7 +107,9 @@ export function ModelCombobox({
           className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border border-border bg-background shadow-md text-sm"
         >
           {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-muted-foreground">No models found</li>
+            <li className="px-3 py-2 text-muted-foreground">
+              {t("admin.noModelsFound")}
+            </li>
           ) : (
             filtered.map((model, idx) => (
               <li

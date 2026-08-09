@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Mic, Square, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ export function VoiceRecorder({
   autoStart = false,
   embedded = false,
 }: VoiceRecorderProps) {
+  const { t } = useTranslation();
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [supported, setSupported] = useState(false);
@@ -274,7 +276,7 @@ export function VoiceRecorder({
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Cancel recording"
+            aria-label={t("chat.cancelRecording")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -285,7 +287,7 @@ export function VoiceRecorder({
             variant="destructive"
             size="icon"
             className="h-9 w-9 shrink-0 rounded-full"
-            aria-label="Stop and send"
+            aria-label={t("chat.stopAndSend")}
           >
             <Square className="h-4 w-4" />
           </Button>
@@ -302,7 +304,7 @@ export function VoiceRecorder({
       variant="ghost"
       size="icon"
       className={cn("h-11 w-11 shrink-0", className)}
-      aria-label="Record voice message"
+      aria-label={t("chat.recordVoiceMessage")}
     >
       <Mic className="h-5 w-5" />
     </Button>

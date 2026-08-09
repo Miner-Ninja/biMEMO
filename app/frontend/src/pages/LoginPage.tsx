@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
 import { authLogin, waitForApplicationReady } from "@/lib/bimemo-api";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ErrorAlert } from "@/components/ui/error-alert";
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const { setAuthenticated } = useAuth();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,13 +21,13 @@ export function LoginPage() {
     const timer = window.setTimeout(() => {
       setRetryAfter((prev) => {
         const next = Math.max(0, prev - 1);
-        setError(next > 0 ? `Too many attempts. Try again in ${next}s.` : "");
+        setError(next > 0 ? t("auth.tooManyAttempts", { seconds: next }) : "");
         return next;
       });
     }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, [retryAfter]);
+  }, [retryAfter, t]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +38,7 @@ export function LoginPage() {
     try {
       const result = await authLogin(password);
       if (result.status === "starting") {
-        setStartupMessage("Unlock accepted. Starting encrypted services.");
+        setStartupMessage(t("auth.unlockAccepted"));
         await waitForApplicationReady();
         await authLogin(password);
       }
@@ -51,9 +53,9 @@ export function LoginPage() {
         const parsed = parseInt(apiErr.retryAfter || "30", 10);
         const seconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
         setRetryAfter(seconds);
-        setError(`Too many attempts. Try again in ${seconds}s.`);
+        setError(t("auth.tooManyAttempts", { seconds }));
       } else {
-        setError(apiErr.message || "Invalid password");
+        setError(apiErr.message || t("auth.invalidPassword"));
       }
     } finally {
       setLoading(false);
@@ -66,19 +68,17 @@ export function LoginPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold">biMEMO</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Enter your password to continue
+            {t("auth.enterPasswordToContinue")}
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            Manual unlock keeps the startup password out of local files. If you later
-            enable automatic startup, the Docker secret file contains this same password
-            in plaintext.
+            {t("auth.manualUnlockNote")}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label htmlFor="password" className="text-sm font-medium">
-              Password
+              {t("auth.password")}
             </label>
             <Input
               id="password"
@@ -100,7 +100,7 @@ export function LoginPage() {
             className="w-full"
             disabled={loading || !password || retryAfter > 0}
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? t("auth.signingIn") : t("auth.signIn")}
           </Button>
         </form>
       </div>

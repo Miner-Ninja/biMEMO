@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { User, LogOut, Settings, Shield, AudioLines } from "lucide-react";
+import { User, LogOut, Settings, Shield, AudioLines, Languages } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SUPPORTED_LANGUAGES, isUiLanguage, setUiLanguage } from "@/i18n";
 import { getSidebarActionButtonClassName } from "./sidebar-chrome";
 
 interface UserMenuProps {
@@ -33,7 +35,13 @@ export function UserMenu({
 }: UserMenuProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
   const isAdmin = location.pathname.startsWith("/admin");
+  const currentLanguage = isUiLanguage(i18n.language) ? i18n.language : "en";
+  const nextLanguage =
+    SUPPORTED_LANGUAGES[
+      (SUPPORTED_LANGUAGES.indexOf(currentLanguage) + 1) % SUPPORTED_LANGUAGES.length
+    ];
   const [open, setOpen] = useState(false);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const pendingMousePosRef = useRef<{ x: number; y: number } | null>(null);
@@ -114,7 +122,11 @@ export function UserMenu({
         }
       >
         <Avatar className="size-8">
-          <AvatarImage src="/avatars/user" alt="User avatar" className="object-cover" />
+          <AvatarImage
+            src="/avatars/user"
+            alt={t("menu.userAvatar")}
+            className="object-cover"
+          />
           <AvatarFallback className="bg-primary text-primary-foreground text-xs">
             {initials}
           </AvatarFallback>
@@ -145,7 +157,7 @@ export function UserMenu({
               onClick={() => handleSelect(() => navigate(isAdmin ? "/" : "/admin"))}
             >
               <Shield className="size-4" />
-              {isAdmin ? "Back to Chat" : "App Settings"}
+              {isAdmin ? t("menu.backToChat") : t("menu.appSettings")}
             </button>
             {onToggleVoiceMode && (
               <button
@@ -157,14 +169,28 @@ export function UserMenu({
                 }}
               >
                 <AudioLines className="size-4" />
-                <span className="flex-1">Voice Mode</span>
+                <span className="flex-1">{t("menu.voiceMode")}</span>
                 <Switch
                   checked={Boolean(voiceMode)}
                   className="pointer-events-none ml-auto scale-75"
-                  aria-label="Voice mode"
+                  aria-label={t("menu.voiceMode")}
                 />
               </button>
             )}
+            <button
+              type="button"
+              className={ITEM_CLASS}
+              onClick={(e) => {
+                e.preventDefault();
+                setUiLanguage(nextLanguage);
+              }}
+            >
+              <Languages className="size-4" />
+              <span className="flex-1">{t("menu.language")}</span>
+              <span className="text-xs text-muted-foreground">
+                {t(`languages.${currentLanguage}`)}
+              </span>
+            </button>
             <div className={SEPARATOR_CLASS} aria-hidden />
             <button
               type="button"
@@ -172,7 +198,7 @@ export function UserMenu({
               onClick={() => handleSelect(() => onLogout?.())}
             >
               <LogOut className="size-4" />
-              Sign out
+              {t("menu.signOut")}
             </button>
           </PopoverPrimitive.Popup>
         </PopoverPrimitive.Positioner>

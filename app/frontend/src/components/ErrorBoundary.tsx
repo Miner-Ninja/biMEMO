@@ -1,6 +1,7 @@
 import { Component, type ReactNode, type ErrorInfo } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import i18n from "@/i18n";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -43,14 +44,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
         <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 p-8 text-center">
           <AlertTriangle className="h-12 w-12 text-destructive" />
           <div className="space-y-2">
-            <h2 className="text-xl font-semibold">Something went wrong</h2>
+            <h2 className="text-xl font-semibold">
+              {i18n.t("layout.somethingWentWrong")}
+            </h2>
             <p className="text-sm text-muted-foreground max-w-md">
-              {this.state.error?.message || "An unexpected error occurred"}
+              {this.state.error?.message || i18n.t("layout.unexpectedError")}
             </p>
           </div>
           <Button onClick={this.handleReset} variant="outline" className="gap-2">
             <RefreshCw className="h-4 w-4" />
-            Try again
+            {i18n.t("layout.tryAgain")}
           </Button>
         </div>
       );

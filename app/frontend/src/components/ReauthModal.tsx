@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/bimemo-api";
@@ -9,6 +10,7 @@ interface ReauthModalProps {
 }
 
 export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,7 @@ export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
       });
       onSuccess(data.reauth_token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      setError(err instanceof Error ? err.message : t("auth.authenticationFailed"));
     } finally {
       setLoading(false);
     }
@@ -36,10 +38,8 @@ export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-sm rounded-lg border border-border bg-background p-6 shadow-lg space-y-4">
         <div>
-          <h2 className="text-lg font-semibold">Re-authentication Required</h2>
-          <p className="text-sm text-muted-foreground">
-            This action requires password confirmation.
-          </p>
+          <h2 className="text-lg font-semibold">{t("auth.reauthRequired")}</h2>
+          <p className="text-sm text-muted-foreground">{t("auth.reauthDescription")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -47,7 +47,7 @@ export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
+            placeholder={t("auth.enterYourPassword")}
             autoFocus
             autoComplete="current-password"
             required
@@ -57,10 +57,10 @@ export function ReauthModal({ onSuccess, onClose }: ReauthModalProps) {
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={!password || loading}>
-              {loading ? "Verifying..." : "Confirm"}
+              {loading ? t("auth.verifying") : t("common.confirm")}
             </Button>
           </div>
         </form>

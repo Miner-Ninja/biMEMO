@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Shield, MessageSquare, FileText, FolderTree } from "lucide-react";
 import { NewChatButton } from "./NewChatButton";
 import { ChatList } from "./ChatList";
@@ -50,6 +51,7 @@ export function Sidebar({
   voiceMode,
   onToggleVoiceMode,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("chats");
 
@@ -62,7 +64,7 @@ export function Sidebar({
     <SidebarShell
       icon={Shield}
       title="biMEMO"
-      subtitle="Workspace"
+      subtitle={t("sidebar.workspace")}
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
           <Tabs value={activeTab} onValueChange={(value) => switchTab(value as TabKey)}>
@@ -72,21 +74,22 @@ export function Sidebar({
                 className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
               >
                 <MessageSquare className="h-4 w-4" />
-                Chats
+                {t("sidebar.chats")}
               </TabsTrigger>
               <TabsTrigger
                 value="files"
                 className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
               >
                 <FileText className="h-4 w-4" />
-                Files{activeFiles.length > 0 && ` (${activeFiles.length})`}
+                {t("sidebar.files")}
+                {activeFiles.length > 0 && ` (${activeFiles.length})`}
               </TabsTrigger>
               <TabsTrigger
                 value="workspace"
                 className="gap-2 rounded-md py-2 text-sm data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground"
               >
                 <FolderTree className="h-4 w-4" />
-                Workspace
+                {t("sidebar.workspace")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -96,7 +99,9 @@ export function Sidebar({
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder={
-                activeTab === "chats" ? "Search chats..." : "Search files..."
+                activeTab === "chats"
+                  ? t("sidebar.searchChats")
+                  : t("sidebar.searchFiles")
               }
             />
           )}
@@ -131,7 +136,7 @@ export function Sidebar({
         <div className="flex flex-col gap-2">
           <NewChatButton onClick={onNewChat} />
           <UserMenu
-            userName={username || "User"}
+            userName={username || t("sidebar.user")}
             onLogout={onLogout}
             voiceMode={voiceMode}
             onToggleVoiceMode={onToggleVoiceMode}

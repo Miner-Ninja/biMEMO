@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -50,6 +51,7 @@ export function useConfirm() {
   }, []);
 
   function ConfirmDialog() {
+    const { t } = useTranslation();
     return (
       <AlertDialog
         open={state.open}
@@ -64,10 +66,10 @@ export function useConfirm() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancel}>
-              {state.cancelLabel ?? "Cancel"}
+              {state.cancelLabel ?? t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirm}>
-              {state.confirmLabel ?? "Confirm"}
+              {state.confirmLabel ?? t("common.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

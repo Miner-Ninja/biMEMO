@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   Bell,
@@ -37,6 +39,7 @@ interface TaskDetailsModalProps {
 }
 
 export function TaskDetailsModal({ task, onClose }: TaskDetailsModalProps) {
+  const { t } = useTranslation();
   const open = task !== null;
 
   return (
@@ -46,7 +49,7 @@ export function TaskDetailsModal({ task, onClose }: TaskDetailsModalProps) {
           <>
             <DialogHeader>
               <DialogTitle>{task.name}</DialogTitle>
-              <DialogDescription>Task details</DialogDescription>
+              <DialogDescription>{t("scheduler.taskDetails")}</DialogDescription>
             </DialogHeader>
             <DetailsBody task={task} />
             <DialogFooter className="pt-2">
@@ -55,7 +58,7 @@ export function TaskDetailsModal({ task, onClose }: TaskDetailsModalProps) {
                 className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
                 onClick={onClose}
               >
-                Close
+                {t("common.close")}
               </button>
             </DialogFooter>
           </>
@@ -66,6 +69,7 @@ export function TaskDetailsModal({ task, onClose }: TaskDetailsModalProps) {
 }
 
 function DetailsBody({ task }: { task: ScheduledTask }) {
+  const { t } = useTranslation();
   const isReminder = task.task_type === "reminder";
   const allowedTools = parseAllowedTools(task.allowed_tools);
   const scheduleLine = describeSchedule(
@@ -80,7 +84,7 @@ function DetailsBody({ task }: { task: ScheduledTask }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           {isReminder ? <Bell className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-          {isReminder ? "Reminder" : "Agent task"}
+          {isReminder ? t("scheduler.reminderType") : t("scheduler.agentTaskChip")}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           <Clock3 className="h-3 w-3" />
@@ -89,14 +93,18 @@ function DetailsBody({ task }: { task: ScheduledTask }) {
         {task.repeat_count > 0 && (
           <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             <Repeat className="h-3 w-3" />
-            {task.repeat_count}
-            {task.repeat_limit ? ` of ${task.repeat_limit}` : ""}
+            {task.repeat_limit
+              ? t("scheduler.repeatCountOf", {
+                  count: task.repeat_count,
+                  limit: task.repeat_limit,
+                })
+              : task.repeat_count}
           </span>
         )}
       </div>
 
       {/* Prompt */}
-      <Section title="Prompt">
+      <Section title={t("scheduler.promptSection")}>
         <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed text-foreground/90">
           {task.prompt}
         </pre>
@@ -104,10 +112,10 @@ function DetailsBody({ task }: { task: ScheduledTask }) {
 
       {/* Allowed tools */}
       {!isReminder && (
-        <Section title="Allowed tools">
+        <Section title={t("scheduler.allowedToolsLabel")}>
           {allowedTools.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No tools enabled. The agent runs without tool access.
+              {t("scheduler.noToolsEnabled")}
             </p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
@@ -126,7 +134,7 @@ function DetailsBody({ task }: { task: ScheduledTask }) {
 
       {/* Last error */}
       {task.last_error && (
-        <Section title="Last error">
+        <Section title={t("scheduler.lastErrorSection")}>
           <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
@@ -140,26 +148,29 @@ function DetailsBody({ task }: { task: ScheduledTask }) {
       <RunHistorySection taskId={task.id} />
 
       {/* Metadata grid */}
-      <Section title="Metadata">
+      <Section title={t("scheduler.metadataSection")}>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 font-mono text-[11px]">
-          <MetaRow label="Status" value={task.status} />
-          <MetaRow label="Schedule kind" value={task.schedule_kind} />
-          <MetaRow label="Schedule expr" value={task.schedule_expr} />
-          <MetaRow label="Timezone" value={task.timezone} />
+          <MetaRow label={t("scheduler.metaStatus")} value={task.status} />
+          <MetaRow label={t("scheduler.metaScheduleKind")} value={task.schedule_kind} />
+          <MetaRow label={t("scheduler.metaScheduleExpr")} value={task.schedule_expr} />
+          <MetaRow label={t("scheduler.metaTimezone")} value={task.timezone} />
           <MetaRow
-            label="Next run"
+            label={t("scheduler.metaNextRun")}
             value={`${formatAbsoluteTime(task.next_run_at)} (${formatRelativeTime(task.next_run_at)})`}
           />
           <MetaRow
-            label="Last run"
+            label={t("scheduler.metaLastRun")}
             value={
               task.last_run_at
                 ? `${formatAbsoluteTime(task.last_run_at)} (${formatRelativeTime(task.last_run_at)})`
                 : "—"
             }
           />
-          <MetaRow label="Created" value={formatAbsoluteTime(task.created_at)} />
-          <MetaRow label="Task ID" value={task.id} />
+          <MetaRow
+            label={t("scheduler.metaCreated")}
+            value={formatAbsoluteTime(task.created_at)}
+          />
+          <MetaRow label={t("scheduler.metaTaskId")} value={task.id} />
         </dl>
       </Section>
     </div>
@@ -200,13 +211,29 @@ function MetaRow({ label, value }: MetaRowProps) {
 
 const STATUS_STYLES: Record<
   TaskRunStatus,
-  { label: string; icon: typeof Check; className: string }
+  { labelKey: TranslationKey; icon: typeof Check; className: string }
 > = {
-  ok: { label: "OK", icon: Check, className: "text-emerald-500" },
-  error: { label: "Error", icon: X, className: "text-destructive" },
-  timeout: { label: "Timeout", icon: AlertTriangle, className: "text-amber-500" },
-  silent: { label: "Silent", icon: Pause, className: "text-muted-foreground" },
-  skipped: { label: "Skipped", icon: Zap, className: "text-muted-foreground" },
+  ok: { labelKey: "scheduler.runStatusOk", icon: Check, className: "text-emerald-500" },
+  error: {
+    labelKey: "scheduler.runStatusError",
+    icon: X,
+    className: "text-destructive",
+  },
+  timeout: {
+    labelKey: "scheduler.runStatusTimeout",
+    icon: AlertTriangle,
+    className: "text-amber-500",
+  },
+  silent: {
+    labelKey: "scheduler.runStatusSilent",
+    icon: Pause,
+    className: "text-muted-foreground",
+  },
+  skipped: {
+    labelKey: "scheduler.runStatusSkipped",
+    icon: Zap,
+    className: "text-muted-foreground",
+  },
 };
 
 function formatDuration(ms: number): string {
@@ -218,6 +245,7 @@ function formatDuration(ms: number): string {
 }
 
 function RunHistorySection({ taskId }: { taskId: string }) {
+  const { t } = useTranslation();
   const [runs, setRuns] = useState<ScheduledTaskRun[] | null>(null);
   const [error, setError] = useState("");
 
@@ -231,16 +259,18 @@ function RunHistorySection({ taskId }: { taskId: string }) {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load run history");
+          setError(
+            err instanceof Error ? err.message : t("scheduler.loadRunHistoryFailed")
+          );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [taskId, t]);
 
   return (
-    <Section title="Run history">
+    <Section title={t("scheduler.runHistorySection")}>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {runs === null && !error && (
         <div className="space-y-1">
@@ -251,7 +281,7 @@ function RunHistorySection({ taskId }: { taskId: string }) {
       )}
       {runs !== null && runs.length === 0 && (
         <p className="text-xs italic text-muted-foreground">
-          No runs yet. The history will appear here after the first execution.
+          {t("scheduler.noRunsYet")}
         </p>
       )}
       {runs !== null && runs.length > 0 && (
@@ -260,16 +290,16 @@ function RunHistorySection({ taskId }: { taskId: string }) {
             <thead className="bg-background/40">
               <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="px-2.5 py-1.5 font-medium uppercase tracking-[0.06em]">
-                  Status
+                  {t("scheduler.metaStatus")}
                 </th>
                 <th className="px-2.5 py-1.5 font-medium uppercase tracking-[0.06em]">
-                  When
+                  {t("scheduler.runWhenHeader")}
                 </th>
                 <th className="px-2.5 py-1.5 font-medium uppercase tracking-[0.06em]">
-                  Duration
+                  {t("scheduler.runDurationHeader")}
                 </th>
                 <th className="px-2.5 py-1.5 font-medium uppercase tracking-[0.06em]">
-                  Detail
+                  {t("scheduler.runDetailHeader")}
                 </th>
               </tr>
             </thead>
@@ -294,7 +324,7 @@ function RunHistorySection({ taskId }: { taskId: string }) {
                         )}
                       >
                         <Icon className="h-3 w-3" />
-                        {styles.label}
+                        {t(styles.labelKey)}
                       </span>
                     </td>
                     <td
