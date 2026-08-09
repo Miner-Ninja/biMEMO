@@ -339,6 +339,7 @@ def _build_dialog_recorder_provider(
             dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
             primary_model=llm_config.get("model", ""),
             dialog_recorder_model=dialog_recorder_model,
+            embedding_model=embedding_model,
             compute_config=ComputeConfig(mode=ComputeMode.GPU_ONLY, gpu_layers=0),
             num_ctx=parse_optional_int(llm_config.get("num_ctx")),
             capabilities_registry=capabilities_registry,

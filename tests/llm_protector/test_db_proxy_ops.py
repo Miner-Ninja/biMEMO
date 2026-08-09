@@ -50,7 +50,7 @@ from backend.processes.db_proxy import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 103
+EXPECTED_SOCKET_A_OPERATION_COUNT = 104
 EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 68
 EXPECTED_SOCKET_B_OPERATION_COUNT = 101
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
@@ -608,6 +608,54 @@ class TestPeekRecordQueue:
         # The ancient row must survive — this is a read, not the pruning op.
         remaining = db.execute("SELECT COUNT(*) FROM record_queue").fetchone()[0]
         assert remaining == 2
+
+
+class TestVectorSearch:
+    """hybrid-recall — KNN vector search joins records and drops tainted."""
+
+    @pytest.mark.asyncio
+    async def test_joins_records_excludes_tainted_orders_by_distance(
+        self, db: FakeDB, monkeypatch
+    ) -> None:
+        """S2.1 + S2.2 — nearest untainted records returned, tainted dropped."""
+        import backend.memory.retrieval.vector_store as vector_store
+        from backend.processes.db_proxy.handlers.memory import (
+            make_vector_search_handler,
+        )
+
+        db.execute("INSERT INTO conversations (id) VALUES ('c1')")
+        db.execute(
+            "INSERT INTO records (id, conversation_id, session_id, summary, "
+            "tainted) VALUES "
+            "('r1', 'c1', 's1', 'first', 0), "
+            "('r2', 'c1', 's1', 'second', 0), "
+            "('r3', 'c1', 's1', 'tainted one', 1)"
+        )
+
+        # vec0 MATCH is unavailable in the plain FakeDB — stub the KNN so the
+        # test exercises the handler's join/tainted/ordering logic.
+        def fake_search_similar(_db, _embedding, _limit):
+            return [("r3", 0.05), ("r1", 0.10), ("r2", 0.20)]
+
+        monkeypatch.setattr(vector_store, "search_similar", fake_search_similar)
+
+        handler = make_vector_search_handler(db)
+        result = await handler({"query_embedding": [0.1, 0.2], "limit": 5})
+        ids = [row["id"] for row in result["results"]]
+        assert ids == ["r1", "r2"]  # r3 tainted excluded; nearest-first
+        assert result["results"][0]["distance"] == 0.10
+        assert result["results"][0]["summary"] == "first"
+
+    @pytest.mark.asyncio
+    async def test_empty_embedding_returns_nothing(self, db: FakeDB) -> None:
+        """An empty query embedding short-circuits to no results."""
+        from backend.processes.db_proxy.handlers.memory import (
+            make_vector_search_handler,
+        )
+
+        handler = make_vector_search_handler(db)
+        result = await handler({"query_embedding": [], "limit": 5})
+        assert result == {"results": []}
 
 
 class TestVectorCoverage:
