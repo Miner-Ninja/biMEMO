@@ -84,6 +84,17 @@ export interface RouteDiagnosticEntry {
   used_long_term_mode: boolean;
 }
 
+export interface AssertionEntry {
+  id: string;
+  text?: string;
+  assertion_text?: string;
+  relation?: string;
+  trust_level?: string;
+  valid_from?: string | null;
+  invalid_from?: string | null;
+  created_at?: string;
+}
+
 export interface TimelineEntry {
   type: string;
   id: string;

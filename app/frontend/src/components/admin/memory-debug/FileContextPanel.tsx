@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import type { TranslationKey } from "@/i18n";
 import type {
   FileContextData,
   FileContextIndexEntry,
@@ -25,54 +27,51 @@ function formatIsoTimestamp(value: string): string {
 }
 
 function formatChunkIndexes(indexes: number[]): string {
-  if (!indexes.length) return "No chunks were selected.";
   return indexes.map((index) => String(index + 1)).join(", ");
 }
 
-function getPromptBlockDetails(block: string): { label: string; description: string } {
+function getPromptBlockDetails(block: string): {
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+} {
   if (block.includes(CHUNK_BLOCK_MARKER)) {
     return {
-      label: "Selected chunks",
-      description:
-        "This block contains the chunk excerpts that were chosen for the last prompt build.",
+      labelKey: "memoryDebug.blockSelectedChunks",
+      descriptionKey: "memoryDebug.blockSelectedChunksDescription",
     };
   }
   if (block.includes(SUMMARY_BLOCK_MARKER)) {
     return {
-      label: "Stored summary",
-      description:
-        "This block comes from the saved file summary that the system keeps for large files.",
+      labelKey: "memoryDebug.blockStoredSummary",
+      descriptionKey: "memoryDebug.blockStoredSummaryDescription",
     };
   }
   if (block.includes(PREVIEW_BLOCK_MARKER)) {
     return {
-      label: "File preview",
-      description:
-        "This block shows a shortened preview because the full file was not injected into the prompt.",
+      labelKey: "memoryDebug.blockFilePreview",
+      descriptionKey: "memoryDebug.blockFilePreviewDescription",
     };
   }
   if (block.includes(FULL_CONTENT_BLOCK_MARKER)) {
     return {
-      label: "Inline file content",
-      description:
-        "This block contains the full file body because the file was small enough to inline safely.",
+      labelKey: "memoryDebug.blockInlineContent",
+      descriptionKey: "memoryDebug.blockInlineContentDescription",
     };
   }
   if (block.includes(FILE_METADATA_BLOCK_MARKER)) {
     return {
-      label: "File metadata",
-      description:
-        "This block describes the attached file itself, including its name and content type.",
+      labelKey: "memoryDebug.blockFileMetadata",
+      descriptionKey: "memoryDebug.blockFileMetadataDescription",
     };
   }
   return {
-    label: "Prompt context",
-    description:
-      "This block is part of the assembled file context, but it did not match a more specific trace category.",
+    labelKey: "memoryDebug.blockPromptContext",
+    descriptionKey: "memoryDebug.blockPromptContextDescription",
   };
 }
 
 export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState<FileContextIndexEntry[]>([]);
   const [selectedFileId, setSelectedFileId] = useState("");
   const [fileContext, setFileContext] = useState<FileContextData | null>(null);
@@ -138,7 +137,7 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
   if (filesError) {
     return (
       <div className="p-4 text-sm text-red-400">
-        File context index could not be loaded: {filesError}
+        {t("memoryDebug.filesIndexLoadError", { error: filesError })}
       </div>
     );
   }
@@ -146,8 +145,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
   if (!files.length) {
     return (
       <EmptyStateCard
-        title="No file context yet"
-        description="Upload one or more files through chat or the files route to inspect their stored summary and chunk context here."
+        title={t("memoryDebug.noFileContextTitle")}
+        description={t("memoryDebug.noFileContextDescription")}
       />
     );
   }
@@ -161,13 +160,13 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
   return (
     <div className="space-y-6">
       <SectionIntro
-        title="File context"
-        description="Inspect the saved summary, file kind, processing mode, and stored chunks that the chat route reuses for attached files."
+        title={t("memoryDebug.viewFiles")}
+        description={t("memoryDebug.fileContextIntro")}
       />
 
       <Card>
         <CardHeader>
-          <CardTitle>Attached files</CardTitle>
+          <CardTitle>{t("memoryDebug.attachedFiles")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {files.map((file) => (
@@ -193,26 +192,37 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span>MIME: {selectedFile.mime_type}</span>
-            <span>Size: {selectedFile.size} bytes</span>
-            <span>Uploaded: {formatIsoTimestamp(selectedFile.created_at)}</span>
-            {fileContext ? <span>Kind: {fileContext.file_kind}</span> : null}
+            <span>{t("memoryDebug.mimeLabel", { value: selectedFile.mime_type })}</span>
+            <span>{t("memoryDebug.sizeBytes", { size: selectedFile.size })}</span>
+            <span>
+              {t("memoryDebug.uploadedAt", {
+                time: formatIsoTimestamp(selectedFile.created_at),
+              })}
+            </span>
             {fileContext ? (
-              <span>Estimated tokens: {fileContext.estimated_tokens}</span>
+              <span>
+                {t("memoryDebug.kindLabel", { value: fileContext.file_kind })}
+              </span>
+            ) : null}
+            {fileContext ? (
+              <span>
+                {t("memoryDebug.estimatedTokens", {
+                  value: fileContext.estimated_tokens,
+                })}
+              </span>
             ) : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {contextError ? (
             <div className="text-sm text-red-400">
-              Stored file context could not be loaded: {contextError}
+              {t("memoryDebug.fileContextLoadError", { error: contextError })}
             </div>
           ) : null}
 
           {!contextError && !fileContext ? (
-            <div className="text-sm text-muted-foreground">
-              This file does not currently have stored text context. That usually means
-              it is not treated as a text-like file.
+            <div className="font-prose text-sm text-muted-foreground">
+              {t("memoryDebug.noStoredTextContext")}
             </div>
           ) : null}
 
@@ -220,65 +230,74 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
             <>
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Stored mode reason
+                  {t("memoryDebug.storedModeReason")}
                 </h3>
                 <div className="rounded-lg border border-border bg-muted/10 p-4 text-sm leading-7">
-                  {fileContext.processing_reason ||
-                    "No stored mode explanation is available for this file yet."}
+                  {fileContext.processing_reason || t("memoryDebug.noModeExplanation")}
                 </div>
               </div>
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Summary overview
+                  {t("memoryDebug.summaryOverview")}
                 </h3>
                 <div className="rounded-lg border border-border bg-muted/10 p-4 text-sm leading-7">
-                  {fileContext.summary_overview || "No summary overview stored."}
+                  {fileContext.summary_overview || t("memoryDebug.noSummaryOverview")}
                 </div>
               </div>
 
               <Card className="border-border/70 bg-muted/10">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Last prompt usage</CardTitle>
+                  <CardTitle className="text-sm">
+                    {t("memoryDebug.lastPromptUsage")}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {fileContext.last_usage ? (
                     <>
                       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Mode: {fileContext.last_usage.processing_mode}</span>
                         <span>
-                          Used: {formatIsoTimestamp(fileContext.last_usage.used_at)}
+                          {t("memoryDebug.modeLabel", {
+                            value: fileContext.last_usage.processing_mode,
+                          })}
                         </span>
                         <span>
-                          Prompt chunks:{" "}
-                          {formatChunkIndexes(
-                            fileContext.last_usage.selected_chunk_indexes
-                          )}
+                          {t("memoryDebug.usedAt", {
+                            time: formatIsoTimestamp(fileContext.last_usage.used_at),
+                          })}
+                        </span>
+                        <span>
+                          {t("memoryDebug.promptChunks", {
+                            value: fileContext.last_usage.selected_chunk_indexes.length
+                              ? formatChunkIndexes(
+                                  fileContext.last_usage.selected_chunk_indexes
+                                )
+                              : t("memoryDebug.noChunksSelected"),
+                          })}
                         </span>
                       </div>
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Why this mode was used
+                          {t("memoryDebug.whyModeUsed")}
                         </h4>
                         <div className="rounded-md border border-border/70 bg-background/60 p-3 text-sm leading-7">
                           {fileContext.last_usage.mode_reason ||
-                            "No mode explanation stored for the last prompt use."}
+                            t("memoryDebug.noLastModeExplanation")}
                         </div>
                       </div>
                       <div className="space-y-2">
                         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Last query
+                          {t("memoryDebug.lastQuery")}
                         </h4>
                         <div className="rounded-md border border-border/70 bg-background/60 p-3 text-sm leading-7">
                           {fileContext.last_usage.user_query ||
-                            "No query text was stored for the last usage snapshot."}
+                            t("memoryDebug.noStoredQuery")}
                         </div>
                       </div>
                     </>
                   ) : (
-                    <div className="text-sm text-muted-foreground">
-                      This file has not been used in a chat request since file-context
-                      usage tracking was added.
+                    <div className="font-prose text-sm text-muted-foreground">
+                      {t("memoryDebug.fileNotUsedSinceTracking")}
                     </div>
                   )}
                 </CardContent>
@@ -286,7 +305,7 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Raw prompt blocks preview
+                  {t("memoryDebug.rawPromptBlocksPreview")}
                 </h3>
                 {fileContext.prompt_blocks.length ? (
                   <div className="space-y-3">
@@ -297,7 +316,9 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                       >
                         <CardHeader className="pb-3">
                           <CardTitle className="text-sm">
-                            Prompt block {index + 1}
+                            {t("memoryDebug.promptBlockNumber", {
+                              number: index + 1,
+                            })}
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -309,20 +330,22 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">
-                    No prompt preview is available yet for this file context.
+                  <div className="font-prose text-sm text-muted-foreground">
+                    {t("memoryDebug.noPromptPreview")}
                   </div>
                 )}
               </div>
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Forensic view
+                  {t("memoryDebug.forensicView")}
                 </h3>
                 <div className="grid gap-4 xl:grid-cols-4">
                   <Card className="border-border/70 bg-muted/10">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Stored mode</CardTitle>
+                      <CardTitle className="text-sm">
+                        {t("memoryDebug.storedMode")}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="text-sm text-foreground/90">
                       {fileContext.processing_mode}
@@ -330,36 +353,47 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                   </Card>
                   <Card className="border-border/70 bg-muted/10">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Last prompt mode</CardTitle>
+                      <CardTitle className="text-sm">
+                        {t("memoryDebug.lastPromptMode")}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="text-sm text-foreground/90">
                       {fileContext.last_usage?.processing_mode ||
-                        "This file has not been used in a prompt yet."}
+                        t("memoryDebug.fileNotUsedInPrompt")}
                     </CardContent>
                   </Card>
                   <Card className="border-border/70 bg-muted/10">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Chunk selection</CardTitle>
+                      <CardTitle className="text-sm">
+                        {t("memoryDebug.chunkSelection")}
+                      </CardTitle>
                     </CardHeader>
-                    <CardContent className="text-sm text-foreground/90">
-                      {selectedChunkIds.size} of {fileContext.chunks.length} stored
-                      chunks were used in the last prompt.
+                    <CardContent className="font-prose text-sm text-foreground/90">
+                      {t("memoryDebug.chunksUsedOfStored", {
+                        used: selectedChunkIds.size,
+                        total: fileContext.chunks.length,
+                      })}
                     </CardContent>
                   </Card>
                   <Card className="border-border/70 bg-muted/10">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Prompt blocks</CardTitle>
+                      <CardTitle className="text-sm">
+                        {t("memoryDebug.promptBlocks")}
+                      </CardTitle>
                     </CardHeader>
-                    <CardContent className="text-sm text-foreground/90">
-                      {fileContext.prompt_blocks.length} blocks were assembled for the
-                      current preview.
+                    <CardContent className="font-prose text-sm text-foreground/90">
+                      {t("memoryDebug.blocksAssembled", {
+                        count: fileContext.prompt_blocks.length,
+                      })}
                     </CardContent>
                   </Card>
                 </div>
 
                 <Card className="border-border/70 bg-muted/10">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Chunk selection trace</CardTitle>
+                    <CardTitle className="text-sm">
+                      {t("memoryDebug.chunkSelectionTrace")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {fileContext.chunks.length ? (
@@ -374,36 +408,44 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                               className="rounded-lg border border-border/70 bg-background/60 p-4"
                             >
                               <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground/90">
-                                <span>Chunk {chunk.chunk_index + 1}</span>
+                                <span>
+                                  {t("memoryDebug.chunkNumber", {
+                                    number: chunk.chunk_index + 1,
+                                  })}
+                                </span>
                                 <Badge
                                   variant={usedInLastPrompt ? "default" : "outline"}
                                 >
                                   {usedInLastPrompt
-                                    ? "used in last prompt"
-                                    : "stored but skipped"}
+                                    ? t("memoryDebug.usedInLastPrompt")
+                                    : t("memoryDebug.storedButSkipped")}
                                 </Badge>
                                 {chunk.line_start != null && chunk.line_end != null ? (
                                   <span className="text-xs text-muted-foreground">
-                                    lines {chunk.line_start}-{chunk.line_end}
+                                    {t("memoryDebug.linesRange", {
+                                      start: chunk.line_start,
+                                      end: chunk.line_end,
+                                    })}
                                   </span>
                                 ) : null}
                                 <span className="text-xs text-muted-foreground">
-                                  ~{chunk.estimated_tokens} tokens
+                                  {t("memoryDebug.approxTokens", {
+                                    count: chunk.estimated_tokens,
+                                  })}
                                 </span>
                               </div>
-                              <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                              <p className="font-prose mt-2 text-sm leading-7 text-muted-foreground">
                                 {usedInLastPrompt
-                                  ? "This chunk was selected for the most recent prompt assembly."
-                                  : "This chunk is stored for recall, but it was not needed in the most recent prompt."}
+                                  ? t("memoryDebug.chunkSelectedForPrompt")
+                                  : t("memoryDebug.chunkStoredNotNeeded")}
                               </p>
                             </div>
                           );
                         })}
                       </div>
                     ) : (
-                      <div className="text-sm text-muted-foreground">
-                        This file does not have stored chunks, so there is no
-                        chunk-selection trace to inspect.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noChunkTrace")}
                       </div>
                     )}
                   </CardContent>
@@ -411,7 +453,9 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
 
                 <Card className="border-border/70 bg-muted/10">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Prompt assembly trace</CardTitle>
+                    <CardTitle className="text-sm">
+                      {t("memoryDebug.promptAssemblyTrace")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {fileContext.prompt_blocks.length ? (
@@ -424,22 +468,21 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                               className="rounded-lg border border-border/70 bg-background/60 p-4"
                             >
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{details.label}</Badge>
+                                <Badge variant="outline">{t(details.labelKey)}</Badge>
                                 <span className="text-sm font-medium text-foreground/90">
-                                  Block {index + 1}
+                                  {t("memoryDebug.blockNumber", { number: index + 1 })}
                                 </span>
                               </div>
-                              <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                                {details.description}
+                              <p className="font-prose mt-2 text-sm leading-7 text-muted-foreground">
+                                {t(details.descriptionKey)}
                               </p>
                             </div>
                           );
                         })}
                       </div>
                     ) : (
-                      <div className="text-sm text-muted-foreground">
-                        No prompt blocks are available, so there is no prompt-assembly
-                        trace to inspect yet.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noPromptAssemblyTrace")}
                       </div>
                     )}
                   </CardContent>
@@ -449,7 +492,9 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
               <div className="grid gap-4 xl:grid-cols-3">
                 <Card className="border-border/70 bg-muted/10">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Structure</CardTitle>
+                    <CardTitle className="text-sm">
+                      {t("memoryDebug.structure")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {fileContext.summary_structure.length ? (
@@ -464,8 +509,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-sm text-muted-foreground">
-                        No structural lines were stored for this file.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noStructuralLines")}
                       </div>
                     )}
                   </CardContent>
@@ -473,7 +518,9 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
 
                 <Card className="border-border/70 bg-muted/10">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Key points</CardTitle>
+                    <CardTitle className="text-sm">
+                      {t("memoryDebug.keyPoints")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {fileContext.summary_key_points.length ? (
@@ -488,8 +535,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-sm text-muted-foreground">
-                        No key points were stored for this file.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noKeyPoints")}
                       </div>
                     )}
                   </CardContent>
@@ -497,7 +544,9 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
 
                 <Card className="border-border/70 bg-muted/10">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Warnings</CardTitle>
+                    <CardTitle className="text-sm">
+                      {t("memoryDebug.warnings")}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {fileContext.summary_warnings.length ? (
@@ -512,8 +561,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-sm text-muted-foreground">
-                        No warnings were stored for this file.
+                      <div className="font-prose text-sm text-muted-foreground">
+                        {t("memoryDebug.noWarnings")}
                       </div>
                     )}
                   </CardContent>
@@ -522,7 +571,7 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Stored chunks
+                  {t("memoryDebug.storedChunks")}
                 </h3>
                 {fileContext.chunks.length ? (
                   <div className="space-y-3">
@@ -533,16 +582,27 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                       >
                         <CardHeader className="pb-3">
                           <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
-                            <span>Chunk {chunk.chunk_index + 1}</span>
+                            <span>
+                              {t("memoryDebug.chunkNumber", {
+                                number: chunk.chunk_index + 1,
+                              })}
+                            </span>
                             {fileContext.last_usage?.selected_chunk_ids.includes(
                               chunk.chunk_id
                             ) ? (
-                              <Badge variant="outline">used in last prompt</Badge>
+                              <Badge variant="outline">
+                                {t("memoryDebug.usedInLastPrompt")}
+                              </Badge>
                             ) : null}
                             {chunk.line_start != null && chunk.line_end != null
-                              ? ` · lines ${chunk.line_start}-${chunk.line_end}`
+                              ? ` · ${t("memoryDebug.linesRange", {
+                                  start: chunk.line_start,
+                                  end: chunk.line_end,
+                                })}`
                               : ""}
-                            {` · ~${chunk.estimated_tokens} tokens`}
+                            {` · ${t("memoryDebug.approxTokens", {
+                              count: chunk.estimated_tokens,
+                            })}`}
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -554,8 +614,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">
-                    No stored chunks were needed for this file.
+                  <div className="font-prose text-sm text-muted-foreground">
+                    {t("memoryDebug.noStoredChunks")}
                   </div>
                 )}
               </div>

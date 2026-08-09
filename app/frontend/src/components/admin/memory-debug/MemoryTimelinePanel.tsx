@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import type { TranslationKey } from "@/i18n";
 import { SORT_OPTIONS } from "@/components/admin/memory-debug/constants";
+import { AssertionCard } from "@/components/admin/memory-debug/AssertionCard";
 import type {
   TimelineData,
   TimelineEntry,
@@ -14,6 +17,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
+
+const TYPE_FILTERS: ReadonlyArray<{ value: string; labelKey: TranslationKey }> = [
+  { value: "", labelKey: "memoryDebug.all" },
+  { value: "message", labelKey: "memoryDebug.typeMessage" },
+  { value: "record", labelKey: "memoryDebug.typeRecord" },
+  { value: "assertion", labelKey: "memoryDebug.typeAssertion" },
+];
 
 function reorderMessagePairs(entries: TimelineEntry[]): TimelineEntry[] {
   const result: TimelineEntry[] = [];
@@ -38,6 +48,7 @@ function reorderMessagePairs(entries: TimelineEntry[]): TimelineEntry[] {
 }
 
 export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<"desc" | "asc">("desc");
@@ -85,18 +96,18 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
   return (
     <div className="space-y-6">
       <SectionIntro
-        title="Timeline"
-        description="Read memory as a time-ordered stream of messages, records, and summaries."
+        title={t("memoryDebug.viewTimeline")}
+        description={t("memoryDebug.timelineIntro")}
         actions={
           <>
-            {["", "message", "record", "assertion"].map((type) => (
+            {TYPE_FILTERS.map(({ value, labelKey }) => (
               <Button
-                key={type || "all"}
+                key={value || "all"}
                 size="sm"
-                variant={filter === type ? "default" : "outline"}
-                onClick={() => setFilter(type)}
+                variant={filter === value ? "default" : "outline"}
+                onClick={() => setFilter(value)}
               >
-                {type || "All"}
+                {t(labelKey)}
               </Button>
             ))}
             {SORT_OPTIONS.map((option) => (
@@ -106,7 +117,7 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
                 variant={sort === option.value ? "default" : "outline"}
                 onClick={() => setSort(option.value)}
               >
-                {option.label}
+                {t(option.labelKey)}
               </Button>
             ))}
           </>
@@ -115,6 +126,32 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
 
       <div className="space-y-3">
         {entries.map((entry) => {
+          if (entry.type === "assertion") {
+            const meta = entry.meta ?? {};
+            return (
+              <Card key={entry.id}>
+                <CardContent className="p-4">
+                  <AssertionCard
+                    data={{
+                      id: entry.id,
+                      text: typeof entry.content === "string" ? entry.content : "",
+                      relation:
+                        typeof meta.relation === "string" ? meta.relation : undefined,
+                      trustLevel:
+                        typeof meta.trust_level === "string"
+                          ? meta.trust_level
+                          : undefined,
+                      invalidFrom:
+                        typeof meta.invalid_from === "string"
+                          ? meta.invalid_from
+                          : null,
+                      createdAt: entry.created_at,
+                    }}
+                  />
+                </CardContent>
+              </Card>
+            );
+          }
           const role = entry.type === "message" ? entry.meta?.role || "message" : "";
           const badgeType = role === "user" || role === "assistant" ? role : entry.type;
           return (
@@ -136,14 +173,14 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
         })}
         {entries.length === 0 && !loading ? (
           <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              No entries match the current timeline filter.
+            <CardContent className="font-prose p-4 text-sm text-muted-foreground">
+              {t("memoryDebug.noTimelineEntries")}
             </CardContent>
           </Card>
         ) : null}
         {entries.length > 0 ? (
           <div className="text-xs text-muted-foreground">
-            Showing {entries.length} of {totalCount}
+            {t("memoryDebug.showingOf", { shown: entries.length, total: totalCount })}
           </div>
         ) : null}
         {hasMore ? (
@@ -153,7 +190,7 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
             onClick={() => fetchEntries(false)}
             disabled={loading}
           >
-            {loading ? "Loading..." : "Load more"}
+            {loading ? t("common.loading") : t("memoryDebug.loadMore")}
           </Button>
         ) : null}
       </div>

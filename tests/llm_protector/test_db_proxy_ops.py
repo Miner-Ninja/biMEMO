@@ -51,8 +51,8 @@ from backend.processes.db_proxy import (
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 103
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 64
-EXPECTED_SOCKET_B_OPERATION_COUNT = 97
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 65
+EXPECTED_SOCKET_B_OPERATION_COUNT = 98
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -496,6 +496,57 @@ class TestUiSettingsOperations:
         get_handler = make_get_ui_settings_handler(db)
         stored = await get_handler({})
         assert stored["settings"] == {"theme": "light"}
+
+
+class TestListEntitiesOperation:
+    """R1 (memory-page) — paged entity listing with active-fact counts."""
+
+    @pytest.mark.asyncio
+    async def test_counts_only_active_assertions(self, db: FakeDB) -> None:
+        """S1.1 — each entity carries its count of active assertions."""
+        from backend.processes.db_proxy.handlers.graph import (
+            make_list_entities_handler,
+        )
+
+        db.execute(
+            "INSERT INTO entities (id, entity_type, canonical_name) "
+            "VALUES ('e1', 'person', 'User'), ('e2', 'tool', 'Docker')"
+        )
+        db.execute(
+            "INSERT INTO assertions "
+            "(id, subject_entity_id, relation, object_value, assertion_text) "
+            "VALUES "
+            "('a1', 'e1', 'uses', 'x', 'User uses x'), "
+            "('a2', 'e1', 'prefers', 'y', 'User prefers y'), "
+            "('a3', 'e2', 'states', 'z', 'Docker states z')"
+        )
+        db.execute(
+            "UPDATE assertions SET invalid_from = '2026-01-01' WHERE id = 'a2'"
+        )
+        handler = make_list_entities_handler(db)
+        result = await handler({"limit": 10, "offset": 0})
+        assert result["total"] == 2
+        by_id = {e["id"]: e for e in result["entities"]}
+        assert by_id["e1"]["active_assertions"] == 1
+        assert by_id["e2"]["active_assertions"] == 1
+
+    @pytest.mark.asyncio
+    async def test_pagination(self, db: FakeDB) -> None:
+        """S1.1 — limit/offset page through entities."""
+        from backend.processes.db_proxy.handlers.graph import (
+            make_list_entities_handler,
+        )
+
+        for i in range(5):
+            db.execute(
+                "INSERT INTO entities (id, entity_type, canonical_name, "
+                "created_at) VALUES (?, 'topic', ?, ?)",
+                (f"e{i}", f"name{i}", f"2026-01-0{i + 1}T00:00:00"),
+            )
+        handler = make_list_entities_handler(db)
+        page = await handler({"limit": 2, "offset": 2})
+        assert page["total"] == 5
+        assert [e["id"] for e in page["entities"]] == ["e2", "e1"]
 
 
 class TestCreateBackup:

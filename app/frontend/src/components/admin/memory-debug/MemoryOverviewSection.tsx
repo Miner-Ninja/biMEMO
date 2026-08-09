@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   PipelineData,
@@ -6,7 +7,11 @@ import type {
   RouteDiagnosticsSummaryData,
 } from "@/components/admin/memory-debug/types";
 import { PanelSkeleton } from "@/components/ui/skeletons";
-import { EmptyStateCard, SummaryCard } from "@/components/admin/memory-debug/shared";
+import {
+  EmptyStateCard,
+  SummaryCard,
+  AutoRefreshBadge,
+} from "@/components/admin/memory-debug/shared";
 import {
   Card,
   CardContent,
@@ -15,46 +20,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
-
-function buildAttentionItems(
-  quality: QualityData | null,
-  diagnostics: RouteDiagnosticsSummaryData | null
-): string[] {
-  const items: string[] = [];
-
-  if (quality) {
-    if (quality.orphan_entities > 0) {
-      items.push(`${quality.orphan_entities} graph entities have no assertions yet.`);
-    }
-    if (quality.assertions_with_missing_evidence > 0) {
-      items.push(
-        `${quality.assertions_with_missing_evidence} assertions cite records that were already pruned.`
-      );
-    }
-    if (quality.duplicate_assertion_texts > 0) {
-      items.push(
-        `${quality.duplicate_assertion_texts} assertions repeat the same statement text.`
-      );
-    }
-  }
-
-  if (diagnostics) {
-    if (diagnostics.totals.mismatch_rows > 0) {
-      items.push(
-        `${diagnostics.totals.mismatch_rows} recent route decisions changed after deeper analysis.`
-      );
-    }
-    if (diagnostics.totals.fallback_rows > 0) {
-      items.push(
-        `${diagnostics.totals.fallback_rows} recent questions needed the backup route classifier.`
-      );
-    }
-  }
-
-  return items.slice(0, 5);
-}
+import { buildAttentionItems } from "@/components/admin/memory-debug/quality-issues";
 
 export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }) {
+  const { t } = useTranslation();
   const [pipeline, setPipeline] = useState<PipelineData | null>(null);
   const [quality, setQuality] = useState<QualityData | null>(null);
   const [diagnostics, setDiagnostics] = useState<RouteDiagnosticsSummaryData | null>(
@@ -97,8 +66,8 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
   if (error) {
     return (
       <EmptyStateCard
-        title="Overview unavailable"
-        description={`The overview could not be loaded: ${error}`}
+        title={t("memoryDebug.overviewUnavailable")}
+        description={t("memoryDebug.overviewLoadError", { error })}
       />
     );
   }
@@ -117,32 +86,35 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <AutoRefreshBadge seconds={5} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          title="Messages"
+          title={t("memoryDebug.messages")}
           value={pipeline.messages}
-          detail="Raw conversation entries currently stored."
+          detail={t("memoryDebug.messagesDetail")}
           toneClassName="text-blue-400"
           accentClassName="bg-blue-400/80"
         />
         <SummaryCard
-          title="Records"
+          title={t("memoryDebug.records")}
           value={pipeline.records}
-          detail="Compressed memory records extracted from messages."
+          detail={t("memoryDebug.recordsDetail")}
           toneClassName="text-amber-400"
           accentClassName="bg-amber-400/80"
         />
         <SummaryCard
-          title="Assertions"
+          title={t("memoryDebug.assertions")}
           value={pipeline.assertions}
-          detail="Graph knowledge assertions extracted from records."
+          detail={t("memoryDebug.assertionsDetail")}
           toneClassName="text-violet-400"
           accentClassName="bg-violet-400/80"
         />
         <SummaryCard
-          title="Quality score"
+          title={t("memoryDebug.qualityScore")}
           value={`${Math.round(quality.quality_score * 100)}%`}
-          detail="Overall memory health based on links and coverage."
+          detail={attentionItems[0] ?? t("memoryDebug.qualityScoreDetail")}
           toneClassName={qualityTone}
           accentClassName={
             quality.quality_score * 100 >= 85
@@ -157,10 +129,9 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
       <div className="grid gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>What needs attention now</CardTitle>
-            <CardDescription>
-              The most important signals from the current memory snapshot and the last
-              24 hours of diagnostics.
+            <CardTitle>{t("memoryDebug.attentionTitle")}</CardTitle>
+            <CardDescription className="font-prose">
+              {t("memoryDebug.attentionDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -176,8 +147,8 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300">
-                No obvious problems are visible in the current overview window.
+              <div className="font-prose rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300">
+                {t("memoryDebug.noObviousProblems")}
               </div>
             )}
           </CardContent>
@@ -187,9 +158,9 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Routing snapshot</CardTitle>
-            <CardDescription>
-              Recent question-routing behavior from the last 24 hours.
+            <CardTitle>{t("memoryDebug.routingSnapshotTitle")}</CardTitle>
+            <CardDescription className="font-prose">
+              {t("memoryDebug.routingSnapshotDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -198,27 +169,31 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
                 {diagnostics.totals.total_rows}
               </div>
               <div className="mt-1 text-sm text-muted-foreground">
-                Stored route decisions
+                {t("memoryDebug.storedRouteDecisions")}
               </div>
             </div>
             <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="text-2xl font-semibold text-amber-400">
                 {diagnostics.totals.fallback_rows}
               </div>
-              <div className="mt-1 text-sm text-muted-foreground">Fallback uses</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {t("memoryDebug.fallbackUses")}
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="text-2xl font-semibold text-orange-400">
                 {diagnostics.totals.mismatch_rows}
               </div>
-              <div className="mt-1 text-sm text-muted-foreground">Route changes</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {t("memoryDebug.routeChanges")}
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="text-2xl font-semibold text-violet-400">
                 {diagnostics.totals.long_term_rows}
               </div>
               <div className="mt-1 text-sm text-muted-foreground">
-                Long-term mode uses
+                {t("memoryDebug.longTermModeUses")}
               </div>
             </div>
           </CardContent>
@@ -226,32 +201,40 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
 
         <Card>
           <CardHeader>
-            <CardTitle>Memory link coverage</CardTitle>
-            <CardDescription>
-              How well stored memory items are tied back to supporting data.
+            <CardTitle>{t("memoryDebug.memoryLinkCoverageTitle")}</CardTitle>
+            <CardDescription className="font-prose">
+              {t("memoryDebug.memoryLinkCoverageDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Valid assertions</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.validAssertions")}
+              </span>
               <span>{quality.assertions_valid}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Invalidated assertions</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.invalidatedAssertions")}
+              </span>
               <span>{quality.assertions_invalidated}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                Assertions citing pruned records
+                {t("memoryDebug.assertionsCitingPruned")}
               </span>
               <span>{quality.assertions_with_missing_evidence}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Orphan entities</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.orphanEntities")}
+              </span>
               <span>{quality.orphan_entities}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Duplicate assertion texts</span>
+              <span className="text-muted-foreground">
+                {t("memoryDebug.duplicateAssertionTexts")}
+              </span>
               <span>{quality.duplicate_assertion_texts}</span>
             </div>
           </CardContent>
