@@ -169,7 +169,7 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
                 {attentionItems.map((item) => (
                   <div
                     key={item}
-                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200"
+                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-200"
                   >
                     {item}
                   </div>

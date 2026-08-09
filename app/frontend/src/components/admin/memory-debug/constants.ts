@@ -32,8 +32,8 @@ export const MEMORY_DEBUG_SECTIONS: Array<{
   },
   {
     id: "assertions",
-    label: "Summaries",
-    description: "Learned main points and insights extracted from conversations.",
+    label: "Assertions",
+    description: "Graph knowledge: dated, trust-labeled facts with search.",
   },
 ];
 

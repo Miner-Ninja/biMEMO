@@ -41,6 +41,21 @@
 		path /mcp /mcp/*
 	}
 
+	# SPA page navigations under /admin/* must come from Vite in dev:
+	# the backend would serve its baked-in dist whose hashed assets do
+	# not exist on the dev-server, leaving a blank page. API calls
+	# (Accept: application/json or */*) still go to the backend below.
+	@admin_page {
+		path /admin /admin/*
+		header Accept *text/html*
+	}
+
+	handle @admin_page {
+		reverse_proxy frontend:5173 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
 	handle @api {
 		reverse_proxy bimemo:8000 {
 			header_up X-Forwarded-Proto {scheme}

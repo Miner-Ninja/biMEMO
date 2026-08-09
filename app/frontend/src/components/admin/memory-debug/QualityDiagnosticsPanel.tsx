@@ -102,14 +102,14 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 {issues.map((issue) => (
                   <div
                     key={issue}
-                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200"
+                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-200"
                   >
                     {issue}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300">
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
                 No major quality issues are visible in the current snapshot.
               </div>
             )}
