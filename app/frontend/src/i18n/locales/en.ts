@@ -666,6 +666,26 @@ const en = {
     viewRecordsLog: "Records log",
     viewRecordsLogDescription:
       "Detailed records for record creation, skips, and failures.",
+    viewExtractor: "Extractor",
+    viewExtractorDescription:
+      "What the graph extractor decided for each batch of records.",
+    viewQueue: "Record queue",
+    viewQueueDescription: "Records waiting to be turned into graph knowledge.",
+    extractorTraceIntro:
+      "Every decision the graph extractor made — what it stored, skipped, invalidated, or could not parse.",
+    extractorNoDetail: "No extra detail for this decision.",
+    noExtractorTrace: "No extractor decisions have been recorded yet.",
+    recordQueueIntro:
+      "Pending items waiting for the extractor. This is a read-only view and does not prune anything.",
+    recordQueueEmpty: "The record queue is empty.",
+    queueLoadError: "Record queue could not be loaded: {{error}}",
+    queueInjectionFlagged: "injection flagged",
+    queueAttempts_one: "{{count}} attempt",
+    queueAttempts_few: "{{count}} attempts",
+    queueAttempts_many: "{{count}} attempts",
+    queueAttempts_other: "{{count}} attempts",
+    vectorCoverage: "Vector coverage",
+    vectorCoverageDetail: "{{embedded}} of {{total}} records have an embedding.",
     sortNewestFirst: "Newest first",
     sortOldestFirst: "Oldest first",
     pageTitle: "Memory Debug",

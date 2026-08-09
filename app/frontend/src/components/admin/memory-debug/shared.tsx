@@ -149,7 +149,7 @@ export function TypeBadge({ type }: { type: string }) {
   );
 }
 
-function NamedBadge({
+export function NamedBadge({
   value,
   colors,
 }: {

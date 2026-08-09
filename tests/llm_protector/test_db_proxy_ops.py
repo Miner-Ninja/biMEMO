@@ -51,8 +51,8 @@ from backend.processes.db_proxy import (
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 103
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 65
-EXPECTED_SOCKET_B_OPERATION_COUNT = 98
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 67
+EXPECTED_SOCKET_B_OPERATION_COUNT = 100
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -547,6 +547,77 @@ class TestListEntitiesOperation:
         page = await handler({"limit": 2, "offset": 2})
         assert page["total"] == 5
         assert [e["id"] for e in page["entities"]] == ["e2", "e1"]
+
+
+class TestPeekRecordQueue:
+    """memory-diagnostics-gaps — read-only queue view (no pruning)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_contents_without_pruning(self, db: FakeDB) -> None:
+        """Rows are returned oldest-first and an old row is NOT deleted."""
+        from backend.processes.db_proxy.handlers.memory import (
+            make_peek_record_queue_handler,
+        )
+
+        db.execute(
+            "INSERT INTO record_queue "
+            "(id, conversation_id, session_id, source_message_ids, attempts, "
+            "created_at) VALUES "
+            "('q1', 'c1', 's1', '[\"m1\"]', 2, '2000-01-01T00:00:00'), "
+            "('q2', 'c2', 's2', '[]', 0, '2030-01-01T00:00:00')"
+        )
+        handler = make_peek_record_queue_handler(db)
+        result = await handler({"limit": 10})
+        assert [item["queue_id"] for item in result["items"]] == ["q1", "q2"]
+        assert result["items"][0]["attempts"] == 2
+        assert result["items"][0]["source_message_ids"] == ["m1"]
+        assert result["items"][0]["created_at"] == "2000-01-01T00:00:00"
+        # The ancient row must survive — this is a read, not the pruning op.
+        remaining = db.execute("SELECT COUNT(*) FROM record_queue").fetchone()[0]
+        assert remaining == 2
+
+
+class TestVectorCoverage:
+    """memory-diagnostics-gaps — embedding coverage metric."""
+
+    @pytest.mark.asyncio
+    async def test_counts_embedded_vs_total(self, db: FakeDB) -> None:
+        """Coverage counts non-tainted records with an embedding."""
+        from backend.processes.db_proxy.handlers.memory import (
+            make_get_vector_coverage_handler,
+        )
+
+        db.execute("INSERT INTO conversations (id) VALUES ('c1')")
+        db.execute(
+            "INSERT INTO records (id, conversation_id, session_id, summary, "
+            "tainted) VALUES "
+            "('r1', 'c1', 's1', 'a', 0), "
+            "('r2', 'c1', 's1', 'b', 0), "
+            "('r3', 'c1', 's1', 'c', 1)"
+        )
+        db.execute("INSERT INTO record_embeddings (record_id) VALUES ('r1')")
+        handler = make_get_vector_coverage_handler(db)
+        result = await handler({})
+        assert result["total"] == 2  # tainted r3 excluded
+        assert result["embedded"] == 1
+        assert result["unembedded"] == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_vector_table(self, db: FakeDB) -> None:
+        """With no embeddings table, all records read as unembedded."""
+        from backend.processes.db_proxy.handlers.memory import (
+            make_get_vector_coverage_handler,
+        )
+
+        db.execute("DROP TABLE record_embeddings")
+        db.execute("INSERT INTO conversations (id) VALUES ('c1')")
+        db.execute(
+            "INSERT INTO records (id, conversation_id, session_id, summary, "
+            "tainted) VALUES ('r1', 'c1', 's1', 'a', 0)"
+        )
+        handler = make_get_vector_coverage_handler(db)
+        result = await handler({})
+        assert result == {"total": 1, "embedded": 0, "unembedded": 1}
 
 
 class TestCreateBackup:

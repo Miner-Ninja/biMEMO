@@ -8,15 +8,25 @@ import { buildQualityIssues } from "@/components/admin/memory-debug/quality-issu
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
 
+interface VectorCoverage {
+  total: number;
+  embedded: number;
+  unembedded: number;
+}
+
 export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number }) {
   const { t } = useTranslation();
   const [data, setData] = useState<QualityData | null>(null);
+  const [coverage, setCoverage] = useState<VectorCoverage | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     apiRequest<QualityData>("/admin/memory/quality")
       .then(setData)
       .catch((requestError) => setError(String(requestError)));
+    apiRequest<VectorCoverage>("/admin/memory/vector-coverage")
+      .then(setCoverage)
+      .catch(() => setCoverage(null));
   }, [refreshToken]);
 
   if (error)
@@ -98,6 +108,21 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
           detail={t("memoryDebug.evidenceIntegrityDetail")}
           toneClassName="text-blue-400"
         />
+        {coverage ? (
+          <SummaryCard
+            title={t("memoryDebug.vectorCoverage")}
+            value={
+              coverage.total > 0
+                ? `${Math.round((coverage.embedded / coverage.total) * 100)}%`
+                : "—"
+            }
+            detail={t("memoryDebug.vectorCoverageDetail", {
+              embedded: coverage.embedded,
+              total: coverage.total,
+            })}
+            toneClassName="text-cyan-400"
+          />
+        ) : null}
         <SummaryCard
           title={t("memoryDebug.orphanEntities")}
           value={data.orphan_entities}

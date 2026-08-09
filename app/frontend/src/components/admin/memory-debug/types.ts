@@ -1,9 +1,9 @@
 export type MemoryDebugSection =
   "overview" | "diagnostics" | "memory-data" | "processing-logs" | "assertions";
 
-export type DiagnosticsView = "routing" | "quality" | "audit";
+export type DiagnosticsView = "routing" | "quality" | "audit" | "extractor";
 
-export type MemoryDataView = "context" | "timeline" | "links" | "files";
+export type MemoryDataView = "context" | "timeline" | "links" | "files" | "queue";
 
 export type ProcessingLogsView = "records-log";
 
