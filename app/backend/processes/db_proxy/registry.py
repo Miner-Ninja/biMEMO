@@ -100,6 +100,7 @@ from .handlers.graph import (
     make_fetch_unextracted_records_handler,
     make_find_entities_handler,
     make_find_graph_entry_points_handler,
+    make_get_entities_by_ids_handler,
     make_get_entity_handler,
     make_get_graph_stats_handler,
     make_invalidate_assertion_handler,
@@ -313,6 +314,7 @@ SOCKET_B_ONLY_OPERATIONS = {
     "get_ui_settings",
     "store_ui_settings",
     "list_entities",
+    "get_entities_by_ids",
     "peek_record_queue",
     "get_vector_coverage",
     "get_avatar",
@@ -521,6 +523,10 @@ def _register_graph_operations(
     registry.register("prune_graph", make_prune_graph_handler(db))
     registry.register("get_graph_stats", make_get_graph_stats_handler(db))
     registry.register("get_entity", make_get_entity_handler(db))
+    registry.register(
+        "get_entities_by_ids",
+        make_get_entities_by_ids_handler(db),
+    )
     registry.register("find_entities", make_find_entities_handler(db))
     registry.register("list_entities", make_list_entities_handler(db))
     registry.register(

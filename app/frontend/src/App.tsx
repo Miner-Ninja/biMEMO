@@ -16,6 +16,7 @@ import { BackupsPage } from "@/pages/BackupsPage";
 import { LLMConfigPage } from "@/pages/admin/LLMConfigPage";
 import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
 import { MemoryPage } from "@/pages/admin/MemoryPage";
+import { EntityDetailPage } from "@/pages/admin/EntityDetailPage";
 import { ProfilePage } from "@/pages/admin/ProfilePage";
 import { ScheduledTasksPage } from "@/pages/admin/ScheduledTasksPage";
 import { SkillsPage } from "@/pages/admin/SkillsPage";
@@ -83,6 +84,10 @@ function AppRoutes() {
       <Route path="/admin/scheduled-tasks" element={<ScheduledTasksPage />} />
       <Route path="/admin/memory" element={<MemoryPage />} />
       <Route path="/admin/memory-debug" element={<MemoryDebugPage />} />
+      <Route
+        path="/admin/memory-debug/entity/:entityId"
+        element={<EntityDetailPage />}
+      />
       <Route path="/admin/skills" element={<SkillsPage />} />
       <Route path="/admin/skills/:name" element={<SkillDetailPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -545,13 +545,35 @@ async def get_graph_entity(
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
 ) -> dict:
-    """Return one entity with its assertions in both roles."""
+    """Return one entity, its assertions, and its resolved neighbors.
+
+    Each assertion carries a subject/object entity id; the ``related``
+    map resolves those ids to name+type so the UI can label and link
+    neighbors (graph traversal) without one round trip per edge.
+    """
     del _claims
     entity = await admin.get_entity(entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     assertions = await admin.list_assertions_for_entity(entity_id, valid_only=False)
-    return {"entity": entity, "assertions": assertions}
+    neighbor_ids = {
+        neighbor_id
+        for assertion in assertions
+        for neighbor_id in (
+            assertion.get("subject_entity_id"),
+            assertion.get("object_entity_id"),
+        )
+        if neighbor_id and neighbor_id != entity_id
+    }
+    related = {}
+    if neighbor_ids:
+        for neighbor in await admin.get_entities_by_ids(sorted(neighbor_ids)):
+            related[neighbor["id"]] = {
+                "id": neighbor["id"],
+                "canonical_name": neighbor["canonical_name"],
+                "entity_type": neighbor["entity_type"],
+            }
+    return {"entity": entity, "assertions": assertions, "related": related}
 
 
 @memory_router.get("/records/{record_id}")

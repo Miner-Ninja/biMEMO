@@ -51,8 +51,8 @@ from backend.processes.db_proxy import (
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 103
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 67
-EXPECTED_SOCKET_B_OPERATION_COUNT = 100
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 68
+EXPECTED_SOCKET_B_OPERATION_COUNT = 101
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -547,6 +547,39 @@ class TestListEntitiesOperation:
         page = await handler({"limit": 2, "offset": 2})
         assert page["total"] == 5
         assert [e["id"] for e in page["entities"]] == ["e2", "e1"]
+
+
+class TestGetEntitiesByIds:
+    """memory-entity-page — batch neighbor resolution."""
+
+    @pytest.mark.asyncio
+    async def test_returns_requested_entities(self, db: FakeDB) -> None:
+        """Only the requested ids are returned; unknown ids are ignored."""
+        from backend.processes.db_proxy.handlers.graph import (
+            make_get_entities_by_ids_handler,
+        )
+
+        db.execute(
+            "INSERT INTO entities (id, entity_type, canonical_name) VALUES "
+            "('e1', 'person', 'User'), ('e2', 'tool', 'Docker'), "
+            "('e3', 'topic', 'Graphs')"
+        )
+        handler = make_get_entities_by_ids_handler(db)
+        result = await handler({"entity_ids": ["e1", "e3", "missing"]})
+        by_id = {e["id"]: e for e in result["entities"]}
+        assert set(by_id) == {"e1", "e3"}
+        assert by_id["e1"]["canonical_name"] == "User"
+
+    @pytest.mark.asyncio
+    async def test_empty_input(self, db: FakeDB) -> None:
+        """An empty id list returns no entities and runs no query."""
+        from backend.processes.db_proxy.handlers.graph import (
+            make_get_entities_by_ids_handler,
+        )
+
+        handler = make_get_entities_by_ids_handler(db)
+        result = await handler({"entity_ids": []})
+        assert result == {"entities": []}
 
 
 class TestPeekRecordQueue:

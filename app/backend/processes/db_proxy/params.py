@@ -264,6 +264,12 @@ class GetEntityParams(ForbidExtraParams):
     entity_id: str
 
 
+class GetEntitiesByIdsParams(ForbidExtraParams):
+    """Parameters for get_entities_by_ids operation (neighbor resolution)."""
+
+    entity_ids: list[str]
+
+
 class FindEntitiesParams(ForbidExtraParams):
     """Parameters for find_entities operation."""
 

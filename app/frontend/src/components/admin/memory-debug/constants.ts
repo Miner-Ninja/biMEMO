@@ -95,6 +95,11 @@ export const MEMORY_DATA_VIEWS: Array<{
     labelKey: "memoryDebug.viewQueue",
     descriptionKey: "memoryDebug.viewQueueDescription",
   },
+  {
+    id: "entities",
+    labelKey: "memoryDebug.viewEntities",
+    descriptionKey: "memoryDebug.viewEntitiesDescription",
+  },
 ];
 
 export const PROCESSING_LOG_VIEWS: Array<{

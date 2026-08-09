@@ -6,6 +6,7 @@ import { FileContextPanel } from "@/components/admin/memory-debug/FileContextPan
 import { MemoryLinksPanel } from "@/components/admin/memory-debug/MemoryLinksPanel";
 import { MemoryTimelinePanel } from "@/components/admin/memory-debug/MemoryTimelinePanel";
 import { RecordQueuePanel } from "@/components/admin/memory-debug/RecordQueuePanel";
+import { EntitiesBrowsePanel } from "@/components/admin/memory-debug/EntitiesBrowsePanel";
 import { SubsectionNav } from "@/components/admin/memory-debug/SubsectionNav";
 import type { MemoryDataView } from "@/components/admin/memory-debug/types";
 
@@ -29,6 +30,9 @@ export function MemoryDataSection({ refreshToken }: { refreshToken: number }) {
       {activeView === "links" ? <MemoryLinksPanel refreshToken={refreshToken} /> : null}
       {activeView === "files" ? <FileContextPanel refreshToken={refreshToken} /> : null}
       {activeView === "queue" ? <RecordQueuePanel refreshToken={refreshToken} /> : null}
+      {activeView === "entities" ? (
+        <EntitiesBrowsePanel refreshToken={refreshToken} />
+      ) : null}
     </div>
   );
 }

@@ -406,6 +406,17 @@ class AdminDBClient(_BaseIPCClient):
         )
         return result["entities"]
 
+    async def get_entities_by_ids(
+        self,
+        entity_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Load several graph entities by id (neighbor resolution)."""
+        result = await self.send_operation(
+            "get_entities_by_ids",
+            {"entity_ids": entity_ids},
+        )
+        return result["entities"]
+
     async def list_entities(
         self,
         limit: int = 50,
