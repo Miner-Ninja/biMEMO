@@ -3,7 +3,8 @@ export type MemoryDebugSection =
 
 export type DiagnosticsView = "routing" | "quality" | "audit" | "extractor";
 
-export type MemoryDataView = "context" | "timeline" | "links" | "files" | "queue";
+export type MemoryDataView =
+  "context" | "timeline" | "links" | "files" | "queue" | "entities";
 
 export type ProcessingLogsView = "records-log";
 

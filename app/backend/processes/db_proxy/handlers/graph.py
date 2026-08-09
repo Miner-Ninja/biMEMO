@@ -33,6 +33,7 @@ from ..params import (
     FetchUnextractedRecordsParams,
     FindEntitiesParams,
     FindGraphEntryPointsParams,
+    GetEntitiesByIdsParams,
     GetEntityParams,
     GetGraphStatsParams,
     InvalidateAssertionParams,
@@ -299,6 +300,25 @@ def make_get_entity_handler(db: DatabaseManager) -> OperationHandler:
             (p.entity_id,),
         ).fetchone()
         return {"entity": _entity_row_dict(row) if row else None}
+
+    return handle
+
+
+def make_get_entities_by_ids_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for get_entities_by_ids (batch neighbor resolution)."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Load several entities by id in one round trip."""
+        p = _validate(params, GetEntitiesByIdsParams)
+        ids = [entity_id for entity_id in p.entity_ids if entity_id]
+        if not ids:
+            return {"entities": []}
+        placeholders = ",".join("?" for _ in ids)
+        rows = db.execute(
+            _ENTITY_FIELDS_SQL + f"WHERE id IN ({placeholders})",
+            tuple(ids),
+        ).fetchall()
+        return {"entities": [_entity_row_dict(row) for row in rows]}
 
     return handle
 
