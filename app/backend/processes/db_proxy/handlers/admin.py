@@ -1,6 +1,7 @@
 """Admin, auth, profile, rate-limit, and debug DB proxy handler factories."""
 
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,7 @@ from ..params import (
     DeleteAvatarParams,
     GetAvatarParams,
     GetRecentRateLimitCallsParams,
+    GetUiSettingsParams,
     LimitOffsetParams,
     ListAuditLogParams,
     ListMessagesParams,
@@ -24,6 +26,7 @@ from ..params import (
     RecordRateLimitCallParams,
     StoreAvatarParams,
     StorePasswordHashParams,
+    StoreUiSettingsParams,
     StoreUserProfileParams,
 )
 
@@ -33,6 +36,9 @@ if TYPE_CHECKING:
 
 
 RATE_LIMIT_RETENTION_SECONDS = 120.0
+
+logger = logging.getLogger(__name__)
+
 
 MEMORY_COUNT_QUERIES = {
     "messages": "SELECT count(*) FROM messages",
@@ -368,6 +374,52 @@ def make_initialize_handler(db: DatabaseManager) -> OperationHandler:
         initialize_credential_schema(db)
         create_fts_tables(db)
         ensure_table(db)
+        return {"ok": True}
+
+    return handle
+
+
+# Web-tier UI settings blob (theme, voice mode, command history, …).
+UI_SETTINGS_MAX_BYTES = 16384
+
+
+def make_get_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for get_ui_settings operation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Read the UI settings blob from metadata."""
+        validate_params(params, GetUiSettingsParams)
+        raw = _metadata_value(db, "ui_settings")
+        if not raw:
+            return {"settings": {}}
+        try:
+            settings = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Stored UI settings are not valid JSON; returning empty")
+            return {"settings": {}}
+        if not isinstance(settings, dict):
+            return {"settings": {}}
+        return {"settings": settings}
+
+    return handle
+
+
+def make_store_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for store_ui_settings operation.
+
+    Rejects blobs over UI_SETTINGS_MAX_BYTES with an explicit error so a
+    runaway client cannot grow the metadata row without bound.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Replace the UI settings blob in metadata."""
+        p = validate_params(params, StoreUiSettingsParams)
+        encoded = json.dumps(p.settings, ensure_ascii=False)
+        if len(encoded.encode("utf-8")) > UI_SETTINGS_MAX_BYTES:
+            raise ValueError(
+                f"UI settings blob exceeds {UI_SETTINGS_MAX_BYTES} bytes"
+            )
+        _store_metadata_value(db, "ui_settings", encoded)
         return {"ok": True}
 
     return handle

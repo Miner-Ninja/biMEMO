@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthContext, useAuthState, useAuth } from "@/hooks/useAuth";
+import { syncUiSettings } from "@/lib/ui-settings";
 import { AppSkeleton } from "@/components/ui/skeletons";
 import { ChatPage } from "@/pages/ChatPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -25,6 +26,12 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { authenticated, loading, checkStatus } = useAuth();
+
+  useEffect(() => {
+    if (authenticated) {
+      void syncUiSettings();
+    }
+  }, [authenticated]);
   const navigate = useNavigate();
 
   useEffect(() => {

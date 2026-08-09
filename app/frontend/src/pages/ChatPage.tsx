@@ -56,7 +56,7 @@ import {
   type ActiveAssistantStreamState,
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
-import { loadCommandHistory, saveCommandHistory } from "@/lib/storage";
+import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
 import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
 import { TOOL_LABELS } from "@/types/chat";
 import type { ExtendedUsage } from "@/types/stats";
@@ -452,13 +452,11 @@ export function ChatPage() {
   const [availableFiles, setAvailableFiles] = useState<IndexedFile[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressData | null>(null);
-  const [commandHistory, setCommandHistory] = useState<string[]>(() =>
-    loadCommandHistory()
+  const [commandHistory, setCommandHistory] = useState<string[]>(
+    () => getUiSetting("command_history") ?? []
   );
   const [ttsAvailable, setTtsAvailable] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(
-    () => localStorage.getItem("bm-voice-mode") === "true"
-  );
+  const [voiceMode, setVoiceMode] = useState(() => getUiSetting("voice_mode") === true);
   const [bridgeProviders, setBridgeProviders] = useState<ChatBridgeProviderItem[]>([]);
   const [bridgeProvidersAutoAttempted, setBridgeProvidersAutoAttempted] =
     useState(false);
@@ -760,7 +758,7 @@ export function ChatPage() {
   // Keep voiceMode ref in sync
   useEffect(() => {
     voiceModeRef.current = voiceMode;
-    localStorage.setItem("bm-voice-mode", String(voiceMode));
+    setUiSetting("voice_mode", voiceMode);
   }, [voiceMode]);
 
   const toggleVoiceMode = useCallback(() => {
@@ -1386,8 +1384,11 @@ export function ChatPage() {
   const handleSend = async (content: string, files?: File[]) => {
     // Save to command history
     setCommandHistory((prev) => {
-      const next = [content, ...prev.filter((h) => h !== content)].slice(0, 10);
-      saveCommandHistory(next);
+      const next = [content, ...prev.filter((h) => h !== content)].slice(
+        0,
+        COMMAND_HISTORY_LIMIT
+      );
+      setUiSetting("command_history", next);
       return next;
     });
 

@@ -17,6 +17,7 @@ from .handlers.admin import (
     make_get_recent_rate_limit_calls_handler,
     make_get_signing_material_handler,
     make_get_stats_handler,
+    make_get_ui_settings_handler,
     make_get_user_profile_handler,
     make_initialize_handler,
     make_list_audit_log_handler,
@@ -28,6 +29,7 @@ from .handlers.admin import (
     make_record_rate_limit_call_handler,
     make_store_avatar_handler,
     make_store_password_hash_handler,
+    make_store_ui_settings_handler,
     make_store_user_profile_handler,
 )
 from .handlers.chat_bridge import (
@@ -305,6 +307,8 @@ SOCKET_B_ONLY_OPERATIONS = {
     "initialize",
     "get_user_profile",
     "store_user_profile",
+    "get_ui_settings",
+    "store_ui_settings",
     "get_avatar",
     "store_avatar",
     "delete_avatar",
@@ -762,6 +766,11 @@ def _register_misc_db_operations(
     )
     registry.register("get_user_profile", make_get_user_profile_handler(db))
     registry.register("store_user_profile", make_store_user_profile_handler(db))
+    registry.register("get_ui_settings", make_get_ui_settings_handler(db))
+    registry.register(
+        "store_ui_settings",
+        make_store_ui_settings_handler(db),
+    )
     registry.register("get_avatar", make_get_avatar_handler(db))
     registry.register("store_avatar", make_store_avatar_handler(db))
     registry.register("delete_avatar", make_delete_avatar_handler(db))

@@ -27,6 +27,7 @@ from backend.models.requests import (  # noqa: TC001
     ChatBridgeUpdateRequest,
     IntegrationCreateRequest,
     ReauthRequest,
+    UiSettingsRequest,
     UserProfileRequest,
 )
 from backend.models.responses import (
@@ -187,6 +188,40 @@ def _bridge_link_updated_event_data(
         "conversation_id": bridge_link.conversation_id,
         "bridge_link": bridge_link.model_dump(),
     }
+
+
+@admin_router.get("/settings/ui")
+async def get_ui_settings(
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Return the persisted UI settings blob."""
+    del claims
+    return {"settings": await admin.get_ui_settings()}
+
+
+@admin_router.put("/settings/ui")
+async def store_ui_settings(
+    body: UiSettingsRequest,
+    claims: TokenClaims = Depends(_require_auth),
+    admin: AdminDBClient = Depends(_get_admin_client),
+) -> dict:
+    """Replace the persisted UI settings blob.
+
+    Raises:
+        HTTPException: 413 when the blob exceeds the server-side cap.
+    """
+    del claims
+    try:
+        await admin.store_ui_settings(body.settings)
+    except HTTPException as exc:
+        # The DB-proxy client wraps operation errors into HTTPException(500)
+        # with the operation's message in detail — surface the size-cap
+        # rejection as 413 so the client can react specifically.
+        if "exceeds" in str(exc.detail):
+            raise HTTPException(status_code=413, detail=str(exc.detail)) from exc
+        raise
+    return {"ok": True}
 
 
 @admin_router.post("/backup")

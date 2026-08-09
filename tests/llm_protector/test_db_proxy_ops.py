@@ -51,8 +51,8 @@ from backend.processes.db_proxy import (
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 103
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 62
-EXPECTED_SOCKET_B_OPERATION_COUNT = 95
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 64
+EXPECTED_SOCKET_B_OPERATION_COUNT = 97
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -452,6 +452,50 @@ class TestRecordOperations:
             (result["record_id"],),
         ).fetchone()
         assert row[0] == 1
+
+
+class TestUiSettingsOperations:
+    """R1 (ui-settings-db) — settings blob roundtrip and size cap."""
+
+    @pytest.mark.asyncio
+    async def test_roundtrip_and_empty_default(self, db: FakeDB) -> None:
+        """S1.1 + S1.2 — stored blob returns as-is; empty reads as {}."""
+        from backend.processes.db_proxy.handlers.admin import (
+            make_get_ui_settings_handler,
+            make_store_ui_settings_handler,
+        )
+
+        get_handler = make_get_ui_settings_handler(db)
+        empty = await get_handler({})
+        assert empty["settings"] == {}
+
+        store_handler = make_store_ui_settings_handler(db)
+        payload = {
+            "theme": "dark",
+            "voice_mode": True,
+            "command_history": ["ls", "htop"],
+        }
+        await store_handler({"settings": payload})
+        stored = await get_handler({})
+        assert stored["settings"] == payload
+
+    @pytest.mark.asyncio
+    async def test_oversized_blob_rejected(self, db: FakeDB) -> None:
+        """S1.3 — an over-cap blob fails and the old value survives."""
+        from backend.processes.db_proxy.handlers.admin import (
+            make_get_ui_settings_handler,
+            make_store_ui_settings_handler,
+        )
+
+        store_handler = make_store_ui_settings_handler(db)
+        await store_handler({"settings": {"theme": "light"}})
+        with pytest.raises(ValueError, match="exceeds"):
+            await store_handler(
+                {"settings": {"command_history": ["x" * 200] * 200}}
+            )
+        get_handler = make_get_ui_settings_handler(db)
+        stored = await get_handler({})
+        assert stored["settings"] == {"theme": "light"}
 
 
 class TestCreateBackup:
