@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +21,7 @@ export function FileMention({
   onSelect,
   onHover,
 }: FileMentionProps) {
+  const { t } = useTranslation();
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export function FileMention({
     return (
       <Card className="shadow-md">
         <CardContent className="p-2 text-sm text-muted-foreground">
-          No matching files
+          {t("chat.noMatchingFiles")}
         </CardContent>
       </Card>
     );

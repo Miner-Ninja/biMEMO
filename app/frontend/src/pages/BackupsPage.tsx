@@ -1,9 +1,11 @@
+import { useTranslation } from "react-i18next";
 import { Database } from "lucide-react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 
 export function BackupsPage() {
+  const { t } = useTranslation();
   return (
-    <AdminLayout title="Backups">
+    <AdminLayout title={t("admin.backups")}>
       <div className="flex-1 overflow-y-auto p-6 max-w-3xl">
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-start gap-4">
@@ -12,17 +14,13 @@ export function BackupsPage() {
             </div>
             <div className="space-y-3">
               <div>
-                <h2 className="font-semibold">Not available in the current runtime</h2>
+                <h2 className="font-semibold">{t("admin.backupsUnavailableTitle")}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  The active multi-process FastAPI backend does not expose backup routes
-                  yet. This page is kept as a placeholder so the UI does not point to
-                  broken API calls.
+                  {t("admin.backupsUnavailableBody")}
                 </p>
               </div>
               <p className="text-sm text-muted-foreground">
-                If backup support is needed, it should be implemented against the active
-                `backend.processes.fastapi_app` stack rather than the legacy route
-                layer.
+                {t("admin.backupsImplementationNote")}
               </p>
             </div>
           </div>

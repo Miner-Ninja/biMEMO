@@ -1,5 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router-dom";
+import i18n from "@/i18n";
 import { Layout } from "@/components/layout/Layout";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/sidebar/Sidebar";
@@ -163,7 +165,6 @@ type PendingBridgeSettingsSave = {
   personaUserId: string;
 };
 
-const DEFAULT_SERVER_PROCESSING_STAGE = "Processing...";
 const DISCORD_BRIDGE_PROVIDER = "discord";
 const PERSONA_DELIVERY_MODE = "persona_user_and_bot_assistant";
 const NEUTRAL_PERSONA_MODE = "neutral";
@@ -213,7 +214,7 @@ function buildServerProcessingStage(
   return [
     {
       id: "server-processing-stage",
-      label: stageLabel || DEFAULT_SERVER_PROCESSING_STAGE,
+      label: stageLabel || i18n.t("chat.processing"),
       status: "active",
       startedAt: performance.now() - wallClockDelayMs,
     },
@@ -366,6 +367,7 @@ async function imageFileDataUrl(file: File): Promise<string> {
 }
 
 export function ChatPage() {
+  const { t } = useTranslation();
   const {
     chats,
     activeChat,
@@ -712,14 +714,14 @@ export function ChatPage() {
         if (showError) {
           addToast({
             type: "error",
-            message: "Failed to load bridge providers",
+            message: t("chat.failedToLoadProviders"),
           });
         }
       } finally {
         setBridgeProvidersLoading(false);
       }
     },
-    [addToast, bridgeProvidersLoaded, bridgeProvidersLoading]
+    [addToast, bridgeProvidersLoaded, bridgeProvidersLoading, t]
   );
 
   useEffect(() => {
@@ -949,7 +951,7 @@ export function ChatPage() {
             message:
               error instanceof Error
                 ? error.message
-                : "Failed to apply streamed response",
+                : t("chat.failedToApplyStreamedResponse"),
           });
         });
       } else if (event.type === "error") {
@@ -1081,7 +1083,7 @@ export function ChatPage() {
             : new Date(),
         });
       } else if (event.type === "scheduled_task_result") {
-        const taskName = String(eventPayload?.task_name || "Scheduled task");
+        const taskName = String(eventPayload?.task_name || t("chat.scheduledTask"));
         const taskType = String(eventPayload?.task_type || "");
         const resultText = String(eventPayload?.result_text || "");
         const status = String(eventPayload?.status || "ok");
@@ -1110,6 +1112,7 @@ export function ChatPage() {
       addOrUpdateConversation,
       addMessageToConversation,
       addToast,
+      t,
       applyBridgeLink,
       updateConversation,
       removeConversation,
@@ -1164,10 +1167,10 @@ export function ChatPage() {
           continue;
         }
         const shouldReplace = await confirm({
-          title: "File already exists",
-          description: `"${file.name}" already exists. The old version will be replaced.`,
-          confirmLabel: "Replace",
-          cancelLabel: "Skip",
+          title: t("chat.fileAlreadyExists"),
+          description: t("chat.fileAlreadyExistsDescription", { name: file.name }),
+          confirmLabel: t("chat.replace"),
+          cancelLabel: t("chat.skip"),
         });
         if (shouldReplace) {
           filesToUpload.push(file);
@@ -1175,7 +1178,7 @@ export function ChatPage() {
       }
       return filesToUpload;
     },
-    [availableFiles, confirm]
+    [availableFiles, confirm, t]
   );
 
   const applyUploadedFileToActiveSelection = useCallback(
@@ -1224,13 +1227,20 @@ export function ChatPage() {
             uploadResult.file_id,
             uploadResult.filename
           );
-          addToast({ type: "success", message: `${file.name} uploaded` });
+          addToast({
+            type: "success",
+            message: t("chat.fileUploaded", { name: file.name }),
+          });
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          const errorMessage =
+            error instanceof Error ? error.message : t("chat.unknownError");
           results.push({ name: file.name, ok: false });
           addToast({
             type: "error",
-            message: `Failed to upload ${file.name}: ${errorMessage}`,
+            message: t("chat.failedToUploadFile", {
+              name: file.name,
+              error: errorMessage,
+            }),
           });
         }
       }
@@ -1248,6 +1258,7 @@ export function ChatPage() {
     },
     [
       addToast,
+      t,
       applyUploadedFileToActiveSelection,
       refreshAvailableFiles,
       replaceableUploadFiles,
@@ -1271,7 +1282,7 @@ export function ChatPage() {
 
     setIsLoading(true);
     clearStages();
-    addStage("Sending...");
+    addStage(t("chat.sending"));
     let streamStarted = false;
 
     try {
@@ -1356,7 +1367,7 @@ export function ChatPage() {
               ? undefined
               : err instanceof Error
                 ? err.message
-                : "Failed to send message",
+                : t("chat.failedToSendMessage"),
           },
           streamedThinkingRef.current
         )
@@ -1417,7 +1428,7 @@ export function ChatPage() {
     updateConversation(currentChat.id, {
       title: nextConversationTitle(currentChat.title, messageContent),
       processingStatus: "active",
-      processingStage: DEFAULT_SERVER_PROCESSING_STAGE,
+      processingStage: t("chat.processing"),
       processingStartedAt: userMessage.timestamp,
       updatedAt: userMessage.timestamp,
     });
@@ -1457,7 +1468,7 @@ export function ChatPage() {
     if (!conversationId) return;
     updateConversation(conversationId, {
       processingStatus: "active",
-      processingStage: DEFAULT_SERVER_PROCESSING_STAGE,
+      processingStage: t("chat.processing"),
       processingStartedAt: new Date(),
       updatedAt: new Date(),
     });
@@ -1479,7 +1490,7 @@ export function ChatPage() {
     };
     updateConversation(currentChat.id, {
       processingStatus: "active",
-      processingStage: "Transcribing...",
+      processingStage: t("chat.transcribing"),
       processingStartedAt: userMessage.timestamp,
       updatedAt: userMessage.timestamp,
     });
@@ -1502,7 +1513,7 @@ export function ChatPage() {
 
     setIsLoading(true);
     clearStages();
-    addStage("Transcribing...");
+    addStage(t("chat.transcribing"));
     let streamStarted = false;
 
     try {
@@ -1595,7 +1606,7 @@ export function ChatPage() {
               ? undefined
               : err instanceof Error
                 ? err.message
-                : "Failed to send voice message",
+                : t("chat.failedToSendVoiceMessage"),
           },
           streamedThinkingRef.current
         )
@@ -1627,7 +1638,7 @@ export function ChatPage() {
     if (activeStream.assistantMessageId) {
       stoppedAssistantMessageIdsRef.current.add(activeStream.assistantMessageId);
       updateMessage(activeStream.assistantMessageId, {
-        content: streamedContentRef.current || "Stopped.",
+        content: streamedContentRef.current || t("chat.stopped"),
       });
     }
     if (activeStream.conversationId) {
@@ -1838,7 +1849,7 @@ export function ChatPage() {
           }
           addToast({
             type: "success",
-            message: "Bridge message settings saved",
+            message: t("chat.bridgeSettingsSaved"),
           });
         } else if (bridgeAction) {
           const currentBridgeLink = await fetchChatBridgeForConversation(
@@ -1867,7 +1878,7 @@ export function ChatPage() {
             }
             addToast({
               type: "success",
-              message: `${bridgeAction.provider} bridge connected`,
+              message: t("chat.bridgeConnected", { provider: bridgeAction.provider }),
             });
           } else {
             if (
@@ -1882,7 +1893,9 @@ export function ChatPage() {
               );
               addToast({
                 type: "success",
-                message: `${bridgeAction.provider} bridge disconnected`,
+                message: t("chat.bridgeDisconnected", {
+                  provider: bridgeAction.provider,
+                }),
               });
             }
           }
@@ -1890,12 +1903,12 @@ export function ChatPage() {
       } catch (error) {
         const message =
           error instanceof ApiError && error.status === 403
-            ? "Re-authentication required"
+            ? t("chat.reauthenticationRequired")
             : error instanceof Error
               ? error.message
               : pendingSettingsSave
-                ? "Failed to save bridge message settings"
-                : "Failed to update chat bridge";
+                ? t("chat.failedToSaveBridgeSettings")
+                : t("chat.failedToUpdateBridge");
         addToast({
           type: "error",
           message,
@@ -1910,6 +1923,7 @@ export function ChatPage() {
       activeBridgeProvider,
       activeChat?.title,
       addToast,
+      t,
       applyBridgeLink,
       createBridgeLinkForConversation,
       disableStoredBridgeLink,
@@ -2009,7 +2023,7 @@ export function ChatPage() {
       sidebar={sidebar}
       header={
         <Header
-          title={activeChat?.title || "New Chat"}
+          title={activeChat?.title || t("chat.newChat")}
           bridgeProvider={activeBridgeProvider}
           onOpenBridgeDetails={handleBridgeDetailsOpen}
         />
@@ -2037,10 +2051,10 @@ export function ChatPage() {
         uploadProgress={uploadProgress}
         placeholder={
           realtimeStatus === "connecting"
-            ? "Connecting to server..."
+            ? t("chat.connectingToServer")
             : realtimeStatus === "disconnected"
-              ? "Server disconnected. Reconnecting..."
-              : "Ask me anything..."
+              ? t("chat.serverDisconnected")
+              : t("chat.askAnything")
         }
         processingStage={currentProcessingStage}
         activeFiles={activeFileNames}
@@ -2084,7 +2098,7 @@ export function ChatPage() {
       {showBridgeDetails ? (
         <ChatBridgeDetailsModal
           key={activeBridgeLink?.id ?? "chat-bridge-details"}
-          chatTitle={activeChat?.title || "New Chat"}
+          chatTitle={activeChat?.title || t("chat.newChat")}
           bridgeLink={activeBridgeLink}
           availableProviders={bridgeProviders}
           settingsSaving={bridgeActionLoadingProvider !== null}

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,7 @@ interface LayoutProps {
  * Main layout with sidebar and main content area
  */
 export function Layout({ sidebar, header, children }: LayoutProps) {
+  const { t } = useTranslation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev);
@@ -33,8 +35,10 @@ export function Layout({ sidebar, header, children }: LayoutProps) {
               className="w-[85vw] max-w-80 border-sidebar-border p-0 md:hidden"
             >
               <SheetHeader className="sr-only">
-                <SheetTitle>Navigation sidebar</SheetTitle>
-                <SheetDescription>Open the main navigation panel.</SheetDescription>
+                <SheetTitle>{t("layout.navigationSidebar")}</SheetTitle>
+                <SheetDescription>
+                  {t("layout.navigationSidebarDescription")}
+                </SheetDescription>
               </SheetHeader>
               {sidebar}
             </SheetContent>
@@ -55,7 +59,7 @@ export function Layout({ sidebar, header, children }: LayoutProps) {
               size="icon"
               onClick={toggleSidebar}
               className="ml-1 size-10 shrink-0 md:hidden"
-              aria-label="Toggle sidebar"
+              aria-label={t("layout.toggleSidebar")}
             >
               <PanelLeft data-icon="inline-start" />
             </Button>

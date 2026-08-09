@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Volume2, Loader2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { synthesizeSpeech } from "@/lib/bimemo-api";
@@ -8,6 +9,7 @@ interface SpeakButtonProps {
 }
 
 export function SpeakButton({ text }: SpeakButtonProps) {
+  const { t } = useTranslation();
   const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -67,10 +69,10 @@ export function SpeakButton({ text }: SpeakButtonProps) {
       className="h-7 w-7"
       aria-label={
         state === "loading"
-          ? "Synthesizing..."
+          ? t("chat.synthesizing")
           : state === "playing"
-            ? "Stop playback"
-            : "Read aloud"
+            ? t("chat.stopPlayback")
+            : t("chat.readAloud")
       }
     >
       {state === "loading" ? (

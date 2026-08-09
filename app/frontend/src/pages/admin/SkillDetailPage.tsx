@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Pencil,
@@ -59,9 +61,9 @@ interface UsageLog {
   created_at: string;
 }
 
-const TABS = [
-  { key: "logic", label: "Skill Logic" },
-  { key: "logs", label: "History" },
+const TABS: Array<{ key: string; labelKey: TranslationKey }> = [
+  { key: "logic", labelKey: "admin.skillLogicTab" },
+  { key: "logs", labelKey: "admin.historyTab" },
 ];
 
 const TOOL_OPTIONS = [
@@ -98,25 +100,25 @@ function formatDuration(ms: number): string {
 
 const STATUS_STYLES: Record<
   string,
-  { bg: string; text: string; border: string; label: string }
+  { bg: string; text: string; border: string; labelKey: TranslationKey }
 > = {
   success: {
     bg: "bg-emerald-500/10",
     text: "text-emerald-400",
     border: "border-emerald-500/20",
-    label: "success",
+    labelKey: "admin.statusSuccess",
   },
   partial: {
     bg: "bg-amber-500/10",
     text: "text-amber-400",
     border: "border-amber-500/20",
-    label: "partial",
+    labelKey: "admin.statusPartial",
   },
   error: {
     bg: "bg-red-500/10",
     text: "text-red-400",
     border: "border-red-500/20",
-    label: "error",
+    labelKey: "admin.statusError",
   },
 };
 
@@ -154,6 +156,7 @@ function SkillSection({
  * Full-page skill editor with hero card and tabbed sections.
  */
 export function SkillDetailPage() {
+  const { t } = useTranslation();
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
 
@@ -178,9 +181,9 @@ export function SkillDetailPage() {
         setSkill(d.skill);
         setLogs(d.logs || []);
       })
-      .catch((e) => setError(e.message || "Failed to load skill"))
+      .catch((e) => setError(e.message || t("admin.loadSkillFailed")))
       .finally(() => setLoading(false));
-  }, [name]);
+  }, [name, t]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -227,7 +230,7 @@ export function SkillDetailPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("admin.saveFailed"));
     }
   };
 
@@ -241,7 +244,7 @@ export function SkillDetailPage() {
       });
       setSkill({ ...skill, enabled: next });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update skill status");
+      setError(e instanceof Error ? e.message : t("admin.updateSkillStatusFailed"));
     }
   };
 
@@ -253,7 +256,7 @@ export function SkillDetailPage() {
       });
       navigate("/admin/skills");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      setError(e instanceof Error ? e.message : t("admin.deleteFailed"));
     }
   };
 
@@ -299,7 +302,7 @@ export function SkillDetailPage() {
 
   if (loading)
     return (
-      <AdminLayout title="Skill">
+      <AdminLayout title={t("admin.skill")}>
         <div className="p-6">
           <AdminCardSkeleton count={2} />
         </div>
@@ -307,35 +310,44 @@ export function SkillDetailPage() {
     );
   if (error && !skill)
     return (
-      <AdminLayout title="Skill">
+      <AdminLayout title={t("admin.skill")}>
         <div className="p-6 text-center text-destructive">{error}</div>
       </AdminLayout>
     );
   if (!skill)
     return (
-      <AdminLayout title="Skill">
-        <div className="p-6 text-center text-muted-foreground">Skill not found</div>
+      <AdminLayout title={t("admin.skill")}>
+        <div className="p-6 text-center text-muted-foreground">
+          {t("admin.skillNotFound")}
+        </div>
       </AdminLayout>
     );
 
   const proc = editing ? editData.procedure || [] : skill.procedure;
   const errs = editing ? editData.errors || [] : skill.errors;
   const summaryMetrics = [
-    { value: String(skill.use_count), label: "Uses" },
-    { value: `${skill.procedure.length} steps`, label: "Procedure" },
+    { value: String(skill.use_count), label: t("admin.uses") },
+    {
+      value: t("admin.stepsCount", { count: skill.procedure.length }),
+      label: t("admin.procedure"),
+    },
   ];
   const timeMetrics = [
-    { label: "Created", value: formatDate(skill.created_at), icon: CalendarClock },
-    { label: "Updated", value: formatDate(skill.updated_at), icon: RefreshCw },
     {
-      label: "Last Used",
+      label: t("admin.created"),
+      value: formatDate(skill.created_at),
+      icon: CalendarClock,
+    },
+    { label: t("admin.updated"), value: formatDate(skill.updated_at), icon: RefreshCw },
+    {
+      label: t("admin.lastUsed"),
       value: logs.length > 0 ? formatDate(logs[0].created_at) : "—",
       icon: History,
     },
   ];
 
   return (
-    <AdminLayout title={skill.title || "Skill"}>
+    <AdminLayout title={skill.title || t("admin.skill")}>
       <div className="flex-1 overflow-y-auto p-4 space-y-5 sm:p-6">
         {/* Top bar */}
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -344,21 +356,21 @@ export function SkillDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Skills
+            {t("admin.backToSkills")}
           </Link>
           <div className="flex items-center gap-2">
             {saved && (
               <span className="text-xs text-emerald-400 flex items-center gap-1 animate-in fade-in">
-                <Check className="h-3.5 w-3.5" /> Saved
+                <Check className="h-3.5 w-3.5" /> {t("admin.saved")}
               </span>
             )}
             {editing ? (
               <>
                 <Button size="sm" variant="outline" onClick={cancelEdit}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button size="sm" className="bg-primary" onClick={saveEdit}>
-                  Save
+                  {t("common.save")}
                 </Button>
               </>
             ) : (
@@ -369,7 +381,7 @@ export function SkillDetailPage() {
                   onClick={startEdit}
                   className="gap-1.5"
                 >
-                  <Pencil className="h-3.5 w-3.5" /> Edit
+                  <Pencil className="h-3.5 w-3.5" /> {t("admin.edit")}
                 </Button>
                 <Button
                   size="sm"
@@ -377,7 +389,7 @@ export function SkillDetailPage() {
                   onClick={() => setShowDelete(!showDelete)}
                   className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                  <Trash2 className="h-3.5 w-3.5" /> {t("common.delete")}
                 </Button>
               </>
             )}
@@ -388,7 +400,7 @@ export function SkillDetailPage() {
         {editing && (
           <div className="animate-in fade-in duration-200 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-primary flex items-center gap-2">
             <Pencil className="h-3.5 w-3.5" />
-            Edit mode — modify fields and click Save
+            {t("admin.editModeBanner")}
           </div>
         )}
 
@@ -396,14 +408,14 @@ export function SkillDetailPage() {
         {showDelete && (
           <div className="animate-in fade-in duration-200 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 flex items-center justify-between">
             <span className="text-sm text-destructive">
-              Delete this skill permanently?
+              {t("admin.deleteSkillConfirm")}
             </span>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={() => setShowDelete(false)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button size="sm" variant="destructive" onClick={handleDelete}>
-                Yes, delete
+                {t("admin.yesDelete")}
               </Button>
             </div>
           </div>
@@ -418,7 +430,7 @@ export function SkillDetailPage() {
               className="ml-2 underline"
               onClick={() => setError(null)}
             >
-              dismiss
+              {t("admin.dismiss")}
             </button>
           </div>
         )}
@@ -444,7 +456,7 @@ export function SkillDetailPage() {
                     setEditData((d) => ({ ...d, title: e.target.value }))
                   }
                   className="text-lg font-semibold mb-1"
-                  placeholder="Skill title"
+                  placeholder={t("admin.skillTitlePlaceholder")}
                 />
               ) : (
                 <h2 className="text-lg font-semibold leading-tight">{skill.title}</h2>
@@ -456,7 +468,7 @@ export function SkillDetailPage() {
 
             <div className="flex items-center gap-2.5 shrink-0">
               <Badge variant={skill.enabled ? "success" : "outline"}>
-                {skill.enabled ? "On" : "Off"}
+                {skill.enabled ? t("admin.on") : t("admin.off")}
               </Badge>
               <Switch checked={skill.enabled} onCheckedChange={handleToggle} />
             </div>
@@ -514,23 +526,25 @@ export function SkillDetailPage() {
         {/* Tabs + Panel connected */}
         <div>
           <div className="relative z-10 flex overflow-x-auto scrollbar-none -mb-px">
-            {TABS.map((t) => (
+            {TABS.map((tab) => (
               <button
-                key={t.key}
+                key={tab.key}
                 type="button"
                 onClick={() => {
                   const currentHeight = panelRef.current?.offsetHeight ?? 0;
                   setPanelMinHeight((current) => Math.max(current, currentHeight));
-                  setActiveTab(t.key);
+                  setActiveTab(tab.key);
                 }}
                 className={cn(
                   "relative shrink-0 rounded-t-lg border px-3.5 py-3 transition-colors sm:px-5",
-                  activeTab === t.key
+                  activeTab === tab.key
                     ? "border-border border-b-transparent bg-card text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
-                <h4 className="text-base font-semibold tracking-tight">{t.label}</h4>
+                <h4 className="text-base font-semibold tracking-tight">
+                  {t(tab.labelKey)}
+                </h4>
               </button>
             ))}
           </div>
@@ -545,7 +559,7 @@ export function SkillDetailPage() {
           >
             {activeTab === "logic" && (
               <div className="flex flex-col gap-4">
-                <SkillSection index={1} title="Trigger">
+                <SkillSection index={1} title={t("admin.trigger")}>
                   {editing ? (
                     <Textarea
                       value={editData.trigger || ""}
@@ -553,18 +567,18 @@ export function SkillDetailPage() {
                         setEditData((d) => ({ ...d, trigger: e.target.value }))
                       }
                       rows={5}
-                      placeholder="Describe when this skill should be triggered"
+                      placeholder={t("admin.triggerPlaceholder")}
                     />
                   ) : (
                     <div className="rounded-xl border border-border/70 bg-muted/50 p-4 sm:p-5">
                       <p className="text-sm leading-relaxed text-foreground/85">
-                        {skill.trigger || "No trigger description"}
+                        {skill.trigger || t("admin.noTriggerDescription")}
                       </p>
                     </div>
                   )}
                 </SkillSection>
 
-                <SkillSection index={2} title="Tools & Arguments">
+                <SkillSection index={2} title={t("admin.toolsAndArguments")}>
                   <div className="space-y-3">
                     {proc.map((step, i) => (
                       <div
@@ -580,16 +594,16 @@ export function SkillDetailPage() {
 
                               <div>
                                 <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                                  Step
+                                  {t("admin.step")}
                                 </div>
                                 <div className="mt-1.5 text-sm font-semibold text-foreground">
-                                  Tool call
+                                  {t("admin.toolCall")}
                                 </div>
                               </div>
 
                               <div>
                                 <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                                  Tool
+                                  {t("admin.tool")}
                                 </div>
                                 {editing ? (
                                   <div className="mt-2 space-y-2">
@@ -612,7 +626,7 @@ export function SkillDetailPage() {
                                       className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
                                     >
                                       <X className="h-3.5 w-3.5" />
-                                      Remove step
+                                      {t("admin.removeStep")}
                                     </button>
                                   </div>
                                 ) : (
@@ -627,7 +641,7 @@ export function SkillDetailPage() {
                           <div className="space-y-4">
                             <div>
                               <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                                Arguments
+                                {t("admin.arguments")}
                               </div>
                               {editing ? (
                                 <Input
@@ -635,7 +649,7 @@ export function SkillDetailPage() {
                                   onChange={(e) =>
                                     updateStep(i, "query", e.target.value)
                                   }
-                                  placeholder="Query or parameters"
+                                  placeholder={t("admin.queryPlaceholder")}
                                   className="mt-2 text-sm"
                                 />
                               ) : (
@@ -666,12 +680,12 @@ export function SkillDetailPage() {
                       onClick={addStep}
                       className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Add step
+                      <Plus className="h-3.5 w-3.5" /> {t("admin.addStep")}
                     </button>
                   )}
                 </SkillSection>
 
-                <SkillSection index={3} title="Issues & Fixes">
+                <SkillSection index={3} title={t("admin.issuesAndFixes")}>
                   <div className="space-y-3">
                     {errs.map((err, i) => (
                       <div
@@ -682,30 +696,30 @@ export function SkillDetailPage() {
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <label className="text-[10px] font-medium uppercase tracking-[0.06em] text-amber-400">
-                                Error
+                                {t("common.error")}
                               </label>
                               <button
                                 type="button"
                                 onClick={() => removeError(i)}
                                 className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
                               >
-                                <X className="h-3 w-3" /> Remove
+                                <X className="h-3 w-3" /> {t("admin.remove")}
                               </button>
                             </div>
                             <Input
                               value={err.name}
                               onChange={(e) => updateError(i, "name", e.target.value)}
-                              placeholder="Error name"
+                              placeholder={t("admin.errorNamePlaceholder")}
                               className="font-medium"
                             />
                             <label className="block text-[10px] font-medium uppercase tracking-[0.06em] text-emerald-400">
-                              Solution
+                              {t("admin.solution")}
                             </label>
                             <Textarea
                               value={err.fix}
                               onChange={(e) => updateError(i, "fix", e.target.value)}
                               rows={2}
-                              placeholder="How to handle this error"
+                              placeholder={t("admin.errorFixPlaceholder")}
                             />
                           </div>
                         ) : (
@@ -732,12 +746,12 @@ export function SkillDetailPage() {
                       onClick={addError}
                       className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Add error
+                      <Plus className="h-3.5 w-3.5" /> {t("admin.addError")}
                     </button>
                   )}
                 </SkillSection>
 
-                <SkillSection index={4} title="Result verification">
+                <SkillSection index={4} title={t("admin.resultVerification")}>
                   {editing ? (
                     <Textarea
                       value={editData.verification || ""}
@@ -745,12 +759,12 @@ export function SkillDetailPage() {
                         setEditData((d) => ({ ...d, verification: e.target.value }))
                       }
                       rows={5}
-                      placeholder="How to confirm the result is correct"
+                      placeholder={t("admin.verificationPlaceholder")}
                     />
                   ) : (
                     <div className="rounded-xl border border-border/70 bg-muted/50 p-4 sm:p-5">
                       <p className="text-sm leading-relaxed text-foreground/85">
-                        {skill.verification || "No verification criteria"}
+                        {skill.verification || t("admin.noVerificationCriteria")}
                       </p>
                     </div>
                   )}
@@ -762,13 +776,15 @@ export function SkillDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground font-medium">
-                    Usage history
+                    {t("admin.usageHistory")}
                   </div>
-                  <Badge variant="outline">{logs.length} entries</Badge>
+                  <Badge variant="outline">
+                    {t("admin.entriesCount", { count: logs.length })}
+                  </Badge>
                 </div>
                 {logs.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-8 text-center">
-                    No usage recorded yet
+                    {t("admin.noUsageRecorded")}
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -796,7 +812,7 @@ export function SkillDetailPage() {
                                   style.border
                                 )}
                               >
-                                {style.label}
+                                {t(style.labelKey)}
                               </Badge>
                             </div>
                             <span className="text-xs text-muted-foreground">

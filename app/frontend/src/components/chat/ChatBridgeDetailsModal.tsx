@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
+import i18n from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +42,9 @@ function bridgeProviderLabel(provider: string): string {
 }
 
 function bridgeStatusLabel(status: string): string {
-  return status === "active" ? "Connected" : "Disabled";
+  return status === "active"
+    ? i18n.t("chat.statusConnected")
+    : i18n.t("chat.statusDisabled");
 }
 
 function formatBridgeDate(createdAt: string): string {
@@ -101,6 +105,7 @@ export function ChatBridgeDetailsModal({
   onSaveSettings,
   onClose,
 }: ChatBridgeDetailsModalProps) {
+  const { t } = useTranslation();
   const [showActivity, setShowActivity] = useState(false);
   const [messageLinks, setMessageLinks] = useState<ChatBridgeMessageLink[]>([]);
   const [messageLinksLoading, setMessageLinksLoading] = useState(false);
@@ -130,7 +135,9 @@ export function ChatBridgeDetailsModal({
         if (!cancelled) {
           setMessageLinks([]);
           setMessageLinksError(
-            error instanceof Error ? error.message : "Failed to load bridge activity"
+            error instanceof Error
+              ? error.message
+              : i18n.t("chat.failedToLoadBridgeActivity")
           );
         }
       })
@@ -168,7 +175,7 @@ export function ChatBridgeDetailsModal({
 
   const connectedProvider = bridgeLink
     ? bridgeProviderLabel(bridgeLink.provider)
-    : "Not selected";
+    : t("chat.notSelected");
   const isDiscordBridge = bridgeLink?.provider === "discord";
   const selectedProvider = availableProviders.find(
     ({ provider }) => provider === bridgeLink?.provider
@@ -190,16 +197,16 @@ export function ChatBridgeDetailsModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[calc(100vw-1rem)] max-w-3xl p-0 sm:max-h-[90dvh]">
         <DialogHeader className="p-6 pb-0">
-          <DialogTitle>Chat bridge properties</DialogTitle>
-          <DialogDescription>{chatTitle || "New Chat"}</DialogDescription>
+          <DialogTitle>{t("chat.bridgeProperties")}</DialogTitle>
+          <DialogDescription>{chatTitle || t("chat.newChat")}</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(90dvh-9rem)] px-6">
           <div className="flex flex-col gap-4 py-6">
-            <SectionCard title="Current state">
+            <SectionCard title={t("chat.currentState")}>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">
-                  Connected provider
+                  {t("chat.connectedProvider")}
                 </span>
                 <Badge variant="info">{connectedProvider}</Badge>
               </div>
@@ -207,49 +214,60 @@ export function ChatBridgeDetailsModal({
               {bridgeLink ? (
                 <div className="flex flex-col gap-3">
                   <DetailsRow
-                    label="Status"
+                    label={t("chat.status")}
                     value={bridgeStatusLabel(bridgeLink.status)}
                   />
                   <Separator />
                   <DetailsRow
-                    label="Provider"
+                    label={t("chat.provider")}
                     value={bridgeProviderLabel(bridgeLink.provider)}
                   />
                   <Separator />
-                  <DetailsRow label="Direction" value={bridgeLink.sync_direction} />
-                  <Separator />
-                  <DetailsRow label="Delivery mode" value={bridgeLink.delivery_mode} />
-                  <Separator />
-                  <DetailsRow label="Persona mode" value={bridgeLink.persona_mode} />
+                  <DetailsRow
+                    label={t("chat.direction")}
+                    value={bridgeLink.sync_direction}
+                  />
                   <Separator />
                   <DetailsRow
-                    label="Created"
+                    label={t("chat.deliveryMode")}
+                    value={bridgeLink.delivery_mode}
+                  />
+                  <Separator />
+                  <DetailsRow
+                    label={t("chat.personaMode")}
+                    value={bridgeLink.persona_mode}
+                  />
+                  <Separator />
+                  <DetailsRow
+                    label={t("chat.created")}
                     value={formatBridgeDate(bridgeLink.created_at)}
                   />
                   <Separator />
                   <DetailsRow
-                    label="External channel"
+                    label={t("chat.externalChannel")}
                     value={bridgeLink.external_channel_id}
                   />
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
-                  This chat is not connected to any external messenger yet.
+                  {t("chat.notConnectedToMessenger")}
                 </div>
               )}
             </SectionCard>
 
             {bridgeLink && isDiscordBridge ? (
               <SectionCard
-                title="How web messages leave for Discord"
-                description="Choose whether web messages should look like a regular web user or like one specific Discord user."
+                title={t("chat.webMessagesToDiscord")}
+                description={t("chat.webMessagesToDiscordDescription")}
               >
                 <Card className="border-border/70 bg-muted/30 shadow-none">
                   <CardContent className="flex items-center justify-between gap-3 p-4">
                     <div className="flex flex-col gap-0.5">
-                      <div className="text-sm font-medium">Use Discord user ID</div>
+                      <div className="text-sm font-medium">
+                        {t("chat.useDiscordUserId")}
+                      </div>
                       <div className="text-xs text-muted-foreground">
-                        Off: web user. On: one specific Discord user.
+                        {t("chat.discordPersonaHint")}
                       </div>
                     </div>
                     <Switch
@@ -267,7 +285,7 @@ export function ChatBridgeDetailsModal({
                   <Input
                     value={personaUserId}
                     onChange={(event) => setPersonaUserId(event.target.value)}
-                    placeholder={defaultPersonaUserId || "Enter Discord user ID"}
+                    placeholder={defaultPersonaUserId || t("chat.enterDiscordUserId")}
                     className="break-all"
                   />
                 ) : null}
@@ -278,15 +296,15 @@ export function ChatBridgeDetailsModal({
                     onClick={handleSaveSettings}
                     disabled={!canSaveSettings || settingsSaving}
                   >
-                    {settingsSaving ? "Saving..." : "Save"}
+                    {settingsSaving ? t("chat.saving") : t("common.save")}
                   </Button>
                 </div>
               </SectionCard>
             ) : null}
 
             <SectionCard
-              title="Available providers"
-              description="Provider switching still happens from the bridge button in the chat input row."
+              title={t("chat.availableProviders")}
+              description={t("chat.providerSwitchingHint")}
             >
               {availableProviders.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
@@ -304,18 +322,18 @@ export function ChatBridgeDetailsModal({
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
-                  No bridge providers are configured right now.
+                  {t("chat.noBridgeProviders")}
                 </div>
               )}
             </SectionCard>
 
-            <SectionCard title="Bridge activity">
+            <SectionCard title={t("chat.bridgeActivity")}>
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
                   {!bridgeLink
-                    ? "Bridge activity will appear here after the first synchronization."
+                    ? t("chat.bridgeActivityEmpty")
                     : !showActivity
-                      ? "Activity is loaded only when you open this section."
+                      ? t("chat.activityLoadHint")
                       : null}
                 </div>
                 {bridgeLink && !showActivity ? (
@@ -325,14 +343,14 @@ export function ChatBridgeDetailsModal({
                     size="sm"
                     onClick={handleLoadActivity}
                   >
-                    Load activity
+                    {t("chat.loadActivity")}
                   </Button>
                 ) : null}
               </div>
               {showActivity ? (
                 messageLinksLoading ? (
                   <div className="text-sm text-muted-foreground">
-                    Loading bridge activity...
+                    {t("chat.loadingBridgeActivity")}
                   </div>
                 ) : visibleMessageLinksError ? (
                   <div className="text-sm text-destructive">
@@ -341,29 +359,29 @@ export function ChatBridgeDetailsModal({
                 ) : (
                   <div className="flex flex-col gap-3">
                     <DetailsRow
-                      label="Last inbound"
+                      label={t("chat.lastInbound")}
                       value={
                         latestInboundMessage
                           ? formatBridgeDate(latestInboundMessage.created_at)
-                          : "No inbound messages yet"
+                          : t("chat.noInboundMessages")
                       }
                     />
                     <Separator />
                     <DetailsRow
-                      label="Last outbound"
+                      label={t("chat.lastOutbound")}
                       value={
                         latestOutboundMessage
                           ? formatBridgeDate(latestOutboundMessage.created_at)
-                          : "No outbound messages yet"
+                          : t("chat.noOutboundMessages")
                       }
                     />
                     <Separator />
                     <DetailsRow
-                      label="Last sync"
+                      label={t("chat.lastSync")}
                       value={
                         latestSyncedMessage
                           ? formatBridgeDate(latestSyncedMessage.created_at)
-                          : "No sync activity yet"
+                          : t("chat.noSyncActivity")
                       }
                     />
                   </div>
@@ -375,7 +393,7 @@ export function ChatBridgeDetailsModal({
 
         <DialogFooter className="border-t border-border px-6 py-4">
           <Button type="button" variant="ghost" onClick={onClose}>
-            Close
+            {t("common.close")}
           </Button>
         </DialogFooter>
       </DialogContent>

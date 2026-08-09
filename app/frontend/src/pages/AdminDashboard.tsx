@@ -1,51 +1,60 @@
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Settings, Database, Cpu, User, Bug, Sparkles } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { TranslationKey } from "@/i18n";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 
-const adminLinks = [
+const adminLinks: Array<{
+  to: string;
+  icon: LucideIcon;
+  titleKey: TranslationKey;
+  descriptionKey: TranslationKey;
+}> = [
   {
     to: "/admin/llm",
     icon: Cpu,
-    title: "LLM Configuration",
-    description: "Configure AI provider, model, and credentials",
+    titleKey: "admin.llmConfiguration",
+    descriptionKey: "admin.llmConfigDescription",
   },
   {
     to: "/admin/profile",
     icon: User,
-    title: "User Profile",
-    description: "Set your name, timezone, language, and instructions",
+    titleKey: "admin.userProfile",
+    descriptionKey: "admin.profileDescription",
   },
   {
     to: "/admin/integrations",
     icon: Settings,
-    title: "Integrations",
-    description: "Manage external service connections",
+    titleKey: "admin.integrations",
+    descriptionKey: "admin.integrationsDescription",
   },
   {
     to: "/admin/backups",
     icon: Database,
-    title: "Backups",
-    description: "Temporarily unavailable in the active backend stack",
+    titleKey: "admin.backups",
+    descriptionKey: "admin.backupsDescription",
   },
   {
     to: "/admin/memory-debug",
     icon: Bug,
-    title: "Memory Debug",
-    description: "Inspect memory pipeline, context, timeline, and live events",
+    titleKey: "admin.memoryDebug",
+    descriptionKey: "admin.memoryDebugDescription",
   },
   {
     to: "/admin/skills",
     icon: Sparkles,
-    title: "Skills",
-    description: "View, edit, and manage agent learned skills",
+    titleKey: "admin.skills",
+    descriptionKey: "admin.skillsDescription",
   },
 ];
 
 export function AdminDashboard() {
+  const { t } = useTranslation();
   return (
-    <AdminLayout title="Dashboard">
+    <AdminLayout title={t("admin.dashboard")}>
       <div className="flex-1 overflow-y-auto p-6">
-        <p className="text-muted-foreground mb-6">Manage your biMEMO instance</p>
+        <p className="text-muted-foreground mb-6">{t("admin.dashboardSubtitle")}</p>
         <div className="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {adminLinks.map((link) => (
             <Link
@@ -54,8 +63,8 @@ export function AdminDashboard() {
               className="flex flex-col gap-2 rounded-lg border border-border p-4 hover:bg-muted/50 transition-colors"
             >
               <link.icon className="h-6 w-6 text-primary" />
-              <h2 className="font-semibold">{link.title}</h2>
-              <p className="text-sm text-muted-foreground">{link.description}</p>
+              <h2 className="font-semibold">{t(link.titleKey)}</h2>
+              <p className="text-sm text-muted-foreground">{t(link.descriptionKey)}</p>
             </Link>
           ))}
         </div>

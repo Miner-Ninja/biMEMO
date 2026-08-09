@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,14 +8,14 @@ import { ModelCombobox } from "@/components/ModelCombobox";
 import { testLLMConnection, getModelList } from "@/api/llm";
 import type { LLMConfigEntry, ProviderType } from "@/api/llm";
 
-const PROVIDER_LABELS: Record<ProviderType, string> = {
-  openrouter: "OpenRouter",
-  ollama: "Ollama (local)",
-  custom: "Custom LLM Provider",
+const PROVIDER_LABEL_KEYS: Record<ProviderType, TranslationKey> = {
+  openrouter: "admin.providerOpenrouter",
+  ollama: "admin.providerOllama",
+  custom: "admin.providerCustom",
 };
 
-const PROVIDER_SUBTITLES: Partial<Record<ProviderType, string>> = {
-  custom: "OpenAI-compatible API",
+const PROVIDER_SUBTITLE_KEYS: Partial<Record<ProviderType, TranslationKey>> = {
+  custom: "admin.openaiCompatibleApi",
 };
 
 interface LLMConfigDialogProps {
@@ -37,6 +39,7 @@ export function LLMConfigDialog({
   onSave,
   editConfig,
 }: LLMConfigDialogProps) {
+  const { t } = useTranslation();
   const isEdit = !!editConfig;
 
   const [serviceType, setServiceType] = useState<ProviderType>("openrouter");
@@ -49,6 +52,7 @@ export function LLMConfigDialog({
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [testResult, setTestResult] = useState("");
+  const [testOk, setTestOk] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -71,12 +75,13 @@ export function LLMConfigDialog({
       }
       setModels([]);
       setTestResult("");
+      setTestOk(false);
     }
   }, [open, editConfig]);
 
   const showApiKey = serviceType === "openrouter" || serviceType === "custom";
   const showBaseUrl = serviceType === "ollama" || serviceType === "custom";
-  const providerSubtitle = PROVIDER_SUBTITLES[serviceType];
+  const providerSubtitleKey = PROVIDER_SUBTITLE_KEYS[serviceType];
 
   const loadModels = async () => {
     setLoadingModels(true);
@@ -97,6 +102,7 @@ export function LLMConfigDialog({
   const handleTest = async () => {
     setTesting(true);
     setTestResult("");
+    setTestOk(false);
     try {
       const result = await testLLMConnection({
         service_type: serviceType,
@@ -104,13 +110,17 @@ export function LLMConfigDialog({
         model: model || undefined,
         base_url: baseUrl || undefined,
       });
+      setTestOk(result.ok);
       setTestResult(
         result.ok
-          ? `Connected — ${result.provider ?? serviceType}`
-          : `Failed: ${result.error ?? "unknown"}`
+          ? t("admin.connectedTo", { provider: result.provider ?? serviceType })
+          : t("admin.connectionFailedWithError", {
+              error: result.error ?? t("admin.unknown"),
+            })
       );
     } catch (err) {
-      setTestResult(err instanceof Error ? err.message : "Test failed");
+      setTestOk(false);
+      setTestResult(err instanceof Error ? err.message : t("admin.testFailed"));
     } finally {
       setTesting(false);
     }
@@ -141,7 +151,7 @@ export function LLMConfigDialog({
       <div className="relative z-50 w-full max-w-lg rounded-lg border border-border bg-background p-6 shadow-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">
-            {isEdit ? "Edit LLM Configuration" : "Add LLM Provider"}
+            {isEdit ? t("admin.editLlmConfigTitle") : t("admin.addLlmProviderTitle")}
           </h2>
           <button
             onClick={onClose}
@@ -153,7 +163,7 @@ export function LLMConfigDialog({
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium">Provider</label>
+            <label className="text-sm font-medium">{t("admin.provider")}</label>
             <select
               value={serviceType}
               onChange={(e) => {
@@ -163,25 +173,25 @@ export function LLMConfigDialog({
               disabled={isEdit}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             >
-              {(Object.keys(PROVIDER_LABELS) as ProviderType[]).map((key) => (
+              {(Object.keys(PROVIDER_LABEL_KEYS) as ProviderType[]).map((key) => (
                 <option key={key} value={key}>
-                  {PROVIDER_LABELS[key]}
+                  {t(PROVIDER_LABEL_KEYS[key])}
                 </option>
               ))}
             </select>
-            {providerSubtitle && (
-              <p className="text-xs text-muted-foreground">{providerSubtitle}</p>
+            {providerSubtitleKey && (
+              <p className="text-xs text-muted-foreground">{t(providerSubtitleKey)}</p>
             )}
           </div>
 
           {showApiKey && (
             <div className="space-y-1">
-              <label className="text-sm font-medium">API Key</label>
+              <label className="text-sm font-medium">{t("admin.apiKey")}</label>
               <Input
                 type="password"
                 placeholder={
                   isEdit && editConfig?.has_api_key
-                    ? "Configured — leave blank to keep current"
+                    ? t("admin.apiKeyConfiguredPlaceholder")
                     : "sk-…"
                 }
                 value={apiKey}
@@ -193,7 +203,7 @@ export function LLMConfigDialog({
               />
               {isEdit && editConfig?.has_api_key && !apiKey && (
                 <p className="text-xs text-muted-foreground">
-                  API key is saved. Enter a new value only to change it.
+                  {t("admin.apiKeySavedHint")}
                 </p>
               )}
             </div>
@@ -202,7 +212,7 @@ export function LLMConfigDialog({
           {showBaseUrl && (
             <>
               <div className="space-y-1">
-                <label className="text-sm font-medium">Base URL</label>
+                <label className="text-sm font-medium">{t("admin.baseUrl")}</label>
                 <Input
                   placeholder={
                     serviceType === "ollama"
@@ -220,9 +230,9 @@ export function LLMConfigDialog({
               {(serviceType === "ollama" || serviceType === "custom") && (
                 <div className="space-y-1">
                   <label className="text-sm font-medium">
-                    Dialog Recorder Base URL{" "}
+                    {t("admin.dialogRecorderBaseUrl")}{" "}
                     <span className="text-muted-foreground font-normal">
-                      (optional)
+                      {t("admin.optional")}
                     </span>
                   </label>
                   <Input
@@ -241,14 +251,14 @@ export function LLMConfigDialog({
 
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Model</label>
+              <label className="text-sm font-medium">{t("admin.model")}</label>
               <button
                 type="button"
                 onClick={loadModels}
                 disabled={loadingModels}
                 className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                {loadingModels ? "Loading…" : "Load Models"}
+                {loadingModels ? t("common.loading") : t("admin.loadModels")}
               </button>
             </div>
             <ModelCombobox
@@ -268,21 +278,23 @@ export function LLMConfigDialog({
 
           <div className="space-y-1">
             <label className="text-sm font-medium">
-              Dialog Recorder Model{" "}
-              <span className="text-muted-foreground font-normal">(optional)</span>
+              {t("admin.dialogRecorderModel")}{" "}
+              <span className="text-muted-foreground font-normal">
+                {t("admin.optional")}
+              </span>
             </label>
             <ModelCombobox
               value={dialogRecorderModel}
               onChange={setDialogRecorderModel}
               models={models}
               loading={loadingModels}
-              placeholder="Leave blank to use the same model"
+              placeholder={t("admin.sameModelPlaceholder")}
             />
           </div>
 
           {testResult && (
             <p
-              className={`text-sm ${testResult.startsWith("Connected") ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+              className={`text-sm ${testOk ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
             >
               {testResult}
             </p>
@@ -290,13 +302,17 @@ export function LLMConfigDialog({
 
           <div className="flex items-center gap-3 pt-2">
             <Button onClick={handleSubmit} disabled={saving}>
-              {saving ? "Saving…" : isEdit ? "Update" : "Create"}
+              {saving
+                ? t("admin.savingEllipsis")
+                : isEdit
+                  ? t("admin.update")
+                  : t("admin.create")}
             </Button>
             <Button variant="ghost" onClick={handleTest} disabled={testing}>
-              {testing ? "Testing…" : "Test Connection"}
+              {testing ? t("admin.testing") : t("admin.testConnection")}
             </Button>
             <Button variant="ghost" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Button>
           </div>
         </div>

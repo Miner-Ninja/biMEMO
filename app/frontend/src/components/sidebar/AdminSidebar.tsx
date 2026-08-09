@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import {
   Plug,
@@ -12,6 +14,7 @@ import {
   Shield,
   CalendarClock,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { UserMenu } from "./UserMenu";
@@ -24,22 +27,27 @@ import {
   SidebarShell,
 } from "./sidebar-chrome";
 
-const adminLinks = [
-  { to: "/admin", icon: Shield, label: "Dashboard" },
-  { to: "/admin/profile", icon: User, label: "User Profile" },
-  { to: "/admin/scheduled-tasks", icon: CalendarClock, label: "Scheduled Tasks" },
-  { to: "/admin/skills", icon: Sparkles, label: "Skills" },
-  { to: "/admin/memory-debug", icon: Bug, label: "Memory Debug" },
-  { to: "/admin/integrations", icon: Settings, label: "Integrations" },
-  { to: "/admin/agents", icon: Plug, label: "Agent Connection" },
-  { to: "/admin/backups", icon: Database, label: "Backups" },
-  { to: "/admin/llm", icon: Cpu, label: "LLM Configuration" },
+const adminLinks: Array<{ to: string; icon: LucideIcon; labelKey: TranslationKey }> = [
+  { to: "/admin", icon: Shield, labelKey: "admin.dashboard" },
+  { to: "/admin/profile", icon: User, labelKey: "admin.userProfile" },
+  {
+    to: "/admin/scheduled-tasks",
+    icon: CalendarClock,
+    labelKey: "scheduler.scheduledTasksTitle",
+  },
+  { to: "/admin/skills", icon: Sparkles, labelKey: "admin.skills" },
+  { to: "/admin/memory-debug", icon: Bug, labelKey: "admin.memoryDebug" },
+  { to: "/admin/integrations", icon: Settings, labelKey: "admin.integrations" },
+  { to: "/admin/agents", icon: Plug, labelKey: "admin.agentConnection" },
+  { to: "/admin/backups", icon: Database, labelKey: "admin.backups" },
+  { to: "/admin/llm", icon: Cpu, labelKey: "admin.llmConfiguration" },
 ];
 
 /**
  * Admin sidebar with navigation links, active state, and back-to-chat link.
  */
 export function AdminSidebar() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const { logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,22 +61,22 @@ export function AdminSidebar() {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     if (!normalizedQuery) return adminLinks;
     return adminLinks.filter((link) =>
-      link.label.toLowerCase().includes(normalizedQuery)
+      t(link.labelKey).toLowerCase().includes(normalizedQuery)
     );
-  }, [searchQuery]);
+  }, [searchQuery, t]);
 
   return (
     <SidebarShell
       icon={Shield}
       title="biMEMO"
-      subtitle="Administration"
+      subtitle={t("admin.administration")}
       toolbar={
         <SidebarPanel className="space-y-3 p-3">
-          <SidebarSectionLabel>Navigation</SidebarSectionLabel>
+          <SidebarSectionLabel>{t("admin.navigation")}</SidebarSectionLabel>
           <ChatSearch
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search settings..."
+            placeholder={t("admin.searchSettingsPlaceholder")}
           />
         </SidebarPanel>
       }
@@ -88,13 +96,13 @@ export function AdminSidebar() {
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
-                    {link.label}
+                    {t(link.labelKey)}
                   </Link>
                 );
               })
             ) : (
               <div className="px-3 py-4 text-sm text-sidebar-foreground/55">
-                No settings found for &ldquo;{searchQuery}&rdquo;
+                {t("admin.noSettingsFound", { query: searchQuery })}
               </div>
             )}
           </nav>
@@ -104,7 +112,7 @@ export function AdminSidebar() {
         <div className="flex flex-col gap-2">
           <Link to="/" className={getSidebarActionButtonClassName()}>
             <MessageSquare className="h-4 w-4 shrink-0" />
-            Back to Chat
+            {t("admin.backToChat")}
           </Link>
           <UserMenu onLogout={logout} />
         </div>

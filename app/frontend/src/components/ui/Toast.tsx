@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { CheckCircle2, XCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,9 @@ interface ToastItemProps {
 
 function ToastItem({ toast, onDismiss }: ToastItemProps) {
   const [visible, setVisible] = useState(false);
-  const statusLabel = toast.type === "success" ? "Success" : "Error";
+  const { t } = useTranslation();
+  const statusLabel =
+    toast.type === "success" ? t("common.success") : t("common.error");
 
   useEffect(() => {
     // Animate in
@@ -65,7 +68,7 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
             setVisible(false);
             setTimeout(() => onDismiss(toast.id), 200);
           }}
-          aria-label="Dismiss toast"
+          aria-label={t("common.dismissToast")}
         >
           <X />
         </Button>

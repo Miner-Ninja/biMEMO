@@ -1,4 +1,5 @@
 import { useState, useMemo, memo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   ChevronDown,
@@ -61,6 +62,7 @@ export const ChatMessage = memo(function ChatMessage({
   ttsAvailable = false,
   onConfirmationStatusChange,
 }: ChatMessageProps) {
+  const { t } = useTranslation();
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -140,7 +142,7 @@ export const ChatMessage = memo(function ChatMessage({
             size="icon"
             onClick={handleCopyContent}
             className="h-8 w-8"
-            aria-label={copied ? "Copied!" : "Copy message"}
+            aria-label={copied ? t("chat.copied") : t("chat.copyMessage")}
           >
             {copied ? (
               <Check className="h-4 w-4 text-primary" />
@@ -159,7 +161,7 @@ export const ChatMessage = memo(function ChatMessage({
             size="icon"
             onClick={handleStartEdit}
             className="h-8 w-8"
-            aria-label="Edit message"
+            aria-label={t("chat.editMessage")}
           >
             <Pencil className="h-4 w-4" />
           </Button>
@@ -172,7 +174,7 @@ export const ChatMessage = memo(function ChatMessage({
           <>
             <AvatarImage
               src="/avatars/user"
-              alt="User avatar"
+              alt={t("chat.userAvatar")}
               className="object-cover"
             />
             <AvatarFallback className="bg-primary text-primary-foreground">
@@ -181,11 +183,15 @@ export const ChatMessage = memo(function ChatMessage({
           </>
         ) : (
           <>
-            <AvatarImage src="/avatars/ai" alt="AI avatar" className="object-cover" />
+            <AvatarImage
+              src="/avatars/ai"
+              alt={t("chat.aiAvatar")}
+              className="object-cover"
+            />
             <AvatarFallback className="bg-muted">
               <img
                 src="/bimemo_mini.webp"
-                alt="biMEMO AI avatar"
+                alt={t("chat.bimemoAvatar")}
                 className="h-full w-full object-cover"
               />
             </AvatarFallback>
@@ -198,12 +204,12 @@ export const ChatMessage = memo(function ChatMessage({
         {/* Header with role and timestamp */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pr-16 sm:pr-20">
           <span className="text-sm font-medium sm:text-base">
-            {isUser ? "You" : assistantName || "Assistant"}
+            {isUser ? t("chat.you") : assistantName || t("chat.assistant")}
           </span>
           {message.isVoice && (
             <Badge variant="info" className="gap-1">
               <Mic className="h-3 w-3" />
-              voice
+              {t("chat.voice")}
             </Badge>
           )}
           <span className="text-xs text-muted-foreground">
@@ -226,22 +232,24 @@ export const ChatMessage = memo(function ChatMessage({
                   type="button"
                   className="w-full text-left"
                   onClick={() => setSelectedImage(imageUrl)}
-                  aria-label={`Open image ${imageIndex + 1}`}
+                  aria-label={t("chat.openImage", { number: imageIndex + 1 })}
                 >
                   <img
                     src={imageUrl}
-                    alt={`Attached image ${imageIndex + 1}`}
+                    alt={t("chat.attachedImage", { number: imageIndex + 1 })}
                     className="h-40 w-full object-cover transition-transform duration-200 group-hover/image:scale-[1.02]"
                     loading="lazy"
                   />
                   <CardContent className="flex items-center justify-between gap-2 px-3 py-2">
-                    <span className="text-xs text-muted-foreground">{`Image ${imageIndex + 1}`}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t("chat.imageNumber", { number: imageIndex + 1 })}
+                    </span>
                     <Badge
                       variant="outline"
                       className="gap-1 border-border/70 px-2 py-0.5"
                     >
                       <Expand className="h-3 w-3" />
-                      Open
+                      {t("chat.open")}
                     </Badge>
                   </CardContent>
                 </button>
@@ -308,7 +316,7 @@ export const ChatMessage = memo(function ChatMessage({
                       ) : (
                         <ChevronRight className="h-3 w-3" />
                       )}
-                      Technical information
+                      {t("chat.technicalInformation")}
                     </Button>
                     {errorDetailOpen && (
                       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-3 text-xs text-muted-foreground">
@@ -347,7 +355,7 @@ export const ChatMessage = memo(function ChatMessage({
                 className="gap-1"
               >
                 <Check className="h-3.5 w-3.5" />
-                Save & Submit
+                {t("chat.saveAndSubmit")}
               </Button>
               <Button
                 variant="ghost"
@@ -356,7 +364,7 @@ export const ChatMessage = memo(function ChatMessage({
                 className="gap-1"
               >
                 <X className="h-3.5 w-3.5" />
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </div>
@@ -385,7 +393,7 @@ export const ChatMessage = memo(function ChatMessage({
               <div className="mt-6 flex flex-col items-stretch gap-2 sm:mt-8 sm:items-start sm:gap-2">
                 <Separator />
                 <span className="mb-1 text-[10px] font-medium text-muted-foreground sm:text-xs">
-                  Suggestions
+                  {t("chat.suggestions")}
                 </span>
                 {suggestions.map((s, i) => (
                   <Button
@@ -410,12 +418,12 @@ export const ChatMessage = memo(function ChatMessage({
       >
         <DialogContent className="max-w-[min(96vw,72rem)] border-none bg-transparent p-0 shadow-none">
           <DialogHeader className="sr-only">
-            <DialogTitle>Image preview</DialogTitle>
+            <DialogTitle>{t("chat.imagePreview")}</DialogTitle>
           </DialogHeader>
           {selectedImage ? (
             <img
               src={selectedImage}
-              alt="Selected attachment preview"
+              alt={t("chat.selectedAttachmentPreview")}
               className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
             />
           ) : null}

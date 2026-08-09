@@ -1,6 +1,7 @@
 import type { Chat } from "@/types/chat";
 
-export type ChatGroup = "Today" | "Yesterday" | "Previous 7 Days" | "Older";
+/** Language-independent group keys; display labels come from the dictionary. */
+export type ChatGroup = "today" | "yesterday" | "previous7Days" | "older";
 
 /**
  * Group chats by relative date
@@ -23,13 +24,13 @@ export function groupChatsByDate(chats: Chat[]): Map<ChatGroup, Chat[]> {
     let group: ChatGroup;
 
     if (chatDate >= today) {
-      group = "Today";
+      group = "today";
     } else if (chatDate >= yesterday) {
-      group = "Yesterday";
+      group = "yesterday";
     } else if (chatDate >= weekAgo) {
-      group = "Previous 7 Days";
+      group = "previous7Days";
     } else {
-      group = "Older";
+      group = "older";
     }
 
     if (!groups.has(group)) {
@@ -45,8 +46,8 @@ export function groupChatsByDate(chats: Chat[]): Map<ChatGroup, Chat[]> {
  * Get ordered group keys for display
  */
 export const GROUP_ORDER: ChatGroup[] = [
-  "Today",
-  "Yesterday",
-  "Previous 7 Days",
-  "Older",
+  "today",
+  "yesterday",
+  "previous7Days",
+  "older",
 ];

@@ -28,35 +28,35 @@ describe("groupChatsByDate", () => {
     const chats = [createChat("1", new Date("2024-01-15T10:00:00"))];
     const groups = groupChatsByDate(chats);
 
-    expect(groups.get("Today")).toHaveLength(1);
-    expect(groups.get("Today")![0].id).toBe("1");
-    expect(groups.has("Yesterday")).toBe(false);
+    expect(groups.get("today")).toHaveLength(1);
+    expect(groups.get("today")![0].id).toBe("1");
+    expect(groups.has("yesterday")).toBe(false);
   });
 
   it("groups chat from yesterday", () => {
     const chats = [createChat("1", new Date("2024-01-14T15:00:00"))];
     const groups = groupChatsByDate(chats);
 
-    expect(groups.get("Yesterday")).toHaveLength(1);
-    expect(groups.get("Yesterday")![0].id).toBe("1");
-    expect(groups.has("Today")).toBe(false);
+    expect(groups.get("yesterday")).toHaveLength(1);
+    expect(groups.get("yesterday")![0].id).toBe("1");
+    expect(groups.has("today")).toBe(false);
   });
 
   it("groups chat from previous 7 days", () => {
     const chats = [createChat("1", new Date("2024-01-10T12:00:00"))];
     const groups = groupChatsByDate(chats);
 
-    expect(groups.get("Previous 7 Days")).toHaveLength(1);
-    expect(groups.has("Today")).toBe(false);
-    expect(groups.has("Yesterday")).toBe(false);
+    expect(groups.get("previous7Days")).toHaveLength(1);
+    expect(groups.has("today")).toBe(false);
+    expect(groups.has("yesterday")).toBe(false);
   });
 
   it("groups older chat", () => {
     const chats = [createChat("1", new Date("2024-01-01T12:00:00"))];
     const groups = groupChatsByDate(chats);
 
-    expect(groups.get("Older")).toHaveLength(1);
-    expect(groups.has("Previous 7 Days")).toBe(false);
+    expect(groups.get("older")).toHaveLength(1);
+    expect(groups.has("previous7Days")).toBe(false);
   });
 
   it("groups multiple chats into correct groups", () => {
@@ -68,10 +68,10 @@ describe("groupChatsByDate", () => {
     ];
     const groups = groupChatsByDate(chats);
 
-    expect(groups.get("Today")).toHaveLength(1);
-    expect(groups.get("Yesterday")).toHaveLength(1);
-    expect(groups.get("Previous 7 Days")).toHaveLength(1);
-    expect(groups.get("Older")).toHaveLength(1);
+    expect(groups.get("today")).toHaveLength(1);
+    expect(groups.get("yesterday")).toHaveLength(1);
+    expect(groups.get("previous7Days")).toHaveLength(1);
+    expect(groups.get("older")).toHaveLength(1);
   });
 
   it("sorts chats within groups by updatedAt descending", () => {
@@ -81,7 +81,7 @@ describe("groupChatsByDate", () => {
       createChat("3", new Date("2024-01-15T09:00:00")),
     ];
     const groups = groupChatsByDate(chats);
-    const todayChats = groups.get("Today")!;
+    const todayChats = groups.get("today")!;
 
     expect(todayChats[0].id).toBe("2"); // 10:00 - most recent
     expect(todayChats[1].id).toBe("3"); // 09:00
@@ -96,11 +96,11 @@ describe("groupChatsByDate", () => {
 
 describe("GROUP_ORDER", () => {
   it("has correct order", () => {
-    expect(GROUP_ORDER).toEqual(["Today", "Yesterday", "Previous 7 Days", "Older"]);
+    expect(GROUP_ORDER).toEqual(["today", "yesterday", "previous7Days", "older"]);
   });
 
   it("contains all ChatGroup types", () => {
-    const allGroups: ChatGroup[] = ["Today", "Yesterday", "Previous 7 Days", "Older"];
+    const allGroups: ChatGroup[] = ["today", "yesterday", "previous7Days", "older"];
     expect(GROUP_ORDER).toEqual(allGroups);
   });
 });

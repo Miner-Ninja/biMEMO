@@ -1,12 +1,13 @@
 import { format, formatDistanceToNow, parseISO } from "date-fns";
+import i18n, { getDateFnsLocale } from "@/i18n";
 import type { ScheduleKind } from "@/api/scheduled-tasks";
 
 const INTERVAL_RE = /^(\d+)\s*(m|h|d)$/i;
-const UNIT_LABELS: Record<string, [string, string]> = {
-  m: ["minute", "minutes"],
-  h: ["hour", "hours"],
-  d: ["day", "days"],
-};
+const UNIT_KEYS = {
+  m: "schedule.everyMinute",
+  h: "schedule.everyHour",
+  d: "schedule.everyDay",
+} as const;
 
 function parseSafe(iso: string | null | undefined): Date | null {
   if (!iso) return null;
@@ -21,13 +22,13 @@ function parseSafe(iso: string | null | undefined): Date | null {
 export function formatRelativeTime(iso: string | null | undefined): string {
   const date = parseSafe(iso);
   if (!date) return "";
-  return formatDistanceToNow(date, { addSuffix: true });
+  return formatDistanceToNow(date, { addSuffix: true, locale: getDateFnsLocale() });
 }
 
 export function formatAbsoluteTime(iso: string | null | undefined): string {
   const date = parseSafe(iso);
   if (!date) return "";
-  return format(date, "MMM d, HH:mm");
+  return format(date, i18n.t("dates.absolute"), { locale: getDateFnsLocale() });
 }
 
 export function describeSchedule(
@@ -40,18 +41,17 @@ export function describeSchedule(
     const match = INTERVAL_RE.exec(trimmed);
     if (match) {
       const value = Number(match[1]);
-      const unit = match[2].toLowerCase();
-      const [singular, plural] = UNIT_LABELS[unit];
-      return `Every ${value} ${value === 1 ? singular : plural}`;
+      const unit = match[2].toLowerCase() as keyof typeof UNIT_KEYS;
+      return i18n.t(UNIT_KEYS[unit], { count: value });
     }
-    return `Every ${trimmed}`;
+    return i18n.t("schedule.every", { expr: trimmed });
   }
   if (kind === "cron") {
     const tz = timezone && timezone !== "UTC" ? ` (${timezone})` : "";
-    return `Cron · ${trimmed}${tz}`;
+    return i18n.t("schedule.cron", { expr: trimmed }) + tz;
   }
   // once
-  return `Once · ${formatAbsoluteTime(trimmed) || trimmed}`;
+  return i18n.t("schedule.once", { when: formatAbsoluteTime(trimmed) || trimmed });
 }
 
 /**

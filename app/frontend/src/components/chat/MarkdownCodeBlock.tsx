@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/core";
@@ -160,6 +161,7 @@ export function MarkdownCodeBlock({
   language,
   className,
 }: MarkdownCodeBlockProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const html = useMemo(() => {
@@ -211,7 +213,7 @@ export function MarkdownCodeBlock({
             size="icon"
             onClick={handleCopy}
             className="h-8 w-8"
-            aria-label={copied ? "Copied!" : "Copy code"}
+            aria-label={copied ? t("chat.copied") : t("chat.copyCode")}
           >
             {copied ? (
               <Check className="h-4 w-4 text-primary" />

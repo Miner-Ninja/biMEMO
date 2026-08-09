@@ -9,6 +9,7 @@ import {
   type ClipboardEvent,
   type MouseEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   CornerDownLeft,
   Square,
@@ -131,7 +132,7 @@ export const ChatInput = memo(
       disabled = false,
       isLoading = false,
       uploadProgress,
-      placeholder = "Ask a question about your data...",
+      placeholder: placeholderProp,
       processingStage = null,
       activeFiles,
       onDeactivateFile,
@@ -151,6 +152,8 @@ export const ChatInput = memo(
     }: ChatInputProps,
     ref
   ) {
+    const { t } = useTranslation();
+    const placeholder = placeholderProp ?? t("chat.askAboutData");
     const [value, setValue] = useState("");
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const [isRecording, setIsRecording] = useState(false);
@@ -308,7 +311,7 @@ export const ChatInput = memo(
                         size="icon"
                         onClick={() => onDeactivateFile(filename)}
                         className="h-5 w-5 rounded-full p-0"
-                        aria-label={`Deactivate ${filename}`}
+                        aria-label={t("chat.deactivateFile", { name: filename })}
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -346,7 +349,7 @@ export const ChatInput = memo(
                       size="icon"
                       onClick={() => handleRemoveFile(index)}
                       className="h-5 w-5 p-0"
-                      aria-label="Remove file"
+                      aria-label={t("chat.removeFile")}
                     >
                       <X className="h-3 w-3" />
                     </Button>
@@ -369,7 +372,7 @@ export const ChatInput = memo(
               className="mx-auto mb-2 flex max-w-3xl items-center justify-center gap-1.5 px-2 py-1 text-center text-xs"
             >
               <AudioLines className="h-3.5 w-3.5 animate-pulse" />
-              <span>Voice mode active</span>
+              <span>{t("chat.voiceModeActive")}</span>
             </Badge>
           )}
 
@@ -393,7 +396,7 @@ export const ChatInput = memo(
                   <CardContent className="p-1">
                     <Command shouldFilter={false} className="bg-transparent">
                       <CommandList>
-                        <CommandGroup heading="Commands">
+                        <CommandGroup heading={t("chat.commands")}>
                           {filteredCommands.map((cmd, index) => (
                             <CommandItem
                               key={cmd.name}
@@ -419,7 +422,7 @@ export const ChatInput = memo(
                                 </span>
                               </div>
                               <CommandShortcut>
-                                {cmd.hasArgs ? "args" : "ready"}
+                                {cmd.hasArgs ? t("chat.hasArgs") : t("chat.ready")}
                               </CommandShortcut>
                             </CommandItem>
                           ))}
@@ -496,17 +499,19 @@ export const ChatInput = memo(
                           size="icon"
                           disabled={disabled || bridgeDisabled}
                           className="h-7.5 w-7.5 sm:h-9 sm:w-9"
-                          aria-label="Bridge providers"
+                          aria-label={t("chat.bridgeProviders")}
                         >
                           <Waypoints className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-64">
-                        <DropdownMenuLabel>Bridge providers</DropdownMenuLabel>
+                        <DropdownMenuLabel>
+                          {t("chat.bridgeProviders")}
+                        </DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         {bridgeProvidersLoading ? (
                           <div className="p-2 text-sm text-muted-foreground">
-                            Loading providers...
+                            {t("chat.loadingProviders")}
                           </div>
                         ) : bridgeProviders.length > 0 ? (
                           <DropdownMenuGroup>
@@ -542,7 +547,7 @@ export const ChatInput = memo(
                           </DropdownMenuGroup>
                         ) : (
                           <div className="p-2 text-sm text-muted-foreground">
-                            No bridge providers are configured right now.
+                            {t("chat.noBridgeProviders")}
                           </div>
                         )}
                       </DropdownMenuContent>
@@ -556,20 +561,20 @@ export const ChatInput = memo(
                           variant="ghost"
                           size="icon"
                           className="h-7.5 w-7.5 sm:h-9 sm:w-9"
-                          aria-label="Chat Settings"
+                          aria-label={t("chat.chatSettings")}
                         >
                           <Settings className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-56">
-                        <DropdownMenuLabel>Chat Settings</DropdownMenuLabel>
+                        <DropdownMenuLabel>{t("chat.chatSettings")}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuGroup>
                           {onToggleThinking && (
                             <DropdownMenuItem onClick={onToggleThinking}>
                               <span className="flex items-center gap-2">
                                 <Brain className="h-4 w-4" />
-                                Show Thinking
+                                {t("chat.showThinking")}
                               </span>
                               <Switch checked={Boolean(showThinking)} />
                             </DropdownMenuItem>
@@ -578,7 +583,7 @@ export const ChatInput = memo(
                             <DropdownMenuItem onClick={onToggleSuggestions}>
                               <span className="flex items-center gap-2">
                                 <Lightbulb className="h-4 w-4" />
-                                Suggestions
+                                {t("chat.suggestions")}
                               </span>
                               <Switch checked={Boolean(showSuggestions)} />
                             </DropdownMenuItem>
@@ -594,7 +599,7 @@ export const ChatInput = memo(
                     variant="destructive"
                     size="icon"
                     className="h-8 w-8 shrink-0 rounded-md sm:h-9 sm:w-9 sm:rounded-lg"
-                    aria-label="Stop generation"
+                    aria-label={t("chat.stopGeneration")}
                   >
                     <Square className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                   </Button>
@@ -604,7 +609,7 @@ export const ChatInput = memo(
                     disabled={!canSend || isRecording}
                     size="icon"
                     className="h-8 w-8 shrink-0 rounded-md sm:h-9 sm:w-9 sm:rounded-lg"
-                    aria-label="Send message"
+                    aria-label={t("chat.sendMessage")}
                   >
                     <CornerDownLeft className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                   </Button>

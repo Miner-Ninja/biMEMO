@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Paperclip, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ interface AttachButtonProps {
  * Button to trigger file attachment
  */
 export function AttachButton({ onFileSelect, disabled, className }: AttachButtonProps) {
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,12 +41,12 @@ export function AttachButton({ onFileSelect, disabled, className }: AttachButton
     const validFiles: File[] = [];
     for (const file of Array.from(fileList)) {
       if (!isAllowedUploadFilename(file.name)) {
-        setError("This file type is not supported.");
+        setError(t("chat.fileTypeNotSupported"));
         e.target.value = "";
         return;
       }
       if (file.size > MAX_FILE_SIZE) {
-        setError("File size must be less than 10MB.");
+        setError(t("chat.fileTooLarge"));
         e.target.value = "";
         return;
       }
@@ -73,7 +75,7 @@ export function AttachButton({ onFileSelect, disabled, className }: AttachButton
         size="icon"
         onClick={handleClick}
         disabled={disabled}
-        aria-label="Attach file"
+        aria-label={t("chat.attachFile")}
         className={cn("h-11 w-11 shrink-0", className)}
       >
         <Paperclip className="h-4 w-4" />

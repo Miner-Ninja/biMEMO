@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { CalendarClock, Plus, RefreshCw } from "lucide-react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { ScheduledTaskCard } from "@/components/scheduler/ScheduledTaskCard";
@@ -25,14 +27,15 @@ import {
 } from "@/api/scheduled-tasks";
 import { cn } from "@/lib/utils";
 
-const FILTERS: Array<{ key: ScheduledTaskFilter; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "paused", label: "Paused" },
-  { key: "completed", label: "Completed" },
+const FILTERS: Array<{ key: ScheduledTaskFilter; labelKey: TranslationKey }> = [
+  { key: "all", labelKey: "scheduler.filterAll" },
+  { key: "active", labelKey: "scheduler.filterActive" },
+  { key: "paused", labelKey: "scheduler.filterPaused" },
+  { key: "completed", labelKey: "scheduler.filterCompleted" },
 ];
 
 export function ScheduledTasksPage() {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [filter, setFilter] = useState<ScheduledTaskFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -52,14 +55,14 @@ export function ScheduledTasksPage() {
       } catch (err) {
         addToast({
           type: "error",
-          message: err instanceof Error ? err.message : "Failed to load tasks",
+          message: err instanceof Error ? err.message : t("scheduler.loadTasksFailed"),
         });
       } finally {
         if (!silent) setRefreshing(false);
         setLoading(false);
       }
     },
-    [addToast]
+    [addToast, t]
   );
 
   useEffect(() => {
@@ -75,7 +78,9 @@ export function ScheduledTasksPage() {
         event.data && typeof event.data === "object"
           ? (event.data as Record<string, unknown>)
           : null;
-      const taskName = String(eventPayload?.task_name || "Scheduled task");
+      const taskName = String(
+        eventPayload?.task_name || t("scheduler.scheduledTaskFallbackName")
+      );
       const taskType = String(eventPayload?.task_type || "");
       const resultText = String(eventPayload?.result_text || "");
       const status = String(eventPayload?.status || "ok");
@@ -86,13 +91,13 @@ export function ScheduledTasksPage() {
         type: isError ? "error" : "success",
         message:
           taskType === "reminder"
-            ? `🔔 ${taskName}: ${summary}`
-            : `✅ ${taskName}: ${summary}`,
+            ? t("scheduler.reminderResultToast", { name: taskName, summary })
+            : t("scheduler.taskResultToast", { name: taskName, summary }),
       });
       // Refresh the task list so last_run_at, status, history update live.
       void loadTasks(filter, true);
     },
-    [addToast, filter, loadTasks]
+    [addToast, filter, loadTasks, t]
   );
 
   const { connect, disconnect } = useRealtimeStream(handleRealtimeEvent, null);
@@ -115,17 +120,20 @@ export function ScheduledTasksPage() {
         await updateScheduledTaskStatus(task.id, nextStatus);
         addToast({
           type: "success",
-          message: nextStatus === "paused" ? "Task paused" : "Task resumed",
+          message:
+            nextStatus === "paused"
+              ? t("scheduler.taskPaused")
+              : t("scheduler.taskResumed"),
         });
         void loadTasks(filter, true);
       } catch (err) {
         addToast({
           type: "error",
-          message: err instanceof Error ? err.message : "Failed to update task",
+          message: err instanceof Error ? err.message : t("scheduler.updateTaskFailed"),
         });
       }
     },
-    [addToast, filter, loadTasks]
+    [addToast, filter, loadTasks, t]
   );
 
   const handleDelete = useCallback(async () => {
@@ -134,34 +142,39 @@ export function ScheduledTasksPage() {
     setPendingDelete(null);
     try {
       await deleteScheduledTask(target.id);
-      addToast({ type: "success", message: `Task "${target.name}" deleted` });
+      addToast({
+        type: "success",
+        message: t("scheduler.taskDeleted", { name: target.name }),
+      });
       void loadTasks(filter, true);
     } catch (err) {
       addToast({
         type: "error",
-        message: err instanceof Error ? err.message : "Failed to delete task",
+        message: err instanceof Error ? err.message : t("scheduler.deleteTaskFailed"),
       });
     }
-  }, [addToast, filter, loadTasks, pendingDelete]);
+  }, [addToast, filter, loadTasks, pendingDelete, t]);
 
   const handleCreated = useCallback(
     (_taskId: string, name: string) => {
-      addToast({ type: "success", message: `Task "${name}" created` });
+      addToast({ type: "success", message: t("scheduler.taskCreated", { name }) });
       void loadTasks(filter, true);
     },
-    [addToast, filter, loadTasks]
+    [addToast, filter, loadTasks, t]
   );
 
   return (
-    <AdminLayout title="Scheduled Tasks">
+    <AdminLayout title={t("scheduler.scheduledTasksTitle")}>
       <div className="flex-1 overflow-y-auto p-6">
         {/* Header */}
         <header className="mb-8 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">Scheduled Tasks</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {t("scheduler.scheduledTasksTitle")}
+              </h1>
               <p className="text-sm text-muted-foreground">
-                Automate reminders and background AI work on a schedule.
+                {t("scheduler.pageSubtitle")}
               </p>
             </div>
             <button
@@ -170,7 +183,7 @@ export function ScheduledTasksPage() {
               className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" />
-              New Task
+              {t("scheduler.newTask")}
             </button>
           </div>
 
@@ -189,21 +202,21 @@ export function ScheduledTasksPage() {
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {f.label}
+                  {t(f.labelKey)}
                 </button>
               ))}
             </div>
             <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
               <span className="font-mono tabular-nums">
-                {counts.total} {counts.total === 1 ? "task" : "tasks"}
+                {t("scheduler.taskCount", { count: counts.total })}
               </span>
               <button
                 type="button"
                 onClick={() => loadTasks(filter)}
                 disabled={refreshing}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                title="Refresh"
-                aria-label="Refresh"
+                title={t("scheduler.refresh")}
+                aria-label={t("scheduler.refresh")}
               >
                 <RefreshCw
                   className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
@@ -246,7 +259,7 @@ export function ScheduledTasksPage() {
         task={editTask}
         onClose={() => setEditTask(null)}
         onCreated={(_id, name) => {
-          addToast({ type: "success", message: `Task "${name}" updated` });
+          addToast({ type: "success", message: t("scheduler.taskUpdated", { name }) });
           void loadTasks(filter, true);
         }}
         onError={(message) => addToast({ type: "error", message })}
@@ -260,20 +273,22 @@ export function ScheduledTasksPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete scheduled task?</AlertDialogTitle>
+            <AlertDialogTitle>{t("scheduler.deleteTaskConfirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete
-                ? `"${pendingDelete.name}" will be removed permanently. This cannot be undone.`
+                ? t("scheduler.deleteTaskConfirmDescription", {
+                    name: pendingDelete.name,
+                  })
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={handleDelete}
             >
-              Delete
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -315,7 +330,14 @@ interface EmptyStateProps {
   filter: ScheduledTaskFilter;
 }
 
+const EMPTY_TITLE_KEYS: Record<Exclude<ScheduledTaskFilter, "all">, TranslationKey> = {
+  active: "scheduler.emptyTitleActive",
+  paused: "scheduler.emptyTitlePaused",
+  completed: "scheduler.emptyTitleCompleted",
+};
+
 function EmptyState({ onCreate, filter }: EmptyStateProps) {
+  const { t } = useTranslation();
   const isFiltered = filter !== "all";
   return (
     <div className="flex min-h-[400px] flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-border py-12 text-center">
@@ -325,12 +347,12 @@ function EmptyState({ onCreate, filter }: EmptyStateProps) {
       </div>
       <div className="space-y-1.5 max-w-sm">
         <h2 className="text-base font-semibold">
-          {isFiltered ? `No ${filter} tasks` : "No scheduled tasks yet"}
+          {filter !== "all"
+            ? t(EMPTY_TITLE_KEYS[filter])
+            : t("scheduler.emptyTitleNoTasks")}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {isFiltered
-            ? "Try a different filter or create a new task."
-            : "Create your first task to automate reminders or background AI work."}
+          {isFiltered ? t("scheduler.emptyFilteredHint") : t("scheduler.emptyHint")}
         </p>
       </div>
       <button
@@ -339,7 +361,7 @@ function EmptyState({ onCreate, filter }: EmptyStateProps) {
         className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
       >
         <Plus className="h-4 w-4" />
-        {isFiltered ? "Create new task" : "Create first task"}
+        {isFiltered ? t("scheduler.createNewTask") : t("scheduler.createFirstTask")}
       </button>
     </div>
   );

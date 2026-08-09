@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatItem } from "./ChatItem";
 import { groupChatsByDate, GROUP_ORDER } from "@/lib/chat-groups";
@@ -37,6 +38,7 @@ export function ChatList({
   onDeleteChat,
   onRenameChat,
 }: ChatListProps) {
+  const { t } = useTranslation();
   // Filter chats based on search query
   const filteredChats = useMemo(
     () => chats.filter((chat) => matchesSearch(chat, searchQuery)),
@@ -48,9 +50,9 @@ export function ChatList({
   if (chats.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-sidebar-foreground/55">
-        No chats yet.
+        {t("sidebar.noChatsYet")}
         <br />
-        Start a new chat!
+        {t("sidebar.startNewChat")}
       </div>
     );
   }
@@ -58,7 +60,7 @@ export function ChatList({
   if (filteredChats.length === 0 && searchQuery) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-sm text-sidebar-foreground/55">
-        No results for &ldquo;{searchQuery}&rdquo;
+        {t("sidebar.noResultsFor", { query: searchQuery })}
       </div>
     );
   }
@@ -72,7 +74,9 @@ export function ChatList({
 
           return (
             <div key={groupName} className="flex flex-col gap-1">
-              <SidebarSectionLabel className="px-3">{groupName}</SidebarSectionLabel>
+              <SidebarSectionLabel className="px-3">
+                {t(`chatGroups.${groupName}`)}
+              </SidebarSectionLabel>
               <div>
                 {groupChats.map((chat) => (
                   <ChatItem

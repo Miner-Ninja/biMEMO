@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText, Trash2, Upload, Loader2, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export function FileList({
   refreshKey,
   searchQuery = "",
 }: FileListProps) {
+  const { t } = useTranslation();
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -156,11 +158,11 @@ export function FileList({
 
     for (const file of fileList) {
       if (!isAllowedUploadFilename(file.name)) {
-        errors.push(`Unsupported file type: ${file.name}`);
+        errors.push(t("sidebar.unsupportedFileType", { name: file.name }));
         continue;
       }
       if (file.size > MAX_FILE_SIZE) {
-        errors.push(`File too large: ${file.name} (max 10MB)`);
+        errors.push(t("sidebar.fileTooLarge", { name: file.name }));
         continue;
       }
       validFiles.push(file);
@@ -181,10 +183,10 @@ export function FileList({
     for (const file of validFiles) {
       if (existingNames.has(file.name)) {
         const shouldReplace = await confirm({
-          title: "File already exists",
-          description: `"${file.name}" already exists. The old version will be replaced.`,
-          confirmLabel: "Replace",
-          cancelLabel: "Skip",
+          title: t("sidebar.fileAlreadyExists"),
+          description: t("sidebar.fileExistsDescription", { name: file.name }),
+          confirmLabel: t("sidebar.replace"),
+          cancelLabel: t("sidebar.skip"),
         });
         if (shouldReplace) {
           confirmedFiles.push(file);
@@ -363,11 +365,11 @@ export function FileList({
                   >
                     <Upload />
                   </EmptyMedia>
-                  <EmptyTitle>Drag files here or click to upload</EmptyTitle>
+                  <EmptyTitle>{t("sidebar.dragFilesHere")}</EmptyTitle>
                   <EmptyDescription>
-                    PDF, DOCX, XLSX, CSV, TXT, JSON, Images
+                    {t("sidebar.supportedFormats")}
                     <span className="mx-1.5">&middot;</span>
-                    Max 10 MB per file
+                    {t("sidebar.maxFileSize")}
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
@@ -380,7 +382,7 @@ export function FileList({
                     }}
                   >
                     <Upload />
-                    Upload files
+                    {t("sidebar.uploadFiles")}
                   </Button>
                 </EmptyContent>
               </Empty>
@@ -409,7 +411,7 @@ export function FileList({
           <Card className="flex h-full items-center justify-center border-primary/20 bg-background/85 shadow-none">
             <CardContent className="flex flex-col items-center gap-2 p-6 text-sidebar-primary">
               <Upload className="h-10 w-10" />
-              <p className="text-sm font-medium">Drop files to upload</p>
+              <p className="text-sm font-medium">{t("sidebar.dropFilesToUpload")}</p>
             </CardContent>
           </Card>
         </div>
@@ -417,7 +419,9 @@ export function FileList({
 
       {/* Header with select-all and upload */}
       <div className="flex items-center gap-2 px-3 py-2">
-        <SidebarSectionLabel className="mr-auto">Library</SidebarSectionLabel>
+        <SidebarSectionLabel className="mr-auto">
+          {t("sidebar.library")}
+        </SidebarSectionLabel>
         <Button
           variant="ghost"
           size="sm"
@@ -430,7 +434,7 @@ export function FileList({
           ) : (
             <Upload className="h-3 w-3" />
           )}
-          Upload
+          {t("sidebar.upload")}
         </Button>
         {activeSet.size > 0 && (
           <Button
@@ -461,7 +465,7 @@ export function FileList({
           >
             {allActive ? <Check className="h-3 w-3" /> : null}
           </Badge>
-          All
+          {t("sidebar.all")}
         </Button>
       </div>
 
@@ -476,7 +480,9 @@ export function FileList({
       <div className="flex-1 min-h-0 overflow-y-auto p-2">
         {filteredFiles.length === 0 ? (
           <p className="px-3 py-4 text-center text-sm text-sidebar-foreground/55">
-            No files found{searchQuery && <> for &ldquo;{searchQuery}&rdquo;</>}
+            {searchQuery
+              ? t("sidebar.noFilesFoundFor", { query: searchQuery })
+              : t("sidebar.noFilesFound")}
           </p>
         ) : (
           <div className="grid grid-cols-3 gap-2">
@@ -514,7 +520,7 @@ export function FileList({
                           e.stopPropagation();
                           handleDelete(file.file_id);
                         }}
-                        aria-label={`Delete ${file.filename}`}
+                        aria-label={t("sidebar.deleteFile", { name: file.filename })}
                       >
                         {isDeleting ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />

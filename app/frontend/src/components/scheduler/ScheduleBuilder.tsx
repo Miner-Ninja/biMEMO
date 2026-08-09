@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CalendarDays, Clock3, Repeat, Wrench } from "lucide-react";
+import i18n, { type TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export type ScheduleMode = "once" | "every" | "daily" | "advanced";
@@ -25,25 +27,25 @@ interface ScheduleBuilderProps {
   disabled?: boolean;
 }
 
-const WEEKDAYS = [
-  { idx: 1, label: "Mon" },
-  { idx: 2, label: "Tue" },
-  { idx: 3, label: "Wed" },
-  { idx: 4, label: "Thu" },
-  { idx: 5, label: "Fri" },
-  { idx: 6, label: "Sat" },
-  { idx: 0, label: "Sun" },
+const WEEKDAYS: Array<{ idx: number; labelKey: TranslationKey }> = [
+  { idx: 1, labelKey: "scheduler.weekdayMon" },
+  { idx: 2, labelKey: "scheduler.weekdayTue" },
+  { idx: 3, labelKey: "scheduler.weekdayWed" },
+  { idx: 4, labelKey: "scheduler.weekdayThu" },
+  { idx: 5, labelKey: "scheduler.weekdayFri" },
+  { idx: 6, labelKey: "scheduler.weekdaySat" },
+  { idx: 0, labelKey: "scheduler.weekdaySun" },
 ];
 
 const MODE_TABS: Array<{
   key: ScheduleMode;
-  label: string;
+  labelKey: TranslationKey;
   icon: typeof Clock3;
 }> = [
-  { key: "once", label: "Once", icon: CalendarDays },
-  { key: "every", label: "Every", icon: Repeat },
-  { key: "daily", label: "Daily", icon: Clock3 },
-  { key: "advanced", label: "Advanced", icon: Wrench },
+  { key: "once", labelKey: "scheduler.modeOnce", icon: CalendarDays },
+  { key: "every", labelKey: "scheduler.modeEvery", icon: Repeat },
+  { key: "daily", labelKey: "scheduler.modeDaily", icon: Clock3 },
+  { key: "advanced", labelKey: "scheduler.modeAdvanced", icon: Wrench },
 ];
 
 export function createInitialScheduleValue(): ScheduleBuilderValue {
@@ -181,7 +183,7 @@ export function describeBuilderSchedule(v: ScheduleBuilderValue): string {
         minute: "2-digit",
         hour12: false,
       });
-      return `Runs once on ${formatted}`;
+      return i18n.t("scheduler.previewOnce", { date: formatted });
     } catch {
       return "";
     }
@@ -189,42 +191,41 @@ export function describeBuilderSchedule(v: ScheduleBuilderValue): string {
   if (v.mode === "every") {
     const num = Number(v.everyValue);
     if (!Number.isFinite(num) || num < 1) return "";
-    const unit =
-      v.everyUnit === "m"
-        ? num === 1
-          ? "minute"
-          : "minutes"
-        : v.everyUnit === "h"
-          ? num === 1
-            ? "hour"
-            : "hours"
-          : num === 1
-            ? "day"
-            : "days";
-    return `Runs every ${num} ${unit}`;
+    if (v.everyUnit === "m") {
+      return i18n.t("scheduler.previewEveryMinutes", { count: num });
+    }
+    if (v.everyUnit === "h") {
+      return i18n.t("scheduler.previewEveryHours", { count: num });
+    }
+    return i18n.t("scheduler.previewEveryDays", { count: num });
   }
   if (v.mode === "daily") {
     if (!v.dailyTime || v.dailyDays.size === 0) return "";
     const [hh, mm] = v.dailyTime.split(":");
     const time = `${hh}:${mm}`;
-    if (v.dailyDays.size === 7) return `Runs every day at ${time}`;
+    if (v.dailyDays.size === 7) {
+      return i18n.t("scheduler.previewDailyAllDays", { time });
+    }
     const weekdayOnly =
       v.dailyDays.size === 5 && [1, 2, 3, 4, 5].every((d) => v.dailyDays.has(d));
-    if (weekdayOnly) return `Runs every weekday at ${time}`;
+    if (weekdayOnly) return i18n.t("scheduler.previewWeekdays", { time });
     const weekendOnly =
       v.dailyDays.size === 2 && v.dailyDays.has(0) && v.dailyDays.has(6);
-    if (weekendOnly) return `Runs every weekend at ${time}`;
-    const names = WEEKDAYS.filter((w) => v.dailyDays.has(w.idx)).map((w) => w.label);
-    return `Runs on ${names.join(", ")} at ${time}`;
+    if (weekendOnly) return i18n.t("scheduler.previewWeekends", { time });
+    const names = WEEKDAYS.filter((w) => v.dailyDays.has(w.idx)).map((w) =>
+      i18n.t(w.labelKey)
+    );
+    return i18n.t("scheduler.previewOnDays", { days: names.join(", "), time });
   }
   if (v.mode === "advanced") {
     if (!v.advancedExpr.trim()) return "";
-    return `Runs on schedule: ${v.advancedExpr.trim()}`;
+    return i18n.t("scheduler.previewCron", { expr: v.advancedExpr.trim() });
   }
   return "";
 }
 
 export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderProps) {
+  const { t } = useTranslation();
   const update = <K extends keyof ScheduleBuilderValue>(
     key: K,
     next: ScheduleBuilderValue[K]
@@ -267,7 +268,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
               )}
             >
               <Icon className="h-3.5 w-3.5" />
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           );
         })}
@@ -279,7 +280,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex-1 min-w-[160px]">
               <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Date
+                {t("scheduler.dateLabel")}
               </label>
               <input
                 type="date"
@@ -291,7 +292,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
             </div>
             <div className="w-32">
               <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Time
+                {t("scheduler.timeLabel")}
               </label>
               <input
                 type="time"
@@ -308,7 +309,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           <div className="flex flex-wrap items-end gap-2">
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Every
+                {t("scheduler.modeEvery")}
               </label>
               <input
                 type="number"
@@ -321,7 +322,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
             </div>
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Unit
+                {t("scheduler.unitLabel")}
               </label>
               <select
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-ring/40 focus-visible:ring-[3px]"
@@ -334,9 +335,9 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
                 }
                 disabled={disabled}
               >
-                <option value="m">Minutes</option>
-                <option value="h">Hours</option>
-                <option value="d">Days</option>
+                <option value="m">{t("scheduler.unitMinutes")}</option>
+                <option value="h">{t("scheduler.unitHours")}</option>
+                <option value="d">{t("scheduler.unitDays")}</option>
               </select>
             </div>
           </div>
@@ -347,7 +348,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
             <div className="flex flex-wrap items-end gap-2">
               <div className="w-32">
                 <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                  Time
+                  {t("scheduler.timeLabel")}
                 </label>
                 <input
                   type="time"
@@ -360,7 +361,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
             </div>
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                Days
+                {t("scheduler.unitDays")}
               </label>
               <div className="flex flex-wrap gap-1">
                 {WEEKDAYS.map((day) => {
@@ -378,24 +379,24 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
                           : "border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                       )}
                     >
-                      {day.label}
+                      {t(day.labelKey)}
                     </button>
                   );
                 })}
               </div>
               <div className="mt-1.5 flex gap-2 text-[11px]">
                 <PresetButton
-                  label="All days"
+                  label={t("scheduler.presetAllDays")}
                   onClick={() => update("dailyDays", new Set([0, 1, 2, 3, 4, 5, 6]))}
                   disabled={disabled}
                 />
                 <PresetButton
-                  label="Weekdays"
+                  label={t("scheduler.presetWeekdays")}
                   onClick={() => update("dailyDays", new Set([1, 2, 3, 4, 5]))}
                   disabled={disabled}
                 />
                 <PresetButton
-                  label="Weekends"
+                  label={t("scheduler.presetWeekends")}
                   onClick={() => update("dailyDays", new Set([0, 6]))}
                   disabled={disabled}
                 />
@@ -407,7 +408,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
         {value.mode === "advanced" && (
           <div>
             <label className="mb-1 block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-              Cron expression
+              {t("scheduler.cronExpressionLabel")}
             </label>
             <input
               type="text"
@@ -418,8 +419,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
               disabled={disabled}
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Five fields: minute, hour, day-of-month, month, day-of-week. For most
-              cases, use the visual modes above.
+              {t("scheduler.cronHint")}
             </p>
           </div>
         )}
@@ -432,6 +432,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
 }
 
 function NaturalLanguagePreview({ value }: { value: ScheduleBuilderValue }) {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   useEffect(() => {
     setText(describeBuilderSchedule(value));
@@ -440,14 +441,14 @@ function NaturalLanguagePreview({ value }: { value: ScheduleBuilderValue }) {
   if (!text) {
     return (
       <p className="text-[11px] italic text-muted-foreground">
-        Configure the schedule above
+        {t("scheduler.configureScheduleAbove")}
       </p>
     );
   }
 
   return (
     <p className="text-xs text-foreground/80">
-      <span className="text-muted-foreground">Preview: </span>
+      <span className="text-muted-foreground">{t("scheduler.previewLabel")}</span>
       {text}
     </p>
   );

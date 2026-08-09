@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Brain, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +21,7 @@ interface ThinkingBlockProps {
  * Shows the internal reasoning that led to the response.
  */
 export function ThinkingBlock({ thinking, className }: ThinkingBlockProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(true);
 
   if (!thinking) return null;
@@ -33,9 +35,9 @@ export function ThinkingBlock({ thinking, className }: ThinkingBlockProps) {
               className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")}
             />
             <Brain className="h-4 w-4" />
-            <span className="font-medium">Thinking</span>
+            <span className="font-medium">{t("chat.thinking")}</span>
             <Badge variant="secondary" className="ml-auto">
-              {thinking.length} chars
+              {t("chat.chars", { count: thinking.length })}
             </Badge>
           </CollapsibleTrigger>
           <CollapsibleContent>

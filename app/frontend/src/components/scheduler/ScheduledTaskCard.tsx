@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { TranslationKey } from "@/i18n";
+import { useTranslation } from "react-i18next";
 import {
   Bell,
   Bot,
@@ -35,10 +37,10 @@ const STATUS_RAIL_CLASS: Record<ScheduledTask["status"], string> = {
   completed: "bg-muted-foreground/40",
 };
 
-const STATUS_LABEL: Record<ScheduledTask["status"], string> = {
-  active: "Active",
-  paused: "Paused",
-  completed: "Done",
+const STATUS_LABEL_KEY: Record<ScheduledTask["status"], TranslationKey> = {
+  active: "scheduler.statusActive",
+  paused: "scheduler.statusPaused",
+  completed: "scheduler.statusDone",
 };
 
 const STATUS_TEXT: Record<ScheduledTask["status"], string> = {
@@ -54,6 +56,7 @@ export function ScheduledTaskCard({
   onView,
   onEdit,
 }: ScheduledTaskCardProps) {
+  const { t } = useTranslation();
   // Re-render every 30 seconds so relative times stay fresh
   const [, tick] = useState(0);
   useEffect(() => {
@@ -97,7 +100,7 @@ export function ScheduledTaskCard({
         <div className="flex items-start justify-between gap-3">
           <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             {isReminder ? <Bell className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-            {isReminder ? "Reminder" : "Agent task"}
+            {isReminder ? t("scheduler.reminderType") : t("scheduler.agentTaskChip")}
           </span>
           <span
             className={cn(
@@ -105,7 +108,7 @@ export function ScheduledTaskCard({
               STATUS_TEXT[task.status]
             )}
           >
-            {STATUS_LABEL[task.status]}
+            {t(STATUS_LABEL_KEY[task.status])}
           </span>
         </div>
 
@@ -127,9 +130,13 @@ export function ScheduledTaskCard({
         {!isCompleted && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span className="uppercase tracking-[0.08em]">Next run</span>
+              <span className="uppercase tracking-[0.08em]">
+                {t("scheduler.metaNextRun")}
+              </span>
               <span className="font-mono tabular-nums text-foreground/80">
-                {isPaused ? "paused" : nextRel || "pending"}
+                {isPaused
+                  ? t("scheduler.pausedLower")
+                  : nextRel || t("scheduler.pendingLower")}
               </span>
             </div>
             <div className="h-[2px] w-full overflow-hidden rounded-full bg-muted">
@@ -154,7 +161,7 @@ export function ScheduledTaskCard({
                 ) : (
                   <Check className="h-3 w-3 text-emerald-500" />
                 )}
-                <span>Ran {lastRel}</span>
+                <span>{t("scheduler.ranAgo", { time: lastRel })}</span>
               </span>
             ) : (
               <span />
@@ -200,8 +207,8 @@ export function ScheduledTaskCard({
           type="button"
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           onClick={() => onView(task)}
-          title="View details"
-          aria-label="View details"
+          title={t("scheduler.viewDetails")}
+          aria-label={t("scheduler.viewDetails")}
         >
           <Eye className="h-3.5 w-3.5" />
         </button>
@@ -210,8 +217,8 @@ export function ScheduledTaskCard({
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => onEdit(task)}
-            title="Edit"
-            aria-label="Edit"
+            title={t("scheduler.editAction")}
+            aria-label={t("scheduler.editAction")}
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
@@ -221,8 +228,10 @@ export function ScheduledTaskCard({
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => onPauseToggle(task)}
-            title={isPaused ? "Resume" : "Pause"}
-            aria-label={isPaused ? "Resume" : "Pause"}
+            title={isPaused ? t("scheduler.resumeAction") : t("scheduler.pauseAction")}
+            aria-label={
+              isPaused ? t("scheduler.resumeAction") : t("scheduler.pauseAction")
+            }
           >
             {isPaused ? (
               <Play className="h-3.5 w-3.5" />
@@ -235,8 +244,8 @@ export function ScheduledTaskCard({
           type="button"
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
           onClick={() => onDelete(task)}
-          title="Delete"
-          aria-label="Delete"
+          title={t("common.delete")}
+          aria-label={t("common.delete")}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
