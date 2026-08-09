@@ -156,6 +156,16 @@ class TestOrchestratorSide:
             registered.model_fields
         )
 
+    def test_response_type_dispatchable_on_web_side(self) -> None:
+        """The web-tier reader must know the response type, or the route
+        would hang until timeout even though the write succeeded."""
+        from backend.processes.fastapi_app.orchestrator_client import (
+            ORCHESTRATOR_RESPONSE_TYPES,
+        )
+
+        registered = ORCHESTRATOR_RESPONSE_TYPES["MemoryInvalidateResponse"]
+        assert registered.__name__ == "MemoryInvalidateResponse"
+
     @pytest.mark.asyncio
     async def test_factory_calls_socket_a_invalidate(self) -> None:
         """The factory invalidates via the orchestrator DB client (Socket A)."""
