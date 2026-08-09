@@ -19,8 +19,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/bimemo-api";
 import { buildAttentionItems } from "@/components/admin/memory-debug/quality-issues";
+import { useMemoryEvents } from "@/hooks/useMemoryEvents";
 
 export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }) {
   const { t } = useTranslation();
@@ -30,6 +33,7 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
     null
   );
   const [error, setError] = useState("");
+  const { events, connected } = useMemoryEvents(true);
 
   useEffect(() => {
     let active = true;
@@ -86,9 +90,54 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+            connected
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              : "border-border bg-muted/40 text-muted-foreground"
+          )}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              connected ? "animate-pulse bg-emerald-400" : "bg-muted-foreground"
+            )}
+          />
+          {connected ? t("memoryDebug.liveConnected") : t("memoryDebug.liveOffline")}
+        </span>
         <AutoRefreshBadge seconds={5} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("memoryDebug.liveFeedTitle")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {events.length === 0 ? (
+            <p className="font-prose text-sm text-muted-foreground">
+              {t("memoryDebug.liveNoEvents")}
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {events.map((event, index) => (
+                <div
+                  key={`${event.timestamp ?? ""}-${index}`}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <Badge variant="secondary">{event.type}</Badge>
+                  <span className="text-muted-foreground">
+                    {event.timestamp
+                      ? new Date(event.timestamp * 1000).toLocaleTimeString()
+                      : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title={t("memoryDebug.messages")}
