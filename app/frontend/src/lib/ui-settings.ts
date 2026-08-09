@@ -8,17 +8,20 @@
  * push keeps the cache working (degraded, logged).
  */
 
-import { apiRequest } from "@/lib/bimemo-api";
+import { ApiError, apiRequest } from "@/lib/bimemo-api";
 
 export interface UiSettings {
   theme?: "dark" | "light";
   voice_mode?: boolean;
   ui_language?: string;
   command_history?: string[];
+  /** ISO timestamp of the last local write; freshness for sync. */
+  updated_at?: string;
 }
 
 const CACHE_KEY = "bm-ui-settings";
-const COMMAND_HISTORY_LIMIT = 50;
+export const COMMAND_HISTORY_LIMIT = 50;
+const COMMAND_HISTORY_ENTRY_MAX_CHARS = 500;
 const PUSH_DEBOUNCE_MS = 500;
 
 // Legacy per-key storage migrated into the blob on first sync.
@@ -111,11 +114,28 @@ if (typeof document !== "undefined") {
   window.addEventListener("pagehide", flushPendingPush);
 }
 
+async function pushWithCapRecovery(settings: UiSettings): Promise<void> {
+  try {
+    await pushToServer(settings);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 413) {
+      // Preferences matter more than input hints: drop the history and
+      // retry once so settings sync never stays broken.
+      const slim: UiSettings = { ...settings };
+      delete slim.command_history;
+      writeCache(slim);
+      await pushToServer(slim);
+      return;
+    }
+    throw error;
+  }
+}
+
 function schedulePush(): void {
   if (pushTimer !== null) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     pushTimer = null;
-    pushToServer(readCache()).catch((error) => {
+    pushWithCapRecovery(readCache()).catch((error) => {
       console.warn("UI settings push failed; cache stays local:", error);
     });
   }, PUSH_DEBOUNCE_MS);
@@ -133,10 +153,15 @@ export function setUiSetting<K extends keyof UiSettings>(
 ): void {
   const settings = readCache();
   if (key === "command_history" && Array.isArray(value)) {
-    settings[key] = value.slice(-COMMAND_HISTORY_LIMIT) as UiSettings[K];
+    // Newest-first list; entries trimmed so one long message can never
+    // blow the server-side blob cap.
+    settings[key] = value
+      .map((entry) => entry.slice(0, COMMAND_HISTORY_ENTRY_MAX_CHARS))
+      .slice(0, COMMAND_HISTORY_LIMIT) as UiSettings[K];
   } else {
     settings[key] = value;
   }
+  settings.updated_at = new Date().toISOString();
   writeCache(settings);
   schedulePush();
 }
@@ -158,15 +183,30 @@ export async function syncUiSettings(): Promise<void> {
     return;
   }
   if (Object.keys(server).length > 0) {
-    writeCache(server);
+    const cached = readCache();
+    const cacheIsFresher =
+      typeof cached.updated_at === "string" &&
+      (typeof server.updated_at !== "string" || cached.updated_at > server.updated_at);
+    if (cacheIsFresher) {
+      // The server missed our last writes (e.g. it was unreachable at
+      // push time) — bring it up to date instead of reverting the user.
+      try {
+        await pushWithCapRecovery(cached);
+      } catch (error) {
+        console.warn("UI settings catch-up push failed:", error);
+      }
+    } else {
+      writeCache(server);
+    }
     removeLegacyKeys();
     return;
   }
   const seed: UiSettings = { ...readLegacySettings(), ...readCache() };
   if (Object.keys(seed).length === 0) return;
+  seed.updated_at = new Date().toISOString();
   writeCache(seed);
   try {
-    await pushToServer(seed);
+    await pushWithCapRecovery(seed);
     removeLegacyKeys();
   } catch (error) {
     console.warn("UI settings migration push failed:", error);

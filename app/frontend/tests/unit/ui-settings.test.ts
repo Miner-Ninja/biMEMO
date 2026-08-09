@@ -32,9 +32,17 @@ Object.defineProperty(globalThis, "localStorage", {
 import { getUiSetting, setUiSetting, syncUiSettings } from "@/lib/ui-settings";
 import { apiRequest } from "@/lib/bimemo-api";
 
-vi.mock("@/lib/bimemo-api", () => ({
-  apiRequest: vi.fn(),
-}));
+vi.mock("@/lib/bimemo-api", () => {
+  class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+    }
+  }
+  return { apiRequest: vi.fn(), ApiError };
+});
 
 const apiRequestMock = vi.mocked(apiRequest);
 
@@ -97,13 +105,50 @@ describe("ui-settings store", () => {
     expect(apiRequestMock).toHaveBeenCalledTimes(1);
   });
 
-  it("S5.1 — command history is capped at the newest 50 entries", () => {
+  it("S5.1 — command history keeps the newest 50, entries trimmed", () => {
     apiRequestMock.mockResolvedValue({ ok: true });
+    // Newest-first convention: index 0 is the most recent command.
     const commands = Array.from({ length: 60 }, (_, i) => `cmd-${i}`);
+    commands[0] = "y".repeat(2000);
     setUiSetting("command_history", commands);
     const stored = getUiSetting("command_history");
     expect(stored).toHaveLength(50);
-    expect(stored?.[0]).toBe("cmd-10");
-    expect(stored?.[49]).toBe("cmd-59");
+    expect(stored?.[0]).toBe("y".repeat(500));
+    expect(stored?.[1]).toBe("cmd-1");
+    expect(stored?.[49]).toBe("cmd-49");
+  });
+
+  it("S5.2 — a 413 push drops the history and retries once", async () => {
+    const { ApiError } = await import("@/lib/bimemo-api");
+    apiRequestMock
+      .mockRejectedValueOnce(new ApiError(413, "blob exceeds cap"))
+      .mockResolvedValueOnce({ ok: true });
+    setUiSetting("command_history", ["one", "two"]);
+    setUiSetting("theme", "dark");
+    await vi.runAllTimersAsync();
+    expect(getUiSetting("command_history")).toBeUndefined();
+    expect(getUiSetting("theme")).toBe("dark");
+    const putBodies = apiRequestMock.mock.calls
+      .filter(([, options]) => (options as RequestInit)?.method === "PUT")
+      .map(([, options]) => String((options as RequestInit).body));
+    expect(putBodies).toHaveLength(2);
+    expect(putBodies[1]).not.toContain("command_history");
+  });
+
+  it("S3.4 — a fresher cache is pushed instead of being reverted", async () => {
+    localStorage.setItem(
+      "bm-ui-settings",
+      JSON.stringify({ theme: "dark", updated_at: "2026-08-09T10:00:00Z" })
+    );
+    apiRequestMock.mockResolvedValueOnce({
+      settings: { theme: "light", updated_at: "2026-08-09T09:00:00Z" },
+    });
+    apiRequestMock.mockResolvedValueOnce({ ok: true });
+    await syncUiSettings();
+    expect(getUiSetting("theme")).toBe("dark");
+    const putCall = apiRequestMock.mock.calls.find(
+      ([, options]) => (options as RequestInit)?.method === "PUT"
+    );
+    expect(putCall).toBeDefined();
   });
 });

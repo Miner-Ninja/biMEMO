@@ -56,7 +56,7 @@ import {
   type ActiveAssistantStreamState,
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
-import { getUiSetting, setUiSetting } from "@/lib/ui-settings";
+import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
 import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
 import { TOOL_LABELS } from "@/types/chat";
 import type { ExtendedUsage } from "@/types/stats";
@@ -1384,7 +1384,10 @@ export function ChatPage() {
   const handleSend = async (content: string, files?: File[]) => {
     // Save to command history
     setCommandHistory((prev) => {
-      const next = [content, ...prev.filter((h) => h !== content)].slice(0, 10);
+      const next = [content, ...prev.filter((h) => h !== content)].slice(
+        0,
+        COMMAND_HISTORY_LIMIT
+      );
       setUiSetting("command_history", next);
       return next;
     });
