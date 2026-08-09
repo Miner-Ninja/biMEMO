@@ -131,6 +131,15 @@ class TestParsing:
         assert normalize_relation("loves") == "relates_to"
         assert normalize_relation("Prefers") == "prefers"
 
+    def test_shifted_fields_rejected(self):
+        """A scope keyword in the text slot means a field shift — reject."""
+        shifted = (
+            "ENTITY: person | user\n"
+            'ASSERTION: user | prefers | value="vim" | short_term | high\n'
+        )
+        extraction = parse_graph_extraction(shifted)
+        assert extraction.assertions == []
+
     def test_garbage_lines_discarded(self):
         """S3.4 (parse half) — unparseable output yields nothing stored."""
         extraction = parse_graph_extraction("some prose\nANOTHER: thing")
