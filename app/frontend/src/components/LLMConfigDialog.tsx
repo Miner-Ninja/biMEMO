@@ -28,6 +28,8 @@ interface LLMConfigDialogProps {
     dialog_recorder_model?: string;
     base_url?: string;
     dialog_recorder_base_url?: string;
+    embedding_model?: string;
+    embedding_base_url?: string;
     num_ctx?: string;
   }) => Promise<void>;
   editConfig?: LLMConfigEntry | null;
@@ -48,6 +50,8 @@ export function LLMConfigDialog({
   const [dialogRecorderModel, setDialogRecorderModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [dialogRecorderBaseUrl, setDialogRecorderBaseUrl] = useState("");
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
 
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -64,6 +68,8 @@ export function LLMConfigDialog({
         setDialogRecorderModel(editConfig.dialog_recorder_model ?? "");
         setBaseUrl(editConfig.base_url ?? "");
         setDialogRecorderBaseUrl(editConfig.dialog_recorder_base_url ?? "");
+        setEmbeddingModel(editConfig.embedding_model ?? "");
+        setEmbeddingBaseUrl(editConfig.embedding_base_url ?? "");
         setApiKey("");
       } else {
         setServiceType("openrouter");
@@ -72,6 +78,8 @@ export function LLMConfigDialog({
         setDialogRecorderModel("");
         setBaseUrl("");
         setDialogRecorderBaseUrl("");
+        setEmbeddingModel("");
+        setEmbeddingBaseUrl("");
       }
       setModels([]);
       setTestResult("");
@@ -136,6 +144,8 @@ export function LLMConfigDialog({
         dialog_recorder_model: dialogRecorderModel || undefined,
         base_url: baseUrl || undefined,
         dialog_recorder_base_url: dialogRecorderBaseUrl || undefined,
+        embedding_model: embeddingModel || undefined,
+        embedding_base_url: embeddingBaseUrl || undefined,
         num_ctx: editConfig?.num_ctx,
       });
     } finally {
@@ -246,6 +256,23 @@ export function LLMConfigDialog({
                   />
                 </div>
               )}
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  {t("admin.embeddingBaseUrl")}{" "}
+                  <span className="text-muted-foreground font-normal">
+                    {t("admin.optional")}
+                  </span>
+                </label>
+                <Input
+                  placeholder={
+                    serviceType === "ollama"
+                      ? "http://ollama-memory:11434"
+                      : "http://vllm-embeddings:8000"
+                  }
+                  value={embeddingBaseUrl}
+                  onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
+                />
+              </div>
             </>
           )}
 
@@ -289,6 +316,22 @@ export function LLMConfigDialog({
               models={models}
               loading={loadingModels}
               placeholder={t("admin.sameModelPlaceholder")}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">
+              {t("admin.embeddingModel")}{" "}
+              <span className="text-muted-foreground font-normal">
+                {t("admin.optional")}
+              </span>
+            </label>
+            <ModelCombobox
+              value={embeddingModel}
+              onChange={setEmbeddingModel}
+              models={models}
+              loading={loadingModels}
+              placeholder={t("admin.embeddingModelPlaceholder")}
             />
           </div>
 

@@ -17,6 +17,8 @@ export interface SaveLLMConfigParams {
   dialog_recorder_model?: string;
   base_url?: string;
   dialog_recorder_base_url?: string;
+  embedding_model?: string;
+  embedding_base_url?: string;
   num_ctx?: string;
 }
 
@@ -102,6 +104,8 @@ export interface LLMConfigEntry {
   dialog_recorder_model?: string;
   base_url?: string;
   dialog_recorder_base_url?: string;
+  embedding_model?: string;
+  embedding_base_url?: string;
   num_ctx?: string;
   enabled: boolean;
   has_api_key: boolean;
