@@ -63,10 +63,12 @@ from .handlers.core import (
     make_delete_queued_records_handler,
     make_fetch_unembedded_records_handler,
     make_fulltext_search_handler,
+    make_get_vector_coverage_handler,
     make_init_vector_table_handler,
     make_list_queued_records_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
+    make_peek_record_queue_handler,
     make_prune_unlinked_records_handler,
     make_save_conversation_summary_handler,
     make_save_message_handler,
@@ -311,6 +313,8 @@ SOCKET_B_ONLY_OPERATIONS = {
     "get_ui_settings",
     "store_ui_settings",
     "list_entities",
+    "peek_record_queue",
+    "get_vector_coverage",
     "get_avatar",
     "store_avatar",
     "delete_avatar",
@@ -546,6 +550,14 @@ def _register_memory_operations(
     registry.register(
         "list_queued_records",
         make_list_queued_records_handler(db),
+    )
+    registry.register(
+        "peek_record_queue",
+        make_peek_record_queue_handler(db),
+    )
+    registry.register(
+        "get_vector_coverage",
+        make_get_vector_coverage_handler(db),
     )
     registry.register(
         "bump_queued_record_attempts",

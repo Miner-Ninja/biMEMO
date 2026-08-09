@@ -417,6 +417,18 @@ class AdminDBClient(_BaseIPCClient):
             {"limit": limit, "offset": offset},
         )
 
+    async def peek_record_queue(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Read pending record-queue rows for diagnostics (no pruning)."""
+        result = await self.send_operation(
+            "peek_record_queue",
+            {"limit": limit},
+        )
+        return result["items"]
+
+    async def get_vector_coverage(self) -> dict[str, Any]:
+        """Return embedding coverage over non-tainted records."""
+        return await self.send_operation("get_vector_coverage", {})
+
     async def list_assertions_for_entity(
         self,
         entity_id: str,

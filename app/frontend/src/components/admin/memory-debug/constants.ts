@@ -58,6 +58,11 @@ export const DIAGNOSTICS_VIEWS: Array<{
     labelKey: "memoryDebug.viewAudit",
     descriptionKey: "memoryDebug.viewAuditDescription",
   },
+  {
+    id: "extractor",
+    labelKey: "memoryDebug.viewExtractor",
+    descriptionKey: "memoryDebug.viewExtractorDescription",
+  },
 ];
 
 export const MEMORY_DATA_VIEWS: Array<{
@@ -84,6 +89,11 @@ export const MEMORY_DATA_VIEWS: Array<{
     id: "files",
     labelKey: "memoryDebug.viewFiles",
     descriptionKey: "memoryDebug.viewFilesDescription",
+  },
+  {
+    id: "queue",
+    labelKey: "memoryDebug.viewQueue",
+    descriptionKey: "memoryDebug.viewQueueDescription",
   },
 ];
 
@@ -160,6 +170,19 @@ export const SUMMARIES_LOG_COLORS: Record<string, string> = {
   parse_failed: "bg-red-500/10 text-red-400 border-red-500/20",
   llm_error: "bg-red-500/10 text-red-400 border-red-500/20",
   unsafe_output: "bg-red-500/10 text-red-400 border-red-500/20",
+};
+
+export const EXTRACTOR_DECISION_COLORS: Record<string, string> = {
+  assertion_stored: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  assertion_invalidated_previous: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  assertion_conflict_kept_both: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  assertion_skipped_duplicate: "bg-muted text-muted-foreground border-border",
+  assertion_skipped_subject_undeclared:
+    "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  entity_skipped_forbidden_name:
+    "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  extraction_empty_or_unparsed: "bg-red-500/10 text-red-400 border-red-500/20",
+  assertion_skipped_unsafe_output: "bg-red-500/10 text-red-400 border-red-500/20",
 };
 
 export const SORT_OPTIONS: ReadonlyArray<{

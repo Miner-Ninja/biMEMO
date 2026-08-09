@@ -354,6 +354,69 @@ def make_init_vector_table_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
+def make_peek_record_queue_handler(db: DatabaseManager) -> OperationHandler:
+    """Create the read-only queue-contents handler (Socket B diagnostics).
+
+    Unlike list_queued_records (Socket A), this never prunes: it is a
+    pure read for the diagnostics UI, and it returns created_at so the
+    operator can see how long items have waited.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return pending queue rows, oldest first, without pruning."""
+        p = _validate_params(params, ListQueuedRecordsParams)
+        rows = db.execute(
+            "SELECT id, conversation_id, session_id, "
+            "source_message_ids, injection_flagged, attempts, created_at "
+            "FROM record_queue ORDER BY created_at ASC LIMIT ?",
+            (p.limit,),
+        ).fetchall()
+        return {
+            "items": [
+                {
+                    "queue_id": r[0],
+                    "conversation_id": r[1],
+                    "session_id": r[2],
+                    "source_message_ids": json.loads(r[3]),
+                    "injection_flagged": bool(r[4]),
+                    "attempts": r[5],
+                    "created_at": r[6],
+                }
+                for r in rows
+            ]
+        }
+
+    return handle
+
+
+def make_get_vector_coverage_handler(db: DatabaseManager) -> OperationHandler:
+    """Create the vector-coverage metric handler (Socket B diagnostics).
+
+    Counts how many non-tainted records have a stored embedding versus
+    the total, so the operator can see recall's blind spots.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return embedding coverage over non-tainted records."""
+        del params
+        total = db.execute(
+            "SELECT COUNT(*) FROM records WHERE tainted = 0"
+        ).fetchone()[0]
+        if not _table_exists(db, "record_embeddings"):
+            return {"total": total, "embedded": 0, "unembedded": total}
+        embedded = db.execute(
+            "SELECT COUNT(*) FROM records o WHERE o.tainted = 0 "
+            "AND o.id IN (SELECT record_id FROM record_embeddings)"
+        ).fetchone()[0]
+        return {
+            "total": total,
+            "embedded": embedded,
+            "unembedded": max(0, total - embedded),
+        }
+
+    return handle
+
+
 def make_fetch_unembedded_records_handler(
     db: DatabaseManager,
 ) -> OperationHandler:
