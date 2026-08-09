@@ -2,10 +2,15 @@
 
 # ruff: noqa: B008
 
+from __future__ import annotations
+
+import asyncio
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from backend.files import FileContextManager
 from backend.memory.graph_extractor.trace import read_graph_extractor_trace
@@ -21,6 +26,8 @@ from . import files as files_routes
 
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from backend.channels.endpoints import ReauthManager
     from backend.channels.jwt_auth import TokenClaims
 
@@ -537,6 +544,48 @@ async def search_graph_entities(
         return {"entities": await admin.find_entities(query, limit)}
     listed = await admin.list_entities(limit=limit)
     return {"entities": listed["entities"], "total": listed["total"]}
+
+
+MEMORY_EVENTS_HEARTBEAT_SECONDS = 15.0
+
+
+@memory_router.get("/events")
+async def stream_memory_events(
+    request: Request,
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
+) -> StreamingResponse:
+    """Stream memory-pipeline events to the browser as text/event-stream.
+
+    Read-only live feed: the web tier already receives bus events over
+    the orchestrator IPC bridge; this drains one per-subscriber queue.
+    The queue is always removed when the client disconnects.
+    """
+    _require_auth(request)
+    queue = orchestrator.subscribe_memory_events()
+
+    async def event_stream() -> AsyncIterator[str]:
+        try:
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=MEMORY_EVENTS_HEARTBEAT_SECONDS,
+                    )
+                except TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        finally:
+            orchestrator.unsubscribe_memory_events(queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @memory_router.get("/graph/entities/{entity_id}")

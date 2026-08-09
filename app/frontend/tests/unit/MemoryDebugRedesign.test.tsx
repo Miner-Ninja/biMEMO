@@ -38,6 +38,14 @@ class ResizeObserverMock {
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 
+class EventSourceMock {
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((e: MessageEvent<string>) => void) | null = null;
+  close = vi.fn();
+}
+vi.stubGlobal("EventSource", EventSourceMock);
+
 window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   matches: false,
   media: query,
