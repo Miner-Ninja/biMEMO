@@ -24,38 +24,69 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
     );
   if (!data) return <PanelSkeleton />;
 
+  const scorePercent = Math.round(data.quality_score * 100);
   const scoreTone =
-    data.quality_score >= 85
+    scorePercent >= 85
       ? "text-emerald-400"
-      : data.quality_score >= 65
+      : scorePercent >= 65
         ? "text-amber-400"
         : "text-red-400";
+
+  const issues: string[] = [];
+  if (data.assertions_with_missing_evidence > 0) {
+    issues.push(
+      `${data.assertions_with_missing_evidence} valid assertions cite records that were already pruned.`
+    );
+  }
+  if (data.assertions_without_evidence > 0) {
+    issues.push(
+      `${data.assertions_without_evidence} valid assertions carry no evidence records at all.`
+    );
+  }
+  if (data.duplicate_assertion_texts > 0) {
+    issues.push(
+      `${data.duplicate_assertion_texts} assertions repeat the same statement text.`
+    );
+  }
+  if (data.orphan_entities > 0) {
+    issues.push(`${data.orphan_entities} entities have no assertions in either role.`);
+  }
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="Quality score"
-          value={data.quality_score}
-          detail="Memory health."
+          value={`${scorePercent}%`}
+          detail="Graph memory health."
           toneClassName={scoreTone}
         />
         <SummaryCard
-          title="Record provenance"
-          value={`${Math.round(data.records.provenance_coverage * 100)}%`}
-          detail={`${data.records.with_provenance}/${data.records.total} linked`}
-          toneClassName="text-blue-400"
-        />
-        <SummaryCard
-          title="Live summary support"
-          value={`${Math.round(data.summaries.live_support_coverage * 100)}%`}
-          detail={`${data.summaries.with_live_support}/${data.summaries.total} summaries still point to live records`}
+          title="Valid assertions"
+          value={data.assertions_valid}
+          detail={`${data.assertions_invalidated} invalidated kept as history`}
           toneClassName="text-violet-400"
         />
         <SummaryCard
-          title="Action items"
-          value={`${Math.round(data.records.action_item_coverage * 100)}%`}
-          detail={`${data.records.with_action_items}/${data.records.total} records`}
+          title="Evidence integrity"
+          value={
+            data.assertions_valid > 0
+              ? `${Math.round(
+                  ((data.assertions_valid -
+                    data.assertions_with_missing_evidence -
+                    data.assertions_without_evidence) /
+                    data.assertions_valid) *
+                    100
+                )}%`
+              : "—"
+          }
+          detail="Valid assertions whose cited records still exist."
+          toneClassName="text-blue-400"
+        />
+        <SummaryCard
+          title="Orphan entities"
+          value={data.orphan_entities}
+          detail="Nodes without any assertions (pruned after 24h)."
           toneClassName="text-orange-400"
         />
       </div>
@@ -66,9 +97,9 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
             <CardTitle>Current quality issues</CardTitle>
           </CardHeader>
           <CardContent>
-            {data.issues.length > 0 ? (
+            {issues.length > 0 ? (
               <div className="space-y-2">
-                {data.issues.map((issue) => (
+                {issues.map((issue) => (
                   <div
                     key={issue}
                     className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200"
@@ -87,34 +118,28 @@ export function QualityDiagnosticsPanel({ refreshToken }: { refreshToken: number
 
         <Card>
           <CardHeader>
-            <CardTitle>Coverage details</CardTitle>
+            <CardTitle>Tier counts</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Key facts coverage</span>
-              <span>{Math.round(data.records.key_fact_coverage * 100)}%</span>
+              <span className="text-muted-foreground">Messages</span>
+              <span>{data.counts.message}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Evidence coverage</span>
-              <span>{Math.round(data.summaries.based_on_coverage * 100)}%</span>
+              <span className="text-muted-foreground">Records</span>
+              <span>{data.counts.record}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Summaries with record links</span>
-              <span>{Math.round(data.summaries.support_link_coverage * 100)}%</span>
+              <span className="text-muted-foreground">Assertions</span>
+              <span>{data.counts.assertion}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Orphaned records</span>
-              <span>{data.records.orphaned}</span>
+              <span className="text-muted-foreground">Assertions without evidence</span>
+              <span>{data.assertions_without_evidence}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Orphaned summary links</span>
-              <span>{data.summaries.orphaned_links}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                Duplicate summary main points
-              </span>
-              <span>{data.summaries.duplicate_main_points}</span>
+              <span className="text-muted-foreground">Duplicate assertion texts</span>
+              <span>{data.duplicate_assertion_texts}</span>
             </div>
           </CardContent>
         </Card>

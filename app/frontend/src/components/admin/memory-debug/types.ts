@@ -10,7 +10,7 @@ export type ProcessingLogsView = "records-log";
 export interface PipelineData {
   messages: number;
   records: number;
-  summaries: number;
+  assertions: number;
 }
 
 export interface ContextTierData {
@@ -23,33 +23,18 @@ export interface ContextData {
 }
 
 export interface QualityData {
+  counts: {
+    message: number;
+    record: number;
+    assertion: number;
+  };
+  assertions_valid: number;
+  assertions_invalidated: number;
+  assertions_without_evidence: number;
+  assertions_with_missing_evidence: number;
+  duplicate_assertion_texts: number;
+  orphan_entities: number;
   quality_score: number;
-  issues: string[];
-  messages: {
-    total: number;
-  };
-  records: {
-    total: number;
-    with_provenance: number;
-    provenance_coverage: number;
-    with_key_facts: number;
-    key_fact_coverage: number;
-    with_action_items: number;
-    action_item_coverage: number;
-    orphaned: number;
-  };
-  summaries: {
-    total: number;
-    with_support_links: number;
-    support_link_coverage: number;
-    with_live_support: number;
-    live_support_coverage: number;
-    with_based_on: number;
-    based_on_coverage: number;
-    status_breakdown: Record<string, number>;
-    orphaned_links: number;
-    duplicate_main_points: number;
-  };
 }
 
 export interface RouteDiagnosticsSummaryData {
