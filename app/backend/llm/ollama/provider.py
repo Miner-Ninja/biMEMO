@@ -94,6 +94,7 @@ class OllamaProvider:
     compute_config: ComputeConfig
     capabilities_registry: CapabilitiesRegistry
     dialog_recorder_base_url: str | None = None
+    embedding_model: str = ""
     num_ctx: int | None = None
     timeout: float = LLM_CALL_TIMEOUT
     _client: httpx.AsyncClient = field(init=False, repr=False)
@@ -485,7 +486,8 @@ class OllamaProvider:
 
         Args:
             text: Input text to embed.
-            model: Model to use (defaults to dialog_recorder_model).
+            model: Model to use (defaults to the configured embedding
+                model, then the dialog-recorder model).
 
         Returns:
             Embedding vector as list of floats.
@@ -493,7 +495,7 @@ class OllamaProvider:
         Raises:
             OllamaError: If request fails.
         """
-        target_model = model or self.dialog_recorder_model
+        target_model = model or self.embedding_model or self.dialog_recorder_model
         payload = {"model": target_model, "input": text}
         try:
             data = await self._post_json(

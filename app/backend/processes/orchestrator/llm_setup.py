@@ -168,7 +168,13 @@ def _apply_runtime_context_fn(
     ``_apply_llm_context_settings``. Direct attribute access — if missing,
     AttributeError is raised loudly so the missing wiring is obvious.
     """
-    del llm_config, embed_fn
+    del llm_config
+    # Hand the (vector-ready-gated) query embedder to the recall tool so
+    # memory_recall can run hybrid FTS+vector search. None when no
+    # embedding model is configured — recall then stays FTS+graph only.
+    from backend.tools.handlers.registration import set_recall_embed_fn
+
+    set_recall_embed_fn(embed_fn)
     resolver = orchestrator._capabilities_resolver
     orchestrator.context_fn = make_zone_context_fn(
         db_client,

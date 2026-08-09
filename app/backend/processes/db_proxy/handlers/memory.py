@@ -34,6 +34,7 @@ from ..params import (
     SaveQueuedRecordParams,
     SaveRecordParams,
     StoreEmbeddingParams,
+    VectorSearchParams,
 )
 
 
@@ -385,6 +386,48 @@ def make_peek_record_queue_handler(db: DatabaseManager) -> OperationHandler:
                 for r in rows
             ]
         }
+
+    return handle
+
+
+_VECTOR_RECORDS_SELECT = "SELECT id, summary, created_at FROM records WHERE id IN "
+
+
+def make_vector_search_handler(db: DatabaseManager) -> OperationHandler:
+    """Create the KNN vector-search handler (read-only, Socket A).
+
+    Runs a nearest-neighbour query over record_embeddings and joins the
+    hits back to the records table, excluding tainted records, so recall
+    gets usable record rows (not bare ids).
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return records nearest to the query embedding."""
+        from backend.memory.retrieval.vector_store import search_similar
+
+        p = _validate_params(params, VectorSearchParams)
+        if not _table_exists(db, "record_embeddings") or not p.query_embedding:
+            return {"results": []}
+        # Over-fetch so tainted rows dropped by the join don't shrink the set.
+        neighbors = search_similar(db, p.query_embedding, p.limit * 2)
+        distance_by_id = dict(neighbors)
+        if not distance_by_id:
+            return {"results": []}
+        placeholders = ",".join("?" for _ in distance_by_id)
+        records_query = _VECTOR_RECORDS_SELECT + f"({placeholders}) AND tainted = 0"
+        rows = db.execute(records_query, tuple(distance_by_id)).fetchall()
+        results = [
+            {
+                "id": r[0],
+                "summary": r[1],
+                "created_at": r[2],
+                "distance": distance_by_id.get(r[0]),
+            }
+            for r in rows
+        ]
+        # Preserve nearest-first order and honour the caller's limit.
+        results.sort(key=lambda item: item["distance"])
+        return {"results": results[: p.limit]}
 
     return handle
 

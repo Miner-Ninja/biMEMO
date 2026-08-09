@@ -77,6 +77,13 @@ class FulltextSearchParams(ForbidExtraParams):
     offset: int = 0
 
 
+class VectorSearchParams(ForbidExtraParams):
+    """Parameters for vector_search operation (KNN over record embeddings)."""
+
+    query_embedding: list[float]
+    limit: int = 20
+
+
 class LoadContextParams(ForbidExtraParams):
     """Parameters for load_context operation."""
 

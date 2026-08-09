@@ -75,6 +75,7 @@ from .handlers.core import (
     make_save_queued_record_handler,
     make_save_record_handler,
     make_store_embedding_handler,
+    make_vector_search_handler,
     make_verify_chain_handler,
     make_write_audit_handler,
 )
@@ -200,6 +201,7 @@ SOCKET_A_OPERATIONS = {
     "load_recent_messages",
     "list_messages",
     "fulltext_search",
+    "vector_search",
     "load_context",
     "write_audit",
     "verify_chain",
@@ -435,6 +437,7 @@ def _register_message_operations(
     registry.register("save_message", make_save_message_handler(db))
     registry.register("load_recent_messages", make_load_recent_messages_handler(db))
     registry.register("fulltext_search", make_fulltext_search_handler(db))
+    registry.register("vector_search", make_vector_search_handler(db))
     registry.register("load_context", make_load_context_handler(db))
     registry.register(
         "save_conversation_summary",

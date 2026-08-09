@@ -37,6 +37,7 @@ from .memory import (
     make_save_queued_record_handler,
     make_save_record_handler,
     make_store_embedding_handler,
+    make_vector_search_handler,
 )
 from .message import (
     make_fulltext_search_handler,
@@ -278,6 +279,7 @@ __all__ = [
     "make_load_context_handler",
     "make_load_recent_messages_handler",
     "make_peek_record_queue_handler",
+    "make_vector_search_handler",
     "make_prune_unlinked_records_handler",
     "make_save_conversation_summary_handler",
     "make_save_message_handler",

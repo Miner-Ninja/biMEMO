@@ -681,6 +681,14 @@ class DBProxyClient:
         """Store an embedding vector for an record."""
         return await mem_ops.store_embedding(self, record_id, embedding)
 
+    async def vector_search(
+        self,
+        query_embedding: list[float],
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return records nearest to the query embedding."""
+        return await mem_ops.vector_search(self, query_embedding, limit)
+
 
 
     # --- Summary operations (delegated to client_memory_ops) ---

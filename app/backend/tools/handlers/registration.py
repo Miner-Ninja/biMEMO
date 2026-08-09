@@ -60,6 +60,18 @@ logger = logging.getLogger(__name__)
 
 MEMORY_RECALL_RESULT_LIMIT = 5
 NO_QUERY_PROVIDED_TEXT = "No query provided."
+
+# Late-bound query-embedding callable, set by the orchestrator once vector
+# support is probed (None when no embedding model is configured). Recall
+# reads it at call time so hybrid vector recall lights up without threading
+# the callable through the whole tool-registration chain.
+_recall_embed_fn: object | None = None
+
+
+def set_recall_embed_fn(embed_fn: object | None) -> None:
+    """Register (or clear) the query-embedding callable used by recall."""
+    global _recall_embed_fn
+    _recall_embed_fn = embed_fn
 NO_RELEVANT_MEMORIES_TEXT = "No relevant memories found."
 SUMMARY_SECTION_TITLE = "Summary memory:"
 RECORDS_SECTION_TITLE = "Linked records:"
@@ -392,6 +404,43 @@ def _fast_recall_parts(
     return parts
 
 
+async def _fuse_vector_records(
+    db_client: object,
+    query: str,
+    fts_records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Fuse FTS record hits with semantic (vector) hits via RRF.
+
+    When no embedding callable is registered, or embedding/vector search
+    yields nothing, the FTS records pass through unchanged — recall then
+    behaves exactly as before this feature.
+    """
+    embed_fn = _recall_embed_fn
+    if embed_fn is None:
+        return fts_records
+    try:
+        query_embedding = await embed_fn(query)
+    except Exception:
+        logger.warning("Query embedding failed; using FTS records only", exc_info=True)
+        return fts_records
+    if not query_embedding:
+        return fts_records
+    vector_records = await db_client.vector_search(
+        query_embedding,
+        MEMORY_RECALL_RESULT_LIMIT,
+    )
+    if not vector_records:
+        return fts_records
+
+    from backend.memory.retrieval.rrf import reciprocal_rank_fusion
+
+    fused = reciprocal_rank_fusion(
+        [fts_records, vector_records],
+        key=lambda record: str(record.get("id", "")),
+    )
+    return fused[:MEMORY_RECALL_RESULT_LIMIT]
+
+
 async def _build_fast_recall_result(
     *,
     db_client: object,
@@ -414,6 +463,7 @@ async def _build_fast_recall_result(
         table="records",
         limit=MEMORY_RECALL_RESULT_LIMIT,
     )
+    records = await _fuse_vector_records(db_client, query, records)
     messages = await db_client.fulltext_search(
         query=query,
         table="messages",

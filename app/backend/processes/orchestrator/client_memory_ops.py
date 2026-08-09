@@ -384,3 +384,16 @@ async def prune_graph(client: DBProxyClient) -> dict[str, Any]:
 async def get_graph_stats(client: DBProxyClient) -> dict[str, Any]:
     """Return the graph statistics snapshot."""
     return await client.send_operation("get_graph_stats")
+
+
+async def vector_search(
+    client: DBProxyClient,
+    query_embedding: list[float],
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Return records nearest to the query embedding (KNN over vectors)."""
+    result = await client.send_operation(
+        "vector_search",
+        {"query_embedding": query_embedding, "limit": limit},
+    )
+    return result["results"]

@@ -9,6 +9,7 @@ import json
 
 import httpx
 import pytest
+
 from backend.llm.call_factory import LLM_CALL_TIMEOUT
 from backend.llm.capabilities import ModelCapabilities
 from backend.llm.capabilities_registry import CapabilitiesRegistry
@@ -651,6 +652,22 @@ class TestEmbed:
 
         vec = await provider.embed("test", model="custom-embed")
         assert vec == [1.0, 2.0]
+        await provider.close()
+
+    async def test_embed_uses_configured_embedding_model(self):
+        """hybrid-recall S1.1 — embed uses embedding_model, not the chat model."""
+
+        async def handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "nomic-embed-text"
+            return httpx.Response(200, json={"embeddings": [[0.5]]})
+
+        transport = httpx.MockTransport(handler)
+        provider = make_provider(transport)
+        provider.embedding_model = "nomic-embed-text"
+
+        vec = await provider.embed("test text")
+        assert vec == [0.5]
         await provider.close()
 
     async def test_embed_error(self):
