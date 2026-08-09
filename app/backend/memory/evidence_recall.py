@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from backend.memory.evidence_chain import EvidenceBundle
+    from backend.memory.evidence_chain_models import EvidenceBundle
 
 
 EVIDENCE_RECALL_MARKERS = (

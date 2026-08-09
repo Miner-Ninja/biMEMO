@@ -59,6 +59,11 @@ def _parse_assertion_line(body: str) -> ExtractedAssertion | None:
     trust = parts[5] if len(parts) > 5 else "medium"
     if not subject or not relation or not text:
         return None
+    # A scope/trust keyword in the text position means the model skipped
+    # the statement field and everything shifted left — reject instead of
+    # storing the keyword as a fact.
+    if text.casefold() in ("long_term", "short_term", "high", "medium", "low"):
+        return None
     entity_match = _OBJECT_ENTITY_RE.search(object_part)
     value_match = _OBJECT_VALUE_RE.search(object_part)
     object_entity_name = entity_match.group(1).strip() if entity_match else None

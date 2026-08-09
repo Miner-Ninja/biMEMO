@@ -1,12 +1,10 @@
 """Tests for graph memory storage: entities, assertions, migration, FTS.
 
 Asserts the graph-memory-storage contract: R1 (S1.1-S1.3), R2 (S2.1-S2.3),
-R3 (S3.1-S3.2), R4 (S4.1-S4.4), R5 (S5.1-S5.4), R7 (S7.1-S7.3),
-R8 (S8.1-S8.3), R9 (S9.1).
+R3 (S3.1-S3.2), R4 (S4.1-S4.4), R5 (S5.1-S5.4), R9 (S9.1).
 """
 
 import os
-from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlcipher3
@@ -19,13 +17,10 @@ from backend.processes.db_proxy.handlers.graph import (
     make_get_entity_handler,
     make_invalidate_assertion_handler,
     make_list_assertions_for_entity_handler,
-    make_migrate_summaries_to_assertions_handler,
     make_save_assertion_handler,
     make_save_entity_handler,
 )
-from backend.processes.orchestrator.process import _maybe_migrate_graph_memory
 from backend.security.database import DatabaseManager
-from backend.security.policy import get_policy
 from backend.security.schema import SCHEMA_VERSION, initialize_schema
 
 
@@ -68,12 +63,12 @@ async def _save_assertion(db, subject_id, **overrides):
 class TestEntitiesSchema:
     """R1 — entities table and schema version."""
 
-    def test_fresh_schema_has_entities_and_v17(self, tmp_path):
-        """S1.1 — fresh database gets entities and version 17."""
+    def test_fresh_schema_has_entities_and_current_version(self, tmp_path):
+        """S1.1 — fresh database gets entities at the current version."""
         db = _open_db(tmp_path)
-        assert SCHEMA_VERSION == 17
+        assert SCHEMA_VERSION == 18
         row = db.execute("SELECT version FROM schema_version").fetchone()
-        assert row[0] == 17
+        assert row[0] == 18
         db.execute("SELECT id FROM entities").fetchall()
         db.close()
 
@@ -322,56 +317,6 @@ class TestReadOperations:
         db.close()
 
 
-def _seed_summaries(db):
-    """Insert two legacy summary rows."""
-    for sid, point in (("s1", "user prefers vim"), ("s2", "project uses docker")):
-        db.execute(
-            "INSERT INTO summaries "
-            "(id, main_point, trust_level, summary_scope, source_record_ids) "
-            "VALUES (?, ?, 'high', 'long_term', '[\"r1\"]')",
-            (sid, point),
-        )
-    db.commit()
-
-
-class TestMigration:
-    """R7 — idempotent legacy-summaries migration."""
-
-    async def test_migrates_each_summary_once(self, tmp_path):
-        """S7.1 + S7.2 — one assertion per summary, rerun adds nothing."""
-        db = _open_db(tmp_path)
-        _seed_summaries(db)
-        handler = make_migrate_summaries_to_assertions_handler(db)
-        first = await handler({})
-        assert first["migrated"] == 2
-        second = await handler({})
-        assert second["migrated"] == 0
-        count = db.execute("SELECT COUNT(*) FROM assertions").fetchone()[0]
-        assert count == 2
-        sources = {
-            row[0]
-            for row in db.execute(
-                "SELECT migrated_from_summary_id FROM assertions"
-            ).fetchall()
-        }
-        assert sources == {"s1", "s2"}
-        db.close()
-
-    async def test_summaries_untouched(self, tmp_path):
-        """S7.3 — migration never modifies the summaries table."""
-        db = _open_db(tmp_path)
-        _seed_summaries(db)
-        before = db.execute(
-            "SELECT id, main_point FROM summaries ORDER BY id"
-        ).fetchall()
-        handler = make_migrate_summaries_to_assertions_handler(db)
-        await handler({})
-        after = db.execute(
-            "SELECT id, main_point FROM summaries ORDER BY id"
-        ).fetchall()
-        assert before == after
-        db.close()
-
 
 class TestFetchUnextracted:
     """R2 (этап 2) — eligibility for the graph extractor."""
@@ -406,38 +351,6 @@ class TestFetchUnextracted:
         assert "r-bad" not in ids
         db.close()
 
-
-class TestFeatureFlag:
-    """R8 — graph_memory.enabled gate."""
-
-    def test_flag_declared_in_catalog(self):
-        """S8.1 — the key exists in the catalog as a boolean (enabled
-        deliberately since stage-2 rollout)."""
-        assert isinstance(get_policy().get_bool("graph_memory.enabled"), bool)
-
-    async def test_migration_not_invoked_when_off(self):
-        """S8.2 — startup gate does nothing while the flag is off."""
-        db_client = AsyncMock()
-        with patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=False,
-        ):
-            await _maybe_migrate_graph_memory(db_client)
-        db_client.migrate_summaries_to_assertions.assert_not_awaited()
-
-    async def test_migration_invoked_when_on(self):
-        """S8.3 — startup gate runs the migration once when enabled."""
-        db_client = AsyncMock()
-        db_client.migrate_summaries_to_assertions.return_value = {
-            "migrated": 0,
-            "total_summaries": 0,
-        }
-        with patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=True,
-        ):
-            await _maybe_migrate_graph_memory(db_client)
-        db_client.migrate_summaries_to_assertions.assert_awaited_once()
 
 
 class TestTypedParams:

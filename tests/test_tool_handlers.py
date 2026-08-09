@@ -10,11 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.tools.builtin import (
-    MemoryRecallInput,
     SystemStatusInput,
-)
-from backend.tools.handlers.registration import (
-    _make_memory_recall_handler,
 )
 from backend.tools.handlers.system_status import (
     _fmt_bytes,
@@ -230,125 +226,6 @@ class _FakeMemoryRecallDBClient:
         self.message_calls.append((limit, offset, conversation_id))
         return self.messages[offset : offset + limit]
 
-
-class TestMemoryRecallHandler:
-    """Tests for the memory recall tool handler (legacy, flag-off path).
-
-    Graph-enabled behaviour is covered by tests/test_graph_recall.py.
-    """
-
-    @pytest.fixture(autouse=True)
-    def _force_graph_memory_off(self):
-        """Pin these legacy-path tests to graph_memory.enabled=False."""
-        from unittest.mock import patch as _patch
-
-        with _patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=False,
-        ):
-            yield
-
-    @pytest.mark.asyncio
-    async def test_general_query_uses_fast_recall_only(self) -> None:
-        """General recall should stay on the current full-text path."""
-        db_client = _FakeMemoryRecallDBClient(
-            record_results=[
-                {"summary": "User works with Docker.", "created_at": "2026-07-01"}
-            ],
-            message_results=[{"role": "user", "content": "We use Compose in prod."}],
-            summary_results=[
-                {"main_point": "User runs a containerized stack."}
-            ],
-        )
-        handler = _make_memory_recall_handler(db_client)
-
-        result = await handler(
-            MemoryRecallInput(query="What do you remember about my stack?"),
-        )
-
-        assert "User runs a containerized stack." in result["result"]
-        assert "[2026-07-01] User works with Docker." in result["result"]
-        assert "[user] We use Compose in prod." in result["result"]
-        assert db_client.count_calls == 0
-        assert db_client.fulltext_calls == [
-            ("What do you remember about my stack?", "summaries", 5),
-            ("What do you remember about my stack?", "records", 5),
-            ("What do you remember about my stack?", "messages", 5),
-        ]
-
-    @pytest.mark.asyncio
-    async def test_source_question_returns_evidence_backed_output(self) -> None:
-        """Source questions should include summary, records, and messages."""
-        db_client = _FakeMemoryRecallDBClient(
-            counts={"messages": 2, "records": 1, "summaries": 1},
-            summaries=[
-                {
-                    "id": "summary-1",
-                    "main_point": "We chose CSV for export.",
-                    "based_on": ["Tableau compatibility"],
-                    "record_relations": [
-                        {"record_id": "record-1", "relation": "supports"}
-                    ],
-                }
-            ],
-            records=[
-                {
-                    "id": "record-1",
-                    "summary": "CSV was chosen because Tableau supports it well.",
-                    "source_message_ids": ["msg-1", "msg-2"],
-                }
-            ],
-            messages=[
-                {
-                    "id": "msg-1",
-                    "role": "user",
-                    "content": "We need an export Tableau can read.",
-                    "created_at": "2026-03-30T10:00:00Z",
-                },
-                {
-                    "id": "msg-2",
-                    "role": "assistant",
-                    "content": "CSV fits Tableau and stays simple.",
-                    "created_at": "2026-03-30T10:00:05Z",
-                },
-            ],
-        )
-        handler = _make_memory_recall_handler(db_client)
-
-        result = await handler(MemoryRecallInput(query="Which messages support that?"))
-
-        assert "Summary memory:" in result["result"]
-        assert "We chose CSV for export." in result["result"]
-        assert "Linked records:" in result["result"]
-        assert "CSV was chosen because Tableau supports it well." in result["result"]
-        assert "Source messages:" in result["result"]
-        assert (
-            "2026-03-30T10:00:00Z user: We need an export Tableau can read."
-            in result["result"]
-        )
-        assert db_client.fulltext_calls == []
-        assert db_client.count_calls == 1
-
-    @pytest.mark.asyncio
-    async def test_source_question_falls_back_to_fast_recall_when_bundle_missing(
-        self,
-    ) -> None:
-        """Deep recall should fall back to the fast path when evidence is missing."""
-        db_client = _FakeMemoryRecallDBClient(
-            record_results=[{"summary": "We picked CSV for exports."}],
-            counts={"messages": 0, "records": 0, "summaries": 0},
-        )
-        handler = _make_memory_recall_handler(db_client)
-
-        result = await handler(MemoryRecallInput(query="Why did we choose CSV?"))
-
-        assert result["result"] == "- We picked CSV for exports."
-        assert db_client.count_calls == 1
-        assert db_client.fulltext_calls == [
-            ("Why did we choose CSV?", "summaries", 5),
-            ("Why did we choose CSV?", "records", 5),
-            ("Why did we choose CSV?", "messages", 5),
-        ]
 
 
 class TestFormatHelpers:

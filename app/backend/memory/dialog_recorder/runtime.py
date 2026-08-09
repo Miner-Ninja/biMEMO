@@ -21,7 +21,6 @@ from backend.memory.dialog_recorder.constants import (
     DIALOG_RECORDER_TEMPERATURE,
     MAX_FILTERED_FIELD_ITEMS,
     RECENT_OBSERVATION_DEDUP_LIMIT,
-    RECENT_REFLECTION_DEDUP_LIMIT,
     TRACE_DECISION_DELETED_CONVERSATION,
     TRACE_DECISION_DUPLICATE_MEMORY,
     TRACE_DECISION_LLM_ERROR,
@@ -394,13 +393,12 @@ async def _load_recent_memory_for_dedup(
     existing_memory = await db_client.load_context(
         session_id=session_id,
         conversation_id=conversation_id,
-        summary_limit=RECENT_REFLECTION_DEDUP_LIMIT,
         record_limit=RECENT_OBSERVATION_DEDUP_LIMIT,
         message_limit=0,
     )
     return (
         _recent_observation_records(existing_memory),
-        existing_memory.get("summaries", []),
+        [],
     )
 
 

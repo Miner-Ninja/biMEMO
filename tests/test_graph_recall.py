@@ -5,7 +5,6 @@ R3 (S3.1-S3.2), R4 (S4.1-S4.3), R6 (S6.1-S6.2).
 """
 
 import os
-from unittest.mock import patch
 
 from backend.memory.graph_recall import (
     TRIM_MARKER,
@@ -292,7 +291,7 @@ class TestGraphEvidence:
 class TestRecallToolIntegration:
     """R1 — tool-level branching by flag."""
 
-    async def test_flag_on_graph_first_no_summaries_search(self, tmp_path):
+    async def test_graph_first_no_summaries_search(self, tmp_path):
         """S1.1 + S1.3 — graph lines lead; summaries not searched."""
         from backend.tools.handlers.registration import (
             _build_fast_recall_result,
@@ -309,44 +308,14 @@ class TestRecallToolIntegration:
             return []
 
         client.fulltext_search = fulltext_search
-        with patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=True,
-        ):
-            result = await _build_fast_recall_result(
-                db_client=client,
-                query="vim preferences",
-                max_message_chars=2000,
-            )
+        result = await _build_fast_recall_result(
+            db_client=client,
+            query="vim preferences",
+            max_message_chars=2000,
+        )
         assert "user prefers vim" in result
         assert result.splitlines()[0].startswith("- [2026-08-01]")
         assert "summaries" not in searched_tables
         assert searched_tables == ["records", "messages"]
         db.close()
 
-    async def test_flag_off_legacy_searches(self, tmp_path):
-        """S1.5 — legacy behaviour with the flag off."""
-        from backend.tools.handlers.registration import (
-            _build_fast_recall_result,
-        )
-
-        db = _open_db(tmp_path)
-        client = _GraphReadClient(db)
-        searched_tables = []
-
-        async def fulltext_search(query, table, limit):
-            searched_tables.append(table)
-            return []
-
-        client.fulltext_search = fulltext_search
-        with patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=False,
-        ):
-            await _build_fast_recall_result(
-                db_client=client,
-                query="anything",
-                max_message_chars=2000,
-            )
-        assert searched_tables == ["summaries", "records", "messages"]
-        db.close()

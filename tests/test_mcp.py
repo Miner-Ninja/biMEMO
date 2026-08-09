@@ -1215,46 +1215,21 @@ class TestSearchMemoryGraphHits:
     """R5 (graph-memory-recall) — graph hits in MCP search."""
 
     @pytest.mark.asyncio
-    async def test_flag_on_includes_labeled_graph_hits(self) -> None:
+    async def test_includes_labeled_graph_hits(self) -> None:
         """S5.1 — graph hits arrive labeled table=graph with their kind."""
-        from unittest.mock import patch as _patch
-
         from backend.memory.mcp_seam import resolve_relevant_memory
 
         admin = _FakeMCPAdminClient()
-        with _patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=True,
-        ):
-            resp = await resolve_relevant_memory(
-                admin_client=admin,
-                query="vim",
-            )
+        resp = await resolve_relevant_memory(
+            admin_client=admin,
+            query="vim",
+        )
         graph_hits = [
             hit for hit in resp["results"] if hit.get("table") == "graph"
         ]
         assert len(graph_hits) == 1
         assert graph_hits[0]["kind"] == "assertion"
         assert getattr(admin, "graph_searched", False) is True
-
-    @pytest.mark.asyncio
-    async def test_flag_off_no_graph_read(self) -> None:
-        """S5.2 — with the flag off the graph is not consulted."""
-        from unittest.mock import patch as _patch
-
-        from backend.memory.mcp_seam import resolve_relevant_memory
-
-        admin = _FakeMCPAdminClient()
-        with _patch(
-            "backend.security.policy.AssistantPolicy.get_bool",
-            return_value=False,
-        ):
-            resp = await resolve_relevant_memory(
-                admin_client=admin,
-                query="vim",
-            )
-        assert all(hit.get("table") != "graph" for hit in resp["results"])
-        assert getattr(admin, "graph_searched", False) is False
 
 
 class TestSearchMemoryEdgeCases:

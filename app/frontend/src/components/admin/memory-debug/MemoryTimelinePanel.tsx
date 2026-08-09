@@ -89,7 +89,7 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
         description="Read memory as a time-ordered stream of messages, records, and summaries."
         actions={
           <>
-            {["", "message", "record", "summary"].map((type) => (
+            {["", "message", "record", "assertion"].map((type) => (
               <Button
                 key={type || "all"}
                 size="sm"

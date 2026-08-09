@@ -88,7 +88,7 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
               ? "message"
               : tierName === "records"
                 ? "record"
-                : "summary";
+                : "assertion";
           const isExpanded = expanded[tierName] ?? false;
 
           return (
@@ -110,7 +110,7 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
                     </CardTitle>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {tier.count} entries
+                    {tier.count ?? tier.entries.length} entries
                   </div>
                 </button>
               </CardHeader>
@@ -130,7 +130,10 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
                       <div className="text-sm text-foreground">
                         <ContentDisplay
                           content={
-                            entry.content || entry.summary || entry.main_point || entry
+                            entry.content ||
+                            entry.summary ||
+                            entry.assertion_text ||
+                            entry
                           }
                         />
                       </div>

@@ -1,4 +1,4 @@
-"""Admin routes (integrations, summaries, conversations, profile)."""
+"""Admin routes (integrations, conversations, profile)."""
 
 # ruff: noqa: B008
 
@@ -34,7 +34,6 @@ from backend.models.responses import (
     ChatBridgeMessageLinkItem,
     ChatBridgeProviderItem,
     IntegrationListItem,
-    SummaryItem,
 )
 
 from ..deps import (
@@ -130,16 +129,6 @@ def _integration_list_item(item: dict[str, object]) -> IntegrationListItem:
     """Build one integration response item."""
     return IntegrationListItem(name=str(item["name"]), type=str(item["type"]))
 
-
-def _summary_item(item: dict[str, object]) -> SummaryItem:
-    """Build one summary response item."""
-    return SummaryItem(
-        main_point=str(item["main_point"]),
-        trust_level=str(item["trust_level"]),
-        scope=str(item.get("scope", "long_term")),
-        based_on_count=int(item["based_on_count"]),
-        created_at=str(item["created_at"]),
-    )
 
 
 def _chat_bridge_link_item(item: object) -> ChatBridgeLinkItem:
@@ -330,31 +319,6 @@ async def delete_integration(
     await cred.delete_integration(name)
     return _detail_response("Integration deleted")
 
-
-@admin_router.get("/summaries")
-async def list_summaries(
-    claims: TokenClaims = Depends(_require_auth),
-    admin: AdminDBClient = Depends(_get_admin_client),
-    page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=20, ge=1, le=100),
-) -> list[SummaryItem]:
-    """List stored summaries via DB Proxy Socket B.
-
-    Args:
-        claims: Authenticated token claims.
-        admin: DB Proxy Socket B client.
-        page: Page number (1-indexed).
-        per_page: Items per page.
-
-    Returns:
-        List of summary entries.
-    """
-    del claims
-    items = await admin.list_summaries(
-        limit=per_page,
-        offset=(page - 1) * per_page,
-    )
-    return [_summary_item(item) for item in items]
 
 
 @admin_router.delete("/conversations/{conversation_id}")

@@ -149,148 +149,7 @@ async def store_embedding(
     )
 
 
-async def fetch_untainted_records(
-    client: DBProxyClient,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    """Fetch untainted records for distiller.
 
-    Args:
-        client: DB Proxy client instance.
-        limit: Maximum number of records.
-
-    Returns:
-        List of record dicts with id, summary, key_facts.
-    """
-    return await client._send_list_operation(
-        "fetch_untainted_records",
-        result_key="records",
-        parameters={
-            "limit": limit,
-        },
-    )
-
-
-async def count_distillations(
-    client: DBProxyClient,
-) -> int:
-    """Count total summaries in the database.
-
-    Args:
-        client: DB Proxy client instance.
-
-    Returns:
-        Number of summaries.
-    """
-    return await client._send_int_operation(
-        "count_distillations",
-        result_key="count",
-    )
-
-
-async def save_summary(
-    client: DBProxyClient,
-    main_point: str,
-    based_on: list[str] | None = None,
-    trust_level: str = "",
-    summary_scope: str = "long_term",
-    source_record_ids: list[str] | None = None,
-    record_relations: list[dict[str, str]] | None = None,
-) -> str:
-    """Save a summary.
-
-    Args:
-        client: DB Proxy client instance.
-        main_point: Summary main point text.
-        based_on: Supporting reasons list.
-        trust_level: Trust level label.
-        summary_scope: Time horizon for the summary.
-        source_record_ids: Source record IDs.
-        record_relations: Typed relations to source records.
-
-    Returns:
-        Summary ID.
-    """
-    return await client._send_identifier_operation(
-        "save_summary",
-        result_key="summary_id",
-        parameters={
-            "main_point": main_point,
-            "based_on": based_on or [],
-            "trust_level": trust_level,
-            "summary_scope": summary_scope,
-            "source_record_ids": source_record_ids or [],
-            "record_relations": record_relations or [],
-        },
-    )
-
-
-async def merge_summary_sources(
-    client: DBProxyClient,
-    summary_id: str,
-    main_point: str = "",
-    based_on: list[str] | None = None,
-    trust_level: str = "",
-    summary_scope: str = "long_term",
-    trust_level_score: int | None = None,
-    source_record_ids: list[str] | None = None,
-    record_relations: list[dict[str, str]] | None = None,
-) -> bool:
-    """Attach new source records to an existing summary.
-
-    Args:
-        client: DB Proxy client instance.
-        summary_id: Existing summary identifier.
-        main_point: Replacement main point candidate.
-        based_on: Replacement supporting reasons.
-        trust_level: Replacement trust label.
-        summary_scope: Replacement time horizon for the summary.
-        trust_level_score: Replacement trust score.
-        source_record_ids: New source record identifiers.
-        record_relations: Typed relations to the new records.
-
-    Returns:
-        True when the summary was updated.
-    """
-    return await client._send_bool_operation(
-        "merge_summary_sources",
-        result_key="updated",
-        parameters={
-            "summary_id": summary_id,
-            "main_point": main_point,
-            "based_on": based_on or [],
-            "trust_level": trust_level,
-            "summary_scope": summary_scope,
-            "trust_level_score": trust_level_score,
-            "source_record_ids": source_record_ids or [],
-            "record_relations": record_relations or [],
-        },
-    )
-
-
-async def list_summaries(
-    client: DBProxyClient,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    """List summaries.
-
-    Args:
-        client: DB Proxy client instance.
-        limit: Maximum number.
-        offset: Skip count.
-
-    Returns:
-        List of summary dicts.
-    """
-    return await client._send_list_operation(
-        "list_summaries",
-        result_key="summaries",
-        parameters={
-            "limit": limit,
-            "offset": offset,
-        },
-    )
 
 
 async def list_records(
@@ -318,30 +177,6 @@ async def list_records(
     )
 
 
-async def list_summaries_full(
-    client: DBProxyClient,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    """List summaries with source record metadata.
-
-    Args:
-        client: DB Proxy client instance.
-        limit: Maximum number.
-        offset: Skip count.
-
-    Returns:
-        List of summary dicts with source record metadata.
-    """
-    return await client._send_list_operation(
-        "list_summaries_full",
-        result_key="summaries",
-        parameters={
-            "limit": limit,
-            "offset": offset,
-        },
-    )
-
 
 async def count_memory_entries(
     client: DBProxyClient,
@@ -352,13 +187,13 @@ async def count_memory_entries(
         client: DB Proxy client instance.
 
     Returns:
-        Dict with counts for messages, records, and summaries.
+        Dict with counts for messages, records, and assertions.
     """
     result = await client.send_operation("count_memory_entries")
     return {
         "messages": int(result.get("messages", 0)),
         "records": int(result.get("records", 0)),
-        "summaries": int(result.get("summaries", 0)),
+        "assertions": int(result.get("assertions", 0)),
     }
 
 
@@ -476,12 +311,6 @@ async def invalidate_assertion(
     return bool(result.get("invalidated", False))
 
 
-async def migrate_summaries_to_assertions(
-    client: DBProxyClient,
-) -> dict[str, Any]:
-    """Run the idempotent legacy-summaries migration."""
-    return await client.send_operation("migrate_summaries_to_assertions")
-
 
 async def get_entity(
     client: DBProxyClient,
@@ -545,3 +374,13 @@ async def fetch_unextracted_records(
         {"limit": limit},
     )
     return result["records"]
+
+
+async def prune_graph(client: DBProxyClient) -> dict[str, Any]:
+    """Run one graph maintenance pass (invalidated + orphan cleanup)."""
+    return await client.send_operation("prune_graph")
+
+
+async def get_graph_stats(client: DBProxyClient) -> dict[str, Any]:
+    """Return the graph statistics snapshot."""
+    return await client.send_operation("get_graph_stats")

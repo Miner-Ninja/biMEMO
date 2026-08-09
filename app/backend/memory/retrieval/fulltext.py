@@ -166,16 +166,11 @@ _FTS_SEARCH_SQL = {
         "SELECT rowid, rank, snippet(records_fts, 0, '', '', '...', 32) "
         "FROM records_fts WHERE records_fts MATCH ? ORDER BY rank LIMIT ?"
     ),
-    "summaries_fts": (
-        "SELECT rowid, rank, snippet(summaries_fts, 0, '', '', '...', 32) "
-        "FROM summaries_fts WHERE summaries_fts MATCH ? ORDER BY rank LIMIT ?"
-    ),
 }
 
 _FTS_DELETE_SQL = {
     "messages_fts": "DELETE FROM messages_fts WHERE rowid = ?",
     "records_fts": "DELETE FROM records_fts WHERE rowid = ?",
-    "summaries_fts": "DELETE FROM summaries_fts WHERE rowid = ?",
     "entities_fts": "DELETE FROM entities_fts WHERE rowid = ?",
     "assertions_fts": "DELETE FROM assertions_fts WHERE rowid = ?",
 }
@@ -183,7 +178,6 @@ _FTS_DELETE_SQL = {
 _FTS_CLEAR_SQL = (
     "DELETE FROM messages_fts",
     "DELETE FROM records_fts",
-    "DELETE FROM summaries_fts",
     "DELETE FROM entities_fts",
     "DELETE FROM assertions_fts",
 )
@@ -192,9 +186,6 @@ _FTS_INSERT_SQL = {
     "messages_fts": "INSERT INTO messages_fts (rowid, content) VALUES (?, ?)",
     "records_fts": (
         "INSERT INTO records_fts (rowid, summary, key_facts) VALUES (?, ?, ?)"
-    ),
-    "summaries_fts": (
-        "INSERT INTO summaries_fts (rowid, main_point, based_on) VALUES (?, ?, ?)"
     ),
     "entities_fts": (
         "INSERT INTO entities_fts (rowid, canonical_name, aliases) VALUES (?, ?, ?)"
@@ -223,10 +214,6 @@ _FTS_REBUILD_SOURCES = (
     (
         "records_fts",
         "SELECT rowid, summary, key_facts FROM records",
-    ),
-    (
-        "summaries_fts",
-        "SELECT rowid, main_point, based_on FROM summaries",
     ),
 )
 
@@ -301,10 +288,6 @@ def _create_stable_fts_tables(db: DatabaseManager) -> None:
     for query in _FTS_TABLE_CREATE_SQL:
         db.execute(query)
     db.execute("DROP TABLE IF EXISTS summaries_fts")
-    db.execute(
-        "CREATE VIRTUAL TABLE summaries_fts "
-        "USING fts5(main_point, based_on, content_rowid='rowid')"
-    )
     db.commit()
 
 
@@ -491,29 +474,6 @@ def index_observation(
     )
 
 
-def index_reflection(
-    db: DatabaseManager,
-    rowid: int,
-    main_point: str,
-    based_on: str,
-) -> None:
-    """Add a summary to the full-text index.
-
-    Main point and supporting reasons are stemmed before indexing.
-
-    Args:
-        db: An open DatabaseManager instance.
-        rowid: Row ID of the summary.
-        main_point: Summary main point to index.
-        based_on: JSON string of supporting reasons to index.
-    """
-    _insert_stemmed_index_row(
-        db,
-        table="summaries_fts",
-        rowid=rowid,
-        values=(main_point, based_on),
-    )
-
 
 def search_messages(db: DatabaseManager, query: str, limit: int) -> list[tuple]:
     """Search messages by keyword.
@@ -555,25 +515,6 @@ def search_observations(db: DatabaseManager, query: str, limit: int) -> list[tup
     )
 
 
-def search_reflections(db: DatabaseManager, query: str, limit: int) -> list[tuple]:
-    """Search summaries by keyword.
-
-    Args:
-        db: An open DatabaseManager instance.
-        query: FTS5 search query string.
-        limit: Maximum number of results.
-
-    Returns:
-        List of matching (rowid, rank, main_point snippet) tuples.
-        rank is a negative float (BM25: lower is more relevant).
-    """
-    return _fts_match_rows(
-        db,
-        table="summaries_fts",
-        query=query,
-        limit=limit,
-    )
-
 
 def delete_message_index(db: DatabaseManager, rowid: int) -> None:
     """Remove a message from the full-text index.
@@ -594,15 +535,6 @@ def delete_record_index(db: DatabaseManager, rowid: int) -> None:
     """
     _delete_index_row(db, table="records_fts", rowid=rowid)
 
-
-def delete_summary_index(db: DatabaseManager, rowid: int) -> None:
-    """Remove a summary from the full-text index.
-
-    Args:
-        db: An open DatabaseManager instance.
-        rowid: Row ID of the summary to remove.
-    """
-    _delete_index_row(db, table="summaries_fts", rowid=rowid)
 
 
 def index_entity(
@@ -632,3 +564,13 @@ def index_assertion(
         rowid=rowid,
         values=(assertion_text,),
     )
+
+
+def delete_entity_index(db: DatabaseManager, rowid: int) -> None:
+    """Remove one entity row from the full-text index."""
+    _delete_index_row(db, table="entities_fts", rowid=rowid)
+
+
+def delete_assertion_index(db: DatabaseManager, rowid: int) -> None:
+    """Remove one assertion row from the full-text index."""
+    _delete_index_row(db, table="assertions_fts", rowid=rowid)

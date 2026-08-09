@@ -7,13 +7,12 @@ summary deletion, and VACUUM execution.
 import secrets
 
 import pytest
+
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
-    index_reflection,
-    search_reflections,
 )
 from backend.security.database import DatabaseManager
-from backend.security.deletion import delete_conversation, delete_reflection
+from backend.security.deletion import delete_conversation
 from backend.security.schema import initialize_schema
 
 
@@ -94,19 +93,3 @@ class TestDeleteConversation:
 class TestDeleteSummary:
     """Tests for summary deletion."""
 
-    def test_deletes_reflection(self, del_db):
-        """Verify summary is removed."""
-        del_db.execute(
-            "INSERT INTO summaries (id, main_point) VALUES (?, ?)",
-            ("ref-1", "test main point"),
-        )
-        del_db.commit()
-        index_reflection(del_db, 1, "test main point", "[]")
-        del_db.commit()
-        delete_reflection(del_db, "ref-1")
-        cursor = del_db.execute(
-            "SELECT count(*) FROM summaries WHERE id = ?",
-            ("ref-1",),
-        )
-        assert cursor.fetchone()[0] == 0
-        assert search_reflections(del_db, "main", 10) == []

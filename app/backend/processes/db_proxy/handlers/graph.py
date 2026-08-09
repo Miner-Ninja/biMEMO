@@ -4,7 +4,7 @@ Provides make_save_entity_handler, make_save_assertion_handler,
 make_invalidate_assertion_handler, make_get_entity_handler,
 make_find_entities_handler, make_list_assertions_for_entity_handler,
 make_find_graph_entry_points_handler, and
-make_migrate_summaries_to_assertions_handler.
+make_prune_graph_handler, and make_get_graph_stats_handler.
 
 Entities are graph nodes; assertions are typed edges with a validity
 window and evidence references. Writes are exposed on Socket A only;
@@ -34,9 +34,10 @@ from ..params import (
     FindEntitiesParams,
     FindGraphEntryPointsParams,
     GetEntityParams,
+    GetGraphStatsParams,
     InvalidateAssertionParams,
     ListAssertionsForEntityParams,
-    MigrateSummariesToAssertionsParams,
+    PruneGraphParams,
     SaveAssertionParams,
     SaveEntityParams,
 )
@@ -52,6 +53,11 @@ logger = logging.getLogger(__name__)
 
 # The migration parks legacy summaries under one placeholder entity until
 # the stage-2 extractor re-attributes them to real entities.
+# Lifecycle maintenance retention. Named constants, not config keys —
+# same policy as the record retention constants.
+GRAPH_PRUNE_INVALIDATED_DAYS = 90
+GRAPH_ORPHAN_GRACE_HOURS = 24
+
 MIGRATION_ENTITY_TYPE = "unresolved"
 MIGRATION_ENTITY_NAME = "legacy_summaries"
 MIGRATION_RELATION = "states"
@@ -435,67 +441,121 @@ def make_fetch_unextracted_records_handler(
     return handle
 
 
-def make_migrate_summaries_to_assertions_handler(
-    db: DatabaseManager,
-) -> OperationHandler:
-    """Create handler for migrate_summaries_to_assertions operation.
 
-    Idempotent: each summary id lands in migrated_from_summary_id (UNIQUE),
-    so re-running creates no duplicates. Summary rows are read-only here.
+def make_prune_graph_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for prune_graph operation.
+
+    Deletes assertions invalidated longer than the retention period ago
+    (clearing supersession references that pointed at them and their FTS
+    rows) and entities that have no assertions in either role and are
+    older than the orphan grace window. Valid assertions are never
+    deleted.
+    """
+    from backend.memory.retrieval.fulltext import (
+        delete_assertion_index,
+        delete_entity_index,
+    )
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Run one graph maintenance pass."""
+        _validate(params, PruneGraphParams)
+        assertion_rows = db.execute(
+            "SELECT id, rowid FROM assertions WHERE invalid_from IS NOT NULL "
+            "AND invalid_from < strftime('%Y-%m-%dT%H:%M:%f', 'now', ?)",
+            (f"-{GRAPH_PRUNE_INVALIDATED_DAYS} days",),
+        ).fetchall()
+        cleared_references = 0
+        for assertion_id, rowid in assertion_rows:
+            delete_assertion_index(db, rowid)
+            cursor = db.execute(
+                "UPDATE assertions SET invalidated_by_assertion_id = NULL "
+                "WHERE invalidated_by_assertion_id = ?",
+                (assertion_id,),
+            )
+            cleared_references += cursor.rowcount
+            db.execute(
+                "DELETE FROM assertions WHERE id = ?",
+                (assertion_id,),
+            )
+        entity_rows = db.execute(
+            "SELECT e.id, e.rowid FROM entities e "
+            "WHERE e.created_at < strftime('%Y-%m-%dT%H:%M:%f', 'now', ?) "
+            "AND NOT EXISTS (SELECT 1 FROM assertions a "
+            "WHERE a.subject_entity_id = e.id OR a.object_entity_id = e.id)",
+            (f"-{GRAPH_ORPHAN_GRACE_HOURS} hours",),
+        ).fetchall()
+        for _entity_id, rowid in entity_rows:
+            delete_entity_index(db, rowid)
+        for entity_id, _rowid in entity_rows:
+            db.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        db.commit()
+        return {
+            "assertions_deleted": len(assertion_rows),
+            "entities_deleted": len(entity_rows),
+            "references_cleared": cleared_references,
+        }
+
+    return handle
+
+
+def make_get_graph_stats_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for get_graph_stats operation.
+
+    Read-only snapshot for the admin health view: counts, orphans,
+    missing-evidence assertions, recorder-queue depth, and the newest
+    assertion timestamp (extractor liveness signal).
     """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Convert legacy summaries into placeholder-entity assertions."""
-        _validate(params, MigrateSummariesToAssertionsParams)
-        placeholder_id, _created = _get_or_create_entity(
-            db,
-            entity_type=MIGRATION_ENTITY_TYPE,
-            raw_name=MIGRATION_ENTITY_NAME,
-            aliases=[],
+        """Collect graph statistics."""
+        _validate(params, GetGraphStatsParams)
+        entities_by_type = dict(
+            db.execute(
+                "SELECT entity_type, COUNT(*) FROM entities "
+                "GROUP BY entity_type",
+            ).fetchall()
         )
-        summary_rows = db.execute(
-            "SELECT id, main_point, trust_level, summary_scope, "
-            "source_record_ids, created_at FROM summaries",
-        ).fetchall()
-        migrated_count = 0
-        for summary_row in summary_rows:
-            (
-                summary_id,
-                main_point,
-                trust_level,
-                summary_scope,
-                source_record_ids,
-                created_at,
-            ) = summary_row
-            already = db.execute(
-                "SELECT 1 FROM assertions WHERE migrated_from_summary_id = ?",
-                (summary_id,),
-            ).fetchone()
-            if already is not None:
+        assertions_valid = db.execute(
+            "SELECT COUNT(*) FROM assertions WHERE invalid_from IS NULL",
+        ).fetchone()[0]
+        assertions_invalidated = db.execute(
+            "SELECT COUNT(*) FROM assertions WHERE invalid_from IS NOT NULL",
+        ).fetchone()[0]
+        orphan_entities = db.execute(
+            "SELECT COUNT(*) FROM entities e WHERE NOT EXISTS ("
+            "SELECT 1 FROM assertions a WHERE a.subject_entity_id = e.id "
+            "OR a.object_entity_id = e.id)",
+        ).fetchone()[0]
+        known_record_ids = {
+            row[0]
+            for row in db.execute("SELECT id FROM records").fetchall()
+        }
+        missing_evidence = 0
+        for (source_ids_json,) in db.execute(
+            "SELECT source_record_ids FROM assertions "
+            "WHERE invalid_from IS NULL",
+        ).fetchall():
+            try:
+                cited = json.loads(source_ids_json)
+            except (json.JSONDecodeError, TypeError):
                 continue
-            assertion_id = str(uuid.uuid4())
-            cursor = db.execute(
-                "INSERT INTO assertions "
-                "(id, subject_entity_id, relation, object_value, "
-                "assertion_text, trust_level, assertion_scope, valid_from, "
-                "source_record_ids, migrated_from_summary_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    assertion_id,
-                    placeholder_id,
-                    MIGRATION_RELATION,
-                    None,
-                    main_point,
-                    trust_level,
-                    summary_scope,
-                    created_at,
-                    source_record_ids,
-                    summary_id,
-                ),
-            )
-            index_assertion(db, cursor.lastrowid, main_point)
-            migrated_count += 1
-        db.commit()
-        return {"migrated": migrated_count, "total_summaries": len(summary_rows)}
+            if any(str(record_id) not in known_record_ids for record_id in cited):
+                missing_evidence += 1
+        queue_depth = db.execute(
+            "SELECT COUNT(*) FROM record_queue",
+        ).fetchone()[0]
+        last_assertion_row = db.execute(
+            "SELECT MAX(created_at) FROM assertions",
+        ).fetchone()
+        return {
+            "entities_by_type": entities_by_type,
+            "entities_total": sum(entities_by_type.values()),
+            "assertions_valid": assertions_valid,
+            "assertions_invalidated": assertions_invalidated,
+            "orphan_entities": orphan_entities,
+            "assertions_with_missing_evidence": missing_evidence,
+            "record_queue_depth": queue_depth,
+            "last_assertion_at": last_assertion_row[0] or "",
+        }
 
     return handle

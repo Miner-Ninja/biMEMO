@@ -22,7 +22,6 @@ from .handlers.admin import (
     make_list_audit_log_handler,
     make_list_messages_handler,
     make_list_records_handler,
-    make_list_summaries_full_handler,
     make_mcp_memory_get_handler,
     make_mcp_memory_recent_handler,
     make_mcp_memory_stats_handler,
@@ -59,31 +58,23 @@ from .handlers.conversation import (
 )
 from .handlers.core import (
     make_bump_queued_record_attempts_handler,
-    make_count_distillations_handler,
     make_delete_queued_records_handler,
     make_fetch_unembedded_records_handler,
-    make_fetch_untainted_records_handler,
     make_fulltext_search_handler,
     make_init_vector_table_handler,
-    make_list_conflicted_summaries_handler,
     make_list_queued_records_handler,
-    make_list_summaries_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
-    make_merge_summary_sources_handler,
-    make_prune_stale_summaries_handler,
     make_prune_unlinked_records_handler,
     make_save_conversation_summary_handler,
     make_save_message_handler,
     make_save_queued_record_handler,
     make_save_record_handler,
-    make_save_summary_handler,
     make_store_embedding_handler,
     make_verify_chain_handler,
     make_write_audit_handler,
 )
 from .handlers.diagnostic import (
-    make_conflicted_summary_flag_handler,
     make_get_memory_route_diagnostics_summary_handler,
     make_list_memory_route_diagnostics_handler,
     make_list_record_processing_diagnostics_handler,
@@ -106,9 +97,10 @@ from .handlers.graph import (
     make_find_entities_handler,
     make_find_graph_entry_points_handler,
     make_get_entity_handler,
+    make_get_graph_stats_handler,
     make_invalidate_assertion_handler,
     make_list_assertions_for_entity_handler,
-    make_migrate_summaries_to_assertions_handler,
+    make_prune_graph_handler,
     make_save_assertion_handler,
     make_save_entity_handler,
 )
@@ -210,25 +202,18 @@ SOCKET_A_OPERATIONS = {
     "save_entity",
     "save_assertion",
     "invalidate_assertion",
-    "migrate_summaries_to_assertions",
     "get_entity",
     "find_entities",
     "list_assertions_for_entity",
     "find_graph_entry_points",
     "fetch_unextracted_records",
+    "prune_graph",
+    "get_graph_stats",
     "delete_queued_records",
     "list_queued_records",
     "bump_queued_record_attempts",
     "store_embedding",
-    "fetch_untainted_records",
-    "save_summary",
-    "merge_summary_sources",
-    "prune_stale_summaries",
     "prune_unlinked_records",
-    "list_conflicted_summaries",
-    "list_summaries",
-    "count_distillations",
-    "list_summaries_full",
     "create_conversation",
     "list_conversations",
     "delete_conversation",
@@ -273,7 +258,6 @@ SOCKET_A_OPERATIONS = {
     "write_memory_route_diagnostic",
     "write_record_processing_diagnostic",
     "write_summary_processing_diagnostic",
-    "conflicted_summary_flag",
     "skill_create",
     "skill_search",
     "skill_use",
@@ -330,7 +314,6 @@ SOCKET_B_ONLY_OPERATIONS = {
     "record_task_run",
     "list_task_runs",
     "list_records",
-    "list_summaries_full",
     "list_messages",
     "count_memory_entries",
     "list_audit_log",
@@ -378,6 +361,7 @@ SOCKET_B_ONLY_OPERATIONS = {
 }
 
 SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
+    "get_graph_stats",
     "get_entity",
     "find_entities",
     "list_assertions_for_entity",
@@ -387,7 +371,6 @@ SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
     "mcp_memory_get",   # MCP get_memory (read-only)
     "mcp_memory_stats",   # MCP memory_stats (read-only)
     "write_audit",
-    "list_summaries",
     "create_scheduled_task",
     "list_scheduled_tasks",
     "update_scheduled_task",
@@ -474,10 +457,6 @@ def _register_diagnostic_operations(
         make_write_summary_processing_diagnostic_handler(diagnostics_db),
     )
     registry.register(
-        "conflicted_summary_flag",
-        make_conflicted_summary_flag_handler(diagnostics_db),
-    )
-    registry.register(
         "list_memory_route_diagnostics",
         make_list_memory_route_diagnostics_handler(diagnostics_db),
     )
@@ -526,13 +505,11 @@ def _register_graph_operations(
         make_invalidate_assertion_handler(db),
     )
     registry.register(
-        "migrate_summaries_to_assertions",
-        make_migrate_summaries_to_assertions_handler(db),
-    )
-    registry.register(
         "fetch_unextracted_records",
         make_fetch_unextracted_records_handler(db),
     )
+    registry.register("prune_graph", make_prune_graph_handler(db))
+    registry.register("get_graph_stats", make_get_graph_stats_handler(db))
     registry.register("get_entity", make_get_entity_handler(db))
     registry.register("find_entities", make_find_entities_handler(db))
     registry.register(
@@ -569,28 +546,9 @@ def _register_memory_operations(
     )
     registry.register("store_embedding", make_store_embedding_handler(db))
     registry.register(
-        "fetch_untainted_records",
-        make_fetch_untainted_records_handler(db),
-    )
-    registry.register("save_summary", make_save_summary_handler(db))
-    registry.register(
-        "merge_summary_sources",
-        make_merge_summary_sources_handler(db),
-    )
-    registry.register(
-        "prune_stale_summaries",
-        make_prune_stale_summaries_handler(db),
-    )
-    registry.register(
         "prune_unlinked_records",
         make_prune_unlinked_records_handler(db),
     )
-    registry.register("list_summaries", make_list_summaries_handler(db))
-    registry.register(
-        "list_conflicted_summaries",
-        make_list_conflicted_summaries_handler(db),
-    )
-    registry.register("count_distillations", make_count_distillations_handler(db))
     registry.register("skill_create", make_skill_create_handler(db))
     registry.register("skill_search", make_skill_search_handler(db))
     registry.register("skill_use", make_skill_use_handler(db))
@@ -828,7 +786,6 @@ def _register_misc_db_operations(
     registry.register("get_file_context", make_get_file_context_handler(db))
     registry.register("get_stats", make_get_stats_handler(db))
     registry.register("list_records", make_list_records_handler(db))
-    registry.register("list_summaries_full", make_list_summaries_full_handler(db))
     registry.register("list_messages", make_list_messages_handler(db))
     registry.register("count_memory_entries", make_count_memory_entries_handler(db))
     registry.register("mcp_memory_recent", make_mcp_memory_recent_handler(db))

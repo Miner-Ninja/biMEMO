@@ -10,9 +10,8 @@ from backend.memory.runtime.scheduler import (
     DialogRecorderScheduler,
     SchedulingMode,
     _count_source_message_coverage,
-    _should_run_distiller,
+    _should_run_extraction,
     run_dialog_recorder_loop,
-    run_distiller_loop,
     run_reembed_loop,
 )
 
@@ -25,8 +24,7 @@ __all__ = [
     "RecordRateLimiter",
     "SchedulingMode",
     "_count_source_message_coverage",
-    "_should_run_distiller",
+    "_should_run_extraction",
     "run_dialog_recorder_loop",
-    "run_distiller_loop",
     "run_reembed_loop",
 ]

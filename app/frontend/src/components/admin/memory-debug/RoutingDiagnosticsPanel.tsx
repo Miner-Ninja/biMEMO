@@ -189,7 +189,7 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
               ))}
             </div>
           ) : (
-            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300">
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
               No clear routing problems are visible in this time window.
             </div>
           )}

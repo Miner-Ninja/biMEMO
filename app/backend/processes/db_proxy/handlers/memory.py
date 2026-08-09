@@ -1,11 +1,9 @@
-"""Handler factories for memory record, summary, and embedding operations.
+"""Handler factories for memory record and embedding operations.
 
-Provides make_save_record_handler,
-make_save_summary_handler, make_merge_summary_sources_handler,
-make_store_embedding_handler, make_fetch_untainted_records_handler,
-make_count_distillations_handler, make_list_summaries_handler,
-make_init_vector_table_handler, make_fetch_unembedded_records_handler,
-make_prune_stale_summaries_handler, and make_prune_unlinked_records_handler.
+Provides the record-queue handlers, make_save_record_handler,
+make_store_embedding_handler, make_init_vector_table_handler,
+make_fetch_unembedded_records_handler, and
+make_prune_unlinked_records_handler.
 """
 
 from __future__ import annotations
@@ -17,14 +15,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from backend.memory.models import (
-    get_trust_level_score,
-    normalize_summary_scope,
-    normalize_trust_level,
-)
 from backend.memory.retrieval.fulltext import (
     index_observation,
-    index_reflection,
 )
 
 from ..common import (
@@ -36,16 +28,11 @@ from ..params import (
     BumpQueuedRecordAttemptsParams,
     DeleteQueuedRecordsParams,
     FetchUnembeddedRecordsParams,
-    FetchUntaintedRecordsParams,
     InitVectorTableParams,
     ListQueuedRecordsParams,
-    ListSummariesParams,
-    MergeSummarySourcesParams,
-    PruneStaleSummariesParams,
     PruneUnlinkedRecordsParams,
     SaveQueuedRecordParams,
     SaveRecordParams,
-    SaveSummaryParams,
     StoreEmbeddingParams,
 )
 
@@ -76,6 +63,19 @@ def _table_exists(db: DatabaseManager, table_name: str) -> bool:
 # they survived multiple restarts without being processed and retrying them
 # weeks later would only pollute memory with stale dialog steps.
 QUEUED_RECORD_RETENTION_DAYS = 7
+
+
+def _parse_record_timestamp(raw: object) -> datetime | None:
+    """Parse one stored timestamp into an aware UTC datetime."""
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def make_save_queued_record_handler(db: DatabaseManager) -> OperationHandler:
@@ -247,71 +247,6 @@ def make_save_record_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-def make_save_summary_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for save_summary operation.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Save a summary to the database."""
-        p = _validate_params(params, SaveSummaryParams)
-        summary_id = str(uuid.uuid4())
-        normalized_trust_level = normalize_trust_level(p.trust_level)
-        based_on_json = json.dumps(p.based_on)
-        cursor = db.execute(
-            "INSERT INTO summaries "
-            "("
-            "id, main_point, based_on, trust_level, summary_scope, "
-            "trust_level_score, source_record_ids, record_relations"
-            ") "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                summary_id,
-                p.main_point,
-                based_on_json,
-                normalized_trust_level.value,
-                normalize_summary_scope(p.summary_scope).value,
-                get_trust_level_score(normalized_trust_level.value),
-                json.dumps(p.source_record_ids),
-                json.dumps([link.model_dump() for link in p.record_relations]),
-            ),
-        )
-        index_reflection(db, cursor.lastrowid, p.main_point, based_on_json)
-        db.commit()
-        return {"summary_id": summary_id}
-
-    return handle
-
-
-def make_merge_summary_sources_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for merge_summary_sources operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Attach new source records to an existing summary."""
-        p = _validate_params(params, MergeSummarySourcesParams)
-        from backend.memory.summary_distiller.store import append_summary_sources
-
-        updated = append_summary_sources(
-            db,
-            p.summary_id,
-            p.source_record_ids,
-            [link.model_dump() for link in p.record_relations],
-            main_point=p.main_point,
-            based_on=p.based_on,
-            trust_level=p.trust_level,
-            summary_scope=p.summary_scope,
-            trust_level_score=p.trust_level_score,
-        )
-        return {"updated": updated}
-
-    return handle
-
-
 def make_store_embedding_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for store_embedding operation.
 
@@ -333,100 +268,6 @@ def make_store_embedding_handler(db: DatabaseManager) -> OperationHandler:
         except Exception as e:
             logger.warning("store_embedding failed: %s", e)
             return {"ok": False, "error": str(e)}
-
-    return handle
-
-
-def make_fetch_untainted_records_handler(
-    db: DatabaseManager,
-) -> OperationHandler:
-    """Create handler for fetch_untainted_records operation.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Fetch untainted records for distiller."""
-        p = _validate_params(params, FetchUntaintedRecordsParams)
-        from backend.memory.storage.tainted import fetch_untainted_for_distiller
-
-        rows = fetch_untainted_for_distiller(db, limit=p.limit)
-        return {
-            "records": [
-                {
-                    "id": r[0],
-                    "summary": r[1],
-                    "key_facts": r[2],
-                    "action_items": r[3],
-                    "memory_kinds": r[4],
-                    "source_message_ids": r[5],
-                }
-                for r in rows
-            ]
-        }
-
-    return handle
-
-
-def make_count_distillations_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for count_distillations operation.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Count total summaries in the database."""
-        from backend.memory.summary_distiller.store import count_distillations
-
-        count = count_distillations(db)
-        return {"count": count}
-
-    return handle
-
-
-def make_list_summaries_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for list_summaries operation.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """List summaries ordered by trust level and creation date."""
-        p = _validate_params(params, ListSummariesParams)
-        from backend.memory.summary_distiller.store import (
-            list_revalidated_distillations,
-        )
-
-        rows = list_revalidated_distillations(
-            db,
-            limit=p.limit,
-            offset=p.offset,
-        )
-        return {
-            "summaries": [
-                {
-                    "id": row["id"],
-                    "main_point": row["main_point"],
-                    "trust_level": row["trust_level"],
-                    "scope": row["scope"],
-                    "created_at": row["created_at"],
-                    "based_on_count": len(row["based_on"]),
-                }
-                for row in rows
-            ]
-        }
 
     return handle
 
@@ -569,72 +410,11 @@ def make_fetch_unembedded_records_handler(
     return handle
 
 
-def make_prune_stale_summaries_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for prune_stale_summaries operation.
-
-    Deletes summaries whose derived revalidation status is in the
-    requested statuses AND whose age exceeds age_days.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-    from backend.memory.retrieval.fulltext import delete_summary_index
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Delete summaries a newer summary has already outdated.
-
-        The revalidation status is read from the same read-path helpers the
-        ranker and evidence chain use, so pruning cannot diverge from what
-        ranking sees. The keep/delete decision is the pure
-        ``should_prune_summary`` policy helper.
-        """
-        from backend.memory.storage.pruning import should_prune_summary
-        from backend.memory.summary_distiller.store import (
-            _build_revalidated_distillation_record,
-            _load_distillation_rows,
-            _parse_timestamp,
-        )
-
-        p = _validate_params(params, PruneStaleSummariesParams)
-        now = datetime.now(UTC)
-
-        deleted = 0
-        for row in _load_distillation_rows(db, None):
-            record = _build_revalidated_distillation_record(db, row)
-            created_at = _parse_timestamp(str(record.get("created_at") or ""))
-            if created_at is None:
-                continue
-            if not should_prune_summary(
-                status=str(record["revalidation_status"]),
-                age_days=(now - created_at).days,
-                grace_days=p.grace_days,
-            ):
-                continue
-
-            rowid_row = db.execute(
-                "SELECT rowid FROM summaries WHERE id = ?",
-                (record["id"],),
-            ).fetchone()
-            if rowid_row is None:
-                continue
-            db.execute("DELETE FROM summaries WHERE id = ?", (record["id"],))
-            delete_summary_index(db, rowid_row[0])
-            deleted += 1
-
-        db.commit()
-        return {"deleted": deleted}
-
-    return handle
-
-
 def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for prune_unlinked_records operation.
 
-    Deletes records older than age_days that are not referenced by
-    any summary (via source_record_ids or record_relations).
+    Deletes records older than age_days that no assertion cites as
+    evidence (source_record_ids).
 
     Args:
         db: DatabaseManager instance.
@@ -648,32 +428,22 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
         """Delete unlinked records by age."""
         from datetime import timedelta
 
-        from backend.memory.summary_distiller.store import _parse_timestamp
-
         p = _validate_params(params, PruneUnlinkedRecordsParams)
 
-        # Collect all record IDs referenced by any summary
+        # A record is protected while any assertion cites it as evidence.
         referenced_ids = set()
-        summary_rows = db.execute(
-            "SELECT source_record_ids, record_relations FROM summaries",
+        assertion_rows = db.execute(
+            "SELECT source_record_ids FROM assertions",
         ).fetchall()
-        for src_ids, raw_relations in summary_rows:
-            if src_ids:
-                try:
-                    ids = json.loads(src_ids)
-                    if isinstance(ids, list):
-                        referenced_ids.update(ids)
-                except json.JSONDecodeError, TypeError:
-                    pass
-            if raw_relations:
-                try:
-                    rels = json.loads(raw_relations)
-                    if isinstance(rels, list):
-                        for rel in rels:
-                            if isinstance(rel, dict) and rel.get("record_id"):
-                                referenced_ids.add(str(rel["record_id"]))
-                except json.JSONDecodeError, TypeError:
-                    pass
+        for (src_ids,) in assertion_rows:
+            if not src_ids:
+                continue
+            try:
+                ids = json.loads(src_ids)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(ids, list):
+                referenced_ids.update(str(record_id) for record_id in ids)
 
         # Load all records
         rows = db.execute(
@@ -685,7 +455,7 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
         deleted = 0
         for record_id, created_at, rowid in rows:
             # Check age
-            record_time = _parse_timestamp(created_at)
+            record_time = _parse_record_timestamp(created_at)
             if record_time is None or record_time >= cutoff:
                 continue
 
@@ -715,39 +485,3 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
     return handle
 
 
-def make_list_conflicted_summaries_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for list_conflicted_summaries operation.
-
-    Returns the id and main point of every summary whose derived
-    revalidation status is ``conflicted``, using the same read-path
-    derivation the ranker and evidence chain use. Read-only; it never
-    mutates a summary.
-
-    Args:
-        db: DatabaseManager instance.
-
-    Returns:
-        Async handler function.
-    """
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Return conflicted summaries as {summary_id, main_point} pairs."""
-        from backend.memory.summary_distiller.store import (
-            _build_revalidated_distillation_record,
-            _load_distillation_rows,
-        )
-
-        conflicted = [
-            {
-                "summary_id": str(record["id"]),
-                "main_point": str(record.get("main_point") or ""),
-            }
-            for record in (
-                _build_revalidated_distillation_record(db, row)
-                for row in _load_distillation_rows(db, None)
-            )
-            if str(record["revalidation_status"]) == "conflicted"
-        ]
-        return {"summaries": conflicted}
-
-    return handle

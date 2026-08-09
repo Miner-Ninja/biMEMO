@@ -82,12 +82,8 @@ class LoadContextParams(ForbidExtraParams):
 
     session_id: str
     conversation_id: str = Field(min_length=1)
-    summary_limit: int = 10
     record_limit: int = 20
     message_limit: int = 50
-    message_search_limit: int = 10
-    query: str | None = None
-    query_embedding: list[float] | None = None
 
 
 class SaveConversationSummaryParams(ForbidExtraParams):
@@ -196,13 +192,6 @@ class WriteSummaryProcessingDiagnosticParams(ForbidExtraParams):
     detail: str = ""
 
 
-class ConflictedSummaryFlagParams(ForbidExtraParams):
-    """Parameters for conflicted_summary_flag operation."""
-
-    summary_id: str
-    main_point: str = ""
-
-
 class ListRecordProcessingDiagnosticsParams(LimitOnlyParams):
     """Parameters for list_record_processing_diagnostics operation."""
 
@@ -230,6 +219,14 @@ class FetchUnextractedRecordsParams(ForbidExtraParams):
     """Parameters for fetch_unextracted_records operation."""
 
     limit: int = 20
+
+
+class PruneGraphParams(ForbidExtraParams):
+    """Parameters for prune_graph operation."""
+
+
+class GetGraphStatsParams(ForbidExtraParams):
+    """Parameters for get_graph_stats operation."""
 
 
 class SaveEntityParams(ForbidExtraParams):
@@ -289,10 +286,6 @@ class FindGraphEntryPointsParams(ForbidExtraParams):
     limit: int = 20
 
 
-class MigrateSummariesToAssertionsParams(ForbidExtraParams):
-    """Parameters for migrate_summaries_to_assertions operation."""
-
-
 class SaveQueuedRecordParams(ForbidExtraParams):
     """Parameters for save_queued_record operation."""
 
@@ -334,54 +327,10 @@ class SaveRecordParams(ForbidExtraParams):
     tainted: bool = False
 
 
-class RecordRelationParams(ForbidExtraParams):
-    """Typed relation between a summary and a source record."""
-
-    record_id: str
-    relation: str
-
-
-class SaveSummaryParams(ForbidExtraParams):
-    """Parameters for save_summary operation."""
-
-    main_point: str
-    based_on: list[str] = Field(default_factory=list)
-    trust_level: str = ""
-    summary_scope: str = "long_term"
-    source_record_ids: list[str] = Field(default_factory=list)
-    record_relations: list[RecordRelationParams] = Field(default_factory=list)
-
-
-class MergeSummarySourcesParams(ForbidExtraParams):
-    """Parameters for merge_summary_sources operation."""
-
-    summary_id: str
-    main_point: str = ""
-    based_on: list[str] = Field(default_factory=list)
-    trust_level: str = ""
-    summary_scope: str = "long_term"
-    trust_level_score: int | None = None
-    source_record_ids: list[str] = Field(default_factory=list)
-    record_relations: list[RecordRelationParams] = Field(default_factory=list)
-
-
-class PruneStaleSummariesParams(ForbidExtraParams):
-    """Parameters for prune_stale_summaries operation."""
-
-    grace_days: int
-
-
 class PruneUnlinkedRecordsParams(ForbidExtraParams):
     """Parameters for prune_unlinked_records operation."""
 
     age_days: int
-
-
-class ListSummariesParams(LimitOffsetParams):
-    """Parameters for list_summaries operation."""
-
-    limit: int = 100
-    offset: int = 0
 
 
 class CreateConversationParams(ForbidExtraParams):
@@ -513,12 +462,6 @@ class StoreEmbeddingParams(ForbidExtraParams):
 
     record_id: str
     embedding: list[float]
-
-
-class FetchUntaintedRecordsParams(LimitOnlyParams):
-    """Parameters for fetch_untainted_records operation."""
-
-    limit: int = 50
 
 
 class CountSummariesParams(ForbidExtraParams):
@@ -675,13 +618,6 @@ class ListTaskRunsParams(ForbidExtraParams):
 
 class ListRecordsParams(LimitOffsetParams):
     """Parameters for list_records operation."""
-
-    limit: int = 50
-    offset: int = 0
-
-
-class ListSummariesFullParams(LimitOffsetParams):
-    """Parameters for list_summaries_full operation."""
 
     limit: int = 50
     offset: int = 0

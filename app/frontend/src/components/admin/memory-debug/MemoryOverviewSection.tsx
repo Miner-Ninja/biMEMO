@@ -23,19 +23,17 @@ function buildAttentionItems(
   const items: string[] = [];
 
   if (quality) {
-    if (quality.issues.length > 0) {
+    if (quality.orphan_entities > 0) {
+      items.push(`${quality.orphan_entities} graph entities have no assertions yet.`);
+    }
+    if (quality.assertions_with_missing_evidence > 0) {
       items.push(
-        `${quality.issues.length} quality issue${quality.issues.length === 1 ? "" : "s"} need review.`
+        `${quality.assertions_with_missing_evidence} assertions cite records that were already pruned.`
       );
     }
-    if (quality.records.orphaned > 0) {
+    if (quality.duplicate_assertion_texts > 0) {
       items.push(
-        `${quality.records.orphaned} records are not linked back to source messages.`
-      );
-    }
-    if (quality.summaries.orphaned_links > 0) {
-      items.push(
-        `${quality.summaries.orphaned_links} summary links are missing their record support.`
+        `${quality.duplicate_assertion_texts} assertions repeat the same statement text.`
       );
     }
   }
@@ -111,9 +109,9 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
 
   const attentionItems = buildAttentionItems(quality, diagnostics);
   const qualityTone =
-    quality.quality_score >= 85
+    quality.quality_score * 100 >= 85
       ? "text-emerald-400"
-      : quality.quality_score >= 65
+      : quality.quality_score * 100 >= 65
         ? "text-amber-400"
         : "text-red-400";
 
@@ -135,21 +133,21 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
           accentClassName="bg-amber-400/80"
         />
         <SummaryCard
-          title="Summaries"
-          value={pipeline.summaries}
-          detail="Higher-level memory summaries built from records."
+          title="Assertions"
+          value={pipeline.assertions}
+          detail="Graph knowledge assertions extracted from records."
           toneClassName="text-violet-400"
           accentClassName="bg-violet-400/80"
         />
         <SummaryCard
           title="Quality score"
-          value={quality.quality_score}
+          value={`${Math.round(quality.quality_score * 100)}%`}
           detail="Overall memory health based on links and coverage."
           toneClassName={qualityTone}
           accentClassName={
-            quality.quality_score >= 85
+            quality.quality_score * 100 >= 85
               ? "bg-emerald-400/80"
-              : quality.quality_score >= 65
+              : quality.quality_score * 100 >= 65
                 ? "bg-amber-400/80"
                 : "bg-red-400/80"
           }
@@ -171,7 +169,7 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
                 {attentionItems.map((item) => (
                   <div
                     key={item}
-                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200"
+                    className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-200"
                   >
                     {item}
                   </div>
@@ -235,28 +233,26 @@ export function MemoryOverviewSection({ refreshToken }: { refreshToken: number }
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Record provenance coverage</span>
-              <span>{Math.round(quality.records.provenance_coverage * 100)}%</span>
+              <span className="text-muted-foreground">Valid assertions</span>
+              <span>{quality.assertions_valid}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Invalidated assertions</span>
+              <span>{quality.assertions_invalidated}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                Summaries with live record support
+                Assertions citing pruned records
               </span>
-              <span>{Math.round(quality.summaries.live_support_coverage * 100)}%</span>
+              <span>{quality.assertions_with_missing_evidence}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Broken summary links</span>
-              <span>{quality.summaries.orphaned_links}</span>
+              <span className="text-muted-foreground">Orphan entities</span>
+              <span>{quality.orphan_entities}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Action item coverage</span>
-              <span>{Math.round(quality.records.action_item_coverage * 100)}%</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                Duplicate summary main points
-              </span>
-              <span>{quality.summaries.duplicate_main_points}</span>
+              <span className="text-muted-foreground">Duplicate assertion texts</span>
+              <span>{quality.duplicate_assertion_texts}</span>
             </div>
           </CardContent>
         </Card>

@@ -22,9 +22,6 @@ from backend.memory.context_builder.zone_builder import (
     evict_oldest_messages,
 )
 from backend.memory.storage.pruning import (
-    OUTDATED_GRACE_DAYS,
-    RECORD_PRUNE_AGE_DAYS,
-    prune_stale_summaries,
     prune_unlinked_records,
     run_pruning_cycle,
 )
@@ -456,51 +453,25 @@ class TestCompressEvictedIterativeUpdate:
 
 
 class TestPruning:
-    """Tests for memory pruning operations."""
-
-    @pytest.mark.asyncio
-    async def test_prune_stale_summaries_calls_operation(self) -> None:
-        """Verifies correct DB operation name and params for summary pruning."""
-        db_client = AsyncMock()
-        db_client.send_operation.return_value = {"deleted": 5}
-
-        count = await prune_stale_summaries(db_client)
-
-        assert count == 5
-        db_client.send_operation.assert_called_once()
-        call_args = db_client.send_operation.call_args
-        assert call_args[0][0] == "prune_stale_summaries"
-        params = call_args[0][1]
-        assert params["grace_days"] == OUTDATED_GRACE_DAYS
+    """Pruning cycle wiring (graph era)."""
 
     @pytest.mark.asyncio
     async def test_prune_unlinked_records_calls_operation(self) -> None:
         """Verifies correct DB operation name and params for record pruning."""
         db_client = AsyncMock()
-        db_client.send_operation.return_value = {"deleted": 3}
-
+        db_client.prune_unlinked_records.return_value = {"deleted": 3}
         count = await prune_unlinked_records(db_client)
-
         assert count == 3
-        db_client.send_operation.assert_called_once_with(
-            "prune_unlinked_records",
-            {"age_days": RECORD_PRUNE_AGE_DAYS},
-        )
+        db_client.prune_unlinked_records.assert_awaited_once_with(age_days=60)
 
     @pytest.mark.asyncio
     async def test_run_pruning_cycle_returns_counts(self) -> None:
-        """Prune and surface run; counts returned as a three-tuple."""
+        """Cycle returns (assertions_deleted, records_deleted, entities_deleted)."""
         db_client = AsyncMock()
-        db_client.send_operation.side_effect = [
-            {"deleted": 2},  # prune_stale_summaries
-            {"deleted": 7},  # prune_unlinked_records
-            {"summaries": []},  # list_conflicted_summaries (none)
-        ]
-
-        summaries_deleted, records_deleted, conflicts = await run_pruning_cycle(
-            db_client
-        )
-
-        assert summaries_deleted == 2
-        assert records_deleted == 7
-        assert conflicts == 0
+        db_client.prune_unlinked_records.return_value = {"deleted": 2}
+        db_client.prune_graph.return_value = {
+            "assertions_deleted": 1,
+            "entities_deleted": 4,
+        }
+        result = await run_pruning_cycle(db_client)
+        assert result == (1, 2, 4)

@@ -8,7 +8,6 @@ Also registers ToolDefinition objects in the ToolRegistry.
 import logging
 from typing import TYPE_CHECKING
 
-from backend.memory.evidence_chain import load_evidence_bundle_for_query
 from backend.memory.evidence_recall import is_evidence_recall_question
 from backend.tools.builtin import (
     CodeSearchInput,
@@ -406,21 +405,10 @@ async def _build_fast_recall_result(
     its content lives in the graph. Records and messages remain the
     episodic tier in both modes.
     """
-    from backend.security.policy import get_policy
+    from backend.memory.graph_recall import build_graph_recall_lines
 
-    graph_enabled = get_policy().get_bool("graph_memory.enabled")
-    graph_lines: list[str] = []
+    graph_lines = await build_graph_recall_lines(db_client, query)
     summaries: list[dict[str, object]] = []
-    if graph_enabled:
-        from backend.memory.graph_recall import build_graph_recall_lines
-
-        graph_lines = await build_graph_recall_lines(db_client, query)
-    else:
-        summaries = await db_client.fulltext_search(
-            query=query,
-            table="summaries",
-            limit=MEMORY_RECALL_RESULT_LIMIT,
-        )
     records = await db_client.fulltext_search(
         query=query,
         table="records",
@@ -499,14 +487,9 @@ async def _build_evidence_recall_result(
     max_message_chars: int,
 ) -> str:
     """Run source-backed memory recall and fall back to fast recall if needed."""
-    from backend.security.policy import get_policy
+    from backend.memory.graph_recall import load_graph_evidence_bundle
 
-    if get_policy().get_bool("graph_memory.enabled"):
-        from backend.memory.graph_recall import load_graph_evidence_bundle
-
-        evidence_bundle = await load_graph_evidence_bundle(db_client, query)
-    else:
-        evidence_bundle = await load_evidence_bundle_for_query(query, db_client)
+    evidence_bundle = await load_graph_evidence_bundle(db_client, query)
     if evidence_bundle is None:
         return await _build_fast_recall_result(
             db_client=db_client,
