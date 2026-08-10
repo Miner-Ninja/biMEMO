@@ -33,6 +33,7 @@ LLM_CREDENTIAL_FIELDS = (
     "base_url",
     "dialog_recorder_base_url",
     "embedding_model",
+    "embedding_base_url",
     "num_ctx",
 )
 
