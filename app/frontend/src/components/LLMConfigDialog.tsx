@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { TranslationKey } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
@@ -59,6 +59,26 @@ export function LLMConfigDialog({
   const [testOk, setTestOk] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const loadModelsWith = useCallback(
+    async (opts: {
+      service_type: ProviderType;
+      api_key?: string;
+      base_url?: string;
+    }) => {
+      setLoadingModels(true);
+      try {
+        const result = await getModelList(opts);
+        setModels(result.models);
+      } catch {
+        // silent
+      } finally {
+        setLoadingModels(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (open) {
@@ -84,28 +104,29 @@ export function LLMConfigDialog({
       setModels([]);
       setTestResult("");
       setTestOk(false);
+      setShowAdvanced(false);
+      // Preload the model list up front so every model field (chat, dialog
+      // recorder, embedding) offers a pick-list without a manual click.
+      const activeType = editConfig?.service_type ?? "openrouter";
+      if (activeType === "ollama" || activeType === "custom") {
+        void loadModelsWith({
+          service_type: activeType,
+          base_url: editConfig?.base_url || undefined,
+        });
+      }
     }
-  }, [open, editConfig]);
+  }, [open, editConfig, loadModelsWith]);
 
   const showApiKey = serviceType === "openrouter" || serviceType === "custom";
   const showBaseUrl = serviceType === "ollama" || serviceType === "custom";
   const providerSubtitleKey = PROVIDER_SUBTITLE_KEYS[serviceType];
 
-  const loadModels = async () => {
-    setLoadingModels(true);
-    try {
-      const result = await getModelList({
-        service_type: serviceType,
-        api_key: apiKey || undefined,
-        base_url: baseUrl || undefined,
-      });
-      setModels(result.models);
-    } catch {
-      // silent
-    } finally {
-      setLoadingModels(false);
-    }
-  };
+  const loadModels = () =>
+    loadModelsWith({
+      service_type: serviceType,
+      api_key: apiKey || undefined,
+      base_url: baseUrl || undefined,
+    });
 
   const handleTest = async () => {
     setTesting(true);
@@ -237,42 +258,53 @@ export function LLMConfigDialog({
                 />
               </div>
 
-              {(serviceType === "ollama" || serviceType === "custom") && (
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">
-                    {t("admin.dialogRecorderBaseUrl")}{" "}
-                    <span className="text-muted-foreground font-normal">
-                      {t("admin.optional")}
-                    </span>
-                  </label>
-                  <Input
-                    placeholder={
-                      serviceType === "ollama"
-                        ? "http://ollama-memory:11434"
-                        : "http://vllm-dialog-recorder:8000"
-                    }
-                    value={dialogRecorderBaseUrl}
-                    onChange={(e) => setDialogRecorderBaseUrl(e.target.value)}
-                  />
-                </div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showAdvanced ? "▾ " : "▸ "}
+                {t("admin.advancedSettings")}
+              </button>
+
+              {showAdvanced && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">
+                      {t("admin.dialogRecorderBaseUrl")}{" "}
+                      <span className="text-muted-foreground font-normal">
+                        {t("admin.optional")}
+                      </span>
+                    </label>
+                    <Input
+                      placeholder={
+                        serviceType === "ollama"
+                          ? "http://ollama-memory:11434"
+                          : "http://vllm-dialog-recorder:8000"
+                      }
+                      value={dialogRecorderBaseUrl}
+                      onChange={(e) => setDialogRecorderBaseUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">
+                      {t("admin.embeddingBaseUrl")}{" "}
+                      <span className="text-muted-foreground font-normal">
+                        {t("admin.optional")}
+                      </span>
+                    </label>
+                    <Input
+                      placeholder={
+                        serviceType === "ollama"
+                          ? "http://ollama-memory:11434"
+                          : "http://vllm-embeddings:8000"
+                      }
+                      value={embeddingBaseUrl}
+                      onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
+                    />
+                  </div>
+                </>
               )}
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  {t("admin.embeddingBaseUrl")}{" "}
-                  <span className="text-muted-foreground font-normal">
-                    {t("admin.optional")}
-                  </span>
-                </label>
-                <Input
-                  placeholder={
-                    serviceType === "ollama"
-                      ? "http://ollama-memory:11434"
-                      : "http://vllm-embeddings:8000"
-                  }
-                  value={embeddingBaseUrl}
-                  onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
-                />
-              </div>
             </>
           )}
 
@@ -320,12 +352,22 @@ export function LLMConfigDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium">
-              {t("admin.embeddingModel")}{" "}
-              <span className="text-muted-foreground font-normal">
-                {t("admin.optional")}
-              </span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                {t("admin.embeddingModel")}{" "}
+                <span className="text-muted-foreground font-normal">
+                  {t("admin.optional")}
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={loadModels}
+                disabled={loadingModels}
+                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                {loadingModels ? t("common.loading") : t("admin.loadModels")}
+              </button>
+            </div>
             <ModelCombobox
               value={embeddingModel}
               onChange={setEmbeddingModel}

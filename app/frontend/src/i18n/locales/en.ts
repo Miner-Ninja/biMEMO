@@ -525,6 +525,7 @@ const en = {
     embeddingModel: "Embedding Model",
     embeddingModelPlaceholder: "Leave blank to disable vector search",
     embeddingBaseUrl: "Embedding Base URL",
+    advancedSettings: "Advanced (separate hosts)",
     saveConfigFailed: "Failed to save configuration",
     saved: "Saved",
     saveFailed: "Save failed",

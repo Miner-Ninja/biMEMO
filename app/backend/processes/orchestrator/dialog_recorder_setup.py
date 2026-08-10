@@ -337,6 +337,7 @@ def _build_dialog_recorder_provider(
         return OllamaProvider(
             base_url=llm_config.get("base_url", "http://ollama:11434"),
             dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
+            embedding_base_url=llm_config.get("embedding_base_url") or None,
             primary_model=llm_config.get("model", ""),
             dialog_recorder_model=dialog_recorder_model,
             embedding_model=embedding_model,

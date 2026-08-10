@@ -683,6 +683,50 @@ class TestEmbed:
             await provider.embed("test")
         await provider.close()
 
+    async def test_embed_uses_dedicated_embedding_host(self):
+        """llm-embedding-field — embed() targets the embedding host when set."""
+
+        async def main_handler(request):
+            raise AssertionError("embed must not hit the main chat host")
+
+        async def embedding_handler(request):
+            assert str(request.url) == "http://embed-host:11434/api/embed"
+            return httpx.Response(200, json={"embeddings": [[0.9, 0.8]]})
+
+        provider = make_provider(httpx.MockTransport(main_handler))
+        provider._embedding_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(embedding_handler),
+            base_url="http://embed-host:11434",
+        )
+
+        vec = await provider.embed("test text")
+        assert vec == [0.9, 0.8]
+        await provider.close()
+
+    def test_embedding_client_built_for_separate_host(self):
+        """llm-embedding-field — a distinct embedding_base_url gets its own client."""
+        provider = OllamaProvider(
+            base_url="http://localhost:11434",
+            embedding_base_url="http://embed-host:11434",
+            primary_model="qwen3:8b",
+            dialog_recorder_model="qwen3:1.7b",
+            compute_config=ComputeConfig(mode=ComputeMode.GPU_ONLY, gpu_layers=0),
+            capabilities_registry=CapabilitiesRegistry(),
+        )
+        assert provider._embedding_client is not None
+
+    def test_no_embedding_client_when_same_as_base_url(self):
+        """llm-embedding-field — no extra client when the host matches base_url."""
+        provider = OllamaProvider(
+            base_url="http://localhost:11434",
+            embedding_base_url="http://localhost:11434",
+            primary_model="qwen3:8b",
+            dialog_recorder_model="qwen3:1.7b",
+            compute_config=ComputeConfig(mode=ComputeMode.GPU_ONLY, gpu_layers=0),
+            capabilities_registry=CapabilitiesRegistry(),
+        )
+        assert provider._embedding_client is None
+
 
 class TestComputeOptions:
     """Tests for compute mode options."""
