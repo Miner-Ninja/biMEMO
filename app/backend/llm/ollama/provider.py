@@ -79,6 +79,9 @@ class OllamaProvider:
         base_url: Ollama API base URL for primary chat work.
         dialog_recorder_base_url: Optional Ollama API base URL
             for Dialog Recorder/Summary Distiller work.
+        embedding_base_url: Optional Ollama API base URL for the embedding
+            endpoint. When set, embed() targets this host instead of
+            base_url, so embeddings can run on a separate Ollama instance.
         primary_model: Model name for chat completion.
         dialog_recorder_model: Model name for Dialog Recorder tasks.
         compute_config: GPU/CPU compute configuration.
@@ -94,11 +97,17 @@ class OllamaProvider:
     compute_config: ComputeConfig
     capabilities_registry: CapabilitiesRegistry
     dialog_recorder_base_url: str | None = None
+    embedding_base_url: str | None = None
     embedding_model: str = ""
     num_ctx: int | None = None
     timeout: float = LLM_CALL_TIMEOUT
     _client: httpx.AsyncClient = field(init=False, repr=False)
     _dialog_recorder_client: httpx.AsyncClient | None = field(
+        init=False,
+        repr=False,
+        default=None,
+    )
+    _embedding_client: httpx.AsyncClient | None = field(
         init=False,
         repr=False,
         default=None,
@@ -114,6 +123,12 @@ class OllamaProvider:
         if recorder_url and recorder_url != self.base_url:
             self._dialog_recorder_client = httpx.AsyncClient(
                 base_url=self.dialog_recorder_base_url,
+                timeout=httpx.Timeout(self.timeout),
+            )
+        embedding_url = self.embedding_base_url
+        if embedding_url and embedding_url != self.base_url:
+            self._embedding_client = httpx.AsyncClient(
+                base_url=embedding_url,
                 timeout=httpx.Timeout(self.timeout),
             )
 
@@ -210,6 +225,8 @@ class OllamaProvider:
         await self._client.aclose()
         if self._dialog_recorder_client is not None:
             await self._dialog_recorder_client.aclose()
+        if self._embedding_client is not None:
+            await self._embedding_client.aclose()
 
     async def resolve_capabilities(self, model: str) -> ModelCapabilities:
         """Resolve the available context window for ``model``.
@@ -497,9 +514,12 @@ class OllamaProvider:
         """
         target_model = model or self.embedding_model or self.dialog_recorder_model
         payload = {"model": target_model, "input": text}
+        # A dedicated embedding host wins; otherwise embeddings share the
+        # main chat client (they never ride the dialog-recorder client).
+        embedding_client = self._embedding_client or self._client
         try:
             data = await self._post_json(
-                client=self._get_client_for_model(target_model),
+                client=embedding_client,
                 path="/api/embed",
                 payload=payload,
             )
