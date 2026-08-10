@@ -36,7 +36,7 @@ describe("LLMConfigDialog embedding fields", () => {
     });
   });
 
-  it("S1.2 — an existing embedding model pre-fills the field", () => {
+  it("S1.2 — an existing embedding model pre-fills the field", async () => {
     render(
       <LLMConfigDialog
         open
@@ -54,7 +54,7 @@ describe("LLMConfigDialog embedding fields", () => {
       />
     );
     expect(
-      screen.getByDisplayValue("nomic-embed-text") as HTMLInputElement
+      (await screen.findByDisplayValue("nomic-embed-text")) as HTMLInputElement
     ).toBeTruthy();
   });
 });

@@ -530,6 +530,7 @@ const ru = {
     embeddingModel: "Модель эмбеддингов",
     embeddingModelPlaceholder: "Пусто — векторный поиск выключен",
     embeddingBaseUrl: "Базовый URL эмбеддингов",
+    advancedSettings: "Дополнительно (отдельные хосты)",
     saveConfigFailed: "Не удалось сохранить конфигурацию",
     saved: "Сохранено",
     saveFailed: "Не удалось сохранить",
