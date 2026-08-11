@@ -43,7 +43,13 @@ export function formatContent(content: unknown): {
     }
     return { text: textParts.join(" "), hasImages: imageCount > 0, imageCount };
   }
-  return { text: JSON.stringify(content), hasImages: false, imageCount: 0 };
+  // JSON.stringify(undefined) yields undefined (not a string) — an
+  // entry with no content must not crash the whole page.
+  return {
+    text: JSON.stringify(content) ?? "",
+    hasImages: false,
+    imageCount: 0,
+  };
 }
 
 /** Parse a metadata payload into a plain object. */
