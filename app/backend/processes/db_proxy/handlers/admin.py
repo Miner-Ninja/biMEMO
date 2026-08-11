@@ -17,12 +17,14 @@ from ..params import (
     CountMemoryEntriesParams,
     DeleteAvatarParams,
     GetAvatarParams,
+    GetLoopHeartbeatsParams,
     GetRecentRateLimitCallsParams,
     GetUiSettingsParams,
     LimitOffsetParams,
     ListAuditLogParams,
     ListMessagesParams,
     ListRecordsParams,
+    RecordLoopHeartbeatParams,
     RecordRateLimitCallParams,
     StoreAvatarParams,
     StorePasswordHashParams,
@@ -264,11 +266,11 @@ def make_get_stats_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-def make_create_backup_handler(
+def perform_backup(
     databases: dict[str, DatabaseManager],
     database_path: str,
-) -> OperationHandler:
-    """Create handler for create_backup operation.
+) -> dict[str, str]:
+    """Write consistent encrypted copies of every open database.
 
     Uses ``VACUUM INTO`` on each open database, which writes a consistent,
     still-encrypted copy through the live connection — unlike a raw file
@@ -279,22 +281,123 @@ def make_create_backup_handler(
             (e.g. "core", "runtime", "diagnostics").
         database_path: Path of the core database file; backups land in a
             ``backups/`` directory next to it.
+
+    Returns:
+        Written backup file paths keyed by database short name.
+    """
+    backup_dir = os.path.join(os.path.dirname(database_path), "backups")
+    os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
+    backup_paths: dict[str, str] = {}
+    for name, database in databases.items():
+        backup_path = os.path.join(
+            backup_dir,
+            f"backup_{name}_{timestamp}.db",
+        )
+        database.execute("VACUUM INTO ?", (backup_path,))
+        backup_paths[name] = backup_path
+    return backup_paths
+
+
+def prune_old_backups(
+    databases: dict[str, DatabaseManager],
+    database_path: str,
+    keep: int,
+) -> int:
+    """Delete the oldest backup files beyond ``keep`` per database name.
+
+    Args:
+        databases: Open databases (their short names select the files).
+        database_path: Path of the core database file (locates backups/).
+        keep: Newest copies to retain per database name.
+
+    Returns:
+        Number of files deleted.
+    """
+    backup_dir = os.path.join(os.path.dirname(database_path), "backups")
+    if not os.path.isdir(backup_dir):
+        return 0
+    deleted = 0
+    for name in databases:
+        prefix = f"backup_{name}_"
+        files = sorted(
+            entry
+            for entry in os.listdir(backup_dir)
+            if entry.startswith(prefix) and entry.endswith(".db")
+        )
+        for stale in files[:-keep] if keep > 0 else files:
+            os.remove(os.path.join(backup_dir, stale))
+            deleted += 1
+    return deleted
+
+
+def make_create_backup_handler(
+    databases: dict[str, DatabaseManager],
+    database_path: str,
+) -> OperationHandler:
+    """Create handler for create_backup operation.
+
+    Args:
+        databases: Open DatabaseManager instances keyed by short name.
+        database_path: Path of the core database file.
     """
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Write consistent encrypted copies of every open database."""
-        backup_dir = os.path.join(os.path.dirname(database_path), "backups")
-        os.makedirs(backup_dir, mode=0o700, exist_ok=True)
-        timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-        backup_paths: dict[str, str] = {}
-        for name, database in databases.items():
-            backup_path = os.path.join(
-                backup_dir,
-                f"backup_{name}_{timestamp}.db",
+        return {"backup_paths": perform_backup(databases, database_path)}
+
+    return handle
+
+
+# Loop names allowed to report liveness; bounds the metadata key space.
+LOOP_HEARTBEAT_NAMES = {"pruning", "graph_extractor", "backup", "reembed"}
+LOOP_HEARTBEAT_KEY_PREFIX = "loop_heartbeat_"
+
+
+def make_record_loop_heartbeat_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for record_loop_heartbeat operation (Socket A).
+
+    Background loops report a successful pass so the health view can
+    show when each last worked instead of failures dying in the log.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Store the current time under the loop's heartbeat key."""
+        p = validate_params(params, RecordLoopHeartbeatParams)
+        if p.loop_name not in LOOP_HEARTBEAT_NAMES:
+            return {"ok": False, "note": f"Unknown loop: {p.loop_name}"}
+        db.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+            (
+                LOOP_HEARTBEAT_KEY_PREFIX + p.loop_name,
+                datetime.now(tz=UTC).isoformat().encode(),
+            ),
+        )
+        db.commit()
+        return {"ok": True}
+
+    return handle
+
+
+def make_get_loop_heartbeats_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for get_loop_heartbeats operation (Socket B)."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return last-success timestamps of the background loops."""
+        validate_params(params, GetLoopHeartbeatsParams)
+        rows = db.execute(
+            "SELECT key, value FROM metadata WHERE key LIKE ?",
+            (LOOP_HEARTBEAT_KEY_PREFIX + "%",),
+        ).fetchall()
+        heartbeats = {
+            row[0][len(LOOP_HEARTBEAT_KEY_PREFIX):]: (
+                row[1].decode() if isinstance(row[1], bytes) else str(row[1])
             )
-            database.execute("VACUUM INTO ?", (backup_path,))
-            backup_paths[name] = backup_path
-        return {"backup_paths": backup_paths}
+            for row in rows
+        }
+        return {"heartbeats": heartbeats}
 
     return handle
 
@@ -563,6 +666,8 @@ def make_count_memory_entries_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
+# Tainted records and invalidated (forgotten) assertions must never
+# surface through the MCP read surface, matching the FTS/vector filters.
 RECENT_MEMORY_SQL = """
     SELECT 'message' AS table_type, id, role, content, conversation_id,
            created_at, meta
@@ -571,11 +676,13 @@ RECENT_MEMORY_SQL = """
     SELECT 'record' AS table_type, id, NULL AS role, summary AS content,
            conversation_id, created_at, NULL AS meta
     FROM records
+    WHERE tainted = 0
     UNION ALL
     SELECT 'assertion' AS table_type, id, NULL AS role,
            assertion_text AS content, NULL AS conversation_id,
            created_at, NULL AS meta
     FROM assertions
+    WHERE invalid_from IS NULL
     ORDER BY created_at DESC
 """
 
@@ -644,7 +751,7 @@ def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
             row = db.execute(
                 "SELECT id, summary, key_facts, action_items, conversation_id, "
                 "created_at, tainted, source_message_ids, memory_kinds "
-                "FROM records WHERE id = ?",
+                "FROM records WHERE id = ? AND tainted = 0",
                 (entry_id,),
             ).fetchone()
             if row is None:
@@ -656,7 +763,7 @@ def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
             "SELECT id, subject_entity_id, relation, object_entity_id, "
             "object_value, assertion_text, trust_level, assertion_scope, "
             "valid_from, invalid_from, source_record_ids, created_at "
-            "FROM assertions WHERE id = ?",
+            "FROM assertions WHERE id = ? AND invalid_from IS NULL",
             (entry_id,),
         ).fetchone()
         if row is None:

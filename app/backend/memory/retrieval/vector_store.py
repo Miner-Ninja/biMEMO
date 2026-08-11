@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 VECTOR_TABLE_NAME = "record_embeddings"
 EMBEDDING_MODEL_METADATA_KEY = "embedding_model"
 EMBEDDING_DIMENSIONS_METADATA_KEY = "embedding_dimensions"
+EMBEDDING_METRIC_METADATA_KEY = "embedding_distance_metric"
+# Embeddings compare by angle, not magnitude; without an explicit metric
+# vec0 defaults to L2. The stored metadata value lets init_vector_table
+# rebuild tables created before the metric was pinned.
+VECTOR_DISTANCE_METRIC = "cosine"
 
 # --- SQL templates ---
 INSERT_SQL = "INSERT INTO record_embeddings (record_id, embedding) VALUES (?, ?)"
@@ -82,7 +87,8 @@ def create_vector_table(db: DatabaseManager, dimensions: int) -> None:
         f"CREATE VIRTUAL TABLE IF NOT EXISTS {VECTOR_TABLE_NAME} "
         f"USING vec0("
         f"record_id TEXT PRIMARY KEY, "
-        f"embedding float[{dimensions}])"
+        f"embedding float[{dimensions}] "
+        f"distance_metric={VECTOR_DISTANCE_METRIC})"
     )
     db.execute(sql)
     db.commit()
@@ -119,6 +125,17 @@ def get_embedding_metadata(db: DatabaseManager) -> tuple[str | None, int | None]
     return model, dimensions
 
 
+def get_embedding_metric(db: DatabaseManager) -> str | None:
+    """Read the stored vector distance metric from metadata.
+
+    Returns:
+        The metric name, or None for tables created before the metric
+        was pinned (those were built with the vec0 default, L2).
+    """
+    metric_value = _metadata_value(db, EMBEDDING_METRIC_METADATA_KEY)
+    return metric_value.decode() if metric_value is not None else None
+
+
 def set_embedding_metadata(db: DatabaseManager, model: str, dimensions: int) -> None:
     """Store the embedding model name and dimensions in metadata.
 
@@ -132,6 +149,11 @@ def set_embedding_metadata(db: DatabaseManager, model: str, dimensions: int) -> 
         db,
         EMBEDDING_DIMENSIONS_METADATA_KEY,
         str(dimensions).encode(),
+    )
+    _set_metadata_value(
+        db,
+        EMBEDDING_METRIC_METADATA_KEY,
+        VECTOR_DISTANCE_METRIC.encode(),
     )
     db.commit()
 

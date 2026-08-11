@@ -669,6 +669,20 @@ class DBProxyClient:
         """Run one graph maintenance pass."""
         return await mem_ops.prune_graph(self)
 
+    async def prune_unlinked_records(
+        self,
+        age_days: int,
+    ) -> dict[str, object]:
+        """Delete old records that no assertion cites as evidence."""
+        return await mem_ops.prune_unlinked_records(self, age_days)
+
+    async def record_loop_heartbeat(
+        self,
+        loop_name: str,
+    ) -> dict[str, object]:
+        """Stamp a successful pass of one background loop."""
+        return await mem_ops.record_loop_heartbeat(self, loop_name)
+
     async def get_graph_stats(self) -> dict[str, object]:
         """Return the graph statistics snapshot."""
         return await mem_ops.get_graph_stats(self)

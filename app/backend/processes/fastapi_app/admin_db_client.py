@@ -489,6 +489,11 @@ class AdminDBClient(_BaseIPCClient):
         """
         return await self.send_operation("create_backup")
 
+    async def get_loop_heartbeats(self) -> dict[str, str]:
+        """Return last-success timestamps of the background loops."""
+        result = await self.send_operation("get_loop_heartbeats")
+        return result.get("heartbeats", {})
+
     async def get_memory_context_view(self) -> dict[str, Any]:
         """Return the memory context snapshot through DB proxy."""
         return await self.send_operation("get_memory_context_view")

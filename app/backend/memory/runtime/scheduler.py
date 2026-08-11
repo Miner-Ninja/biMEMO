@@ -11,6 +11,7 @@ Scheduler-backed memory work now runs through the DB proxy path only.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from enum import StrEnum
@@ -33,6 +34,67 @@ DISTILLER_POLL_INTERVAL_SECONDS = 3.0
 DISTILLER_IDLE_TRIGGER_THRESHOLD = 3
 DISTILLER_IDLE_SOURCE_MESSAGE_THRESHOLD = 12
 DISTILLER_STABLE_POLLS_REQUIRED = 2
+
+# A record whose extraction batches never produce a citing assertion
+# would otherwise be re-fetched (oldest-first) and re-sent to the LLM on
+# every trigger, forever. Mirror the recorder queue's retry bound. The
+# counter is in-process, so a stuck record costs at most this many LLM
+# batches per process lifetime.
+MAX_EXTRACTION_ATTEMPTS_PER_RECORD = 3
+_ATTEMPTS_MAP_PRUNE_SIZE = 1000
+
+
+class ExtractionAttemptTracker:
+    """Bound repeated graph-extraction attempts per record.
+
+    Attributes:
+        max_attempts: Attempts allowed before a record is set aside.
+    """
+
+    def __init__(
+        self,
+        max_attempts: int = MAX_EXTRACTION_ATTEMPTS_PER_RECORD,
+    ) -> None:
+        """Initialize an empty tracker.
+
+        Args:
+            max_attempts: Attempts allowed before a record is set aside.
+        """
+        self.max_attempts = max_attempts
+        self._attempts: dict[str, int] = {}
+
+    def _record_id(self, record: dict) -> str:
+        """Return the id of one fetched record row."""
+        return str(record.get("id", ""))
+
+    def eligible(self, records: list[dict]) -> list[dict]:
+        """Return the records still under the attempt bound."""
+        return [
+            record
+            for record in records
+            if self._attempts.get(self._record_id(record), 0)
+            < self.max_attempts
+        ]
+
+    def register_batch(self, records: list[dict]) -> None:
+        """Count one extraction attempt for every record in the batch.
+
+        Records that extract successfully become cited and are never
+        fetched again, so their counters simply go inert. The map is
+        trimmed to the currently fetched ids once it grows past
+        ``_ATTEMPTS_MAP_PRUNE_SIZE`` — still-uncited records are always
+        part of the current fetch, so live counters survive the trim.
+        """
+        for record in records:
+            record_id = self._record_id(record)
+            self._attempts[record_id] = self._attempts.get(record_id, 0) + 1
+        if len(self._attempts) > _ATTEMPTS_MAP_PRUNE_SIZE:
+            current_ids = {self._record_id(record) for record in records}
+            self._attempts = {
+                record_id: count
+                for record_id, count in self._attempts.items()
+                if record_id in current_ids
+            }
 
 
 class SchedulingMode(StrEnum):
@@ -370,13 +432,25 @@ async def run_graph_extractor_loop(
     logger.info("Graph extractor background loop started")
     previous_count: int | None = None
     stable_poll_count = 0
+    attempt_tracker = ExtractionAttemptTracker()
+    exhausted_logged_count = 0
     try:
         while True:
             await asyncio.sleep(DISTILLER_POLL_INTERVAL_SECONDS)
             await scheduler.wait_for_primary()
-            unextracted = await db_client.fetch_unextracted_records(
+            fetched = await db_client.fetch_unextracted_records(
                 limit=threshold,
             )
+            unextracted = attempt_tracker.eligible(fetched)
+            exhausted_count = len(fetched) - len(unextracted)
+            if exhausted_count > exhausted_logged_count:
+                logger.warning(
+                    "%d record(s) exceeded %d extraction attempts and are "
+                    "set aside until restart",
+                    exhausted_count,
+                    attempt_tracker.max_attempts,
+                )
+            exhausted_logged_count = exhausted_count
             unextracted_count = len(unextracted)
             source_message_coverage = _count_source_message_coverage(
                 unextracted,
@@ -391,6 +465,7 @@ async def run_graph_extractor_loop(
             previous_count = unextracted_count
             if not should_run:
                 continue
+            attempt_tracker.register_batch(unextracted)
             extraction_task = asyncio.create_task(
                 process_graph_extraction(
                     provider,
@@ -405,6 +480,15 @@ async def run_graph_extractor_loop(
                     extraction_task,
                     failure_log_message="Graph extraction failed",
                 )
+                if (
+                    extraction_task.done()
+                    and not extraction_task.cancelled()
+                    and extraction_task.exception() is None
+                ):
+                    with contextlib.suppress(Exception):
+                        await db_client.record_loop_heartbeat(
+                            "graph_extractor",
+                        )
             except asyncio.CancelledError:
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
@@ -441,6 +525,8 @@ async def run_pruning_loop(db_client: object) -> None:
                     records_deleted,
                     entities_deleted,
                 ) = await run_pruning_cycle(db_client)
+                with contextlib.suppress(Exception):
+                    await db_client.record_loop_heartbeat("pruning")
                 if assertions_deleted or records_deleted or entities_deleted:
                     logger.info(
                         "Maintenance cycle: %d assertions, %d records, "

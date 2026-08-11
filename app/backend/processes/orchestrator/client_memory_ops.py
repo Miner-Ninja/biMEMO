@@ -381,6 +381,28 @@ async def prune_graph(client: DBProxyClient) -> dict[str, Any]:
     return await client.send_operation("prune_graph")
 
 
+async def prune_unlinked_records(
+    client: DBProxyClient,
+    age_days: int,
+) -> dict[str, Any]:
+    """Delete old records that no assertion cites as evidence."""
+    return await client.send_operation(
+        "prune_unlinked_records",
+        {"age_days": age_days},
+    )
+
+
+async def record_loop_heartbeat(
+    client: DBProxyClient,
+    loop_name: str,
+) -> dict[str, Any]:
+    """Stamp a successful pass of one background loop."""
+    return await client.send_operation(
+        "record_loop_heartbeat",
+        {"loop_name": loop_name},
+    )
+
+
 async def get_graph_stats(client: DBProxyClient) -> dict[str, Any]:
     """Return the graph statistics snapshot."""
     return await client.send_operation("get_graph_stats")
