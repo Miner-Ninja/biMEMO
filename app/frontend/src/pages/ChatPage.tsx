@@ -124,6 +124,7 @@ type ConversationUpdatedEventPayload = {
   settings?: {
     show_thinking?: boolean;
     show_suggestions?: boolean;
+    thinking_enabled?: boolean;
   };
   processing_status?: "idle" | "active";
   processing_stage?: string;
@@ -422,7 +423,8 @@ export function ChatPage() {
   }, [urlConversationId, isReady, chats, activeChatId, switchChat, navigate]);
 
   const chatSettings = activeChat?.settings ?? DEFAULT_CHAT_SETTINGS;
-  const showThinking = chatSettings.showThinking;
+  // One switch: thinkingEnabled gates both generation and display.
+  const showThinking = chatSettings.thinkingEnabled;
   const showSuggestions = chatSettings.showSuggestions;
   const chatInputRef = useRef<ChatInputHandle>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
@@ -1021,6 +1023,7 @@ export function ChatPage() {
             ? {
                 showThinking: conversationEvent.settings.show_thinking ?? false,
                 showSuggestions: conversationEvent.settings.show_suggestions ?? true,
+                thinkingEnabled: conversationEvent.settings.thinking_enabled ?? true,
               }
             : undefined,
           processingStatus: conversationEvent?.processing_status,
@@ -1707,18 +1710,18 @@ export function ChatPage() {
 
   const handleToggleThinking = useCallback(async () => {
     if (!activeChatId) return;
-    const next = !showThinking;
+    const next = !chatSettings.thinkingEnabled;
     updateConversation(activeChatId, {
-      settings: { ...chatSettings, showThinking: next },
+      settings: { ...chatSettings, thinkingEnabled: next },
     });
     try {
-      await updateChatSettings(activeChatId, { show_thinking: next });
+      await updateChatSettings(activeChatId, { thinking_enabled: next });
     } catch {
       updateConversation(activeChatId, {
-        settings: { ...chatSettings, showThinking: !next },
+        settings: { ...chatSettings, thinkingEnabled: !next },
       });
     }
-  }, [activeChatId, showThinking, chatSettings, updateConversation]);
+  }, [activeChatId, chatSettings, updateConversation]);
 
   const handleToggleSuggestions = useCallback(async () => {
     if (!activeChatId) return;

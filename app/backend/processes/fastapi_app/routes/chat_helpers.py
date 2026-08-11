@@ -92,6 +92,9 @@ def chat_settings_from_raw(raw: dict[str, str]) -> ChatSettingsResponse:
         show_thinking=raw.get("show_thinking") == "1",
         # Suggestions default ON when unset (unlike thinking which defaults off).
         show_suggestions=raw.get("show_suggestions", "1") == "1",
+        # Reasoning generation defaults ON — matches provider behaviour
+        # before the toggle existed.
+        thinking_enabled=raw.get("thinking_enabled", "1") == "1",
     )
 
 

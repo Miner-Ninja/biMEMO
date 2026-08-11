@@ -172,6 +172,7 @@ const en = {
     sending: "Sending...",
     serverDisconnected: "Server disconnected. Reconnecting...",
     showThinking: "Show Thinking",
+    thinkingMode: "Thinking",
     skip: "Skip",
     stageCompleted: "completed",
     stageError: "error",

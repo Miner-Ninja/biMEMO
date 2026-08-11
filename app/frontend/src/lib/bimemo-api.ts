@@ -222,6 +222,8 @@ export class ApiError extends Error {
 export interface StoredChatSettings {
   show_thinking: boolean;
   show_suggestions: boolean;
+  /** Reasoning generation on/off; also gates thinking-block display. */
+  thinking_enabled: boolean;
 }
 
 export interface StoredConversation {

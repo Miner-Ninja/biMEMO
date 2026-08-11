@@ -173,6 +173,7 @@ const ru = {
     sending: "Отправка...",
     serverDisconnected: "Связь с сервером потеряна. Повторное подключение...",
     showThinking: "Показывать размышления",
+    thinkingMode: "Размышления",
     skip: "Пропустить",
     stageCompleted: "завершено",
     stageError: "ошибка",

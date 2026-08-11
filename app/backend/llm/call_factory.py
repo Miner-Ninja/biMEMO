@@ -33,6 +33,25 @@ logger = logging.getLogger(__name__)
 LLM_CALL_TIMEOUT_SECONDS = 120.0
 LLM_CALL_TIMEOUT = LLM_CALL_TIMEOUT_SECONDS
 
+# Per-turn reasoning switch. Set by the chat handler before a turn and
+# cleared in its finally block; provider clients read it when building
+# the request payload. A module-level holder is safe while the
+# orchestrator serves one chat request at a time (the IPC server rejects
+# a parallel one); if chats ever become concurrent, move this flag into
+# LLMCallOptions instead.
+_thinking_enabled: bool | None = None
+
+
+def set_thinking_enabled(value: bool | None) -> None:
+    """Set (or clear with None) the per-turn reasoning switch."""
+    global _thinking_enabled
+    _thinking_enabled = value
+
+
+def current_thinking_enabled() -> bool | None:
+    """Return the per-turn reasoning switch (None = provider default)."""
+    return _thinking_enabled
+
 
 @dataclass(frozen=True)
 class LLMToolCall:

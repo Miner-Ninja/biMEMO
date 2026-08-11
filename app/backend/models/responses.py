@@ -134,6 +134,7 @@ class ChatSettingsResponse(StrictResponseModel):
 
     show_thinking: bool = False
     show_suggestions: bool = True
+    thinking_enabled: bool = True
 
 
 class ConversationItem(StrictResponseModel):
