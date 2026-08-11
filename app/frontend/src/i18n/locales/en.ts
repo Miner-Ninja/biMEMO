@@ -532,7 +532,7 @@ const en = {
     recorderTabHint: "Empty fields reuse the Chat settings.",
     vectorsTabHint:
       "A separate host may serve embeddings; leave the model blank to disable vector search.",
-    modelsLoaded: "Models available: {{count}}",
+    modelsLoaded: "Models on this host: {{count}}",
     modelsListEmpty: "The server responded, but the model list is empty",
     modelsLoadFailed: "Could not load the model list — check the address",
     embeddingTestOk: "Embedding works — dimension {{dim}}",
