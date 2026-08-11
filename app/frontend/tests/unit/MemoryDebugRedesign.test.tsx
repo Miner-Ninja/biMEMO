@@ -117,8 +117,14 @@ function mockEndpoints() {
           mismatch_rows: 0,
           long_term_rows: 0,
         },
-        top_problems: [],
+        recent_hours: 24,
+        mismatch_labels: [],
+        final_intents: [],
+        fallback_reasons: [],
       });
+    }
+    if (url.startsWith("/admin/memory/route-diagnostics")) {
+      return Promise.resolve({ diagnostics: [] });
     }
     if (url.startsWith("/admin/memory/context")) {
       return Promise.resolve({
@@ -144,15 +150,16 @@ describe("memory-debug redesign", () => {
     mockEndpoints();
   });
 
-  it("S1.2 — section tabs switch the rendered section", async () => {
+  it("S1.2 — question tabs switch the rendered content", async () => {
     const user = userEvent.setup();
     withProviders(<MemoryDebugPage />);
-    // Overview is default; its quality card appears.
+    // "What's happening" is default; its quality card appears.
     await screen.findByText("Quality score");
-    const tab = screen.getByRole("tab", { name: "Memory data" });
-    await user.click(tab);
-    expect(tab).toHaveAttribute("aria-selected", "true");
-    // Memory data section defaults to the context snapshot.
+    // The context snapshot now lives under "Why it answered that".
+    await user.click(
+      await screen.findByRole("button", { name: "Why it answered that" })
+    );
+    await user.click(await screen.findByRole("button", { name: "Context snapshot" }));
     await screen.findByText("first-tier-entry");
   });
 

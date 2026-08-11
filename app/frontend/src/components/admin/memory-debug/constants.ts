@@ -1,6 +1,7 @@
 import type {
   DiagnosticsView,
   MemoryDataView,
+  MemoryDebugQuestionTab,
   MemoryDebugSection,
   ProcessingLogsView,
 } from "@/components/admin/memory-debug/types";
@@ -35,6 +36,28 @@ export const MEMORY_DEBUG_SECTIONS: Array<{
     id: "assertions",
     labelKey: "memoryDebug.sectionAssertions",
     descriptionKey: "memoryDebug.sectionAssertionsDescription",
+  },
+];
+
+export const MEMORY_DEBUG_QUESTION_TABS: Array<{
+  id: MemoryDebugQuestionTab;
+  labelKey: TranslationKey;
+}> = [
+  {
+    id: "happening",
+    labelKey: "memoryDebug.tabHappening",
+  },
+  {
+    id: "remembered",
+    labelKey: "memoryDebug.tabRemembered",
+  },
+  {
+    id: "answers",
+    labelKey: "memoryDebug.tabAnswers",
+  },
+  {
+    id: "broken",
+    labelKey: "memoryDebug.tabBroken",
   },
 ];
 
