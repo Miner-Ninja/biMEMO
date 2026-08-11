@@ -29,6 +29,8 @@ export interface TestLLMConnectionParams {
   base_url?: string;
   dialog_recorder_base_url?: string;
   num_ctx?: string;
+  /** "embedding" probes the embeddings endpoint instead of chat. */
+  probe?: "chat" | "embedding";
 }
 
 export interface OllamaCapabilitiesParams {
@@ -77,6 +79,7 @@ export async function testLLMConnection(params: TestLLMConnectionParams): Promis
   provider?: string;
   record?: string;
   error?: string;
+  dimension?: number;
 }> {
   return apiRequest("/admin/llm/test", {
     method: "POST",

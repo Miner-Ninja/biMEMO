@@ -13,7 +13,7 @@ vi.mock("@/api/llm", () => ({
   getModelList: vi.fn().mockResolvedValue({ models: [] }),
 }));
 
-import { getModelList } from "@/api/llm";
+import { getModelList, testLLMConnection } from "@/api/llm";
 import { LLMConfigDialog } from "@/components/LLMConfigDialog";
 
 const openVectorsTab = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -103,5 +103,47 @@ describe("LLMConfigDialog load-failure indication", () => {
 
     await user.type(screen.getByPlaceholderText("http://vllm-embeddings:8000"), "x");
     expect(screen.queryByText(/Could not load the model list/)).toBeNull();
+  });
+});
+
+describe("LLMConfigDialog per-tab Test Connection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getModelList).mockResolvedValue({ models: [] });
+  });
+
+  it("S2.1 — on the vectors tab the button probes the embedding endpoint", async () => {
+    vi.mocked(testLLMConnection).mockResolvedValue({
+      ok: true,
+      provider: "custom",
+      dimension: 1024,
+    });
+    const user = userEvent.setup();
+    render(<LLMConfigDialog open onClose={vi.fn()} onSave={vi.fn()} />);
+
+    await openVectorsTab(user);
+    await user.type(
+      screen.getByPlaceholderText("Leave blank to disable vector search"),
+      "qwen3-embedding:0.6b"
+    );
+    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+
+    expect(testLLMConnection).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(testLLMConnection).mock.calls[0][0]).toMatchObject({
+      probe: "embedding",
+      model: "qwen3-embedding:0.6b",
+    });
+    expect(await screen.findByText(/dimension 1024/)).toBeTruthy();
+  });
+
+  it("S2.2 — an empty embedding model blocks the probe with a hint", async () => {
+    const user = userEvent.setup();
+    render(<LLMConfigDialog open onClose={vi.fn()} onSave={vi.fn()} />);
+
+    await openVectorsTab(user);
+    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+
+    expect(testLLMConnection).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Enter an embedding model/)).toBeTruthy();
   });
 });

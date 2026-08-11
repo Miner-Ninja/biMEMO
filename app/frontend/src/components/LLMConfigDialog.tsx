@@ -192,25 +192,55 @@ export function LLMConfigDialog({
   const showBaseUrl = serviceType === "ollama" || serviceType === "custom";
   const providerSubtitleKey = PROVIDER_SUBTITLE_KEYS[serviceType];
 
+  // Test Connection checks what the active tab shows: the chat host,
+  // the recorder host/model, or a real embedding request.
   const handleTest = async () => {
+    if (tab === "vectors" && !embeddingModel) {
+      setTestOk(false);
+      setTestResult(t("admin.embeddingModelRequired"));
+      return;
+    }
     setTesting(true);
     setTestResult("");
     setTestOk(false);
     try {
-      const result = await testLLMConnection({
-        service_type: serviceType,
-        api_key: apiKey || undefined,
-        model: model || undefined,
-        base_url: baseUrl || undefined,
-      });
-      setTestOk(result.ok);
-      setTestResult(
-        result.ok
-          ? t("admin.connectedTo", { provider: result.provider ?? serviceType })
-          : t("admin.connectionFailedWithError", {
-              error: result.error ?? t("admin.unknown"),
-            })
+      const result = await testLLMConnection(
+        tab === "vectors"
+          ? {
+              service_type: serviceType,
+              api_key: apiKey || undefined,
+              model: embeddingModel,
+              base_url: embeddingBaseUrl || baseUrl || undefined,
+              probe: "embedding",
+            }
+          : tab === "recorder"
+            ? {
+                service_type: serviceType,
+                api_key: apiKey || undefined,
+                model: dialogRecorderModel || model || undefined,
+                base_url: dialogRecorderBaseUrl || baseUrl || undefined,
+              }
+            : {
+                service_type: serviceType,
+                api_key: apiKey || undefined,
+                model: model || undefined,
+                base_url: baseUrl || undefined,
+              }
       );
+      setTestOk(result.ok);
+      if (result.ok && tab === "vectors") {
+        setTestResult(t("admin.embeddingTestOk", { dim: result.dimension ?? 0 }));
+      } else {
+        setTestResult(
+          result.ok
+            ? t("admin.connectedTo", {
+                provider: result.provider ?? serviceType,
+              })
+            : t("admin.connectionFailedWithError", {
+                error: result.error ?? t("admin.unknown"),
+              })
+        );
+      }
     } catch (err) {
       setTestOk(false);
       setTestResult(err instanceof Error ? err.message : t("admin.testFailed"));

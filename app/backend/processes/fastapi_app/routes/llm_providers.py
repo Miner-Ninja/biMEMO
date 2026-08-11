@@ -89,6 +89,7 @@ def _provider_probe_values(body: dict[str, object]) -> dict[str, str]:
         "api_key": str(body.get("api_key", "")),
         "model": str(body.get("model", "")),
         "base_url": str(body.get("base_url", "")),
+        "probe": str(body.get("probe", "chat")),
     }
 
 
@@ -141,16 +142,85 @@ def _reload_detail(
     return failed_detail
 
 
-async def _probe_llm_provider(
+async def _probe_embedding(
     *,
     service_type: str,
     api_key: str,
     model: str,
     base_url: str,
 ) -> dict:
+    """Embed one word on the target host and report the vector dimension.
+
+    Unlike the chat probe, this proves the configured model actually
+    produces embeddings — a chat model on a live host passes an address
+    check but fails here.
+    """
+    import httpx
+
+    if not model:
+        return {"ok": False, "error": "embedding model is required"}
+    try:
+        if service_type == "ollama":
+            url = (
+                base_url.rstrip("/") if base_url else "http://ollama:11434"
+            ) + "/api/embed"
+            payload: dict[str, object] = {"model": model, "input": "ping"}
+            headers = {"Content-Type": "application/json"}
+        else:
+            endpoint_base = (
+                base_url.rstrip("/") if base_url else "https://openrouter.ai"
+            )
+            url = endpoint_base + _get_api_prefix(service_type) + "/embeddings"
+            payload = {"model": model, "input": "ping"}
+            headers = {
+                **_build_auth_headers(api_key),
+                "Content-Type": "application/json",
+            }
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code not in (200, 201):
+            return {
+                "ok": False,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+        data = resp.json()
+        if service_type == "ollama":
+            vectors = data.get("embeddings") or []
+            vector = vectors[0] if vectors else []
+        else:
+            entries = data.get("data") or []
+            vector = entries[0].get("embedding", []) if entries else []
+        if not vector:
+            return {"ok": False, "error": "server returned an empty embedding"}
+        return {
+            "ok": True,
+            "provider": service_type,
+            "dimension": len(vector),
+        }
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "Connection timed out"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+async def _probe_llm_provider(
+    *,
+    service_type: str,
+    api_key: str,
+    model: str,
+    base_url: str,
+    probe: str = "chat",
+) -> dict:
     """Run one lightweight provider connectivity probe."""
     import httpx
 
+    if probe == "embedding":
+        return await _probe_embedding(
+            service_type=service_type,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+        )
     try:
         if service_type == "ollama":
             url = (

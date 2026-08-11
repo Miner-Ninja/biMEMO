@@ -535,6 +535,8 @@ const en = {
     modelsLoaded: "Models available: {{count}}",
     modelsListEmpty: "The server responded, but the model list is empty",
     modelsLoadFailed: "Could not load the model list — check the address",
+    embeddingTestOk: "Embedding works — dimension {{dim}}",
+    embeddingModelRequired: "Enter an embedding model to test it",
     saveConfigFailed: "Failed to save configuration",
     saved: "Saved",
     saveFailed: "Save failed",

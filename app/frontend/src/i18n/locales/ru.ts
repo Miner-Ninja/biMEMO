@@ -540,6 +540,8 @@ const ru = {
     modelsLoaded: "Моделей доступно: {{count}}",
     modelsListEmpty: "Сервер ответил, но список моделей пуст",
     modelsLoadFailed: "Не удалось загрузить список моделей — проверьте адрес",
+    embeddingTestOk: "Эмбеддинг работает — размерность {{dim}}",
+    embeddingModelRequired: "Укажите модель эмбеддингов, чтобы её проверить",
     saveConfigFailed: "Не удалось сохранить конфигурацию",
     saved: "Сохранено",
     saveFailed: "Не удалось сохранить",
