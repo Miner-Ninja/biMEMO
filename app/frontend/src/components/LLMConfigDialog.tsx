@@ -329,8 +329,16 @@ export function LLMConfigDialog({
         </div>
 
         <div className="space-y-4">
-          {tab === "chat" && (
-            <>
+          {/* All panels stay mounted, stacked in one grid cell: hidden
+              tabs keep their height, so the dialog never resizes when
+              switching tabs. */}
+          <div className="grid">
+            <div
+              className={`col-start-1 row-start-1 space-y-4 ${
+                tab === "chat" ? "" : "invisible pointer-events-none"
+              }`}
+              aria-hidden={tab !== "chat"}
+            >
               <div className="space-y-1">
                 <label className="text-sm font-medium">{t("admin.provider")}</label>
                 <select
@@ -421,11 +429,14 @@ export function LLMConfigDialog({
                 />
                 {loadStatusLine("chat")}
               </div>
-            </>
-          )}
+            </div>
 
-          {tab === "recorder" && (
-            <>
+            <div
+              className={`col-start-1 row-start-1 space-y-4 ${
+                tab === "recorder" ? "" : "invisible pointer-events-none"
+              }`}
+              aria-hidden={tab !== "recorder"}
+            >
               <p className="text-xs text-muted-foreground">
                 {t("admin.recorderTabHint")}
               </p>
@@ -460,11 +471,14 @@ export function LLMConfigDialog({
                 />
                 {loadStatusLine("recorder")}
               </div>
-            </>
-          )}
+            </div>
 
-          {tab === "vectors" && (
-            <>
+            <div
+              className={`col-start-1 row-start-1 space-y-4 ${
+                tab === "vectors" ? "" : "invisible pointer-events-none"
+              }`}
+              aria-hidden={tab !== "vectors"}
+            >
               <p className="text-xs text-muted-foreground">
                 {t("admin.vectorsTabHint")}
               </p>
@@ -499,8 +513,8 @@ export function LLMConfigDialog({
                 />
                 {loadStatusLine("vectors")}
               </div>
-            </>
-          )}
+            </div>
+          </div>
 
           {testResult && (
             <p
