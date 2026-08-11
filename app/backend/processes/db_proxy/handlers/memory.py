@@ -290,14 +290,17 @@ def make_init_vector_table_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Initialize or recreate the vector table based on model/dimensions."""
         from backend.memory.retrieval.vector_store import (
+            VECTOR_DISTANCE_METRIC,
             create_vector_table,
             drop_vector_table,
             get_embedding_metadata,
+            get_embedding_metric,
             set_embedding_metadata,
         )
 
         p = _validate_params(params, InitVectorTableParams)
         stored_model, stored_dim = get_embedding_metadata(db)
+        stored_metric = get_embedding_metric(db)
         recreated = False
 
         need_recreate = False
@@ -319,6 +322,15 @@ def make_init_vector_table_handler(db: DatabaseManager) -> OperationHandler:
                 p.embedding_model,
                 stored_dim,
                 p.dimensions,
+            )
+        elif stored_metric != VECTOR_DISTANCE_METRIC:
+            # Tables from before the metric was pinned were built with
+            # the vec0 default (L2) and must be rebuilt for cosine.
+            need_recreate = True
+            logger.info(
+                "Vector distance metric changed (%s→%s) — recreating table",
+                stored_metric,
+                VECTOR_DISTANCE_METRIC,
             )
 
         if need_recreate:

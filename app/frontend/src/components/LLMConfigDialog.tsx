@@ -55,6 +55,10 @@ export function LLMConfigDialog({
 
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  // The embedding host may differ from the main provider, so its model
+  // pick-list is loaded separately from the embedding base URL.
+  const [embeddingModels, setEmbeddingModels] = useState<string[]>([]);
+  const [loadingEmbeddingModels, setLoadingEmbeddingModels] = useState(false);
   const [testResult, setTestResult] = useState("");
   const [testOk, setTestOk] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -102,6 +106,7 @@ export function LLMConfigDialog({
         setEmbeddingBaseUrl("");
       }
       setModels([]);
+      setEmbeddingModels([]);
       setTestResult("");
       setTestOk(false);
       setShowAdvanced(false);
@@ -113,6 +118,14 @@ export function LLMConfigDialog({
           service_type: activeType,
           base_url: editConfig?.base_url || undefined,
         });
+        if (editConfig?.embedding_base_url) {
+          void getModelList({
+            service_type: activeType,
+            base_url: editConfig.embedding_base_url,
+          })
+            .then((result) => setEmbeddingModels(result.models))
+            .catch(() => undefined);
+        }
       }
     }
   }, [open, editConfig, loadModelsWith]);
@@ -127,6 +140,22 @@ export function LLMConfigDialog({
       api_key: apiKey || undefined,
       base_url: baseUrl || undefined,
     });
+
+  const loadEmbeddingModels = async () => {
+    setLoadingEmbeddingModels(true);
+    try {
+      const result = await getModelList({
+        service_type: serviceType,
+        api_key: apiKey || undefined,
+        base_url: embeddingBaseUrl || baseUrl || undefined,
+      });
+      setEmbeddingModels(result.models);
+    } catch {
+      // silent
+    } finally {
+      setLoadingEmbeddingModels(false);
+    }
+  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -361,18 +390,20 @@ export function LLMConfigDialog({
               </label>
               <button
                 type="button"
-                onClick={loadModels}
-                disabled={loadingModels}
+                onClick={() => void loadEmbeddingModels()}
+                disabled={loadingEmbeddingModels}
                 className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                {loadingModels ? t("common.loading") : t("admin.loadModels")}
+                {loadingEmbeddingModels ? t("common.loading") : t("admin.loadModels")}
               </button>
             </div>
             <ModelCombobox
               value={embeddingModel}
               onChange={setEmbeddingModel}
-              models={models}
-              loading={loadingModels}
+              models={
+                embeddingBaseUrl || embeddingModels.length ? embeddingModels : models
+              }
+              loading={loadingEmbeddingModels}
               placeholder={t("admin.embeddingModelPlaceholder")}
             />
           </div>

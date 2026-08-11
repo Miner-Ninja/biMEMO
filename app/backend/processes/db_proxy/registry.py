@@ -13,6 +13,7 @@ from .handlers.admin import (
     make_create_backup_handler,
     make_delete_avatar_handler,
     make_get_avatar_handler,
+    make_get_loop_heartbeats_handler,
     make_get_password_hash_handler,
     make_get_recent_rate_limit_calls_handler,
     make_get_signing_material_handler,
@@ -26,6 +27,7 @@ from .handlers.admin import (
     make_mcp_memory_get_handler,
     make_mcp_memory_recent_handler,
     make_mcp_memory_stats_handler,
+    make_record_loop_heartbeat_handler,
     make_record_rate_limit_call_handler,
     make_store_avatar_handler,
     make_store_password_hash_handler,
@@ -222,6 +224,7 @@ SOCKET_A_OPERATIONS = {
     "bump_queued_record_attempts",
     "store_embedding",
     "prune_unlinked_records",
+    "record_loop_heartbeat",
     "create_conversation",
     "list_conversations",
     "delete_conversation",
@@ -384,6 +387,7 @@ SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
     "mcp_memory_recent",  # MCP recent_memory (read-only)
     "mcp_memory_get",   # MCP get_memory (read-only)
     "mcp_memory_stats",   # MCP memory_stats (read-only)
+    "get_loop_heartbeats",  # background-loop liveness (read-only)
     "write_audit",
     "create_scheduled_task",
     "list_scheduled_tasks",
@@ -900,6 +904,14 @@ def build_registry(
     registry.register(
         "create_backup",
         make_create_backup_handler(backup_databases, database_path),
+    )
+    registry.register(
+        "record_loop_heartbeat",
+        make_record_loop_heartbeat_handler(core_db),
+    )
+    registry.register(
+        "get_loop_heartbeats",
+        make_get_loop_heartbeats_handler(core_db),
     )
     _register_message_operations(registry, core_db)
     _register_diagnostic_operations(

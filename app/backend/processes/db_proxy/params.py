@@ -353,6 +353,16 @@ class PruneUnlinkedRecordsParams(ForbidExtraParams):
     age_days: int
 
 
+class RecordLoopHeartbeatParams(ForbidExtraParams):
+    """Parameters for record_loop_heartbeat operation."""
+
+    loop_name: str
+
+
+class GetLoopHeartbeatsParams(ForbidExtraParams):
+    """Parameters for get_loop_heartbeats operation (none)."""
+
+
 class CreateConversationParams(ForbidExtraParams):
     """Parameters for create_conversation operation."""
 

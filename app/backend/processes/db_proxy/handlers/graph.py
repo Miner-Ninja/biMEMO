@@ -437,7 +437,8 @@ def make_find_graph_entry_points_handler(
             "a.invalidated_by_assertion_id, a.source_record_ids, a.created_at "
             "FROM assertions_fts JOIN assertions a "
             "ON a.rowid = assertions_fts.rowid "
-            "WHERE assertions_fts MATCH ? ORDER BY rank LIMIT ?",
+            "WHERE assertions_fts MATCH ? AND a.invalid_from IS NULL "
+            "ORDER BY rank LIMIT ?",
             (safe_query, p.limit),
         ).fetchall()
         for row in assertion_rows:

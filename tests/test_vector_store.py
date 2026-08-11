@@ -7,6 +7,7 @@ and similarity search operations.
 import secrets
 
 import pytest
+
 from backend.memory.retrieval.vector_store import (
     create_vector_table,
     enable_vector_extension,
@@ -78,3 +79,68 @@ class TestSearchSimilar:
         """Verify search on empty table returns no results."""
         results = search_similar(vec_db, [1.0, 0.0, 0.0, 0.0], 5)
         assert len(results) == 0
+
+
+class TestCosineMetric:
+    """The vector table compares by angle, not magnitude (cosine)."""
+
+    def test_ranking_ignores_magnitude(self, vec_db):
+        """A long same-direction vector beats a short off-direction one.
+
+        Under the old L2 default the short off-direction vector would
+        rank first; cosine must rank by direction.
+        """
+        store_embedding(vec_db, "same-direction-long", [10.0, 0.0, 0.0, 0.0])
+        store_embedding(vec_db, "off-direction-short", [0.9, 0.5, 0.0, 0.0])
+        results = search_similar(vec_db, [1.0, 0.0, 0.0, 0.0], 2)
+        assert results[0][0] == "same-direction-long"
+
+    def test_metric_recorded_in_metadata(self, vec_db):
+        """set_embedding_metadata pins the metric for migration checks."""
+        from backend.memory.retrieval.vector_store import (
+            VECTOR_DISTANCE_METRIC,
+            get_embedding_metric,
+            set_embedding_metadata,
+        )
+
+        assert get_embedding_metric(vec_db) is None
+        set_embedding_metadata(vec_db, "test-model", 4)
+        assert get_embedding_metric(vec_db) == VECTOR_DISTANCE_METRIC
+
+
+class TestMetricMigration:
+    """init_vector_table rebuilds tables created before the metric pin."""
+
+    @pytest.mark.asyncio
+    async def test_premetric_table_is_recreated(self, tmp_path):
+        """Same model/dim but missing metric metadata forces a rebuild."""
+        from backend.memory.retrieval.fulltext import create_fts_tables
+        from backend.memory.retrieval.vector_store import (
+            EMBEDDING_METRIC_METADATA_KEY,
+        )
+        from backend.processes.db_proxy.handlers.memory import (
+            make_init_vector_table_handler,
+        )
+
+        db = DatabaseManager(str(tmp_path / "migrate.db"))
+        db.open(bytearray(secrets.token_bytes(32)))
+        initialize_schema(db)
+        create_fts_tables(db)
+        enable_vector_extension(db)
+        handler = make_init_vector_table_handler(db)
+        params = {"embedding_model": "m", "dimensions": 4}
+
+        first = await handler(dict(params))
+        assert first["recreated"] is True
+        second = await handler(dict(params))
+        assert second["recreated"] is False
+
+        # Simulate a pre-metric database: erase the stored metric only.
+        db.execute(
+            "DELETE FROM metadata WHERE key = ?",
+            (EMBEDDING_METRIC_METADATA_KEY,),
+        )
+        db.commit()
+        third = await handler(dict(params))
+        assert third["recreated"] is True
+        db.close()

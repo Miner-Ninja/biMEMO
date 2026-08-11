@@ -527,6 +527,10 @@ async def get_memory_health(
         "zones": zones,
         "retrieval": get_recall_stats(),
         "graph": await admin.get_graph_stats(),
+        # Last successful pass of each background loop (pruning, graph
+        # extractor, scheduled backup); a loop that only logs failures
+        # is invisible without this.
+        "loops": await admin.get_loop_heartbeats(),
     }
 
 

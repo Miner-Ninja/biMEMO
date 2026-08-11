@@ -19,9 +19,12 @@ This keeps one clear split:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 
+
+logger = logging.getLogger(__name__)
 
 # --- Structured response parsing ---
 MAX_STRUCTURED_SUGGESTIONS = 3
@@ -227,6 +230,44 @@ def normalize_legacy_response_text(text: str) -> StructuredAssistantContent:
     )
 
 
+# Some structured-output backends (seen with vLLM guided decoding on certain
+# quantized models) glue a spurious opening brace in front of the JSON object,
+# e.g. '{{"answer": ...}' or '{"{ "answer": ...}'. That is invalid JSON. This
+# bound limits how far into the reply we look for the real object start when
+# repairing such a leading-brace defect.
+LEADING_BRACE_REPAIR_SCAN = 16
+
+
+def _loads_lenient(text: str) -> object:
+    """Parse JSON, repairing a spurious leading brace when strict parsing fails.
+
+    A well-formed body is parsed by ``json.loads`` unchanged. Only when that
+    raises do we retry: scan the first few characters for each ``{`` and decode
+    from there, returning the first object that parses. This rescues replies
+    from misbehaving structured-output backends that prepend an extra ``{`` (or
+    ``{"``) before the real object, without touching valid input.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as strict_error:
+        decoder = json.JSONDecoder()
+        for index in range(min(len(text), LEADING_BRACE_REPAIR_SCAN)):
+            if text[index] != "{":
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(text, index)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                logger.warning(
+                    "Repaired malformed structured JSON with a spurious leading "
+                    "brace (parsed from offset %d)",
+                    index,
+                )
+                return candidate
+        raise strict_error
+
+
 def parse_structured_response_json(
     text: str,
     *,
@@ -244,7 +285,7 @@ def parse_structured_response_json(
             answer="",
             thinking=thinking.strip() if thinking else None,
         )
-    raw_data = json.loads(text)
+    raw_data = _loads_lenient(text)
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
     raw_answer = str(raw_data.get("answer", ""))

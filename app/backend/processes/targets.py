@@ -12,6 +12,7 @@ pulling in the heavy orchestrator / DB proxy code.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import tempfile
@@ -500,11 +501,27 @@ def _db_proxy_target(
             socket_c_path,
         )
 
+        from backend.processes.db_proxy.backup_loop import run_backup_loop
+
+        backup_databases = {"core": core_db, "runtime": runtime_db}
+        if diagnostics_db is not None:
+            backup_databases["diagnostics"] = diagnostics_db
+        backup_task = asyncio.create_task(
+            run_backup_loop(
+                backup_databases,
+                settings.database_path,
+                core_db,
+            )
+        )
+
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGTERM, stop_event.set)
         await stop_event.wait()
 
+        backup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await backup_task
         await _stop_db_proxy_servers(server_a, server_b, server_c)
         core_db.close()
         runtime_db.close()
