@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { TranslationKey } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
@@ -17,6 +17,24 @@ const PROVIDER_LABEL_KEYS: Record<ProviderType, TranslationKey> = {
 const PROVIDER_SUBTITLE_KEYS: Partial<Record<ProviderType, TranslationKey>> = {
   custom: "admin.openaiCompatibleApi",
 };
+
+type TabId = "chat" | "recorder" | "vectors";
+
+const TAB_LABEL_KEYS: Record<TabId, TranslationKey> = {
+  chat: "admin.tabChat",
+  recorder: "admin.tabRecorder",
+  vectors: "admin.tabVectors",
+};
+
+/** Outcome of the latest model-list load for one tab. */
+type LoadState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ok"; count: number }
+  | { status: "empty" }
+  | { status: "error"; detail?: string };
+
+const IDLE: LoadState = { status: "idle" };
 
 interface LLMConfigDialogProps {
   open: boolean;
@@ -44,6 +62,8 @@ export function LLMConfigDialog({
   const { t } = useTranslation();
   const isEdit = !!editConfig;
 
+  const [tab, setTab] = useState<TabId>("chat");
+
   const [serviceType, setServiceType] = useState<ProviderType>("openrouter");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
@@ -53,36 +73,71 @@ export function LLMConfigDialog({
   const [embeddingModel, setEmbeddingModel] = useState("");
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
 
-  const [models, setModels] = useState<string[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
-  // The embedding host may differ from the main provider, so its model
-  // pick-list is loaded separately from the embedding base URL.
-  const [embeddingModels, setEmbeddingModels] = useState<string[]>([]);
-  const [loadingEmbeddingModels, setLoadingEmbeddingModels] = useState(false);
+  // Each tab owns its pick-list: its host may differ from the others.
+  const [tabModels, setTabModels] = useState<Record<TabId, string[]>>({
+    chat: [],
+    recorder: [],
+    vectors: [],
+  });
+  const [tabLoad, setTabLoad] = useState<Record<TabId, LoadState>>({
+    chat: IDLE,
+    recorder: IDLE,
+    vectors: IDLE,
+  });
+
   const [testResult, setTestResult] = useState("");
   const [testOk, setTestOk] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const loadModelsWith = useCallback(
-    async (opts: {
-      service_type: ProviderType;
+  const setLoad = (target: TabId, state: LoadState) =>
+    setTabLoad((prev) => ({ ...prev, [target]: state }));
+
+  const clearLoadError = (target: TabId) =>
+    setTabLoad((prev) =>
+      prev[target].status === "error" ? { ...prev, [target]: IDLE } : prev
+    );
+
+  const urlForTab = (target: TabId, overrides?: { chatUrl?: string }) => {
+    const chatUrl = overrides?.chatUrl ?? baseUrl;
+    if (target === "recorder") return dialogRecorderBaseUrl || chatUrl;
+    if (target === "vectors") return embeddingBaseUrl || chatUrl;
+    return chatUrl;
+  };
+
+  const loadTabModels = async (
+    target: TabId,
+    opts?: {
+      service_type?: ProviderType;
       api_key?: string;
       base_url?: string;
-    }) => {
-      setLoadingModels(true);
-      try {
-        const result = await getModelList(opts);
-        setModels(result.models);
-      } catch {
-        // silent
-      } finally {
-        setLoadingModels(false);
+    }
+  ) => {
+    setLoad(target, { status: "loading" });
+    try {
+      const result = await getModelList({
+        service_type: opts?.service_type ?? serviceType,
+        api_key: opts?.api_key ?? (apiKey || undefined),
+        base_url: opts?.base_url ?? (urlForTab(target) || undefined),
+      });
+      if (result.error) {
+        setLoad(target, { status: "error", detail: result.error });
+        return;
       }
-    },
-    []
-  );
+      setTabModels((prev) => ({ ...prev, [target]: result.models }));
+      setLoad(
+        target,
+        result.models.length
+          ? { status: "ok", count: result.models.length }
+          : { status: "empty" }
+      );
+    } catch (err) {
+      setLoad(target, {
+        status: "error",
+        detail: err instanceof Error ? err.message : undefined,
+      });
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -105,57 +160,37 @@ export function LLMConfigDialog({
         setEmbeddingModel("");
         setEmbeddingBaseUrl("");
       }
-      setModels([]);
-      setEmbeddingModels([]);
+      setTab("chat");
+      setTabModels({ chat: [], recorder: [], vectors: [] });
+      setTabLoad({ chat: IDLE, recorder: IDLE, vectors: IDLE });
       setTestResult("");
       setTestOk(false);
-      setShowAdvanced(false);
-      // Preload the model list up front so every model field (chat, dialog
-      // recorder, embedding) offers a pick-list without a manual click.
+      // Preload each tab's pick-list from its own host so every model
+      // field offers a choice without a manual click.
       const activeType = editConfig?.service_type ?? "openrouter";
       if (activeType === "ollama" || activeType === "custom") {
-        void loadModelsWith({
+        const chatUrl = editConfig?.base_url || "";
+        void loadTabModels("chat", {
           service_type: activeType,
-          base_url: editConfig?.base_url || undefined,
+          base_url: chatUrl || undefined,
         });
-        if (editConfig?.embedding_base_url) {
-          void getModelList({
-            service_type: activeType,
-            base_url: editConfig.embedding_base_url,
-          })
-            .then((result) => setEmbeddingModels(result.models))
-            .catch(() => undefined);
-        }
+        void loadTabModels("recorder", {
+          service_type: activeType,
+          base_url: editConfig?.dialog_recorder_base_url || chatUrl || undefined,
+        });
+        void loadTabModels("vectors", {
+          service_type: activeType,
+          base_url: editConfig?.embedding_base_url || chatUrl || undefined,
+        });
       }
     }
-  }, [open, editConfig, loadModelsWith]);
+    // loadTabModels reads only state that this effect just reset.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editConfig]);
 
   const showApiKey = serviceType === "openrouter" || serviceType === "custom";
   const showBaseUrl = serviceType === "ollama" || serviceType === "custom";
   const providerSubtitleKey = PROVIDER_SUBTITLE_KEYS[serviceType];
-
-  const loadModels = () =>
-    loadModelsWith({
-      service_type: serviceType,
-      api_key: apiKey || undefined,
-      base_url: baseUrl || undefined,
-    });
-
-  const loadEmbeddingModels = async () => {
-    setLoadingEmbeddingModels(true);
-    try {
-      const result = await getModelList({
-        service_type: serviceType,
-        api_key: apiKey || undefined,
-        base_url: embeddingBaseUrl || baseUrl || undefined,
-      });
-      setEmbeddingModels(result.models);
-    } catch {
-      // silent
-    } finally {
-      setLoadingEmbeddingModels(false);
-    }
-  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -205,6 +240,58 @@ export function LLMConfigDialog({
 
   if (!open) return null;
 
+  const loadStatusLine = (target: TabId) => {
+    const state = tabLoad[target];
+    if (state.status === "ok") {
+      return (
+        <p className="text-xs text-green-600 dark:text-green-400">
+          {t("admin.modelsLoaded", { count: state.count })}
+        </p>
+      );
+    }
+    if (state.status === "empty") {
+      return (
+        <p className="text-xs text-muted-foreground">{t("admin.modelsListEmpty")}</p>
+      );
+    }
+    if (state.status === "error") {
+      return (
+        <p className="text-xs text-red-600 dark:text-red-400">
+          {t("admin.modelsLoadFailed")}
+          {state.detail ? ` (${state.detail})` : ""}
+        </p>
+      );
+    }
+    return null;
+  };
+
+  const modelFieldHeader = (
+    target: TabId,
+    labelKey: TranslationKey,
+    optional: boolean
+  ) => (
+    <div className="flex items-center justify-between">
+      <label className="text-sm font-medium">
+        {t(labelKey)}{" "}
+        {optional && (
+          <span className="text-muted-foreground font-normal">
+            {t("admin.optional")}
+          </span>
+        )}
+      </label>
+      <button
+        type="button"
+        onClick={() => void loadTabModels(target)}
+        disabled={tabLoad[target].status === "loading"}
+        className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        {tabLoad[target].status === "loading"
+          ? t("common.loading")
+          : t("admin.loadModels")}
+      </button>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -221,192 +308,199 @@ export function LLMConfigDialog({
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">{t("admin.provider")}</label>
-            <select
-              value={serviceType}
-              onChange={(e) => {
-                setServiceType(e.target.value as ProviderType);
-                setModels([]);
-              }}
-              disabled={isEdit}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        <div className="flex gap-1 border-b border-border mb-4">
+          {(Object.keys(TAB_LABEL_KEYS) as TabId[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`px-3 py-2 text-sm border-b-2 -mb-px ${
+                tab === id
+                  ? "border-primary font-medium"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {(Object.keys(PROVIDER_LABEL_KEYS) as ProviderType[]).map((key) => (
-                <option key={key} value={key}>
-                  {t(PROVIDER_LABEL_KEYS[key])}
-                </option>
-              ))}
-            </select>
-            {providerSubtitleKey && (
-              <p className="text-xs text-muted-foreground">{t(providerSubtitleKey)}</p>
-            )}
-          </div>
-
-          {showApiKey && (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">{t("admin.apiKey")}</label>
-              <Input
-                type="password"
-                placeholder={
-                  isEdit && editConfig?.has_api_key
-                    ? t("admin.apiKeyConfiguredPlaceholder")
-                    : "sk-…"
-                }
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                onBlur={() => {
-                  if (apiKey) loadModels();
-                }}
-                autoComplete="off"
-              />
-              {isEdit && editConfig?.has_api_key && !apiKey && (
-                <p className="text-xs text-muted-foreground">
-                  {t("admin.apiKeySavedHint")}
-                </p>
+              {t(TAB_LABEL_KEYS[id])}
+              {tabLoad[id].status === "error" && (
+                <span className="ml-1 text-red-600 dark:text-red-400">•</span>
               )}
-            </div>
-          )}
+            </button>
+          ))}
+        </div>
 
-          {showBaseUrl && (
+        <div className="space-y-4">
+          {tab === "chat" && (
             <>
               <div className="space-y-1">
-                <label className="text-sm font-medium">{t("admin.baseUrl")}</label>
-                <Input
-                  placeholder={
-                    serviceType === "ollama"
-                      ? "http://ollama:11434"
-                      : "https://api.example.com/v1"
-                  }
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  onBlur={() => {
-                    if (serviceType === "ollama" || baseUrl) loadModels();
+                <label className="text-sm font-medium">{t("admin.provider")}</label>
+                <select
+                  value={serviceType}
+                  onChange={(e) => {
+                    setServiceType(e.target.value as ProviderType);
+                    setTabModels({ chat: [], recorder: [], vectors: [] });
+                    setTabLoad({ chat: IDLE, recorder: IDLE, vectors: IDLE });
                   }}
-                />
+                  disabled={isEdit}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                >
+                  {(Object.keys(PROVIDER_LABEL_KEYS) as ProviderType[]).map((key) => (
+                    <option key={key} value={key}>
+                      {t(PROVIDER_LABEL_KEYS[key])}
+                    </option>
+                  ))}
+                </select>
+                {providerSubtitleKey && (
+                  <p className="text-xs text-muted-foreground">
+                    {t(providerSubtitleKey)}
+                  </p>
+                )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((v) => !v)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                {showAdvanced ? "▾ " : "▸ "}
-                {t("admin.advancedSettings")}
-              </button>
-
-              {showAdvanced && (
-                <>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">
-                      {t("admin.dialogRecorderBaseUrl")}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        {t("admin.optional")}
-                      </span>
-                    </label>
-                    <Input
-                      placeholder={
-                        serviceType === "ollama"
-                          ? "http://ollama-memory:11434"
-                          : "http://vllm-dialog-recorder:8000"
-                      }
-                      value={dialogRecorderBaseUrl}
-                      onChange={(e) => setDialogRecorderBaseUrl(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">
-                      {t("admin.embeddingBaseUrl")}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        {t("admin.optional")}
-                      </span>
-                    </label>
-                    <Input
-                      placeholder={
-                        serviceType === "ollama"
-                          ? "http://ollama-memory:11434"
-                          : "http://vllm-embeddings:8000"
-                      }
-                      value={embeddingBaseUrl}
-                      onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
-                    />
-                  </div>
-                </>
+              {showApiKey && (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t("admin.apiKey")}</label>
+                  <Input
+                    type="password"
+                    name="bimemo-llm-api-key"
+                    placeholder={
+                      isEdit && editConfig?.has_api_key
+                        ? t("admin.apiKeyConfiguredPlaceholder")
+                        : "sk-…"
+                    }
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    onBlur={() => {
+                      if (apiKey) void loadTabModels("chat");
+                    }}
+                    autoComplete="new-password"
+                  />
+                  {isEdit && editConfig?.has_api_key && !apiKey && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("admin.apiKeySavedHint")}
+                    </p>
+                  )}
+                </div>
               )}
+
+              {showBaseUrl && (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">{t("admin.baseUrl")}</label>
+                  <Input
+                    placeholder={
+                      serviceType === "ollama"
+                        ? "http://ollama:11434"
+                        : "https://api.example.com/v1"
+                    }
+                    value={baseUrl}
+                    onChange={(e) => {
+                      setBaseUrl(e.target.value);
+                      clearLoadError("chat");
+                    }}
+                    onBlur={() => {
+                      if (serviceType === "ollama" || baseUrl)
+                        void loadTabModels("chat");
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                {modelFieldHeader("chat", "admin.model", false)}
+                <ModelCombobox
+                  value={model}
+                  onChange={setModel}
+                  models={tabModels.chat}
+                  loading={tabLoad.chat.status === "loading"}
+                  placeholder={
+                    serviceType === "openrouter"
+                      ? "openai/gpt-4o"
+                      : serviceType === "ollama"
+                        ? "llama3.2"
+                        : "model-name"
+                  }
+                />
+                {loadStatusLine("chat")}
+              </div>
             </>
           )}
 
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">{t("admin.model")}</label>
-              <button
-                type="button"
-                onClick={loadModels}
-                disabled={loadingModels}
-                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                {loadingModels ? t("common.loading") : t("admin.loadModels")}
-              </button>
-            </div>
-            <ModelCombobox
-              value={model}
-              onChange={setModel}
-              models={models}
-              loading={loadingModels}
-              placeholder={
-                serviceType === "openrouter"
-                  ? "openai/gpt-4o"
-                  : serviceType === "ollama"
-                    ? "llama3.2"
-                    : "model-name"
-              }
-            />
-          </div>
+          {tab === "recorder" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {t("admin.recorderTabHint")}
+              </p>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  {t("admin.dialogRecorderBaseUrl")}{" "}
+                  <span className="text-muted-foreground font-normal">
+                    {t("admin.optional")}
+                  </span>
+                </label>
+                <Input
+                  placeholder={
+                    serviceType === "ollama"
+                      ? "http://ollama-memory:11434"
+                      : "http://vllm-dialog-recorder:8000"
+                  }
+                  value={dialogRecorderBaseUrl}
+                  onChange={(e) => {
+                    setDialogRecorderBaseUrl(e.target.value);
+                    clearLoadError("recorder");
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                {modelFieldHeader("recorder", "admin.dialogRecorderModel", true)}
+                <ModelCombobox
+                  value={dialogRecorderModel}
+                  onChange={setDialogRecorderModel}
+                  models={tabModels.recorder}
+                  loading={tabLoad.recorder.status === "loading"}
+                  placeholder={t("admin.sameModelPlaceholder")}
+                />
+                {loadStatusLine("recorder")}
+              </div>
+            </>
+          )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium">
-              {t("admin.dialogRecorderModel")}{" "}
-              <span className="text-muted-foreground font-normal">
-                {t("admin.optional")}
-              </span>
-            </label>
-            <ModelCombobox
-              value={dialogRecorderModel}
-              onChange={setDialogRecorderModel}
-              models={models}
-              loading={loadingModels}
-              placeholder={t("admin.sameModelPlaceholder")}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                {t("admin.embeddingModel")}{" "}
-                <span className="text-muted-foreground font-normal">
-                  {t("admin.optional")}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => void loadEmbeddingModels()}
-                disabled={loadingEmbeddingModels}
-                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                {loadingEmbeddingModels ? t("common.loading") : t("admin.loadModels")}
-              </button>
-            </div>
-            <ModelCombobox
-              value={embeddingModel}
-              onChange={setEmbeddingModel}
-              models={
-                embeddingBaseUrl || embeddingModels.length ? embeddingModels : models
-              }
-              loading={loadingEmbeddingModels}
-              placeholder={t("admin.embeddingModelPlaceholder")}
-            />
-          </div>
+          {tab === "vectors" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {t("admin.vectorsTabHint")}
+              </p>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  {t("admin.embeddingBaseUrl")}{" "}
+                  <span className="text-muted-foreground font-normal">
+                    {t("admin.optional")}
+                  </span>
+                </label>
+                <Input
+                  placeholder={
+                    serviceType === "ollama"
+                      ? "http://ollama-memory:11434"
+                      : "http://vllm-embeddings:8000"
+                  }
+                  value={embeddingBaseUrl}
+                  onChange={(e) => {
+                    setEmbeddingBaseUrl(e.target.value);
+                    clearLoadError("vectors");
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                {modelFieldHeader("vectors", "admin.embeddingModel", true)}
+                <ModelCombobox
+                  value={embeddingModel}
+                  onChange={setEmbeddingModel}
+                  models={tabModels.vectors}
+                  loading={tabLoad.vectors.status === "loading"}
+                  placeholder={t("admin.embeddingModelPlaceholder")}
+                />
+                {loadStatusLine("vectors")}
+              </div>
+            </>
+          )}
 
           {testResult && (
             <p
