@@ -1,6 +1,8 @@
 export type MemoryDebugSection =
   "overview" | "diagnostics" | "memory-data" | "processing-logs" | "assertions";
 
+export type MemoryDebugQuestionTab = "happening" | "remembered" | "answers" | "broken";
+
 export type DiagnosticsView = "routing" | "quality" | "audit" | "extractor";
 
 export type MemoryDataView =

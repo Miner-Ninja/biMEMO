@@ -21,6 +21,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/bimemo-api";
+import {
+  humanizeMismatchLabel,
+  humanizeRouteIntent,
+  type HumanizedCode,
+} from "@/components/admin/memory-debug/humanize";
 
 const TIME_WINDOWS: ReadonlyArray<{
   labelKey: TranslationKey;
@@ -31,6 +36,11 @@ const TIME_WINDOWS: ReadonlyArray<{
   { labelKey: "memoryDebug.last7d", value: 168 },
   { labelKey: "memoryDebug.allRetained", value: null },
 ];
+
+function Phrase({ code }: { code: HumanizedCode }) {
+  if (code.raw) return <span className="font-mono">{code.text}</span>;
+  return <>{code.text}</>;
+}
 
 function buildTopProblems(
   summary: RouteDiagnosticsSummaryData,
@@ -249,7 +259,9 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                   key={item.intent}
                   className="flex items-center justify-between gap-3 text-sm"
                 >
-                  <span>{item.intent}</span>
+                  <span>
+                    <Phrase code={humanizeRouteIntent(t, item.intent)} />
+                  </span>
                   <span>{item.count}</span>
                 </div>
               ))
@@ -300,6 +312,9 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <RouteMismatchBadge label={entry.mismatch_label} />
+                    <span className="text-xs text-muted-foreground">
+                      <Phrase code={humanizeMismatchLabel(t, entry.mismatch_label)} />
+                    </span>
                     {entry.fallback.attempted ? (
                       <span className="inline-flex items-center rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
                         {t("memoryDebug.fallbackUsedBadge")}
@@ -320,7 +335,9 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                         {t("memoryDebug.initialRoute")}
                       </div>
                       <div className="mt-1 font-medium">
-                        {entry.initial_route.intent}
+                        <Phrase
+                          code={humanizeRouteIntent(t, entry.initial_route.intent)}
+                        />
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background p-3">
@@ -328,14 +345,24 @@ export function RoutingDiagnosticsPanel({ refreshToken }: { refreshToken: number
                         {t("memoryDebug.fallbackLabel")}
                       </div>
                       <div className="mt-1 font-medium">
-                        {entry.fallback.intent || t("memoryDebug.notUsed")}
+                        {entry.fallback.intent ? (
+                          <Phrase
+                            code={humanizeRouteIntent(t, entry.fallback.intent)}
+                          />
+                        ) : (
+                          t("memoryDebug.notUsed")
+                        )}
                       </div>
                     </div>
                     <div className="rounded-lg border border-border bg-background p-3">
                       <div className="text-xs text-muted-foreground">
                         {t("memoryDebug.finalRoute")}
                       </div>
-                      <div className="mt-1 font-medium">{entry.final_route.intent}</div>
+                      <div className="mt-1 font-medium">
+                        <Phrase
+                          code={humanizeRouteIntent(t, entry.final_route.intent)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
