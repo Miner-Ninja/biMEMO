@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, ClassVar
 import httpx
 
 from backend.config import get_settings
-from backend.llm.call_factory import LLMResponse, LLMToolCall
+from backend.llm.call_factory import (
+    LLMResponse,
+    LLMToolCall,
+    current_thinking_enabled,
+)
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
     LlmResponseFormat,
@@ -189,6 +193,8 @@ def _chat_payload(
     llm_response_format: LlmResponseFormat,
     stream: bool,
     schema_override: dict | None = None,
+    thinking_enabled: bool | None = None,
+    api_prefix: str = DEFAULT_OPENAI_API_PREFIX,
 ) -> dict:
     """Build one OpenAI-compatible chat-completions request body.
 
@@ -211,6 +217,10 @@ def _chat_payload(
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = TOOL_CHOICE_AUTO
+    # Reasoning switch: only self-hosted OpenAI-compatible servers (vLLM)
+    # understand chat_template_kwargs; hosted providers get no extra key.
+    if thinking_enabled is False and api_prefix == CUSTOM_API_PREFIX:
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     return payload
 
 
@@ -570,6 +580,8 @@ class OpenAICompatibleClient:
             llm_response_format=llm_response_format,
             stream=_should_stream(llm_response_format),
             schema_override=effective.response_schema,
+            thinking_enabled=current_thinking_enabled(),
+            api_prefix=self.api_prefix,
         )
         if effective_tool_choice is not None and effective_tools:
             payload["tool_choice"] = effective_tool_choice

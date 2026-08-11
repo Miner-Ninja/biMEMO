@@ -221,6 +221,13 @@ async def update_conversation_settings(
                 "value": "1" if body.show_suggestions else "0",
             }
         )
+    if body.thinking_enabled is not None:
+        entries.append(
+            {
+                "key": "thinking_enabled",
+                "value": "1" if body.thinking_enabled else "0",
+            }
+        )
     if entries:
         raw = await admin_client.upsert_chat_settings(conversation_id, entries)
     else:

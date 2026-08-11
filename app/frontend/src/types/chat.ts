@@ -89,10 +89,12 @@ export interface PendingConfirmation {
  * Per-conversation display settings
  */
 export interface ChatSettings {
-  /** Show LLM thinking blocks in assistant messages */
+  /** Show LLM thinking blocks in assistant messages (legacy, unused by UI) */
   showThinking: boolean;
   /** Ask the model to produce a suggestions block (on by default) */
   showSuggestions: boolean;
+  /** Reasoning generation on/off; off also hides thinking blocks */
+  thinkingEnabled: boolean;
 }
 
 /**
@@ -101,6 +103,7 @@ export interface ChatSettings {
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   showThinking: false,
   showSuggestions: true,
+  thinkingEnabled: true,
 };
 
 /**

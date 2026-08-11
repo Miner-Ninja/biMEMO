@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.agent.conversation_settings import read_suggestions_enabled
+from backend.agent.conversation_settings import (
+    read_suggestions_enabled,
+    read_thinking_enabled,
+)
 from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
@@ -22,6 +25,7 @@ from backend.ipc.models import (
     StreamEventType,
     StructuredAssistantContent,
 )
+from backend.llm.call_factory import set_thinking_enabled
 from backend.processes.orchestrator.run_event_recorder import (
     AgentRunEventType,
     RunEventContext,
@@ -554,6 +558,13 @@ async def _run_chat_request(
     orch.prompt_builder.suggestions_enabled = await read_suggestions_enabled(
         db_client, request.conversation_id, default=True
     )
+    # Same pattern for the reasoning switch: read the per-chat setting,
+    # expose it to the provider clients for this turn, clear afterwards.
+    set_thinking_enabled(
+        await read_thinking_enabled(
+            db_client, request.conversation_id, default=True
+        )
+    )
     try:
         response = await _run_with_processing_state(
             db_client=db_client,
@@ -587,6 +598,7 @@ async def _run_chat_request(
         raise
     finally:
         orch.prompt_builder.suggestions_enabled = True
+        set_thinking_enabled(None)
         await _finish_request_event_forwarding(
             request_stream_queue=request_stream_queue,
             event_forwarder=event_forwarder,

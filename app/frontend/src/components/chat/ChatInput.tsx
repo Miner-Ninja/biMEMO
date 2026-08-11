@@ -574,7 +574,7 @@ export const ChatInput = memo(
                             <DropdownMenuItem onClick={onToggleThinking}>
                               <span className="flex items-center gap-2">
                                 <Brain className="h-4 w-4" />
-                                {t("chat.showThinking")}
+                                {t("chat.thinkingMode")}
                               </span>
                               <Switch checked={Boolean(showThinking)} />
                             </DropdownMenuItem>

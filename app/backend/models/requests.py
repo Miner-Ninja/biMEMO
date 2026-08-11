@@ -178,6 +178,7 @@ class ChatSettingsUpdateRequest(StrictRequestModel):
 
     show_thinking: bool | None = None
     show_suggestions: bool | None = None
+    thinking_enabled: bool | None = None
 
 
 class ChatBridgeInboundMessageRequest(StrictRequestModel):

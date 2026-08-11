@@ -22,6 +22,7 @@ from backend.llm.call_factory import (
     LLM_CALL_TIMEOUT,
     LLMResponse,
     LLMToolCall,
+    current_thinking_enabled,
 )
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import (
@@ -388,6 +389,10 @@ class OllamaClient:
             "stream": self._should_stream(capabilities),
             "options": self._build_options(capabilities),
         }
+        # Reasoning switch: Ollama's native flag is a TOP-LEVEL "think"
+        # key (a sibling of "stream", not inside "options").
+        if current_thinking_enabled() is False:
+            payload["think"] = False
         if self._uses_structured_response(capabilities):
             payload["format"] = schema_override or STRUCTURED_RESPONSE_SCHEMA
         if tools:

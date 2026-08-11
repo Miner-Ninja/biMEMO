@@ -67,12 +67,19 @@ function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
 }
 
 function mapSettings(
-  raw: { show_thinking?: boolean; show_suggestions?: boolean } | undefined
+  raw:
+    | {
+        show_thinking?: boolean;
+        show_suggestions?: boolean;
+        thinking_enabled?: boolean;
+      }
+    | undefined
 ): ChatSettings {
   if (!raw) return { ...DEFAULT_CHAT_SETTINGS };
   return {
     showThinking: raw.show_thinking ?? DEFAULT_CHAT_SETTINGS.showThinking,
     showSuggestions: raw.show_suggestions ?? DEFAULT_CHAT_SETTINGS.showSuggestions,
+    thinkingEnabled: raw.thinking_enabled ?? DEFAULT_CHAT_SETTINGS.thinkingEnabled,
   };
 }
 
