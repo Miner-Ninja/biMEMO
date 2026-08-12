@@ -22,6 +22,10 @@ class AgentRunEventType(StrEnum):
 
     RUN_STARTED = "run_started"
     TOOL_STATUS = "tool_status"
+    FORCED_TOOLS = "forced_tools"
+    REQUIREMENTS = "requirements"
+    TOOL_PLAN = "tool_plan"
+    REASK_DECISION = "reask_decision"
     LLM_STARTED = "llm_started"
     ANSWER_DELTA = "answer_delta"
     THINKING_DELTA = "thinking_delta"

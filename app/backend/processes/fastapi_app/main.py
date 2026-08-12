@@ -48,6 +48,7 @@ from .routes import (
     memory_router,
     scheduled_tasks_router,
     tools_catalog_router,
+    trace_router,
     tts_router,
     workspace_router,
 )
@@ -187,6 +188,7 @@ def _register_api_routes(application: FastAPI) -> None:
     application.include_router(admin_router)
     application.include_router(agents_router)
     application.include_router(memory_router)
+    application.include_router(trace_router)
     application.include_router(llm_router)
     application.include_router(files_router)
     application.include_router(avatars_router)

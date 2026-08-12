@@ -543,6 +543,8 @@ def _used_tools_from_response(
     return list(response.used_tools)
 
 
+
+
 async def _run_chat_request(
     *,
     request: ChatRequest,
@@ -647,6 +649,13 @@ async def _run_chat_request_with_prepared_message(
             AgentRunEventType.RUN_STARTED,
             {"channel": request.channel},
         )
+        if request.forced_tools and get_policy().get_bool(
+            "observability.trace_enabled"
+        ):
+            await run_event_recorder.record(
+                AgentRunEventType.FORCED_TOOLS,
+                {"forced_tools": list(request.forced_tools)},
+            )
     try:
         try:
             message, transcription = await _prepare_request_message(

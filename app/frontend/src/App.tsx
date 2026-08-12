@@ -15,6 +15,7 @@ import { AgentConnectionPage } from "@/pages/AgentConnectionPage";
 import { BackupsPage } from "@/pages/BackupsPage";
 import { LLMConfigPage } from "@/pages/admin/LLMConfigPage";
 import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
+import { TracePage } from "@/pages/admin/TracePage";
 import { MemoryPage } from "@/pages/admin/MemoryPage";
 import { EntityDetailPage } from "@/pages/admin/EntityDetailPage";
 import { ProfilePage } from "@/pages/admin/ProfilePage";
@@ -84,6 +85,7 @@ function AppRoutes() {
       <Route path="/admin/scheduled-tasks" element={<ScheduledTasksPage />} />
       <Route path="/admin/memory" element={<MemoryPage />} />
       <Route path="/admin/memory-debug" element={<MemoryDebugPage />} />
+      <Route path="/admin/trace" element={<TracePage />} />
       <Route
         path="/admin/memory-debug/entity/:entityId"
         element={<EntityDetailPage />}

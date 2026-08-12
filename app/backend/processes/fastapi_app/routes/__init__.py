@@ -2,6 +2,7 @@
 
 from .admin import admin_router
 from .admin_memory import memory_router
+from .admin_trace import trace_router
 from .agents import agents_router
 from .auth import auth_router
 from .avatars import avatars_router
@@ -26,6 +27,7 @@ __all__ = [
     "health_router",
     "llm_router",
     "memory_router",
+    "trace_router",
     "scheduled_tasks_router",
     "tools_catalog_router",
     "tts_router",

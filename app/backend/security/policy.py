@@ -143,6 +143,7 @@ DEFAULT_POLICY: dict[str, PolicyValue] = {
     "tools.manual_control_enabled": True,
     "tools.reask_enabled": True,
     "tools.reask_max_retries": 1,
+    "observability.trace_enabled": True,
     "trust.yellow_zone_tools": [
         "file_write",
         "web_search",

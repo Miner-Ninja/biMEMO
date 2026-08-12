@@ -318,6 +318,21 @@ export async function fetchConversations(): Promise<StoredConversation[]> {
   return apiRequest<StoredConversation[]>("/chat/conversations");
 }
 
+/** Full per-turn trace assembled from the persisted run tables. */
+export interface TurnTrace {
+  run: Record<string, unknown>;
+  conversation_id: string;
+  signals: Record<string, unknown>;
+  tool_calls: Record<string, unknown>[];
+  confirmations: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}
+
+/** Load the full turn trace for one agent run id. */
+export async function getTurnTrace(runId: string): Promise<TurnTrace> {
+  return apiRequest<TurnTrace>(`/admin/trace/${encodePathSegment(runId)}`);
+}
+
 /** Load one persisted conversation history from the server. */
 export async function fetchConversationMessages(
   conversationId: string,
