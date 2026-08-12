@@ -1,6 +1,15 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Settings, Database, Cpu, User, Bug, Brain, Sparkles } from "lucide-react";
+import {
+  Settings,
+  Database,
+  Cpu,
+  User,
+  Bug,
+  Brain,
+  Sparkles,
+  Activity,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { TranslationKey } from "@/i18n";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -52,6 +61,12 @@ const adminLinks: Array<{
     icon: Sparkles,
     titleKey: "admin.skills",
     descriptionKey: "admin.skillsDescription",
+  },
+  {
+    to: "/admin/trace",
+    icon: Activity,
+    titleKey: "admin.turnTrace",
+    descriptionKey: "admin.turnTraceDescription",
   },
 ];
 

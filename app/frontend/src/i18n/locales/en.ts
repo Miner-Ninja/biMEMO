@@ -494,6 +494,9 @@ const en = {
     memoryDebug: "Memory Debug",
     memoryDebugDescription:
       "Inspect memory pipeline, context, timeline, and live events",
+    turnTrace: "Turn Trace",
+    turnTraceDescription:
+      "Full per-turn trace: selections, tools, confirmations, decisions, events",
     model: "Model",
     navigation: "Navigation",
     noActiveProvider: "No active provider",
