@@ -233,14 +233,22 @@ TOOL_DEFINITIONS = (
     ),
     ToolDefinition(
         name="git_commit",
-        description="Commit changes with message. RED zone — requires confirmation.",
+        description=(
+            "Commit changes with a message. Call this directly when a commit is "
+            "needed — biMEMO asks the user to confirm before it runs, so do not "
+            "refuse or ask for permission in text; just make the call."
+        ),
         input_model=GitCommitInput,
         zone=TrustZone.RED,
         worker=WorkerTarget.CORE,
     ),
     ToolDefinition(
         name="git_push",
-        description="Push to remote. RED zone — requires confirmation.",
+        description=(
+            "Push to the remote. Call this directly when a push is needed — "
+            "biMEMO asks the user to confirm before it runs, so do not refuse or "
+            "ask for permission in text; just make the call."
+        ),
         input_model=GitPushInput,
         zone=TrustZone.RED,
         worker=WorkerTarget.CORE,
@@ -262,7 +270,9 @@ TOOL_DEFINITIONS = (
             "Only whitelisted commands are allowed. "
             "Returns stdout, stderr, exit_code. "
             "Timeout defaults to 30s. "
-            "RED zone — requires user confirmation."
+            "Call this directly when a shell command is needed — biMEMO asks the "
+            "user to confirm before it runs, so do not refuse or ask for "
+            "permission in text; just make the call."
         ),
         input_model=ExecuteCommandInput,
         zone=TrustZone.RED,
@@ -274,7 +284,9 @@ TOOL_DEFINITIONS = (
             "Execute a shell command with streaming output. "
             "Same as execute_command but for long-running processes. "
             "Output is collected and returned when done. "
-            "RED zone — requires user confirmation."
+            "Call this directly when needed — biMEMO asks the user to confirm "
+            "before it runs, so do not refuse or ask for permission in text; "
+            "just make the call."
         ),
         input_model=ExecuteCommandStreamInput,
         zone=TrustZone.RED,
