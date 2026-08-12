@@ -1152,6 +1152,7 @@ class AgentOrchestrator:
             await self._load_skill_index()
             self.tool_executor.tool_call_count = 0
             self.tool_executor.tool_names_used = []
+            self.tool_executor.executed_tools = []
             self._stage_timings = StageTimings()
             self.tool_executor.stage_timings = self._stage_timings
             # Propagate turn context to tool handlers via the broker.
@@ -1274,7 +1275,8 @@ class AgentOrchestrator:
         # Forced tools (chat-input chips): only when manual tool control is on.
         # One tool -> force that exact function; several -> require a tool call.
         forced = self._forced_tools
-        forced_tool_choice: object | None = None
+        # Either a specific-function choice dict or the literal "required".
+        forced_tool_choice: dict[str, object] | str | None = None
         if forced and get_policy().get_bool("tools.manual_control_enabled"):
             forced_tool_choice = (
                 {"type": "function", "function": {"name": forced[0]}}

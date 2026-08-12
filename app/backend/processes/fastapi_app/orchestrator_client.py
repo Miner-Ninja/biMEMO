@@ -90,6 +90,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Approving a RED action resumes the run: it executes the tool and one follow-up
+# model call, which is bounded by the LLM call timeout (120s). Wait past that so
+# a slow continuation returns a real result instead of a premature IPC timeout.
+CONFIRM_RESUME_TIMEOUT_SECONDS = 130.0
+
 # IPC type map for incoming orchestrator messages
 ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "BridgeInboundSyncResponse": IPCBridgeInboundSyncResponse,
@@ -531,7 +536,7 @@ class OrchestratorClient:
     async def send_confirm(
         self,
         request: IPCConfirmRequest,
-        timeout: float = 130.0,
+        timeout: float = CONFIRM_RESUME_TIMEOUT_SECONDS,
     ) -> IPCConfirmResponse:
         """Send a ConfirmRequest and wait for the ConfirmResponse.
 

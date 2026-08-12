@@ -31,6 +31,7 @@ from backend.processes.orchestrator.run_event_recorder import (
     RunEventContext,
     RunEventRecorder,
 )
+from backend.security.policy import get_policy
 
 
 if TYPE_CHECKING:
@@ -532,17 +533,14 @@ def _pending_confirmations_from_orchestrator(
 
 
 def _used_tools_from_response(
-    response: "AgentResponse",
+    response: AgentResponse,
 ) -> list[dict[str, object]] | None:
     """Return executed tool payloads for the HTTP response."""
-    from backend.security.policy import get_policy
-
     if not get_policy().get_bool("tools.manual_control_enabled"):
         return None
-    tools = getattr(response, "used_tools", [])
-    if not tools:
+    if not response.used_tools:
         return None
-    return list(tools)
+    return list(response.used_tools)
 
 
 async def _run_chat_request(

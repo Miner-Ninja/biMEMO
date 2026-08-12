@@ -911,7 +911,7 @@ class LLMCaller:
         tool_executor: ToolExecutor,
         user_intent: dict[str, set[str]] | None = None,
         force_web_search: bool = False,
-        forced_tool_choice: object | None = None,
+        forced_tool_choice: dict[str, object] | str | None = None,
         requirements: ResponseRequirements | None = None,
         satisfaction: RequirementSatisfaction | None = None,
         suggestions_enabled: bool = True,

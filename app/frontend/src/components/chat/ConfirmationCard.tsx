@@ -1,48 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Check,
-  CheckCircle2,
-  Clock3,
-  Database,
-  Globe,
-  Search,
-  ShieldAlert,
-  Terminal,
-  Wrench,
-  X,
-  XCircle,
-} from "lucide-react";
+import { Check, CheckCircle2, Clock3, ShieldAlert, X, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { confirmAction, denyAction } from "@/lib/bimemo-api";
+import { getToolMeta, type ToolIcon } from "@/lib/tool-metadata";
 import type { TranslationKey } from "@/i18n";
 import type { PendingConfirmation } from "@/types/chat";
 import { cn } from "@/lib/utils";
-
-// Values are translation keys, resolved with t() at render time.
-const TOOL_LABEL_KEYS: Record<string, TranslationKey> = {
-  http_fetch: "chat.toolFetchUrl",
-  email_send: "chat.toolSendEmail",
-};
-
-// Map known tool names to a recognisable icon + display label.
-const TOOL_ICONS: Record<string, { icon: typeof Terminal; labelKey?: TranslationKey }> =
-  {
-    bash: { icon: Terminal },
-    run_command: { icon: Terminal },
-    project_command: { icon: Terminal },
-    git_status: { icon: Terminal },
-    git_diff: { icon: Terminal },
-    git_log: { icon: Terminal },
-    web_search: { icon: Search },
-    http_fetch: { icon: Globe, labelKey: "chat.toolFetchUrl" },
-    file_read: { icon: Database },
-    file_write: { icon: Database },
-    file_search: { icon: Search },
-    email_send: { icon: Globe, labelKey: "chat.toolSendEmail" },
-  };
 
 const CONFIRMATION_TIMEOUT_MS = 300_000;
 const PARAMETER_PREVIEW_LIMIT = 120;
@@ -56,7 +22,7 @@ interface ConfirmationCardProps {
 type StateStyle = {
   frame: string;
   iconWrap: string;
-  icon: typeof ShieldAlert;
+  icon: ToolIcon;
   badge: "success" | "danger" | "warning" | "secondary";
   headingKey: TranslationKey;
   statusKey: TranslationKey;
@@ -115,10 +81,9 @@ export default function ConfirmationCard({
   const StateIcon = style.icon;
 
   // Resolve tool icon + label from the tool name
-  const toolMeta = TOOL_ICONS[confirmation.tool_name] ?? { icon: Wrench };
-  const ToolIcon = toolMeta.icon;
-  const labelKey = toolMeta.labelKey ?? TOOL_LABEL_KEYS[confirmation.tool_name];
-  const label = labelKey ? t(labelKey) : confirmation.tool_name;
+  const toolMeta = getToolMeta(confirmation.tool_name);
+  const ToolGlyph = toolMeta.icon;
+  const label = toolMeta.labelKey ? t(toolMeta.labelKey) : confirmation.tool_name;
   const parameterSummary = buildParameterSummary(confirmation.parameters);
 
   useEffect(() => {
@@ -192,7 +157,7 @@ export default function ConfirmationCard({
           {/* What will run — a command-style preview */}
           <div className="mt-3 rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
             <div className="flex items-center gap-2.5">
-              <ToolIcon className="h-5 w-5 shrink-0 text-foreground" />
+              <ToolGlyph className="h-5 w-5 shrink-0 text-foreground" />
               <span className="truncate font-medium text-sm text-foreground">
                 {label}
               </span>

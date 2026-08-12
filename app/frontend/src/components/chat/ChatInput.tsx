@@ -1,6 +1,7 @@
 import {
   useState,
   useRef,
+  useCallback,
   memo,
   forwardRef,
   useImperativeHandle,
@@ -161,11 +162,11 @@ export const ChatInput = memo(
     const [selectedTools, setSelectedTools] = useState<string[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const toggleTool = (name: string) => {
+    const toggleTool = useCallback((name: string) => {
       setSelectedTools((prev) =>
         prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
       );
-    };
+    }, []);
 
     const {
       showCommands,
@@ -287,11 +288,9 @@ export const ChatInput = memo(
       }, 150);
     };
 
-    const canSend =
-      (value.trim().length > 0 ||
-        selectedTools.length > 0 ||
-        attachedFiles.length > 0) &&
-      !disabled;
+    // Mirror the backend ChatRequest contract: a send needs text, a forced
+    // tool, or voice — attached files alone do not satisfy it (would 422).
+    const canSend = (value.trim().length > 0 || selectedTools.length > 0) && !disabled;
     // Show the shimmering stage label in the placeholder spot only while a
     // request is processing AND the input is empty (so typing hides it).
     const showStageOverlay = !!processingStage && value.length === 0;
@@ -466,7 +465,7 @@ export const ChatInput = memo(
                       <button
                         type="button"
                         onClick={() => toggleTool(name)}
-                        aria-label={`remove ${name}`}
+                        aria-label={t("chat.removeTool", { name })}
                         className="ml-0.5 opacity-60 hover:opacity-100"
                       >
                         <X className="h-3 w-3" />

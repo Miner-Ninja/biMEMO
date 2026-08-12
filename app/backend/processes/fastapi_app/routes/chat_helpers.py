@@ -396,14 +396,8 @@ def build_conversation_message_item(
         if structured_content is not None and isinstance(content, str)
         else content
     )
-    # used_tools is stored inside meta as JSON, not as a separate column
-    used_tools_data = None
-    if raw_meta:
-        try:
-            parsed_meta = json.loads(raw_meta)
-            used_tools_data = parsed_meta.get("used_tools")
-        except (json.JSONDecodeError, TypeError):
-            pass
+    # used_tools is stored inside meta as JSON, not as a separate column.
+    used_tools_data = parse_message_meta(raw_meta).get("used_tools")
     return HTTPConversationMessageItem(
         id=str(message["id"]),
         role=role,
@@ -618,12 +612,16 @@ async def list_conversation_message_items(
         messages,
         key=lambda message: str(message.get("created_at", "")),
     )
-    pending_confirmations = await waiting_confirmations_for_conversation(
-        admin_client=admin_client,
-        conversation_id=conversation_id,
-    )
-    target_message_id = (
-        last_assistant_message_id(ordered_messages) if pending_confirmations else ""
+    # A pending confirmation always hangs off the latest assistant message, so
+    # only pay the pending-actions lookup when there is one to attach it to.
+    target_message_id = last_assistant_message_id(ordered_messages)
+    pending_confirmations = (
+        await waiting_confirmations_for_conversation(
+            admin_client=admin_client,
+            conversation_id=conversation_id,
+        )
+        if target_message_id
+        else []
     )
     return [
         build_conversation_message_item(

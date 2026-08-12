@@ -1,56 +1,7 @@
-import {
-  Activity,
-  Brain,
-  Calendar,
-  Code,
-  ExternalLink,
-  FilePen,
-  FileSearch,
-  FileText,
-  GitBranch,
-  GitCommit,
-  Globe,
-  Mail,
-  Sparkles,
-  Terminal,
-  Wrench,
-} from "lucide-react";
-import type { ComponentType } from "react";
-
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getToolMeta, ZONE_BADGE_VARIANT, type Zone } from "@/lib/tool-metadata";
 import type { UsedTool } from "@/types/chat";
-
-/** Tool name → Lucide icon. Unmapped tools fall back to a wrench. */
-const TOOL_ICON: Record<string, ComponentType<{ className?: string }>> = {
-  file_read: FileText,
-  file_search: FileSearch,
-  file_write: FilePen,
-  code_search: Code,
-  web_search: Globe,
-  http_fetch: ExternalLink,
-  memory_recall: Brain,
-  email_send: Mail,
-  schedule_task: Calendar,
-  system_status: Activity,
-  execute_command: Terminal,
-  execute_command_stream: Terminal,
-  git_status: GitBranch,
-  git_diff: GitBranch,
-  git_log: GitBranch,
-  git_commit: GitCommit,
-  git_push: GitBranch,
-  skill_create: Sparkles,
-  skill_search: Sparkles,
-  skill_load: Sparkles,
-};
-
-/** Trust-zone value (from get_zone) → Badge variant. */
-const ZONE_VARIANT: Record<string, "success" | "warning" | "danger"> = {
-  green: "success",
-  yellow: "warning",
-  red: "danger",
-};
 
 interface CollapsedTool {
   tool: UsedTool;
@@ -92,9 +43,9 @@ export function ToolBadges({ usedTools, className }: ToolBadgesProps) {
   return (
     <div className={cn("flex flex-wrap justify-end gap-1", className)}>
       {collapse(usedTools).map(({ tool, count }, index) => {
-        const Icon = TOOL_ICON[tool.name] ?? Wrench;
+        const Icon = getToolMeta(tool.name).icon;
         const variant = tool.success
-          ? (ZONE_VARIANT[tool.zone] ?? "secondary")
+          ? (ZONE_BADGE_VARIANT[tool.zone as Zone] ?? "secondary")
           : "danger";
         const title = tool.success ? tool.name : `${tool.name} (failed)`;
 

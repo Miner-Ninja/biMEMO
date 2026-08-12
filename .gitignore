@@ -62,9 +62,16 @@ Thumbs.db
 
 # --- Runtime traces (contain real conversation/memory content) ---
 app/.runtime/
+.runtime/
+
+# --- Build / linker artifacts ---
+a.out
+*.out
+*.o
 
 # --- Local analysis / scratch ---
 tmp/
+scripts/analyze_naming.py
 sandbox/
 openspec/
 PROJECT_PROFILE.md

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Check, Wrench } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -10,68 +11,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { getToolMeta, ZONE_DOT_CLASS } from "@/lib/tool-metadata";
+import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-type Zone = "green" | "yellow" | "red";
-
-interface ToolDef {
-  name: string;
-  zone: Zone;
-}
-
-/** Tools grouped by purpose. Zone dot: green silent, yellow notify, red confirm. */
-const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
+/**
+ * Tools grouped by purpose. Tool names + their trust zones come from the shared
+ * tool-metadata table (which mirrors the backend), so the zone dot cannot drift.
+ */
+const TOOL_GROUPS: { labelKey: TranslationKey; tools: string[] }[] = [
   {
-    label: "Файлы",
-    tools: [
-      { name: "file_read", zone: "green" },
-      { name: "file_search", zone: "green" },
-      { name: "file_write", zone: "yellow" },
-    ],
+    labelKey: "chat.toolGroupFiles",
+    tools: ["file_read", "file_search", "file_write"],
   },
   {
-    label: "Git / Код",
-    tools: [
-      { name: "code_search", zone: "green" },
-      { name: "git_status", zone: "red" },
-      { name: "git_diff", zone: "red" },
-      { name: "git_commit", zone: "red" },
-      { name: "git_push", zone: "red" },
-    ],
+    labelKey: "chat.toolGroupGitCode",
+    tools: ["code_search", "git_status", "git_diff", "git_commit", "git_push"],
   },
-  {
-    label: "Шелл",
-    tools: [{ name: "execute_command", zone: "red" }],
-  },
-  {
-    label: "Веб",
-    tools: [
-      { name: "web_search", zone: "yellow" },
-      { name: "http_fetch", zone: "yellow" },
-    ],
-  },
-  {
-    label: "Память",
-    tools: [{ name: "memory_recall", zone: "green" }],
-  },
-  {
-    label: "Связь",
-    tools: [{ name: "email_send", zone: "red" }],
-  },
-  {
-    label: "Система",
-    tools: [
-      { name: "system_status", zone: "green" },
-      { name: "schedule_task", zone: "yellow" },
-    ],
-  },
+  { labelKey: "chat.toolGroupShell", tools: ["execute_command"] },
+  { labelKey: "chat.toolGroupWeb", tools: ["web_search", "http_fetch"] },
+  { labelKey: "chat.toolGroupMemory", tools: ["memory_recall"] },
+  { labelKey: "chat.toolGroupComms", tools: ["email_send"] },
+  { labelKey: "chat.toolGroupSystem", tools: ["system_status", "schedule_task"] },
 ];
-
-const ZONE_DOT: Record<Zone, string> = {
-  green: "bg-success",
-  yellow: "bg-warning",
-  red: "bg-destructive",
-};
 
 interface ToolMenuProps {
   selected: string[];
@@ -85,6 +47,8 @@ interface ToolMenuProps {
  * chips row in the chat input (the forced sequence for the next message).
  */
 export function ToolMenu({ selected, onToggle, disabled }: ToolMenuProps) {
+  const { t } = useTranslation();
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -93,33 +57,38 @@ export function ToolMenu({ selected, onToggle, disabled }: ToolMenuProps) {
           variant="ghost"
           size="icon"
           disabled={disabled}
-          title="Инструменты"
-          aria-label="Инструменты"
+          title={t("chat.tools")}
+          aria-label={t("chat.tools")}
         >
           <Wrench className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
         {TOOL_GROUPS.map((group, index) => (
-          <div key={group.label}>
+          <div key={group.labelKey}>
             {index > 0 && <DropdownMenuSeparator />}
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              {group.label}
+              {t(group.labelKey)}
             </DropdownMenuLabel>
             <DropdownMenuGroup>
-              {group.tools.map((tool) => (
+              {group.tools.map((name) => (
                 <DropdownMenuItem
-                  key={tool.name}
+                  key={name}
                   // Keep the menu open while toggling several tools.
                   onSelect={(event) => {
                     event.preventDefault();
-                    onToggle(tool.name);
+                    onToggle(name);
                   }}
                   className="gap-2"
                 >
-                  <span className={cn("h-2 w-2 rounded-full", ZONE_DOT[tool.zone])} />
-                  <span className="flex-1 font-mono text-xs">{tool.name}</span>
-                  {selected.includes(tool.name) && <Check className="h-3.5 w-3.5" />}
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      ZONE_DOT_CLASS[getToolMeta(name).zone]
+                    )}
+                  />
+                  <span className="flex-1 font-mono text-xs">{name}</span>
+                  {selected.includes(name) && <Check className="h-3.5 w-3.5" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuGroup>
