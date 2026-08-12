@@ -64,7 +64,7 @@ from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
 )
-from backend.trust.zones import extract_user_intent_tools
+from backend.trust.zones import extract_user_intent
 
 
 if TYPE_CHECKING:
@@ -1259,7 +1259,7 @@ class AgentOrchestrator:
                 loop=loop,
             )
 
-        user_intent = extract_user_intent_tools(
+        user_intent = extract_user_intent(
             prepared_turn.filtered_message,
         )
         model_loop_result = await self.llm_caller.run_model_loop(
@@ -1270,7 +1270,7 @@ class AgentOrchestrator:
             call_usages=prepared_turn.call_usages,
             channel=channel,
             tool_executor=self.tool_executor,
-            user_intent_tools=user_intent or None,
+            user_intent=user_intent or None,
             requirements=prepared_turn.requirements,
             satisfaction=prepared_turn.satisfaction,
             suggestions_enabled=self.prompt_builder.suggestions_enabled,

@@ -909,7 +909,7 @@ class LLMCaller:
         call_usages: list[LLMCallUsage],
         channel: str,
         tool_executor: ToolExecutor,
-        user_intent_tools: set[str] | None = None,
+        user_intent: dict[str, set[str]] | None = None,
         force_web_search: bool = False,
         requirements: ResponseRequirements | None = None,
         satisfaction: RequirementSatisfaction | None = None,
@@ -958,7 +958,7 @@ class LLMCaller:
                 llm_response=llm_response,
                 messages=messages,
                 channel=channel,
-                user_intent_tools=user_intent_tools,
+                user_intent=user_intent,
             )
             if round_result.raw_final_text:
                 raw_final_text = round_result.raw_final_text

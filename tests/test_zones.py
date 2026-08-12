@@ -6,11 +6,13 @@ and tool listing by zone.
 
 from backend.trust.zones import (
     TrustZone,
+    extract_user_intent,
     extract_user_intent_tools,
     get_zone,
     is_outbound,
     list_tools_by_zone,
     split_by_zone,
+    user_intent_authorizes,
 )
 
 
@@ -177,3 +179,82 @@ class TestSplitByZoneWithIntent:
         immediate_none, confirm_none = split_by_zone(calls)
         assert len(immediate_empty) == len(immediate_none)
         assert len(confirm_empty) == len(confirm_none)
+
+
+class TestExtractUserIntent:
+    """Tests for parameter-level intent extraction (values, not just names)."""
+
+    def test_extracts_url_value(self):
+        result = extract_user_intent("Please open https://example.com/page now")
+        assert result == {"http_fetch": {"https://example.com/page"}}
+
+    def test_extracts_email_value(self):
+        result = extract_user_intent("Send it to boss@firma.com thanks")
+        assert result == {"email_send": {"boss@firma.com"}}
+
+    def test_extracts_both_and_multiple(self):
+        result = extract_user_intent(
+            "mail a@x.com and b@y.com, ref http://h1.test"
+        )
+        assert result["email_send"] == {"a@x.com", "b@y.com"}
+        assert result["http_fetch"] == {"http://h1.test"}
+
+    def test_no_signal_is_empty(self):
+        assert extract_user_intent("Just a normal question") == {}
+
+
+class TestUserIntentAuthorizes:
+    """Tests for parameter-bound bypass authorization."""
+
+    def test_email_match_authorized(self):
+        assert user_intent_authorizes(
+            "email_send",
+            {"to": "boss@firma.com"},
+            {"email_send": {"boss@firma.com"}},
+        )
+
+    def test_email_mismatch_not_authorized(self):
+        assert not user_intent_authorizes(
+            "email_send",
+            {"to": "attacker@evil.com"},
+            {"email_send": {"boss@firma.com"}},
+        )
+
+    def test_email_one_of_many_not_typed_not_authorized(self):
+        # boss was typed, attacker was not -> must confirm
+        assert not user_intent_authorizes(
+            "email_send",
+            {"to": "boss@firma.com, attacker@evil.com"},
+            {"email_send": {"boss@firma.com"}},
+        )
+
+    def test_email_missing_param_not_authorized(self):
+        assert not user_intent_authorizes(
+            "email_send", {}, {"email_send": {"boss@firma.com"}}
+        )
+
+    def test_http_fetch_match_trailing_slash_authorized(self):
+        assert user_intent_authorizes(
+            "http_fetch",
+            {"url": "https://example.com/"},
+            {"http_fetch": {"https://example.com"}},
+        )
+
+    def test_http_fetch_mismatch_not_authorized(self):
+        assert not user_intent_authorizes(
+            "http_fetch",
+            {"url": "https://evil.com"},
+            {"http_fetch": {"https://example.com"}},
+        )
+
+    def test_no_intent_entry_not_authorized(self):
+        assert not user_intent_authorizes(
+            "email_send", {"to": "boss@firma.com"}, {}
+        )
+
+    def test_unmapped_tool_not_authorized(self):
+        assert not user_intent_authorizes(
+            "execute_command",
+            {"command": "ls"},
+            {"execute_command": {"ls"}},
+        )

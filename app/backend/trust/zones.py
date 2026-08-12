@@ -210,11 +210,80 @@ def extract_user_intent_tools(message: str) -> set[str]:
     return intent_tools
 
 
+# Which call parameter carries the target that a user-intent signal must match.
+_INTENT_PARAM: dict[str, str] = {
+    "http_fetch": "url",
+    "email_send": "to",
+}
+
+
+def extract_user_intent(message: str) -> dict[str, set[str]]:
+    """Extract intent targets the user typed, per RED tool.
+
+    Unlike extract_user_intent_tools (which returns only tool names), this
+    keeps the concrete values (the URLs and email addresses the user wrote),
+    so a bypass can be authorized only when the actual tool-call parameter
+    matches one of those values, not merely when a signal appears anywhere in
+    the message.
+
+    Args:
+        message: Raw user message text.
+
+    Returns:
+        Mapping of tool name to the set of user-typed target strings.
+    """
+    intent: dict[str, set[str]] = {}
+    for pattern, tool_name in _INTENT_SIGNAL_MAP.items():
+        matches = {match.group(0) for match in pattern.finditer(message)}
+        if matches:
+            intent[tool_name] = matches
+    return intent
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize a URL for tolerant-but-strict equality (case, trailing slash)."""
+    return url.strip().rstrip("/").lower()
+
+
+def user_intent_authorizes(
+    tool_name: str,
+    parameters: dict,
+    intent: dict[str, set[str]],
+) -> bool:
+    """Whether the user explicitly authorized THIS specific RED call.
+
+    The bypass applies only when the tool-call parameter matches a value the
+    user actually typed: for email_send every recipient in ``to`` must be an
+    address from the message; for http_fetch the ``url`` must equal a URL from
+    the message. A target the user did not write always requires confirmation.
+    """
+    allowed = intent.get(tool_name)
+    if not allowed:
+        return False
+    param_key = _INTENT_PARAM.get(tool_name)
+    if param_key is None:
+        return False
+    raw = parameters.get(param_key, "")
+    if not isinstance(raw, str) or not raw.strip():
+        return False
+    if tool_name == "email_send":
+        recipients = _EMAIL_PATTERN.findall(raw)
+        allowed_lower = {value.lower() for value in allowed}
+        return bool(recipients) and all(
+            recipient.lower() in allowed_lower for recipient in recipients
+        )
+    if tool_name == "http_fetch":
+        return _normalize_url(raw) in {_normalize_url(value) for value in allowed}
+    return False
+
+
 __all__ = [
     "TrustZone",
+    "extract_user_intent",
     "extract_user_intent_tools",
     "get_zone",
     "is_outbound",
     "list_tools_by_zone",
     "split_by_zone",
+    "user_intent_authorizes",
 ]

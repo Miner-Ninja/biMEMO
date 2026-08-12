@@ -20,7 +20,7 @@ from backend.llm.structured_response import (
     StructuredAssistantContent,
     normalize_legacy_response_text,
 )
-from backend.trust.zones import TrustZone, get_zone
+from backend.trust.zones import TrustZone, get_zone, user_intent_authorizes
 
 
 if TYPE_CHECKING:
@@ -366,27 +366,31 @@ def context_contains_active_long_term_preference(
 
 def split_by_zone(
     calls: list[ToolCall],
-    user_intent_tools: set[str] | None = None,
+    user_intent: dict[str, set[str]] | None = None,
 ) -> tuple[list[ToolCall], list[ToolCall]]:
     """Split tool calls by trust zone.
 
     GREEN and YELLOW tools execute immediately.
-    RED tools require individual confirmation unless
-    the user explicitly requested the action.
+    RED tools require individual confirmation unless the user explicitly
+    requested THIS call — the bypass is bound to the call parameters, so a RED
+    tool skips confirmation only when its target matches a value the user typed
+    (see zones.user_intent_authorizes), not merely when the tool was mentioned.
 
     Args:
         calls: Tool calls to classify.
-        user_intent_tools: Tool names the user explicitly requested.
+        user_intent: Per-tool set of target strings the user typed.
 
     Returns:
         Tuple of (immediate calls, red calls).
     """
     immediate: list[ToolCall] = []
     red: list[ToolCall] = []
-    intent_set = user_intent_tools or set()
+    intent = user_intent or {}
     for call in calls:
         zone = get_zone(call.name)
-        if zone == TrustZone.RED and call.name not in intent_set:
+        if zone == TrustZone.RED and not user_intent_authorizes(
+            call.name, call.parameters, intent
+        ):
             red.append(call)
         else:
             immediate.append(call)

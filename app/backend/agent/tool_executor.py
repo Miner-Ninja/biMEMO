@@ -316,7 +316,7 @@ class ToolExecutor:
         llm_response: object,
         messages: list[dict[str, object]],
         channel: str,
-        user_intent_tools: set[str] | None = None,
+        user_intent: dict[str, set[str]] | None = None,
     ) -> ToolRoundResult:
         """Execute one batch of tool calls and update the prompt state."""
         if not llm_response.tool_calls:
@@ -330,7 +330,7 @@ class ToolExecutor:
         tool_calls = self.build_tool_calls(llm_response)
         immediate, red = split_by_zone(
             tool_calls,
-            user_intent_tools=user_intent_tools,
+            user_intent=user_intent,
         )
         granted_red, red = self._promote_saved_grants(red)
         immediate.extend(granted_red)

@@ -130,34 +130,84 @@ class TestSplitByZone:
 
 
 class TestSplitByZoneWithIntent:
-    """Tests for split_by_zone with user_intent_tools parameter."""
+    """Tests for split_by_zone with parameter-bound user intent.
 
-    def test_red_tool_in_intent_goes_to_immediate(self):
-        """Verify RED tool matching user intent executes immediately."""
-        calls = [ToolCall(id="c1", name="email_send", parameters={})]
+    The bypass is authorized only when the tool-call parameter matches a value
+    the user actually typed, not merely when the tool was mentioned.
+    """
+
+    def test_red_tool_matching_param_goes_to_immediate(self):
+        """RED tool whose target matches a user-typed value skips confirmation."""
+        calls = [
+            ToolCall(id="c1", name="email_send", parameters={"to": "boss@firma.com"})
+        ]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"email_send"},
+            user_intent={"email_send": {"boss@firma.com"}},
         )
         assert len(immediate) == 1
         assert len(red) == 0
 
-    def test_red_tool_not_in_intent_goes_to_red(self):
-        """Verify RED tool without user intent stays in red list."""
-        calls = [ToolCall(id="c1", name="email_send", parameters={})]
+    def test_red_tool_param_mismatch_goes_to_red(self):
+        """RED tool sent to an address the user did NOT type requires confirmation.
+
+        This is the core of the parameter-binding fix: the user wrote
+        boss@firma.com but the model targets attacker@evil.com.
+        """
+        calls = [
+            ToolCall(
+                id="c1", name="email_send", parameters={"to": "attacker@evil.com"}
+            )
+        ]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"http_fetch"},
+            user_intent={"email_send": {"boss@firma.com"}},
         )
         assert len(immediate) == 0
         assert len(red) == 1
+
+    def test_red_tool_missing_param_goes_to_red(self):
+        """RED tool with no target parameter cannot be bypassed."""
+        calls = [ToolCall(id="c1", name="email_send", parameters={})]
+        immediate, red = split_by_zone(
+            calls,
+            user_intent={"email_send": {"boss@firma.com"}},
+        )
+        assert len(immediate) == 0
+        assert len(red) == 1
+
+    def test_red_tool_no_intent_goes_to_red(self):
+        """RED tool with no matching intent entry requires confirmation."""
+        calls = [
+            ToolCall(id="c1", name="email_send", parameters={"to": "boss@firma.com"})
+        ]
+        immediate, red = split_by_zone(
+            calls,
+            user_intent={"http_fetch": {"https://example.com"}},
+        )
+        assert len(immediate) == 0
+        assert len(red) == 1
+
+    def test_http_fetch_matching_url_immediate_trailing_slash(self):
+        """http_fetch to a user-typed URL skips confirmation (slash-tolerant)."""
+        calls = [
+            ToolCall(
+                id="c1", name="http_fetch", parameters={"url": "https://example.com/"}
+            )
+        ]
+        immediate, red = split_by_zone(
+            calls,
+            user_intent={"http_fetch": {"https://example.com"}},
+        )
+        assert len(immediate) == 1
+        assert len(red) == 0
 
     def test_green_tool_unaffected_by_intent(self):
         """Verify GREEN tool stays immediate regardless of intent."""
         calls = [ToolCall(id="c1", name="file_read", parameters={})]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"http_fetch"},
+            user_intent={"http_fetch": {"https://example.com"}},
         )
         assert len(immediate) == 1
         assert len(red) == 0
@@ -167,20 +217,20 @@ class TestSplitByZoneWithIntent:
         calls = [ToolCall(id="c1", name="file_write", parameters={})]
         immediate, red = split_by_zone(
             calls,
-            user_intent_tools={"http_fetch"},
+            user_intent={"http_fetch": {"https://example.com"}},
         )
         assert len(immediate) == 1
         assert len(red) == 0
 
     def test_empty_intent_same_as_no_intent(self):
-        """Verify empty intent set behaves like no intent parameter."""
+        """Verify empty intent behaves like no intent parameter."""
         calls = [
             ToolCall(id="c1", name="file_read", parameters={}),
             ToolCall(id="c2", name="http_fetch", parameters={}),
         ]
         immediate_empty, red_empty = split_by_zone(
             calls,
-            user_intent_tools=set(),
+            user_intent={},
         )
         immediate_none, red_none = split_by_zone(calls)
         assert len(immediate_empty) == len(immediate_none)
