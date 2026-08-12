@@ -396,6 +396,14 @@ def build_conversation_message_item(
         if structured_content is not None and isinstance(content, str)
         else content
     )
+    # used_tools is stored inside meta as JSON, not as a separate column
+    used_tools_data = None
+    if raw_meta:
+        try:
+            parsed_meta = json.loads(raw_meta)
+            used_tools_data = parsed_meta.get("used_tools")
+        except (json.JSONDecodeError, TypeError):
+            pass
     return HTTPConversationMessageItem(
         id=str(message["id"]),
         role=role,
@@ -404,7 +412,7 @@ def build_conversation_message_item(
         created_at=str(message["created_at"]),
         meta=raw_meta,
         structured_content=structured_content,
-        used_tools=build_used_tool_items(message.get("used_tools")),
+        used_tools=build_used_tool_items(used_tools_data),
         pending_confirmations=build_confirmation_items(pending_confirmations),
     )
 
