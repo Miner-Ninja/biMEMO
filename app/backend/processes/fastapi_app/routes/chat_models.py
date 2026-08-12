@@ -6,7 +6,7 @@ chat helpers and route handlers to carry resolved file metadata, prompt
 blocks, and inline image data through the request pipeline.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 
@@ -23,6 +23,7 @@ class ChatInputContext:
     message: str
     images: list[str]
     resolved_files: list[str]
+    forced_tools: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

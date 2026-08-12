@@ -254,6 +254,11 @@ export interface StoredConversationMessage {
     sql?: string | null;
     suggestions?: string[];
   } | null;
+  pending_confirmations?: {
+    action_id: string;
+    tool_name: string;
+    parameters: Record<string, unknown>;
+  }[];
 }
 
 export interface ConversationCreateResponse {
@@ -716,7 +721,7 @@ export interface ConfirmResponse {
 
 /** Approve a pending RED zone tool action. */
 export async function confirmAction(actionId: string): Promise<ConfirmResponse> {
-  return apiRequest<ConfirmResponse>("/chat/confirm", {
+  return apiRequest<ConfirmResponse>("/confirm", {
     method: "POST",
     body: JSON.stringify({
       action_id: actionId,
@@ -727,7 +732,7 @@ export async function confirmAction(actionId: string): Promise<ConfirmResponse> 
 
 /** Deny a pending RED zone tool action. */
 export async function denyAction(actionId: string): Promise<ConfirmResponse> {
-  return apiRequest<ConfirmResponse>("/chat/confirm", {
+  return apiRequest<ConfirmResponse>("/confirm", {
     method: "POST",
     body: JSON.stringify({
       action_id: actionId,

@@ -65,22 +65,27 @@ class MessagePersistence:
         content: str | list[dict[str, object]],
         *,
         meta: dict[str, object] | None = None,
+        used_tools: list[str] | None = None,
     ) -> str | None:
         """Persist one conversation message when storage is available."""
         if self.save_fn is None:
             return None
+        message_meta = meta
+        if used_tools is not None and role == "assistant":
+            message_meta = meta.copy() if meta else {}
+            message_meta["used_tools"] = used_tools
         if inspect.iscoroutinefunction(self.save_fn):
             return await self.save_fn(
                 conversation_id,
                 role,
                 content,
-                meta=meta,
+                meta=message_meta,
             )
         return self.save_fn(
             conversation_id,
             role,
             content,
-            meta=meta,
+            meta=message_meta,
         )
 
     async def save_user_message(

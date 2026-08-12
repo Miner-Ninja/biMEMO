@@ -61,6 +61,8 @@ const en = {
     activityLoadHint: "Activity is loaded only when you open this section.",
     aiAvatar: "AI avatar",
     allow: "Allow",
+    approvalRequired: "Approval required",
+    approvalRequiredHint: "The assistant is requesting permission to run this action",
     approve: "Approve",
     approved: "Approved",
     askAboutData: "Ask a question about your data...",

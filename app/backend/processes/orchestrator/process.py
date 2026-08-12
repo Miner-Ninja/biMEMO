@@ -444,6 +444,13 @@ async def _execute_confirmed_action(
         }
     else:
         result_summary = str(getattr(tool_result, "result", ""))
+        used_tools_list = [
+            {
+                "name": str(getattr(tool_result, "tool_name", "")),
+                "zone": str(getattr(getattr(tool_result, "zone", ""), "value", "")),
+                "success": bool(getattr(tool_result, "success", False)),
+            }
+        ]
         await db_client.complete_pending_action(
             action_id=action_id,
             status="completed",
@@ -465,6 +472,7 @@ async def _execute_confirmed_action(
             stored_action=stored_action,
             status="completed",
             result_summary=final_answer or result_summary,
+            used_tools=used_tools_list,
         )
         return {
             "status": "completed",
@@ -547,6 +555,7 @@ async def _save_confirmed_action_message(
     stored_action: dict[str, object],
     status: str,
     result_summary: str,
+    used_tools: list[dict[str, object]] | None = None,
 ) -> str:
     """Persist a concise assistant message for an approved action result."""
     conversation_id = str((run or {}).get("conversation_id", ""))
@@ -557,15 +566,16 @@ async def _save_confirmed_action_message(
     content = (
         f"Approved action `{tool_name}` {visible_status}.\n\n{result_summary[:2000]}"
     ).strip()
-    meta = json.dumps(
-        {
-            "source": "confirmed_action",
-            "pending_action_id": str(stored_action.get("id", "")),
-            "run_id": str(stored_action.get("run_id", "")),
-            "tool_name": tool_name,
-            "status": status,
-        }
-    )
+    meta_data: dict[str, object] = {
+        "source": "confirmed_action",
+        "pending_action_id": str(stored_action.get("id", "")),
+        "run_id": str(stored_action.get("run_id", "")),
+        "tool_name": tool_name,
+        "status": status,
+    }
+    if used_tools is not None:
+        meta_data["used_tools"] = used_tools
+    meta = json.dumps(meta_data)
     return await db_client.save_message(
         conversation_id,
         "assistant",

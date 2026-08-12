@@ -59,7 +59,13 @@ import {
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
 import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
-import type { Chat, Message, PendingConfirmation, ProcessingStage } from "@/types/chat";
+import type {
+  Chat,
+  Message,
+  PendingConfirmation,
+  ProcessingStage,
+  UsedTool,
+} from "@/types/chat";
 import { TOOL_LABELS } from "@/types/chat";
 import type { ExtendedUsage } from "@/types/stats";
 import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
@@ -82,6 +88,7 @@ type ChatResponsePayload = {
     tool_name: string;
     parameters: Record<string, unknown>;
   }[];
+  used_tools?: UsedTool[];
   stream_enabled?: boolean;
 };
 
@@ -193,6 +200,7 @@ type StructuredAssistantPlaybackInput = {
   stats: ExtendedUsage | undefined;
   sections: StructuredChatSections;
   pendingConfirmations?: PendingConfirmation[];
+  usedTools?: UsedTool[];
 };
 
 type ApplyAssistantResponseInput = {
@@ -430,6 +438,9 @@ export function ChatPage() {
   const assistantMessageIdRef = useRef<string | null>(null);
   const streamedContentRef = useRef("");
   const streamedThinkingRef = useRef("");
+  // Confirmations that arrived as realtime `confirmation` events for the
+  // current assistant turn; accumulated so multiple RED tools each get a card.
+  const pendingConfirmationsRef = useRef<PendingConfirmation[]>([]);
   const pseudoStreamRunIdRef = useRef(0);
   const stoppedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
   const activeAssistantStreamRef = useRef<ActiveAssistantStreamState>({
@@ -494,6 +505,7 @@ export function ChatPage() {
       assistantMessageIdRef.current = assistantMessageId;
       streamedContentRef.current = "";
       streamedThinkingRef.current = "";
+      pendingConfirmationsRef.current = [];
       activeAssistantStreamRef.current = {
         assistantMessageId,
         conversationId: options?.conversationId ?? null,
@@ -583,11 +595,13 @@ export function ChatPage() {
       stats,
       sections,
       pendingConfirmations,
+      usedTools,
     }: StructuredAssistantPlaybackInput): Promise<string> => {
       const runId = pseudoStreamRunIdRef.current;
       updateMessage(assistantMessageId, {
         stats,
         pendingConfirmations,
+        usedTools,
       });
 
       await pseudoStreamSection({
@@ -631,10 +645,20 @@ export function ChatPage() {
       response,
     }: ApplyAssistantResponseInput): Promise<string> => {
       const structuredContent = response.structured_content;
-      const pendingConfirmations = response.pending_confirmations?.map((c) => ({
+      const finalConfirmations = (response.pending_confirmations ?? []).map((c) => ({
         ...c,
         status: "pending" as const,
       }));
+      // Union with confirmations already shown from realtime `confirmation`
+      // events, so the final payload never clears a card the user is looking at.
+      const seenActionIds = new Set(finalConfirmations.map((c) => c.action_id));
+      const pendingConfirmations = [
+        ...finalConfirmations,
+        ...pendingConfirmationsRef.current.filter(
+          (c) => !seenActionIds.has(c.action_id)
+        ),
+      ];
+      const usedTools = response.used_tools;
       const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
         structuredContent,
         streamedContentRef.current,
@@ -660,6 +684,7 @@ export function ChatPage() {
               pendingConfirmations && pendingConfirmations.length > 0
                 ? pendingConfirmations
                 : undefined,
+            usedTools,
           })
         : visibleAnswer;
       if (!structuredContentForPseudoStream) {
@@ -677,6 +702,7 @@ export function ChatPage() {
                 pendingConfirmations && pendingConfirmations.length > 0
                   ? pendingConfirmations
                   : undefined,
+              usedTools,
               error: undefined,
             },
             streamedThinkingRef.current || structuredContent?.thinking || ""
@@ -842,6 +868,7 @@ export function ChatPage() {
         event.type === "token" ||
         event.type === "thinking" ||
         event.type === "tool_status" ||
+        event.type === "confirmation" ||
         event.type === "final" ||
         event.type === "error" ||
         event.type === "done";
@@ -867,6 +894,9 @@ export function ChatPage() {
         });
         setIsLoading(false);
         clearStages();
+        // Reload persisted history. An un-decided confirmation is persisted
+        // server-side and comes back attached to its message, so the reload
+        // restores the card instead of wiping it.
         void refreshConversationMessages(conversationId).finally(() => {
           const activeStream = activeAssistantStreamRef.current;
           if (activeStream.conversationId === conversationId) {
@@ -905,6 +935,29 @@ export function ChatPage() {
           completeActiveStage();
         } else if (status?.status === "error") {
           errorActiveStage();
+        }
+      } else if (event.type === "confirmation" && assistantMessageIdRef.current) {
+        // A RED tool needs the user's approval before it runs. The backend
+        // routes it as a realtime `confirmation` event; render it as a card on
+        // the active assistant message.
+        const conf = eventPayload as {
+          action_id?: string;
+          tool_name?: string;
+          parameters?: Record<string, unknown>;
+        } | null;
+        if (conf?.action_id) {
+          pendingConfirmationsRef.current = [
+            ...pendingConfirmationsRef.current,
+            {
+              action_id: conf.action_id,
+              tool_name: conf.tool_name ?? "",
+              parameters: conf.parameters ?? {},
+              status: "pending",
+            },
+          ];
+          updateMessage(assistantMessageIdRef.current, {
+            pendingConfirmations: pendingConfirmationsRef.current,
+          });
         }
       } else if (event.type === "done") {
         setIsLoading(false);
@@ -1271,7 +1324,8 @@ export function ChatPage() {
   const sendAndStream = async (
     messageContent: string,
     conversationId: string,
-    images?: string[]
+    images?: string[],
+    forcedTools?: string[]
   ) => {
     const assistantMessageId = generateId();
     const assistantMessage: Message = {
@@ -1299,6 +1353,7 @@ export function ChatPage() {
       if (activeFiles.length > 0) {
         body.file_ids = activeFiles;
       }
+      if (forcedTools && forcedTools.length > 0) body.forced_tools = forcedTools;
       const response = await apiRequest<ChatResponsePayload>("/chat", {
         method: "POST",
         body: JSON.stringify(body),
@@ -1395,7 +1450,11 @@ export function ChatPage() {
     }
   };
 
-  const handleSend = async (content: string, files?: File[]) => {
+  const handleSend = async (
+    content: string,
+    files?: File[],
+    forcedTools?: string[]
+  ) => {
     // Save to command history
     setCommandHistory((prev) => {
       const next = [content, ...prev.filter((h) => h !== content)].slice(
@@ -1441,7 +1500,8 @@ export function ChatPage() {
     await sendAndStream(
       messageContent,
       currentChat.id,
-      imageDataUrls.length > 0 ? imageDataUrls : undefined
+      imageDataUrls.length > 0 ? imageDataUrls : undefined,
+      forcedTools
     );
   };
 

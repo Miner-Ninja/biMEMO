@@ -48,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AttachButton } from "./AttachButton";
+import { ToolMenu } from "./ToolMenu";
 import { FileMention } from "./FileMention";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { useSlashCommands } from "@/hooks/useSlashCommands";
@@ -62,7 +63,7 @@ export interface ChatInputHandle {
 }
 
 interface ChatInputProps {
-  onSend: (message: string, files?: File[]) => void;
+  onSend: (message: string, files?: File[], forcedTools?: string[]) => void;
   onSendVoice?: (voiceDataUrl: string) => void;
   onAbort?: () => void;
   disabled?: boolean;
@@ -157,7 +158,14 @@ export const ChatInput = memo(
     const [value, setValue] = useState("");
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const [isRecording, setIsRecording] = useState(false);
+    const [selectedTools, setSelectedTools] = useState<string[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const toggleTool = (name: string) => {
+      setSelectedTools((prev) =>
+        prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+      );
+    };
 
     const {
       showCommands,
@@ -202,11 +210,16 @@ export const ChatInput = memo(
 
     const handleSubmit = () => {
       const trimmed = value.trim();
-      if (!trimmed || disabled) return;
+      if (disabled) return;
 
-      onSend(trimmed, attachedFiles.length > 0 ? attachedFiles : undefined);
+      onSend(
+        trimmed,
+        attachedFiles.length > 0 ? attachedFiles : undefined,
+        selectedTools
+      );
       setValue("");
       setAttachedFiles([]);
+      setSelectedTools([]);
       setShowCommands(false);
       resetHistory();
 
@@ -274,7 +287,11 @@ export const ChatInput = memo(
       }, 150);
     };
 
-    const canSend = value.trim().length > 0 && !disabled;
+    const canSend =
+      (value.trim().length > 0 ||
+        selectedTools.length > 0 ||
+        attachedFiles.length > 0) &&
+      !disabled;
     // Show the shimmering stage label in the placeholder spot only while a
     // request is processing AND the input is empty (so typing hides it).
     const showStageOverlay = !!processingStage && value.length === 0;
@@ -436,6 +453,28 @@ export const ChatInput = memo(
 
             {/* Input row */}
             <div className="rounded-lg border border-border bg-card shadow-xs sm:rounded-xl">
+              {/* Selected tools (forced for the next message) */}
+              {selectedTools.length > 0 && (
+                <div className="flex flex-wrap gap-1 px-3 pt-2 sm:px-4">
+                  {selectedTools.map((name) => (
+                    <Badge
+                      key={name}
+                      variant="secondary"
+                      className="gap-1 font-mono text-xs"
+                    >
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => toggleTool(name)}
+                        aria-label={`remove ${name}`}
+                        className="ml-0.5 opacity-60 hover:opacity-100"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
               {isRecording && onSendVoice ? (
                 <VoiceRecorder
                   onRecorded={onSendVoice}
@@ -481,6 +520,11 @@ export const ChatInput = memo(
                     onFileSelect={handleFileSelect}
                     disabled={disabled || isRecording}
                     className="h-7.5 w-7.5 sm:h-9 sm:w-9"
+                  />
+                  <ToolMenu
+                    selected={selectedTools}
+                    onToggle={toggleTool}
+                    disabled={disabled || isRecording}
                   />
                   {onSendVoice && !canSend && !isRecording ? (
                     <VoiceRecorder

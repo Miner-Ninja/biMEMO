@@ -205,6 +205,7 @@ def _build_chat_response(
     response: AgentResponse,
     transcription: str | None,
     pending_confirmations: list[dict[str, object]] | None = None,
+    used_tools: list[dict[str, object]] | None = None,
 ) -> ChatResponse:
     """Convert one gateway response into the IPC chat response shape."""
     return ChatResponse(
@@ -215,6 +216,7 @@ def _build_chat_response(
         retrieved_memories=response.retrieved_memories or None,
         retrieved_messages=response.retrieved_messages or None,
         pending_confirmations=pending_confirmations,
+        used_tools=used_tools,
         transcription=transcription,
         stats=response.stats,
         stream_enabled=get_settings().llm_response_stream,
@@ -498,6 +500,7 @@ async def _run_prepared_chat_request(
         session_id=request.session_id,
         conversation_id=request.conversation_id,
         images=request.images,
+        forced_tools=request.forced_tools,
         attached_files=request.attached_files or None,
         meta=request_meta,
         agent_run_id=agent_run_id,
@@ -507,6 +510,7 @@ async def _run_prepared_chat_request(
         response=response,
         transcription=transcription,
         pending_confirmations=_pending_confirmations_from_orchestrator(orch),
+        used_tools=_used_tools_from_orchestrator(orch),
     )
 
 
@@ -525,6 +529,20 @@ def _pending_confirmations_from_orchestrator(
         }
         for action in pending
     ]
+
+
+def _used_tools_from_orchestrator(
+    orch: object,
+) -> list[dict[str, object]] | None:
+    """Return executed tool payloads for the HTTP response."""
+    from backend.security.policy import get_policy
+
+    if not get_policy().get_bool("tools.manual_control_enabled"):
+        return None
+    tools = getattr(orch, "used_tools", [])
+    if not tools:
+        return None
+    return list(tools)
 
 
 async def _run_chat_request(
@@ -561,9 +579,7 @@ async def _run_chat_request(
     # Same pattern for the reasoning switch: read the per-chat setting,
     # expose it to the provider clients for this turn, clear afterwards.
     set_thinking_enabled(
-        await read_thinking_enabled(
-            db_client, request.conversation_id, default=True
-        )
+        await read_thinking_enabled(db_client, request.conversation_id, default=True)
     )
     try:
         response = await _run_with_processing_state(
@@ -736,6 +752,7 @@ async def _run_orchestrator_message(
     session_id: str,
     conversation_id: str,
     images: list[str] | None = None,
+    forced_tools: list[str] | None = None,
     attached_files: list[str] | None = None,
     meta: dict | None = None,
     agent_run_id: str = "",
@@ -748,6 +765,7 @@ async def _run_orchestrator_message(
         session_id=session_id,
         conversation_id=conversation_id,
         images=images,
+        forced_tools=forced_tools,
         attached_files=attached_files,
         meta=meta,
         agent_run_id=agent_run_id,

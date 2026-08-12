@@ -60,6 +60,7 @@ from backend.security.content_filter import (
     filter_input,
     filter_output,
 )
+from backend.security.policy import get_policy
 from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
@@ -211,6 +212,9 @@ class AgentOrchestrator:
         # at the start of each turn (see process_message) and read at finalize.
         self._stage_timings = StageTimings()
         self.tool_executor.stage_timings = self._stage_timings
+        # Tools the user forced for the current turn (from the chat-input chips).
+        # Set at the start of process_message; read when building the model call.
+        self._forced_tools: list[str] = []
         self.llm_caller = LLMCaller(
             self.model_name,
             self.web_search_classifier_fn,
@@ -1069,6 +1073,7 @@ class AgentOrchestrator:
         attached_files: list[str] | None = None,
         meta: dict | None = None,
         agent_run_id: str = "",
+        forced_tools: list[str] | None = None,
     ) -> AgentResponse:
         """Process a user message through the agentic loop.
 
@@ -1083,6 +1088,7 @@ class AgentOrchestrator:
             attached_files: File names attached to this message.
             meta: Extra metadata to store with the message.
             agent_run_id: Optional persisted run identifier for action prompts.
+            forced_tools: Tool names the user selected to force for this turn.
 
         Returns:
             AgentResponse with final text.
@@ -1092,6 +1098,7 @@ class AgentOrchestrator:
         """
         if not conversation_id:
             raise ValueError("conversation_id is required")
+        self._forced_tools = forced_tools or []
         await self.concurrency.acquire()
         try:
             return await self._process_turn(
@@ -1262,6 +1269,16 @@ class AgentOrchestrator:
         user_intent = extract_user_intent(
             prepared_turn.filtered_message,
         )
+        # Forced tools (chat-input chips): only when manual tool control is on.
+        # One tool -> force that exact function; several -> require a tool call.
+        forced = self._forced_tools
+        forced_tool_choice: object | None = None
+        if forced and get_policy().get_bool("tools.manual_control_enabled"):
+            forced_tool_choice = (
+                {"type": "function", "function": {"name": forced[0]}}
+                if len(forced) == 1
+                else "required"
+            )
         model_loop_result = await self.llm_caller.run_model_loop(
             loop=loop,
             llm_call=llm_call,
@@ -1271,6 +1288,7 @@ class AgentOrchestrator:
             channel=channel,
             tool_executor=self.tool_executor,
             user_intent=user_intent or None,
+            forced_tool_choice=forced_tool_choice,
             requirements=prepared_turn.requirements,
             satisfaction=prepared_turn.satisfaction,
             suggestions_enabled=self.prompt_builder.suggestions_enabled,
@@ -1289,6 +1307,11 @@ class AgentOrchestrator:
     def pending_red_calls(self) -> list[PendingAction]:
         """Return pending RED zone actions."""
         return self.tool_executor.pending_red_calls
+
+    @property
+    def used_tools(self) -> list[dict]:
+        """Return executed tools for the current turn."""
+        return self.tool_executor.executed_tools
 
     def clear_pending(self) -> None:
         """Clear pending RED zone calls."""

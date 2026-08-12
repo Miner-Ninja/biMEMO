@@ -22,7 +22,11 @@ from backend.ipc.models import ChatRequest as IPCChatRequest
 from backend.ipc.models import ChatResponse as IPCChatResponse
 from backend.llm.structured_response import normalize_legacy_response_text
 from backend.models.responses import ChatResponse as HTTPChatResponse
-from backend.models.responses import ChatSettingsResponse, ConfirmationItem
+from backend.models.responses import (
+    ChatSettingsResponse,
+    ConfirmationItem,
+    UsedToolItem,
+)
 from backend.models.responses import ChatStartResponse as HTTPChatStartResponse
 from backend.models.responses import (
     ConversationDeleteResponse as HTTPConversationDeleteResponse,
@@ -204,6 +208,7 @@ def build_ipc_chat_request(
         images=chat_input_context.images,
         attached_files=chat_input_context.resolved_files,
         voice=body.voice,
+        forced_tools=chat_input_context.forced_tools,
     )
 
 
@@ -248,6 +253,22 @@ def build_confirmation_items(
     ]
 
 
+def build_used_tool_items(
+    used_tools: list[dict[str, object]] | None,
+) -> list[UsedToolItem]:
+    """Convert raw used-tool payloads from IPC into HTTP response items."""
+    if not used_tools:
+        return []
+    return [
+        UsedToolItem(
+            name=tool_data.get("name", ""),
+            zone=tool_data.get("zone", ""),
+            success=bool(tool_data.get("success", True)),
+        )
+        for tool_data in used_tools
+    ]
+
+
 def build_http_chat_response(
     *,
     conversation_id: str,
@@ -262,6 +283,7 @@ def build_http_chat_response(
         pending_confirmations=build_confirmation_items(
             ipc_response.pending_confirmations,
         ),
+        used_tools=build_used_tool_items(ipc_response.used_tools),
         retrieved_memories=ipc_response.retrieved_memories,
         retrieved_messages=ipc_response.retrieved_messages,
         transcription=ipc_response.transcription,
@@ -358,6 +380,7 @@ def build_persisted_structured_content(
 
 def build_conversation_message_item(
     message: dict[str, object],
+    pending_confirmations: list[dict[str, object]] | None = None,
 ) -> HTTPConversationMessageItem:
     """Convert one stored message row into the HTTP message shape."""
     content = message["content"]
@@ -381,6 +404,8 @@ def build_conversation_message_item(
         created_at=str(message["created_at"]),
         meta=raw_meta,
         structured_content=structured_content,
+        used_tools=build_used_tool_items(message.get("used_tools")),
+        pending_confirmations=build_confirmation_items(pending_confirmations),
     )
 
 
@@ -585,7 +610,70 @@ async def list_conversation_message_items(
         messages,
         key=lambda message: str(message.get("created_at", "")),
     )
-    return [build_conversation_message_item(message) for message in ordered_messages]
+    pending_confirmations = await waiting_confirmations_for_conversation(
+        admin_client=admin_client,
+        conversation_id=conversation_id,
+    )
+    target_message_id = (
+        last_assistant_message_id(ordered_messages) if pending_confirmations else ""
+    )
+    return [
+        build_conversation_message_item(
+            message,
+            pending_confirmations=(
+                pending_confirmations
+                if str(message["id"]) == target_message_id
+                else None
+            ),
+        )
+        for message in ordered_messages
+    ]
+
+
+def last_assistant_message_id(ordered_messages: list[dict[str, object]]) -> str:
+    """Return the id of the latest assistant message, or empty if none."""
+    for message in reversed(ordered_messages):
+        if str(message.get("role", "")) == "assistant":
+            return str(message["id"])
+    return ""
+
+
+async def waiting_confirmations_for_conversation(
+    *,
+    admin_client: AdminDBClient,
+    conversation_id: str,
+) -> list[dict[str, object]]:
+    """Return un-decided (waiting) confirmations belonging to one conversation.
+
+    A pending action is tied to an agent run, and the run carries the
+    conversation id — so each waiting action is matched to its conversation
+    through its run. The waiting set is tiny (only the live turn), so the
+    per-run lookup is cheap.
+    """
+    waiting = await admin_client.list_pending_actions(status="waiting")
+    if not waiting:
+        return []
+    run_conversation: dict[str, str] = {}
+    matched: list[dict[str, object]] = []
+    for action in waiting:
+        run_id = str(action.get("run_id", ""))
+        if not run_id:
+            continue
+        conversation = run_conversation.get(run_id)
+        if conversation is None:
+            run = await admin_client.get_agent_run(run_id)
+            conversation = str(run.get("conversation_id", "")) if run else ""
+            run_conversation[run_id] = conversation
+        if conversation != conversation_id:
+            continue
+        matched.append(
+            {
+                "action_id": action.get("id", ""),
+                "tool_name": action.get("tool_name", ""),
+                "parameters": action.get("parameters", {}),
+            }
+        )
+    return matched
 
 
 async def update_conversation_item(

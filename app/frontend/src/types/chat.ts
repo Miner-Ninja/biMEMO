@@ -71,8 +71,19 @@ export interface Message {
   stats?: ExtendedUsage;
   /** Pending RED zone actions awaiting user confirmation */
   pendingConfirmations?: PendingConfirmation[];
+  /** Used tools recorded for this message */
+  usedTools?: UsedTool[];
   /** When the message was created */
   timestamp: Date;
+}
+
+/**
+ * A tool execution record
+ */
+export interface UsedTool {
+  name: string;
+  zone: string;
+  success: boolean;
 }
 
 /**

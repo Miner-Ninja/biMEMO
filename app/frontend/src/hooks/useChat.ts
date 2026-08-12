@@ -141,6 +141,17 @@ export function buildAssistantMessageFields(
 function mapMessage(message: StoredConversationMessage): Message {
   const meta = parseMessageMeta(message.meta);
   const structuredContent = message.structured_content;
+  // A RED tool awaiting the user's decision is persisted server-side; carry it
+  // back so the confirmation card survives a history reload (and a page reload).
+  const pendingConfirmations =
+    message.pending_confirmations && message.pending_confirmations.length > 0
+      ? message.pending_confirmations.map((confirmation) => ({
+          action_id: confirmation.action_id,
+          tool_name: confirmation.tool_name,
+          parameters: confirmation.parameters,
+          status: "pending" as const,
+        }))
+      : undefined;
   return {
     id: message.id,
     role: message.role,
@@ -150,6 +161,7 @@ function mapMessage(message: StoredConversationMessage): Message {
       stats: meta?.stats,
       images: extractMessageImages(message.content),
     }),
+    pendingConfirmations,
     timestamp: new Date(message.created_at),
   };
 }

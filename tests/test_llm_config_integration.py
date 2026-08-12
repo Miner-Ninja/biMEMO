@@ -1281,6 +1281,18 @@ class FakeAdminClient:
             ]
         return messages[offset : offset + limit]
 
+    async def list_pending_actions(
+        self,
+        status: str | None = None,
+        run_id: str | None = None,
+    ) -> list[dict]:
+        """Return no un-decided confirmations by default."""
+        return []
+
+    async def get_agent_run(self, run_id: str) -> dict | None:
+        """Return no agent run by default."""
+        return None
+
     async def list_records(self, limit: int = 50, offset: int = 0) -> list[dict]:
         """Return paginated fake records."""
         return self._observations[offset : offset + limit]
@@ -3645,6 +3657,8 @@ class TestMemoryTimeline:
                 "meta": "",
                 "conversation_id": "conversation-1",
                 "structured_content": None,
+                "used_tools": [],
+                "pending_confirmations": [],
             }
         ]
 

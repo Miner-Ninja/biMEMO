@@ -511,6 +511,7 @@ async def prepare_chat_input_context(
             message=message,
             images=images,
             resolved_files=resolved_files,
+            forced_tools=body.forced_tools,
         )
 
     prepared_files = await collect_file_input_parts(
@@ -525,4 +526,5 @@ async def prepare_chat_input_context(
         message=message,
         images=prepared_files.images,
         resolved_files=prepared_files.resolved_files,
+        forced_tools=body.forced_tools,
     )

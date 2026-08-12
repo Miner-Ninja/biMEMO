@@ -32,6 +32,7 @@ import { VoicePlayer } from "./VoicePlayer";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
 import type { Message, PendingConfirmation } from "@/types/chat";
 import ConfirmationCard from "./ConfirmationCard";
+import { ToolBadges } from "./ToolBadges";
 import { cn, formatDate } from "@/lib/utils";
 
 interface ChatMessageProps {
@@ -258,18 +259,14 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
-        {/* Pending RED zone confirmations */}
-        {message.pendingConfirmations && message.pendingConfirmations.length > 0 && (
-          <div className="max-w-md">
-            {message.pendingConfirmations.map((c) => (
-              <ConfirmationCard
-                key={c.action_id}
-                confirmation={c}
-                onStatusChange={onConfirmationStatusChange || (() => {})}
-              />
-            ))}
-          </div>
-        )}
+        {/* Used-tools badges: tools this assistant message actually executed */}
+        {message.role === "assistant" &&
+          message.usedTools &&
+          message.usedTools.length > 0 && (
+            <div className="mt-1 flex justify-end">
+              <ToolBadges usedTools={message.usedTools} />
+            </div>
+          )}
 
         {/* Token stats for assistant messages — reserve space to prevent layout shift */}
         {message.role === "assistant" && (
@@ -281,6 +278,23 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         )}
+
+        {/* Pending confirmations — right after stats, centered */}
+        {message.role === "assistant" &&
+          message.pendingConfirmations &&
+          message.pendingConfirmations.length > 0 && (
+            <div className="flex justify-center">
+              <div className="w-full max-w-xl space-y-2">
+                {message.pendingConfirmations.map((c) => (
+                  <ConfirmationCard
+                    key={c.action_id}
+                    confirmation={c}
+                    onStatusChange={onConfirmationStatusChange || (() => {})}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
         {/* Thinking block (collapsible) */}
         {hasThinking && showThinking && <ThinkingBlock thinking={message.thinking!} />}

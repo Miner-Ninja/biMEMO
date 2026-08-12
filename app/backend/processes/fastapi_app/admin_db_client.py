@@ -382,6 +382,31 @@ class AdminDBClient(_BaseIPCClient):
             parameters=params,
         )
 
+    async def list_pending_actions(
+        self,
+        status: str | None = None,
+        run_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List confirmation-required actions, optionally filtered by status."""
+        params: dict[str, Any] = {}
+        if status:
+            params["status"] = status
+        if run_id:
+            params["run_id"] = run_id
+        return await self._send_list_operation(
+            "list_pending_actions",
+            result_key="pending_actions",
+            parameters=params or None,
+        )
+
+    async def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
+        """Return one agent run row (which carries its conversation_id)."""
+        return await self._send_optional_dict_operation(
+            "get_agent_run",
+            result_key="agent_run",
+            parameters={"run_id": run_id},
+        )
+
     async def count_memory_entries(self) -> dict[str, int]:
         """Count messages, records, and assertions."""
         return await self.send_operation("count_memory_entries")

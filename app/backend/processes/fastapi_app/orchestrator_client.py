@@ -531,7 +531,7 @@ class OrchestratorClient:
     async def send_confirm(
         self,
         request: IPCConfirmRequest,
-        timeout: float = 30.0,
+        timeout: float = 130.0,
     ) -> IPCConfirmResponse:
         """Send a ConfirmRequest and wait for the ConfirmResponse.
 

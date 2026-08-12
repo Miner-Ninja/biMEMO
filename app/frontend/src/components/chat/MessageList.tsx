@@ -166,7 +166,7 @@ export const MessageList = memo(function MessageList({
     const last = messages[messages.length - 1];
     const signature = `${messages.length}:${last?.id ?? ""}:${
       last?.content?.length ?? 0
-    }`;
+    }:${last?.pendingConfirmations?.length ?? 0}`;
     if (signature === lastMessagesSignatureRef.current) {
       // No real change (e.g. a reconnect refetch of identical content) — do
       // not force-scroll, so the user's scroll position is preserved.

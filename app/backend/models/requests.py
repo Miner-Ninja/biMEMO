@@ -44,6 +44,7 @@ class ChatRequest(StrictRequestModel):
     images: list[str] = Field(default_factory=list, max_length=4)
     file_ids: list[str] = Field(default_factory=list, max_length=20)
     voice: str | None = None
+    forced_tools: list[str] = Field(default_factory=list, max_length=32)
 
     @field_validator("file_ids")
     @classmethod
@@ -54,7 +55,7 @@ class ChatRequest(StrictRequestModel):
     @model_validator(mode="after")
     def _require_message_or_voice(self) -> ChatRequest:
         """Require at least one chat input source."""
-        if not self.message.strip() and not self.voice:
+        if not self.message.strip() and not self.voice and not self.forced_tools:
             raise ValueError("Either message or voice must be provided")
         return self
 

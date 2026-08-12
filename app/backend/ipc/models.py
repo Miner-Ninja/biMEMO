@@ -49,6 +49,7 @@ class ChatRequest(IPCModel):
     images: list[str] = []
     attached_files: list[str] = []
     voice: str | None = None
+    forced_tools: list[str] = []
 
 
 class StopRequest(IPCModel):
@@ -226,6 +227,7 @@ class ChatResponse(IPCModel):
     input_filtered: bool = False
     output_filtered: bool = False
     pending_confirmations: list[dict[str, Any]] | None = None
+    used_tools: list[dict[str, Any]] | None = None
     retrieved_memories: list[dict[str, str]] | None = None
     retrieved_messages: list[dict[str, str]] | None = None
     transcription: str | None = None
@@ -330,8 +332,6 @@ class McpAskResponse(IPCModel):
     conversation_id: str = ""
     session_id: str = ""
     error: str = ""
-
-
 
 
 class ReloadLLMResponse(IPCModel):

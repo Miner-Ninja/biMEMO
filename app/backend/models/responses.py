@@ -45,6 +45,20 @@ class ConfirmationItem(StrictResponseModel):
     parameters: dict[str, object]
 
 
+class UsedToolItem(StrictResponseModel):
+    """Record of one tool execution.
+
+    Attributes:
+        name: Tool name that was executed.
+        zone: Trust zone of the tool.
+        success: Whether the tool executed successfully.
+    """
+
+    name: str
+    zone: str
+    success: bool
+
+
 class StructuredAssistantContent(StrictResponseModel):
     """Structured assistant content extracted from one final response."""
 
@@ -68,6 +82,7 @@ class ChatResponse(StrictResponseModel):
     input_filtered: bool
     output_filtered: bool
     pending_confirmations: list[ConfirmationItem]
+    used_tools: list[UsedToolItem] = []
     retrieved_memories: list[RetrievedDebugItem] | None = None
     retrieved_messages: list[RetrievedDebugItem] | None = None
     transcription: str | None = None
@@ -173,6 +188,8 @@ class ConversationMessageItem(StrictResponseModel):
     created_at: str
     meta: str | None = None
     structured_content: StructuredAssistantContent | None = None
+    used_tools: list[UsedToolItem] = []
+    pending_confirmations: list[ConfirmationItem] = []
 
 
 class ChatBridgeLinkItem(StrictResponseModel):

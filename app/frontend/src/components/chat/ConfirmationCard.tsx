@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, Clock3, OctagonAlert, ShieldAlert, XCircle } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Clock3,
+  Database,
+  Globe,
+  Search,
+  ShieldAlert,
+  Terminal,
+  Wrench,
+  X,
+  XCircle,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { confirmAction, denyAction } from "@/lib/bimemo-api";
 import type { TranslationKey } from "@/i18n";
 import type { PendingConfirmation } from "@/types/chat";
@@ -17,63 +27,81 @@ const TOOL_LABEL_KEYS: Record<string, TranslationKey> = {
   email_send: "chat.toolSendEmail",
 };
 
+// Map known tool names to a recognisable icon + display label.
+const TOOL_ICONS: Record<string, { icon: typeof Terminal; labelKey?: TranslationKey }> =
+  {
+    bash: { icon: Terminal },
+    run_command: { icon: Terminal },
+    project_command: { icon: Terminal },
+    git_status: { icon: Terminal },
+    git_diff: { icon: Terminal },
+    git_log: { icon: Terminal },
+    web_search: { icon: Search },
+    http_fetch: { icon: Globe, labelKey: "chat.toolFetchUrl" },
+    file_read: { icon: Database },
+    file_write: { icon: Database },
+    file_search: { icon: Search },
+    email_send: { icon: Globe, labelKey: "chat.toolSendEmail" },
+  };
+
 const CONFIRMATION_TIMEOUT_MS = 300_000;
-const PARAMETER_PREVIEW_LIMIT = 80;
+const PARAMETER_PREVIEW_LIMIT = 120;
 
 interface ConfirmationCardProps {
   confirmation: PendingConfirmation;
   onStatusChange: (actionId: string, status: PendingConfirmation["status"]) => void;
 }
 
-function getConfirmationStatusVariant(
-  status: PendingConfirmation["status"]
-): "success" | "danger" | "warning" | "secondary" {
-  switch (status) {
-    case "approved":
-      return "success";
-    case "denied":
-      return "danger";
-    case "expired":
-      return "secondary";
-    case "pending":
-      return "warning";
-  }
-}
+// Per-state look: an accent bar + tint + icon that read the outcome at a glance.
+type StateStyle = {
+  frame: string;
+  iconWrap: string;
+  icon: typeof ShieldAlert;
+  badge: "success" | "danger" | "warning" | "secondary";
+  headingKey: TranslationKey;
+  statusKey: TranslationKey;
+};
 
-// Returns a translation key, resolved with t() at render time.
-function getConfirmationStatusLabelKey(
-  status: PendingConfirmation["status"]
-): TranslationKey {
-  switch (status) {
-    case "approved":
-      return "chat.approved";
-    case "denied":
-      return "chat.denied";
-    case "expired":
-      return "chat.expired";
-    case "pending":
-      return "chat.pendingApproval";
-  }
-}
-
-function getConfirmationStatusIcon(status: PendingConfirmation["status"]) {
-  switch (status) {
-    case "approved":
-      return CheckCircle2;
-    case "denied":
-      return XCircle;
-    case "expired":
-      return Clock3;
-    case "pending":
-      return ShieldAlert;
-  }
-}
+const STATE_STYLES: Record<PendingConfirmation["status"], StateStyle> = {
+  pending: {
+    frame: "border-l-amber-500 bg-amber-500/[0.06] ring-amber-500/20",
+    iconWrap: "bg-amber-500/15 text-amber-500",
+    icon: ShieldAlert,
+    badge: "warning",
+    headingKey: "chat.approvalRequired",
+    statusKey: "chat.pendingApproval",
+  },
+  approved: {
+    frame: "border-l-emerald-500 bg-emerald-500/[0.06] ring-emerald-500/20",
+    iconWrap: "bg-emerald-500/15 text-emerald-500",
+    icon: CheckCircle2,
+    badge: "success",
+    headingKey: "chat.approved",
+    statusKey: "chat.approved",
+  },
+  denied: {
+    frame: "border-l-red-500 bg-red-500/[0.06] ring-red-500/20",
+    iconWrap: "bg-red-500/15 text-red-500",
+    icon: XCircle,
+    badge: "danger",
+    headingKey: "chat.denied",
+    statusKey: "chat.denied",
+  },
+  expired: {
+    frame: "border-l-zinc-500 bg-zinc-500/[0.05] ring-zinc-500/20",
+    iconWrap: "bg-zinc-500/15 text-zinc-400",
+    icon: Clock3,
+    badge: "secondary",
+    headingKey: "chat.expired",
+    statusKey: "chat.expired",
+  },
+};
 
 function buildParameterSummary(parameters: PendingConfirmation["parameters"]): string {
   return Object.entries(parameters)
     .filter(([, value]) => typeof value === "string")
     .map(([key, value]) => `${key}: ${String(value).slice(0, PARAMETER_PREVIEW_LIMIT)}`)
-    .join(", ");
+    .join("  ·  ");
 }
 
 export default function ConfirmationCard({
@@ -82,12 +110,16 @@ export default function ConfirmationCard({
 }: ConfirmationCardProps) {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
-
   const isResolved = confirmation.status !== "pending";
-  const labelKey = TOOL_LABEL_KEYS[confirmation.tool_name];
+  const style = STATE_STYLES[confirmation.status];
+  const StateIcon = style.icon;
+
+  // Resolve tool icon + label from the tool name
+  const toolMeta = TOOL_ICONS[confirmation.tool_name] ?? { icon: Wrench };
+  const ToolIcon = toolMeta.icon;
+  const labelKey = toolMeta.labelKey ?? TOOL_LABEL_KEYS[confirmation.tool_name];
   const label = labelKey ? t(labelKey) : confirmation.tool_name;
   const parameterSummary = buildParameterSummary(confirmation.parameters);
-  const StatusIcon = getConfirmationStatusIcon(confirmation.status);
 
   useEffect(() => {
     if (isResolved) {
@@ -126,47 +158,81 @@ export default function ConfirmationCard({
   };
 
   return (
-    <Card
-      className={cn("my-2 border-border/70 bg-card/80", isResolved && "opacity-85")}
+    <div
+      className={cn(
+        "w-full max-w-xl overflow-hidden rounded-xl border border-l-4 border-border/60 shadow-sm ring-1",
+        style.frame,
+        isResolved && "opacity-90"
+      )}
     >
-      <CardHeader className="gap-3 p-4 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            <div className="mt-0.5 rounded-md border border-border/70 bg-muted/60 p-1.5 text-muted-foreground">
-              <StatusIcon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <CardTitle>{label}</CardTitle>
-              {parameterSummary ? (
-                <div className="mt-1 text-sm text-muted-foreground">
-                  {parameterSummary}
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <Badge variant={getConfirmationStatusVariant(confirmation.status)}>
-            {t(getConfirmationStatusLabelKey(confirmation.status))}
-          </Badge>
+      <div className="flex items-start gap-3 p-4">
+        <div
+          className={cn(
+            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+            style.iconWrap
+          )}
+        >
+          <StateIcon className="h-5 w-5" />
         </div>
-      </CardHeader>
-      <Separator />
-      <CardContent className="p-4 pt-4">
-        {isResolved ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <OctagonAlert className="h-4 w-4" />
-            {t("chat.decisionRecorded")}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t(style.headingKey)}
+            </h3>
+            <Badge variant={style.badge}>{t(style.statusKey)}</Badge>
           </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleApprove} disabled={isLoading}>
-              {t("chat.allow")}
-            </Button>
-            <Button variant="outline" onClick={handleDeny} disabled={isLoading}>
-              {t("chat.deny")}
-            </Button>
+
+          {!isResolved && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t("chat.approvalRequiredHint")}
+            </p>
+          )}
+
+          {/* What will run — a command-style preview */}
+          <div className="mt-3 rounded-lg border border-border/60 bg-muted/50 px-3 py-2">
+            <div className="flex items-center gap-2.5">
+              <ToolIcon className="h-5 w-5 shrink-0 text-foreground" />
+              <span className="truncate font-medium text-sm text-foreground">
+                {label}
+              </span>
+            </div>
+            {parameterSummary && (
+              <div className="mt-1 truncate pl-[22px] font-mono text-xs text-muted-foreground">
+                {parameterSummary}
+              </div>
+            )}
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          {isResolved ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("chat.decisionRecorded")}
+            </p>
+          ) : (
+            <div className="mt-3 flex justify-end gap-2">
+              <Button
+                size="sm"
+                onClick={handleApprove}
+                disabled={isLoading}
+                className="gap-1.5"
+              >
+                <Check className="h-4 w-4" />
+                {t("chat.allow")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeny}
+                disabled={isLoading}
+                className="gap-1.5"
+              >
+                <X className="h-4 w-4" />
+                {t("chat.deny")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

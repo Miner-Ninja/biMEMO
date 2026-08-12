@@ -22,6 +22,7 @@ from backend.models.responses import StructuredAssistantContent
 from backend.processes.fastapi_app.routes.chat_helpers import (
     build_conversation_message_item,
     build_http_chat_response,
+    list_conversation_message_items,
 )
 from backend.processes.orchestrator.chat_handler import (
     _build_chat_response,
@@ -793,3 +794,117 @@ def test_forwarder_skips_unknown_event_types() -> None:
     assert [event.event_type for event in ipc_server.events] == [
         StreamEventType.DONE,
     ]
+
+
+class _FakePendingAdminClient:
+    """Admin client double that serves one waiting confirmation."""
+
+    def __init__(self, messages: list[dict], pending: list[dict], run_conv: dict):
+        self._messages = messages
+        self._pending = pending
+        self._run_conv = run_conv
+
+    async def list_messages(
+        self, limit: int = 50, offset: int = 0, conversation_id: str | None = None
+    ) -> list[dict]:
+        return self._messages
+
+    async def list_pending_actions(
+        self, status: str | None = None, run_id: str | None = None
+    ) -> list[dict]:
+        return [p for p in self._pending if status is None or p["status"] == status]
+
+    async def get_agent_run(self, run_id: str) -> dict | None:
+        conversation_id = self._run_conv.get(run_id)
+        return {"conversation_id": conversation_id} if conversation_id else None
+
+
+def test_waiting_confirmation_attaches_to_last_assistant_message() -> None:
+    """A persisted un-decided RED action comes back on its assistant message."""
+    messages = [
+        {
+            "id": "user-1",
+            "role": "user",
+            "content": "run git status",
+            "conversation_id": "conv-1",
+            "created_at": "2026-08-12T10:00:00",
+            "meta": None,
+        },
+        {
+            "id": "assistant-1",
+            "role": "assistant",
+            "content": "Working on it.",
+            "conversation_id": "conv-1",
+            "created_at": "2026-08-12T10:00:01",
+            "meta": None,
+        },
+    ]
+    pending = [
+        {
+            "id": "action-1",
+            "run_id": "run-1",
+            "tool_name": "git_status",
+            "parameters": {"cwd": "/workspace"},
+            "status": "waiting",
+        }
+    ]
+    admin_client = _FakePendingAdminClient(
+        messages=messages,
+        pending=pending,
+        run_conv={"run-1": "conv-1"},
+    )
+
+    items = asyncio.run(
+        list_conversation_message_items(
+            admin_client=admin_client,
+            conversation_id="conv-1",
+            limit=50,
+            offset=0,
+        )
+    )
+
+    by_id = {item.id: item for item in items}
+    assert by_id["user-1"].pending_confirmations == []
+    assistant_confirmations = by_id["assistant-1"].pending_confirmations
+    assert len(assistant_confirmations) == 1
+    assert assistant_confirmations[0].action_id == "action-1"
+    assert assistant_confirmations[0].tool_name == "git_status"
+
+
+def test_waiting_confirmation_from_other_conversation_is_not_attached() -> None:
+    """A waiting action whose run belongs elsewhere never leaks into this list."""
+    messages = [
+        {
+            "id": "assistant-1",
+            "role": "assistant",
+            "content": "Working on it.",
+            "conversation_id": "conv-1",
+            "created_at": "2026-08-12T10:00:01",
+            "meta": None,
+        },
+    ]
+    pending = [
+        {
+            "id": "action-9",
+            "run_id": "run-9",
+            "tool_name": "git_status",
+            "parameters": {},
+            "status": "waiting",
+        }
+    ]
+    admin_client = _FakePendingAdminClient(
+        messages=messages,
+        pending=pending,
+        run_conv={"run-9": "conv-OTHER"},
+    )
+
+    items = asyncio.run(
+        list_conversation_message_items(
+            admin_client=admin_client,
+            conversation_id="conv-1",
+            limit=50,
+            offset=0,
+        )
+    )
+
+    assert items[0].pending_confirmations == []

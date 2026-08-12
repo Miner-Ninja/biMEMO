@@ -140,6 +140,7 @@ DEFAULT_POLICY: dict[str, PolicyValue] = {
     "trust.confirmation_channel_binding": True,
     "trust.auto_downgrade_threshold": 5,
     "trust.red_zone_tools": ["email_send"],
+    "tools.manual_control_enabled": True,
     "trust.yellow_zone_tools": [
         "file_write",
         "web_search",

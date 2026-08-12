@@ -216,6 +216,8 @@ def _chat_payload(
         payload["response_format"] = _response_format_for(schema_override)
     if tools:
         payload["tools"] = tools
+        # Default "auto". Per-turn forcing (chat-input chips) is applied by the
+        # caller via options.tool_choice, not here.
         payload["tool_choice"] = TOOL_CHOICE_AUTO
     # Reasoning switch: only self-hosted OpenAI-compatible servers (vLLM)
     # understand chat_template_kwargs; hosted providers get no extra key.

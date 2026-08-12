@@ -31,6 +31,7 @@ class TestChatResponse:
             "input_filtered": False,
             "output_filtered": False,
             "pending_confirmations": [],
+            "used_tools": [],
             "retrieved_memories": None,
             "retrieved_messages": None,
             "transcription": None,

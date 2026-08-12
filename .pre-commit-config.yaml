@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      # 1. Форматирование кода (аналог Black/Ruff Format)
+      - id: cargo-fmt
+        name: Rust Formatter (cargo fmt)
+        entry: cargo fmt --all -- --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # 2. Линтер и поиск ошибок (аналог Ruff/Pylint/Mypy)
+      # Флаг -D warnings превращает предупреждения в ошибки
+      - id: cargo-clippy
+        name: Rust Linter (cargo clippy)
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # 3. Запуск тестов (аналог pytest)
+      - id: cargo-test
+        name: Rust Tests (cargo test)
+        entry: cargo test --all-features
+        language: system
+        pass_filenames: false
+        always_run: true

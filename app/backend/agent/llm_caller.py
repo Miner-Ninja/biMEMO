@@ -911,6 +911,7 @@ class LLMCaller:
         tool_executor: ToolExecutor,
         user_intent: dict[str, set[str]] | None = None,
         force_web_search: bool = False,
+        forced_tool_choice: object | None = None,
         requirements: ResponseRequirements | None = None,
         satisfaction: RequirementSatisfaction | None = None,
         suggestions_enabled: bool = True,
@@ -940,6 +941,8 @@ class LLMCaller:
                     "type": "function",
                     "function": {"name": "web_search"},
                 }
+            elif first_iteration and forced_tool_choice is not None:
+                forced_choice = forced_tool_choice
 
             llm_response = await self.call_once(
                 llm_call=llm_call,

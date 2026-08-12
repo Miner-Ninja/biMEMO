@@ -75,6 +75,7 @@ class ToolExecutor:
         self._pending_red: list[PendingAction] = []
         self.tool_call_count: int = 0
         self.tool_names_used: list[str] = []
+        self.executed_tools: list[dict] = []
         self.allowed_tool_names: set[str] | None = None
         # Context propagated to tool handlers via the broker
         # (e.g. {"conversation_id": ..., "session_id": ...}).
@@ -143,6 +144,13 @@ class ToolExecutor:
             await self.sse_queue.put(
                 {"type": "tool_status", "name": tool_call.name, "status": "completed"}
             )
+        self.executed_tools.append(
+            {
+                "name": tool_call.name,
+                "zone": result.zone.value,
+                "success": result.success,
+            }
+        )
         return result
 
     def _action_context(self, tool_call: ToolCall) -> ActionContext:

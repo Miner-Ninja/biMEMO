@@ -1,0 +1,250 @@
+{"timestamp": "2026-08-09T09:35:37.187", "decision": "assertion_stored", "assertion_id": "2abb17d4-4800-4252-8c1b-00a75f57ef01", "relation": "prefers"}
+{"timestamp": "2026-08-09T09:35:37.196", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T09:35:37.205", "decision": "assertion_stored", "assertion_id": "762fbf34-8585-4320-bf84-216b204a24af", "relation": "prefers"}
+{"timestamp": "2026-08-09T09:35:37.206", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "762fbf34-8585-4320-bf84-216b204a24af"}
+{"timestamp": "2026-08-09T09:35:37.215", "decision": "assertion_stored", "assertion_id": "b398e5b8-b789-483d-ab99-36bd00260fc6", "relation": "prefers"}
+{"timestamp": "2026-08-09T09:35:37.216", "decision": "assertion_invalidated_previous", "new": "2fff1a43-1be9-4ff6-b8a4-7ce9140bdc6f", "invalidated": "b398e5b8-b789-483d-ab99-36bd00260fc6"}
+{"timestamp": "2026-08-09T09:35:37.225", "decision": "assertion_stored", "assertion_id": "175f3ea5-2011-4b53-88d6-4d8e8ffc8fc2", "relation": "prefers"}
+{"timestamp": "2026-08-09T09:35:37.225", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "175f3ea5-2011-4b53-88d6-4d8e8ffc8fc2"}
+{"timestamp": "2026-08-09T09:35:37.235", "decision": "assertion_stored", "assertion_id": "16d80cba-5393-4cb2-b946-680d78ae8847", "relation": "prefers"}
+{"timestamp": "2026-08-09T09:35:37.236", "decision": "assertion_conflict_kept_both", "new": "439ce840-9dea-403d-bfcb-1f6189d9eda9", "existing": "16d80cba-5393-4cb2-b946-680d78ae8847"}
+{"timestamp": "2026-08-09T14:24:49.440", "decision": "assertion_stored", "assertion_id": "8f8e0bba-7029-4f83-b2f9-eb55f25c6885", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:24:49.449", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:24:49.458", "decision": "assertion_stored", "assertion_id": "5e2f7c16-0abf-4d3b-b45a-6ad19b26d0b8", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:24:49.458", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "5e2f7c16-0abf-4d3b-b45a-6ad19b26d0b8"}
+{"timestamp": "2026-08-09T14:24:49.467", "decision": "assertion_stored", "assertion_id": "3463ec50-6f75-4256-a903-faec345b9b6f", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:24:49.467", "decision": "assertion_invalidated_previous", "new": "dbe13238-3ddb-43dd-9054-96206e1d3ea4", "invalidated": "3463ec50-6f75-4256-a903-faec345b9b6f"}
+{"timestamp": "2026-08-09T14:24:49.475", "decision": "assertion_stored", "assertion_id": "156fd206-146d-4986-a216-cc9388c7df90", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:24:49.475", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "156fd206-146d-4986-a216-cc9388c7df90"}
+{"timestamp": "2026-08-09T14:24:49.483", "decision": "assertion_stored", "assertion_id": "5a86aa9a-598e-4572-aa1c-59c8781b4767", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:24:49.483", "decision": "assertion_conflict_kept_both", "new": "de84ea60-84ad-4764-b705-82371d848254", "existing": "5a86aa9a-598e-4572-aa1c-59c8781b4767"}
+{"timestamp": "2026-08-09T14:26:43.179", "decision": "assertion_stored", "assertion_id": "f86a8de9-b3ea-4051-8bc1-5b54f906f1eb", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:26:43.186", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:26:43.194", "decision": "assertion_stored", "assertion_id": "5cd975b7-d1c9-49e9-9b13-00ad5f02a19f", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:26:43.195", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "5cd975b7-d1c9-49e9-9b13-00ad5f02a19f"}
+{"timestamp": "2026-08-09T14:26:43.203", "decision": "assertion_stored", "assertion_id": "25c767db-e2dd-464a-8007-cf473e553920", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:26:43.203", "decision": "assertion_invalidated_previous", "new": "7d05e7c3-332e-4eff-803a-e246b9951cb9", "invalidated": "25c767db-e2dd-464a-8007-cf473e553920"}
+{"timestamp": "2026-08-09T14:26:43.211", "decision": "assertion_stored", "assertion_id": "23c5e361-718b-4d2b-a4cd-43c079db6360", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:26:43.211", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "23c5e361-718b-4d2b-a4cd-43c079db6360"}
+{"timestamp": "2026-08-09T14:26:43.219", "decision": "assertion_stored", "assertion_id": "7157874b-f9fd-4ee9-8459-750e18e4f307", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:26:43.219", "decision": "assertion_conflict_kept_both", "new": "39f2ba46-123c-4f32-b1f8-160d26b20220", "existing": "7157874b-f9fd-4ee9-8459-750e18e4f307"}
+{"timestamp": "2026-08-09T14:27:32.408", "decision": "assertion_stored", "assertion_id": "3f50d0f2-33d1-41a4-9c15-5e31c30bb243", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:27:32.415", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:27:32.424", "decision": "assertion_stored", "assertion_id": "5df0cb1e-a30f-41be-82b3-a23c001adcaf", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:27:32.424", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "5df0cb1e-a30f-41be-82b3-a23c001adcaf"}
+{"timestamp": "2026-08-09T14:27:32.432", "decision": "assertion_stored", "assertion_id": "c037840b-7254-4108-95bc-f27edc65e563", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:27:32.432", "decision": "assertion_invalidated_previous", "new": "2538a0e7-29c9-4143-9e6f-d5030b180c5a", "invalidated": "c037840b-7254-4108-95bc-f27edc65e563"}
+{"timestamp": "2026-08-09T14:27:32.440", "decision": "assertion_stored", "assertion_id": "796f5d3f-193b-48b8-b75f-293e43544d3d", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:27:32.440", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "796f5d3f-193b-48b8-b75f-293e43544d3d"}
+{"timestamp": "2026-08-09T14:27:32.448", "decision": "assertion_stored", "assertion_id": "9df0136c-1fa9-42ef-8cb8-4ae28ea2c109", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:27:32.448", "decision": "assertion_conflict_kept_both", "new": "b7a04cda-7cb2-4e2e-81ad-d949cea85c86", "existing": "9df0136c-1fa9-42ef-8cb8-4ae28ea2c109"}
+{"timestamp": "2026-08-09T14:28:41.321", "decision": "assertion_stored", "assertion_id": "12561b96-5d86-4f91-bf31-4693438d4115", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:28:41.329", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:28:41.337", "decision": "assertion_stored", "assertion_id": "45f5947a-7a32-4860-b821-bb24caf45e93", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:28:41.337", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "45f5947a-7a32-4860-b821-bb24caf45e93"}
+{"timestamp": "2026-08-09T14:28:41.345", "decision": "assertion_stored", "assertion_id": "259eadcd-31cd-4d37-8bee-23e1fd0bed18", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:28:41.345", "decision": "assertion_invalidated_previous", "new": "230cec5f-64d6-41eb-a2ba-98d6b6ab026d", "invalidated": "259eadcd-31cd-4d37-8bee-23e1fd0bed18"}
+{"timestamp": "2026-08-09T14:28:41.353", "decision": "assertion_stored", "assertion_id": "79a0c2b4-47cb-4c09-a417-2de0a47a15ef", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:28:41.353", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "79a0c2b4-47cb-4c09-a417-2de0a47a15ef"}
+{"timestamp": "2026-08-09T14:28:41.361", "decision": "assertion_stored", "assertion_id": "84ac7ca4-84e3-4f19-be98-9f68404fcf13", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:28:41.362", "decision": "assertion_conflict_kept_both", "new": "9b7e561c-3999-4e4b-925d-c318443fd4f1", "existing": "84ac7ca4-84e3-4f19-be98-9f68404fcf13"}
+{"timestamp": "2026-08-09T14:29:31.003", "decision": "assertion_stored", "assertion_id": "fe725396-c7c1-4737-9b69-10dcaaf76889", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:29:31.011", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:29:31.019", "decision": "assertion_stored", "assertion_id": "7a1bbbda-570b-4754-976f-1704a9d7e89d", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:29:31.019", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "7a1bbbda-570b-4754-976f-1704a9d7e89d"}
+{"timestamp": "2026-08-09T14:29:31.027", "decision": "assertion_stored", "assertion_id": "599769c9-8b08-45ee-a91c-3423b36b7619", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:29:31.028", "decision": "assertion_invalidated_previous", "new": "aa512c6b-36c7-4365-902c-9910a3101971", "invalidated": "599769c9-8b08-45ee-a91c-3423b36b7619"}
+{"timestamp": "2026-08-09T14:29:31.036", "decision": "assertion_stored", "assertion_id": "629cce80-e131-4aa1-a6a2-b9a30edcdd09", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:29:31.036", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "629cce80-e131-4aa1-a6a2-b9a30edcdd09"}
+{"timestamp": "2026-08-09T14:29:31.044", "decision": "assertion_stored", "assertion_id": "7405a940-d64f-4acc-8876-767463169561", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:29:31.044", "decision": "assertion_conflict_kept_both", "new": "d6406b7f-796b-4930-bbb5-a3c8db4d273e", "existing": "7405a940-d64f-4acc-8876-767463169561"}
+{"timestamp": "2026-08-09T14:30:44.404", "decision": "assertion_stored", "assertion_id": "9f4ed89a-3e99-4e73-8379-00ca386ff96f", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:30:44.412", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:30:44.419", "decision": "assertion_stored", "assertion_id": "464f927f-8efb-4f24-b1bc-0ed407dc815d", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:30:44.420", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "464f927f-8efb-4f24-b1bc-0ed407dc815d"}
+{"timestamp": "2026-08-09T14:30:44.427", "decision": "assertion_stored", "assertion_id": "b600a69b-aea2-4e7a-ac7a-ba8febb43de3", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:30:44.428", "decision": "assertion_invalidated_previous", "new": "9d8a92e1-41db-4e28-bbb9-0930e24a78ae", "invalidated": "b600a69b-aea2-4e7a-ac7a-ba8febb43de3"}
+{"timestamp": "2026-08-09T14:30:44.435", "decision": "assertion_stored", "assertion_id": "452e621d-236c-434e-b213-4a84d91e4f29", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:30:44.436", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "452e621d-236c-434e-b213-4a84d91e4f29"}
+{"timestamp": "2026-08-09T14:30:44.443", "decision": "assertion_stored", "assertion_id": "44199c37-2a95-4ade-8695-80069c29b22e", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:30:44.444", "decision": "assertion_conflict_kept_both", "new": "a7ef4a4f-cf21-418d-a933-83975f2315ec", "existing": "44199c37-2a95-4ade-8695-80069c29b22e"}
+{"timestamp": "2026-08-09T14:31:42.208", "decision": "assertion_stored", "assertion_id": "5e23afde-fbae-4d18-bda4-f6675137531f", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:31:42.216", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:31:42.224", "decision": "assertion_stored", "assertion_id": "c277ef4a-00f9-4d0b-97d2-62a0c15d6f47", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:31:42.224", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "c277ef4a-00f9-4d0b-97d2-62a0c15d6f47"}
+{"timestamp": "2026-08-09T14:31:42.232", "decision": "assertion_stored", "assertion_id": "85a737fc-e0f5-44f5-b468-e9291af42492", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:31:42.233", "decision": "assertion_invalidated_previous", "new": "2e96d5c2-bd59-44d0-a1c4-b0600de77c6a", "invalidated": "85a737fc-e0f5-44f5-b468-e9291af42492"}
+{"timestamp": "2026-08-09T14:31:42.241", "decision": "assertion_stored", "assertion_id": "3c309072-e4f1-4253-b334-ce5625cb2b5b", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:31:42.242", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "3c309072-e4f1-4253-b334-ce5625cb2b5b"}
+{"timestamp": "2026-08-09T14:31:42.250", "decision": "assertion_stored", "assertion_id": "491e9cf2-172e-4307-a8ae-377b10102ba0", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:31:42.250", "decision": "assertion_conflict_kept_both", "new": "f08da411-43d7-4826-9af6-6ec40d0f02a4", "existing": "491e9cf2-172e-4307-a8ae-377b10102ba0"}
+{"timestamp": "2026-08-09T14:32:52.074", "decision": "assertion_stored", "assertion_id": "c2d3beb5-2872-4ea7-b479-6451636ec041", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:32:52.081", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:32:52.089", "decision": "assertion_stored", "assertion_id": "db0c59fc-5180-4989-b931-1173c3d070a5", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:32:52.090", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "db0c59fc-5180-4989-b931-1173c3d070a5"}
+{"timestamp": "2026-08-09T14:32:52.097", "decision": "assertion_stored", "assertion_id": "e95c48ca-ca3a-4c93-b60f-9e5178b3d45e", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:32:52.098", "decision": "assertion_invalidated_previous", "new": "33eac1be-c300-4469-b97d-d243dd7b5017", "invalidated": "e95c48ca-ca3a-4c93-b60f-9e5178b3d45e"}
+{"timestamp": "2026-08-09T14:32:52.106", "decision": "assertion_stored", "assertion_id": "9d2e537a-db17-4776-b7d4-0a0553d383d4", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:32:52.106", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "9d2e537a-db17-4776-b7d4-0a0553d383d4"}
+{"timestamp": "2026-08-09T14:32:52.114", "decision": "assertion_stored", "assertion_id": "ab367e72-9787-4ead-a912-b6c637825d59", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:32:52.114", "decision": "assertion_conflict_kept_both", "new": "bf1db6bc-6e0e-497c-940b-7c2b2cf5718b", "existing": "ab367e72-9787-4ead-a912-b6c637825d59"}
+{"timestamp": "2026-08-09T14:34:11.721", "decision": "assertion_stored", "assertion_id": "8c53cd87-b2b4-4ef3-99af-a27debc882be", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:34:11.728", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T14:34:11.736", "decision": "assertion_stored", "assertion_id": "f88504ca-11a6-4b0a-9fb3-4410767049ab", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:34:11.736", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "f88504ca-11a6-4b0a-9fb3-4410767049ab"}
+{"timestamp": "2026-08-09T14:34:11.744", "decision": "assertion_stored", "assertion_id": "bb53f727-8fd3-4aaf-998f-8b1e02118e14", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:34:11.744", "decision": "assertion_invalidated_previous", "new": "cbf798a0-1588-4534-aca5-8d033d406ca7", "invalidated": "bb53f727-8fd3-4aaf-998f-8b1e02118e14"}
+{"timestamp": "2026-08-09T14:34:11.752", "decision": "assertion_stored", "assertion_id": "44341b24-d1d0-479b-b459-4f4fe4075011", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:34:11.752", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "44341b24-d1d0-479b-b459-4f4fe4075011"}
+{"timestamp": "2026-08-09T14:34:11.760", "decision": "assertion_stored", "assertion_id": "89a6508d-9689-4ee5-8909-6f1923d89bad", "relation": "prefers"}
+{"timestamp": "2026-08-09T14:34:11.760", "decision": "assertion_conflict_kept_both", "new": "d809c842-c732-4b7e-9011-86289c406636", "existing": "89a6508d-9689-4ee5-8909-6f1923d89bad"}
+{"timestamp": "2026-08-09T17:57:19.173", "decision": "assertion_stored", "assertion_id": "ef450791-bf32-4d5a-a3b4-313ad3c6a314", "relation": "prefers"}
+{"timestamp": "2026-08-09T17:57:19.182", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T17:57:19.196", "decision": "assertion_stored", "assertion_id": "351a2334-00ec-4eaa-89cb-20ccd12e781d", "relation": "prefers"}
+{"timestamp": "2026-08-09T17:57:19.196", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "351a2334-00ec-4eaa-89cb-20ccd12e781d"}
+{"timestamp": "2026-08-09T17:57:19.210", "decision": "assertion_stored", "assertion_id": "9f362466-f503-4396-965d-cca89900f25b", "relation": "prefers"}
+{"timestamp": "2026-08-09T17:57:19.210", "decision": "assertion_invalidated_previous", "new": "288772b6-e577-43c4-9a2e-622a2adbef9e", "invalidated": "9f362466-f503-4396-965d-cca89900f25b"}
+{"timestamp": "2026-08-09T17:57:19.219", "decision": "assertion_stored", "assertion_id": "263f3dfd-32f6-47e3-8526-f48f2f8df6f1", "relation": "prefers"}
+{"timestamp": "2026-08-09T17:57:19.219", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "263f3dfd-32f6-47e3-8526-f48f2f8df6f1"}
+{"timestamp": "2026-08-09T17:57:19.229", "decision": "assertion_stored", "assertion_id": "5f2514a1-b48e-496c-9ace-5027a703addc", "relation": "prefers"}
+{"timestamp": "2026-08-09T17:57:19.230", "decision": "assertion_conflict_kept_both", "new": "fe74e872-884f-4f19-9344-bb5d43df0dc6", "existing": "5f2514a1-b48e-496c-9ace-5027a703addc"}
+{"timestamp": "2026-08-09T18:22:33.428", "decision": "assertion_stored", "assertion_id": "d99d8729-fe2c-4ad4-a475-d38c6d3b70cc", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:22:33.437", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T18:22:33.445", "decision": "assertion_stored", "assertion_id": "a025ba11-93db-4142-95d4-6e9d45a655c4", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:22:33.446", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "a025ba11-93db-4142-95d4-6e9d45a655c4"}
+{"timestamp": "2026-08-09T18:22:33.454", "decision": "assertion_stored", "assertion_id": "8b528f4b-b065-4baf-a679-76a2a1ccdfb3", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:22:33.454", "decision": "assertion_invalidated_previous", "new": "d79448ed-c6ab-4eff-b3fb-87ea0ed110e0", "invalidated": "8b528f4b-b065-4baf-a679-76a2a1ccdfb3"}
+{"timestamp": "2026-08-09T18:22:33.463", "decision": "assertion_stored", "assertion_id": "efa94d49-58c7-4bec-8636-ca07239387cd", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:22:33.463", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "efa94d49-58c7-4bec-8636-ca07239387cd"}
+{"timestamp": "2026-08-09T18:22:33.471", "decision": "assertion_stored", "assertion_id": "ec118b84-7c88-4813-931f-66355ec21e86", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:22:33.471", "decision": "assertion_conflict_kept_both", "new": "89ca544f-74c7-44ec-ae0a-822b1f221e40", "existing": "ec118b84-7c88-4813-931f-66355ec21e86"}
+{"timestamp": "2026-08-09T18:40:17.790", "decision": "assertion_stored", "assertion_id": "7ad8fba9-0d43-46cc-8eb9-d02774d0bcae", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:40:17.798", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T18:40:17.807", "decision": "assertion_stored", "assertion_id": "9011e579-a1fa-4fda-8836-d7ff9661c953", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:40:17.808", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "9011e579-a1fa-4fda-8836-d7ff9661c953"}
+{"timestamp": "2026-08-09T18:40:17.817", "decision": "assertion_stored", "assertion_id": "1a9476d0-789d-472b-9afa-0af909adece7", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:40:17.817", "decision": "assertion_invalidated_previous", "new": "6b06ed22-d459-465f-94d2-fbe0e27bb0a9", "invalidated": "1a9476d0-789d-472b-9afa-0af909adece7"}
+{"timestamp": "2026-08-09T18:40:17.825", "decision": "assertion_stored", "assertion_id": "beb41c33-199d-4b35-b0cd-723fdedd115d", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:40:17.826", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "beb41c33-199d-4b35-b0cd-723fdedd115d"}
+{"timestamp": "2026-08-09T18:40:17.834", "decision": "assertion_stored", "assertion_id": "d6a99a07-a556-4f7e-9f99-7d0bdbeca4fc", "relation": "prefers"}
+{"timestamp": "2026-08-09T18:40:17.834", "decision": "assertion_conflict_kept_both", "new": "e9c93720-dab6-4aad-9b39-7093878decc9", "existing": "d6a99a07-a556-4f7e-9f99-7d0bdbeca4fc"}
+{"timestamp": "2026-08-09T19:00:04.640", "decision": "assertion_stored", "assertion_id": "b7d9b053-a3a4-40c8-a385-b5445ab0bc6d", "relation": "prefers"}
+{"timestamp": "2026-08-09T19:00:04.648", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T19:00:04.656", "decision": "assertion_stored", "assertion_id": "fda4c2f0-725f-409a-b4c9-c9c8a988e597", "relation": "prefers"}
+{"timestamp": "2026-08-09T19:00:04.656", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "fda4c2f0-725f-409a-b4c9-c9c8a988e597"}
+{"timestamp": "2026-08-09T19:00:04.664", "decision": "assertion_stored", "assertion_id": "3704f3e8-ec04-4696-a138-93673a54ff6a", "relation": "prefers"}
+{"timestamp": "2026-08-09T19:00:04.665", "decision": "assertion_invalidated_previous", "new": "c6d9fb27-e1bb-4059-85f6-af39d6d76b37", "invalidated": "3704f3e8-ec04-4696-a138-93673a54ff6a"}
+{"timestamp": "2026-08-09T19:00:04.673", "decision": "assertion_stored", "assertion_id": "2c5126bc-d095-4fbb-b5c4-0dfca985656e", "relation": "prefers"}
+{"timestamp": "2026-08-09T19:00:04.673", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "2c5126bc-d095-4fbb-b5c4-0dfca985656e"}
+{"timestamp": "2026-08-09T19:00:04.682", "decision": "assertion_stored", "assertion_id": "4f563c58-683c-4cbc-8638-f5f85f236997", "relation": "prefers"}
+{"timestamp": "2026-08-09T19:00:04.682", "decision": "assertion_conflict_kept_both", "new": "4088e6da-4598-41db-9506-88e45179328a", "existing": "4f563c58-683c-4cbc-8638-f5f85f236997"}
+{"timestamp": "2026-08-09T20:12:51.124", "decision": "assertion_stored", "assertion_id": "86479d0e-2b4e-49a6-8178-a31aa495673a", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:12:51.132", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T20:12:51.140", "decision": "assertion_stored", "assertion_id": "d8703990-4741-4f5a-a52b-729229886ce8", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:12:51.140", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "d8703990-4741-4f5a-a52b-729229886ce8"}
+{"timestamp": "2026-08-09T20:12:51.148", "decision": "assertion_stored", "assertion_id": "49b92553-28bb-4139-bad5-e53fb2f81f2d", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:12:51.149", "decision": "assertion_invalidated_previous", "new": "0c7a046b-c8f9-4a91-8296-5ed0fdc42f7f", "invalidated": "49b92553-28bb-4139-bad5-e53fb2f81f2d"}
+{"timestamp": "2026-08-09T20:12:51.157", "decision": "assertion_stored", "assertion_id": "b2ead882-c1a9-4aae-94b4-d95ce151f141", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:12:51.157", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "b2ead882-c1a9-4aae-94b4-d95ce151f141"}
+{"timestamp": "2026-08-09T20:12:51.165", "decision": "assertion_stored", "assertion_id": "d922875f-01d1-4a67-97da-497a5b62e5f0", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:12:51.165", "decision": "assertion_conflict_kept_both", "new": "7cf753db-37c0-49a7-84af-a63f292aaf72", "existing": "d922875f-01d1-4a67-97da-497a5b62e5f0"}
+{"timestamp": "2026-08-09T20:13:54.758", "decision": "assertion_stored", "assertion_id": "438a6eed-fa17-4e62-b013-3959c7722d02", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:13:54.770", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T20:13:54.780", "decision": "assertion_stored", "assertion_id": "314dbb5f-d238-4f67-9b37-785b0cd63fe3", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:13:54.780", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "314dbb5f-d238-4f67-9b37-785b0cd63fe3"}
+{"timestamp": "2026-08-09T20:13:54.789", "decision": "assertion_stored", "assertion_id": "e4cc7a03-bb8e-45b4-9de0-ff572a1b6c39", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:13:54.790", "decision": "assertion_invalidated_previous", "new": "4ba5c774-4b7f-4fb1-a5b0-7aaf83e32dfe", "invalidated": "e4cc7a03-bb8e-45b4-9de0-ff572a1b6c39"}
+{"timestamp": "2026-08-09T20:13:54.798", "decision": "assertion_stored", "assertion_id": "615540f5-3d34-43d3-ac5d-161df31e055f", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:13:54.798", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "615540f5-3d34-43d3-ac5d-161df31e055f"}
+{"timestamp": "2026-08-09T20:13:54.807", "decision": "assertion_stored", "assertion_id": "b6a48692-a9d9-4ba0-8659-4011805f1813", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:13:54.807", "decision": "assertion_conflict_kept_both", "new": "1396ccea-6aad-4b36-8654-8dca86c07f6f", "existing": "b6a48692-a9d9-4ba0-8659-4011805f1813"}
+{"timestamp": "2026-08-09T20:15:17.202", "decision": "assertion_stored", "assertion_id": "553c0d12-c1b4-42f5-b311-32e74f3b3378", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:15:17.209", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T20:15:17.217", "decision": "assertion_stored", "assertion_id": "e27fc06c-10f4-4b4a-a2b7-7e5668a349dc", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:15:17.217", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "e27fc06c-10f4-4b4a-a2b7-7e5668a349dc"}
+{"timestamp": "2026-08-09T20:15:17.225", "decision": "assertion_stored", "assertion_id": "b71d1b91-a189-4712-a245-0293b3dafc64", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:15:17.226", "decision": "assertion_invalidated_previous", "new": "32bd674e-f2bb-4a70-ab5e-846a863fa010", "invalidated": "b71d1b91-a189-4712-a245-0293b3dafc64"}
+{"timestamp": "2026-08-09T20:15:17.234", "decision": "assertion_stored", "assertion_id": "16c6be1e-d312-4026-9c5a-bd9ed3def28b", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:15:17.234", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "16c6be1e-d312-4026-9c5a-bd9ed3def28b"}
+{"timestamp": "2026-08-09T20:15:17.243", "decision": "assertion_stored", "assertion_id": "45e98a8f-eb0b-42a4-b40b-9b01c91a908b", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:15:17.244", "decision": "assertion_conflict_kept_both", "new": "4463bcc3-c5cc-41ca-888d-295949029d2a", "existing": "45e98a8f-eb0b-42a4-b40b-9b01c91a908b"}
+{"timestamp": "2026-08-09T20:16:21.074", "decision": "assertion_stored", "assertion_id": "4a2cabf3-880e-45b9-ba2e-10321ee346d6", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:16:21.082", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T20:16:21.090", "decision": "assertion_stored", "assertion_id": "5677d776-59bb-4a56-ad25-03a8b4ccd55a", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:16:21.091", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "5677d776-59bb-4a56-ad25-03a8b4ccd55a"}
+{"timestamp": "2026-08-09T20:16:21.106", "decision": "assertion_stored", "assertion_id": "d89455b9-2e24-4ebe-bf26-931d10ea5aed", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:16:21.107", "decision": "assertion_invalidated_previous", "new": "84d22437-0202-4db1-b90f-ba6ba1277417", "invalidated": "d89455b9-2e24-4ebe-bf26-931d10ea5aed"}
+{"timestamp": "2026-08-09T20:16:21.118", "decision": "assertion_stored", "assertion_id": "d67e493c-36cd-4aa1-b388-e4aa203ab96c", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:16:21.118", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "d67e493c-36cd-4aa1-b388-e4aa203ab96c"}
+{"timestamp": "2026-08-09T20:16:21.126", "decision": "assertion_stored", "assertion_id": "44e0240d-9377-4a3b-b91f-763b656115fd", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:16:21.127", "decision": "assertion_conflict_kept_both", "new": "b594738f-66ff-4d4a-ae37-ab0807024a12", "existing": "44e0240d-9377-4a3b-b91f-763b656115fd"}
+{"timestamp": "2026-08-09T20:37:05.844", "decision": "assertion_stored", "assertion_id": "74e8beba-844b-4540-81e7-ae887adebd69", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:37:05.852", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-09T20:37:05.861", "decision": "assertion_stored", "assertion_id": "cdb2fcd1-5894-4517-bd36-185def88ac3d", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:37:05.861", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "cdb2fcd1-5894-4517-bd36-185def88ac3d"}
+{"timestamp": "2026-08-09T20:37:05.871", "decision": "assertion_stored", "assertion_id": "6e33d7d6-5d7e-4a10-9655-a22a2b793a0a", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:37:05.871", "decision": "assertion_invalidated_previous", "new": "94da0aa1-0f76-4024-bb8e-634f3bf53145", "invalidated": "6e33d7d6-5d7e-4a10-9655-a22a2b793a0a"}
+{"timestamp": "2026-08-09T20:37:05.880", "decision": "assertion_stored", "assertion_id": "9e695677-744c-4091-bd2b-8922b3bfb72e", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:37:05.880", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "9e695677-744c-4091-bd2b-8922b3bfb72e"}
+{"timestamp": "2026-08-09T20:37:05.888", "decision": "assertion_stored", "assertion_id": "27620ef5-c8dd-4421-9320-433fb93e17dd", "relation": "prefers"}
+{"timestamp": "2026-08-09T20:37:05.889", "decision": "assertion_conflict_kept_both", "new": "adf73ea7-6530-4ca9-a42b-9a8565427dac", "existing": "27620ef5-c8dd-4421-9320-433fb93e17dd"}
+{"timestamp": "2026-08-10T06:18:16.764", "decision": "assertion_stored", "assertion_id": "b2386081-cb7a-4e17-8f67-82f58bf5a20c", "relation": "prefers"}
+{"timestamp": "2026-08-10T06:18:16.772", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-10T06:18:16.780", "decision": "assertion_stored", "assertion_id": "f69d1197-b1b6-47b4-94f4-3d8b9b2fcf14", "relation": "prefers"}
+{"timestamp": "2026-08-10T06:18:16.780", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "f69d1197-b1b6-47b4-94f4-3d8b9b2fcf14"}
+{"timestamp": "2026-08-10T06:18:16.788", "decision": "assertion_stored", "assertion_id": "0bf9f50e-8bb3-4541-b610-673cb5bfbc03", "relation": "prefers"}
+{"timestamp": "2026-08-10T06:18:16.788", "decision": "assertion_invalidated_previous", "new": "045f4f86-4621-485c-9ff0-edd39327af3d", "invalidated": "0bf9f50e-8bb3-4541-b610-673cb5bfbc03"}
+{"timestamp": "2026-08-10T06:18:16.796", "decision": "assertion_stored", "assertion_id": "60d37b80-10e0-40bf-baa1-d462f943ad09", "relation": "prefers"}
+{"timestamp": "2026-08-10T06:18:16.796", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "60d37b80-10e0-40bf-baa1-d462f943ad09"}
+{"timestamp": "2026-08-10T06:18:16.804", "decision": "assertion_stored", "assertion_id": "a8f4b6df-2182-4cdc-8a9e-c15527625e7a", "relation": "prefers"}
+{"timestamp": "2026-08-10T06:18:16.805", "decision": "assertion_conflict_kept_both", "new": "4986d6e8-a165-4808-b80f-ee39ddb0fd9b", "existing": "a8f4b6df-2182-4cdc-8a9e-c15527625e7a"}
+{"timestamp": "2026-08-11T17:33:34.295", "decision": "assertion_stored", "assertion_id": "a1a8763a-52d3-4e28-993d-11536e4dbc1a", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:33:34.303", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-11T17:33:34.312", "decision": "assertion_stored", "assertion_id": "cb08b898-7078-45a6-8adb-28befad7a722", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:33:34.313", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "cb08b898-7078-45a6-8adb-28befad7a722"}
+{"timestamp": "2026-08-11T17:33:34.321", "decision": "assertion_stored", "assertion_id": "d2a958fc-bd6c-442a-b679-7c85609601bf", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:33:34.322", "decision": "assertion_invalidated_previous", "new": "933bf81a-f4b3-4775-a3d6-324f7a29dae6", "invalidated": "d2a958fc-bd6c-442a-b679-7c85609601bf"}
+{"timestamp": "2026-08-11T17:33:34.340", "decision": "assertion_stored", "assertion_id": "62a78411-ec6a-4051-9e29-bd5b9bb71b71", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:33:34.340", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "62a78411-ec6a-4051-9e29-bd5b9bb71b71"}
+{"timestamp": "2026-08-11T17:33:34.351", "decision": "assertion_stored", "assertion_id": "b300e5c8-0348-4f40-9d30-424c0ca7c1e4", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:33:34.351", "decision": "assertion_conflict_kept_both", "new": "8edad79b-83b4-4617-b030-f1a581cc1055", "existing": "b300e5c8-0348-4f40-9d30-424c0ca7c1e4"}
+{"timestamp": "2026-08-11T17:55:00.335", "decision": "assertion_stored", "assertion_id": "5b1ae06e-1536-4cad-8199-338c4c7c9b35", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:55:00.343", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-11T17:55:00.353", "decision": "assertion_stored", "assertion_id": "3d14f6fa-72a4-42d0-bf33-56b0ff67d95f", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:55:00.355", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "3d14f6fa-72a4-42d0-bf33-56b0ff67d95f"}
+{"timestamp": "2026-08-11T17:55:00.365", "decision": "assertion_stored", "assertion_id": "881277ab-064b-4229-ae36-305b8edf0926", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:55:00.365", "decision": "assertion_invalidated_previous", "new": "bd6dbd89-7c7d-41e1-92fc-ed82c721ebbd", "invalidated": "881277ab-064b-4229-ae36-305b8edf0926"}
+{"timestamp": "2026-08-11T17:55:00.374", "decision": "assertion_stored", "assertion_id": "0b791299-00bf-41ab-9fc6-b3ff785faa8d", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:55:00.374", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "0b791299-00bf-41ab-9fc6-b3ff785faa8d"}
+{"timestamp": "2026-08-11T17:55:00.382", "decision": "assertion_stored", "assertion_id": "6d686df9-f3f3-41a4-8704-bfdc932411de", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:55:00.383", "decision": "assertion_conflict_kept_both", "new": "540d88b2-678a-4977-a4f5-eaed5f1a17af", "existing": "6d686df9-f3f3-41a4-8704-bfdc932411de"}
+{"timestamp": "2026-08-11T17:56:01.869", "decision": "assertion_stored", "assertion_id": "037504be-8665-485b-8a69-fc1396533ff2", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:56:01.876", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-11T17:56:01.884", "decision": "assertion_stored", "assertion_id": "8137cbad-6e07-4a9d-871d-7ab59d007d45", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:56:01.885", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "8137cbad-6e07-4a9d-871d-7ab59d007d45"}
+{"timestamp": "2026-08-11T17:56:01.893", "decision": "assertion_stored", "assertion_id": "ad456789-8ffb-4217-8dd7-5d86cbeca46e", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:56:01.893", "decision": "assertion_invalidated_previous", "new": "2174dad7-c504-4371-8c23-4ca084dc9233", "invalidated": "ad456789-8ffb-4217-8dd7-5d86cbeca46e"}
+{"timestamp": "2026-08-11T17:56:01.902", "decision": "assertion_stored", "assertion_id": "842acad3-f43d-48bc-82d9-f1affc175023", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:56:01.902", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "842acad3-f43d-48bc-82d9-f1affc175023"}
+{"timestamp": "2026-08-11T17:56:01.911", "decision": "assertion_stored", "assertion_id": "397a4adb-c8b3-479d-b733-00ea49ceb9f5", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:56:01.911", "decision": "assertion_conflict_kept_both", "new": "d3752306-5370-4fb4-b522-638cc2a87db7", "existing": "397a4adb-c8b3-479d-b733-00ea49ceb9f5"}
+{"timestamp": "2026-08-11T17:57:25.393", "decision": "assertion_stored", "assertion_id": "449a028a-6aa6-4b1b-89fc-eb09b6138138", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:57:25.400", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-11T17:57:25.408", "decision": "assertion_stored", "assertion_id": "ecf4abed-1034-49f9-b63f-28e85f1089e9", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:57:25.408", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "ecf4abed-1034-49f9-b63f-28e85f1089e9"}
+{"timestamp": "2026-08-11T17:57:25.416", "decision": "assertion_stored", "assertion_id": "dfd05c25-2470-4bef-98cc-787b77a5d288", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:57:25.416", "decision": "assertion_invalidated_previous", "new": "02113858-a4f2-4ae7-8ce2-51f0c00d98e0", "invalidated": "dfd05c25-2470-4bef-98cc-787b77a5d288"}
+{"timestamp": "2026-08-11T17:57:25.424", "decision": "assertion_stored", "assertion_id": "6357123e-1a53-411c-aae1-4e409ab2f96d", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:57:25.424", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "6357123e-1a53-411c-aae1-4e409ab2f96d"}
+{"timestamp": "2026-08-11T17:57:25.432", "decision": "assertion_stored", "assertion_id": "9e48ee48-d263-4386-b682-97fa6ced2b08", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:57:25.432", "decision": "assertion_conflict_kept_both", "new": "35d21d2f-335a-40e7-86e0-30292e2d5a22", "existing": "9e48ee48-d263-4386-b682-97fa6ced2b08"}
+{"timestamp": "2026-08-11T17:58:16.199", "decision": "assertion_stored", "assertion_id": "a5279140-7139-4357-bd1b-72b1f5923140", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:58:16.208", "decision": "assertion_skipped_subject_undeclared", "subject": "ghost", "text": "ghost uses x"}
+{"timestamp": "2026-08-11T17:58:16.216", "decision": "assertion_stored", "assertion_id": "37635cbe-927b-4277-a42a-9f8649555ef2", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:58:16.217", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "37635cbe-927b-4277-a42a-9f8649555ef2"}
+{"timestamp": "2026-08-11T17:58:16.225", "decision": "assertion_stored", "assertion_id": "7679d331-95bc-4223-ad00-f9e53d779971", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:58:16.225", "decision": "assertion_invalidated_previous", "new": "e6172ef0-82c6-413c-b8c1-2ca1b0b48424", "invalidated": "7679d331-95bc-4223-ad00-f9e53d779971"}
+{"timestamp": "2026-08-11T17:58:16.233", "decision": "assertion_stored", "assertion_id": "700c48f6-2870-4eb8-b75c-6116898b2b11", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:58:16.233", "decision": "assertion_skipped_duplicate", "text": "user prefers vim", "existing": "700c48f6-2870-4eb8-b75c-6116898b2b11"}
+{"timestamp": "2026-08-11T17:58:16.241", "decision": "assertion_stored", "assertion_id": "06f0097a-1f13-4019-8588-8137a0436a6d", "relation": "prefers"}
+{"timestamp": "2026-08-11T17:58:16.241", "decision": "assertion_conflict_kept_both", "new": "2accf716-5009-4da3-a86f-29015b595ecf", "existing": "06f0097a-1f13-4019-8588-8137a0436a6d"}
