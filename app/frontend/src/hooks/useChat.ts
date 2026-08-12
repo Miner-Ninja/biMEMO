@@ -162,6 +162,7 @@ function mapMessage(message: StoredConversationMessage): Message {
       images: extractMessageImages(message.content),
     }),
     pendingConfirmations,
+    usedTools: message.used_tools,
     timestamp: new Date(message.created_at),
   };
 }

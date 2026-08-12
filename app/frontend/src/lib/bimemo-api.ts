@@ -259,6 +259,11 @@ export interface StoredConversationMessage {
     tool_name: string;
     parameters: Record<string, unknown>;
   }[];
+  used_tools?: {
+    name: string;
+    zone: string;
+    success: boolean;
+  }[];
 }
 
 export interface ConversationCreateResponse {
