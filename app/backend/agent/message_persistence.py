@@ -65,7 +65,7 @@ class MessagePersistence:
         content: str | list[dict[str, object]],
         *,
         meta: dict[str, object] | None = None,
-        used_tools: list[str] | None = None,
+        used_tools: list[dict] | None = None,
     ) -> str | None:
         """Persist one conversation message when storage is available."""
         if self.save_fn is None:
@@ -212,6 +212,7 @@ class MessagePersistence:
         raw_assistant_text: str,
         stats: ExtendedUsage | None,
         structured_content: StructuredAssistantContent | None,
+        used_tools: list[dict] | None = None,
     ) -> str | None:
         """Persist the raw final assistant text with usage metadata."""
         return await self.save_message(
@@ -219,6 +220,7 @@ class MessagePersistence:
             "assistant",
             raw_assistant_text,
             meta=build_assistant_message_meta(stats, structured_content),
+            used_tools=used_tools,
         )
 
     async def persist_final_turn_messages(
@@ -232,6 +234,7 @@ class MessagePersistence:
         stats: ExtendedUsage | None,
         structured_content: StructuredAssistantContent | None,
         user_message_id: str | None,
+        used_tools: list[dict] | None = None,
     ) -> str | None:
         """Persist the assistant message and the compact dialog-step record."""
         assistant_message_id = await self.save_final_assistant_message(
@@ -239,6 +242,7 @@ class MessagePersistence:
             raw_assistant_text=raw_assistant_text,
             stats=stats,
             structured_content=structured_content,
+            used_tools=used_tools,
         )
         await self.save_dialog_record(
             conversation_id=conversation_id,

@@ -737,6 +737,7 @@ class AgentOrchestrator:
             stats=finalized_response.stats,
             structured_content=finalized_response.structured_content,
             user_message_id=user_message_id,
+            used_tools=self.used_tools,
         )
 
         return AgentResponse(
