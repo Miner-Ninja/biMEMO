@@ -30,6 +30,7 @@ from ..params import (
     GetPendingActionParams,
     GetResumeSnapshotParams,
     ListAgentRunEventsParams,
+    ListAgentRunsParams,
     ListCapabilityGrantsParams,
     ListPendingActionsParams,
     ListProjectRootsParams,
@@ -487,6 +488,29 @@ def make_list_agent_run_events_handler(db: DatabaseManager) -> OperationHandler:
             tuple(values),
         ).fetchall()
         return {"events": [_run_event_record(row) for row in rows]}
+
+    return handle
+
+
+def make_list_agent_runs_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_agent_runs operation (recent runs, newest first)."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, ListAgentRunsParams)
+        clauses: list[str] = []
+        values: list[Any] = []
+        if p.conversation_id:
+            clauses.append("conversation_id = ?")
+            values.append(p.conversation_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        values.extend([p.limit, p.offset])
+        rows = db.execute(
+            "SELECT id, conversation_id, session_id, channel, status, current_step, "
+            "request_id, resume_payload, created_at, updated_at, completed_at "
+            f"FROM agent_runs {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            tuple(values),
+        ).fetchall()
+        return {"runs": [_run_record(row) for row in rows]}
 
     return handle
 

@@ -1017,6 +1017,14 @@ class ListAgentRunEventsParams(ForbidExtraParams):
     limit: int = Field(default=200, ge=1, le=1000)
 
 
+class ListAgentRunsParams(ForbidExtraParams):
+    """Parameters for list_agent_runs operation."""
+
+    conversation_id: str | None = Field(default=None, max_length=128)
+    limit: int = Field(default=50, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+
 class UpdateAgentRunStatusParams(AgentRunIdParams):
     """Parameters for update_agent_run_status operation."""
 

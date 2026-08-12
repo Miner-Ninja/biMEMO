@@ -1,13 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
-import { ApiError, getTurnTrace, type TurnTrace } from "@/lib/bimemo-api";
+import {
+  ApiError,
+  getRecentTraces,
+  getTurnTrace,
+  type TraceRunSummary,
+  type TurnTrace,
+} from "@/lib/bimemo-api";
+import { cn } from "@/lib/utils";
+
+function statusClass(status: string): string {
+  if (status === "completed") return "bg-success/15 text-success";
+  if (status === "failed") return "bg-destructive/15 text-destructive";
+  if (status === "waiting") return "bg-warning/15 text-warning";
+  return "bg-muted text-muted-foreground";
+}
+
+function shortTime(iso: string): string {
+  return iso ? iso.replace("T", " ").slice(0, 19) : "";
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">{title}</h3>
+    <div className="rounded-lg border border-border bg-card p-3">
+      <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -15,79 +35,156 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Json({ value }: { value: unknown }) {
   return (
-    <pre className="overflow-x-auto rounded bg-muted/50 p-3 font-mono text-xs text-foreground">
+    <pre className="max-h-80 overflow-auto rounded bg-muted/50 p-3 font-mono text-xs text-foreground">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
 }
 
-/** Admin turn-trace viewer: full per-turn observability for one agent run. */
+function TraceDetail({ trace }: { trace: TurnTrace }) {
+  const { messages } = trace;
+  return (
+    <div className="space-y-3">
+      {messages.user && (
+        <Section title="User request">
+          <p className="whitespace-pre-wrap text-sm text-foreground">
+            {messages.user.content || "(empty)"}
+          </p>
+        </Section>
+      )}
+      {messages.assistant && (
+        <Section title="Assistant answer">
+          <p className="whitespace-pre-wrap text-sm text-foreground">
+            {messages.assistant.content || "(empty)"}
+          </p>
+        </Section>
+      )}
+      <Section
+        title={`Selections & model signals (${Object.keys(trace.signals).length})`}
+      >
+        <Json value={trace.signals} />
+      </Section>
+      <Section title={`Tool calls (${trace.tool_calls.length})`}>
+        <Json value={trace.tool_calls} />
+      </Section>
+      <Section title={`Confirmations & decisions (${trace.confirmations.length})`}>
+        <Json value={trace.confirmations} />
+      </Section>
+      <Section title={`Event timeline (${trace.events.length})`}>
+        <Json value={trace.events} />
+      </Section>
+      <Section title="Run">
+        <Json value={trace.run} />
+      </Section>
+    </div>
+  );
+}
+
+/** Admin turn-trace: pick a recent run to see its full per-turn trace. */
 export function TracePage() {
-  const [runId, setRunId] = useState("");
+  const [runs, setRuns] = useState<TraceRunSummary[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [trace, setTrace] = useState<TurnTrace | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingTrace, setLoadingTrace] = useState(false);
 
-  const load = async () => {
-    const id = runId.trim();
-    if (!id) return;
-    setLoading(true);
+  const loadList = async () => {
+    setLoadingList(true);
     setError("");
+    try {
+      setRuns(await getRecentTraces(80));
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "Failed to load runs");
+    } finally {
+      setLoadingList(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadList();
+  }, []);
+
+  const openRun = async (id: string) => {
+    setSelectedId(id);
+    setLoadingTrace(true);
     setTrace(null);
+    setError("");
     try {
       setTrace(await getTurnTrace(id));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Failed to load trace");
     } finally {
-      setLoading(false);
+      setLoadingTrace(false);
     }
   };
 
   return (
     <AdminLayout title="Turn trace">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={runId}
-            onChange={(event) => setRunId(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && void load()}
-            placeholder="agent run id"
-            className="min-w-[22rem] flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
-          />
-          <Button onClick={() => void load()} disabled={loading || !runId.trim()}>
-            {loading ? "Loading…" : "Load trace"}
-          </Button>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Recent turns, newest first. Click one to see its full trace.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void loadList()}>
+          Refresh
+        </Button>
+      </div>
+
+      {error && (
+        <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(20rem,26rem)_1fr]">
+        <div className="max-h-[75vh] space-y-1 overflow-auto rounded-lg border border-border p-1">
+          {loadingList && <p className="p-3 text-sm text-muted-foreground">Loading…</p>}
+          {!loadingList && runs.length === 0 && (
+            <p className="p-3 text-sm text-muted-foreground">No runs yet.</p>
+          )}
+          {runs.map((run) => (
+            <button
+              key={run.id}
+              type="button"
+              onClick={() => void openRun(run.id)}
+              className={cn(
+                "w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-muted",
+                selectedId === run.id && "bg-muted"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                    statusClass(run.status)
+                  )}
+                >
+                  {run.status}
+                </span>
+                <span className="truncate font-mono text-[11px] text-muted-foreground">
+                  {shortTime(run.created_at)} · {run.channel}
+                </span>
+              </div>
+              <div className="mt-1 line-clamp-2 text-sm text-foreground">
+                {run.user_message || (
+                  <span className="text-muted-foreground">(no request text)</span>
+                )}
+              </div>
+            </button>
+          ))}
         </div>
 
-        {error && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {trace && (
-          <div className="space-y-4">
-            <Section title="Run">
-              <Json value={trace.run} />
-            </Section>
-            <Section
-              title={`User selections & model signals (${Object.keys(trace.signals).length})`}
-            >
-              <Json value={trace.signals} />
-            </Section>
-            <Section title={`Tool calls (${trace.tool_calls.length})`}>
-              <Json value={trace.tool_calls} />
-            </Section>
-            <Section
-              title={`Confirmations & decisions (${trace.confirmations.length})`}
-            >
-              <Json value={trace.confirmations} />
-            </Section>
-            <Section title={`Event timeline (${trace.events.length})`}>
-              <Json value={trace.events} />
-            </Section>
-          </div>
-        )}
+        <div>
+          {loadingTrace && (
+            <p className="p-3 text-sm text-muted-foreground">Loading trace…</p>
+          )}
+          {!loadingTrace && trace && <TraceDetail trace={trace} />}
+          {!loadingTrace && !trace && (
+            <p className="p-3 text-sm text-muted-foreground">
+              Select a run on the left.
+            </p>
+          )}
+        </div>
       </div>
     </AdminLayout>
   );

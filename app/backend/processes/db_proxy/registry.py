@@ -149,6 +149,7 @@ from .handlers.permissions import (
     make_get_pending_action_handler,
     make_get_resume_snapshot_handler,
     make_list_agent_run_events_handler,
+    make_list_agent_runs_handler,
     make_list_capability_grants_handler,
     make_list_pending_actions_handler,
     make_list_project_roots_handler,
@@ -294,6 +295,7 @@ SOCKET_A_OPERATIONS = {
     "get_agent_run",
     "create_agent_run_event",
     "list_agent_run_events",
+    "list_agent_runs",
     "update_agent_run_status",
     "create_pending_action",
     "get_pending_action",
@@ -366,6 +368,7 @@ SOCKET_B_ONLY_OPERATIONS = {
     "get_agent_run",
     "create_agent_run_event",
     "list_agent_run_events",
+    "list_agent_runs",
     "update_agent_run_status",
     "create_pending_action",
     "get_pending_action",
@@ -713,6 +716,10 @@ def _register_permission_operations(
     registry.register(
         "list_agent_run_events",
         make_list_agent_run_events_handler(runtime_db),
+    )
+    registry.register(
+        "list_agent_runs",
+        make_list_agent_runs_handler(runtime_db),
     )
     registry.register(
         "update_agent_run_status",

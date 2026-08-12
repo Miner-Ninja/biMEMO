@@ -419,6 +419,18 @@ class AdminDBClient(_BaseIPCClient):
             parameters={"run_id": run_id, "limit": limit},
         )
 
+    async def list_agent_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return recent agent runs, newest first."""
+        return await self._send_list_operation(
+            "list_agent_runs",
+            result_key="runs",
+            parameters={"limit": limit, "offset": offset},
+        )
+
     async def count_memory_entries(self) -> dict[str, int]:
         """Count messages, records, and assertions."""
         return await self.send_operation("count_memory_entries")

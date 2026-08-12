@@ -318,14 +318,37 @@ export async function fetchConversations(): Promise<StoredConversation[]> {
   return apiRequest<StoredConversation[]>("/chat/conversations");
 }
 
+/** One recent run shown in the trace picker. */
+export interface TraceRunSummary {
+  id: string;
+  conversation_id: string;
+  conversation_title: string;
+  channel: string;
+  status: string;
+  created_at: string;
+  user_message: string;
+}
+
 /** Full per-turn trace assembled from the persisted run tables. */
 export interface TurnTrace {
   run: Record<string, unknown>;
   conversation_id: string;
+  messages: {
+    user: { content: string; created_at: string } | null;
+    assistant: { content: string; created_at: string } | null;
+  };
   signals: Record<string, unknown>;
   tool_calls: Record<string, unknown>[];
   confirmations: Record<string, unknown>[];
   events: Record<string, unknown>[];
+}
+
+/** Load recent runs (newest first) with their request text for the picker. */
+export async function getRecentTraces(limit = 50): Promise<TraceRunSummary[]> {
+  const data = await apiRequest<{ runs: TraceRunSummary[] }>(
+    `/admin/trace?limit=${limit}`
+  );
+  return data.runs;
 }
 
 /** Load the full turn trace for one agent run id. */
