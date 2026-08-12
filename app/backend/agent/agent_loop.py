@@ -30,6 +30,7 @@ from backend.agent.finalization import (
     RequirementSatisfaction,
     ResponseRequirements,
     detect_turn_requirements,
+    requirements_with_expected_tools,
 )
 from backend.agent.llm_caller import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
@@ -999,6 +1000,10 @@ class AgentOrchestrator:
             satisfaction = RequirementSatisfaction()
         else:
             requirements = detect_turn_requirements(turn_input.filtered_message)
+            if get_policy().get_bool("tools.reask_enabled") and self._forced_tools:
+                requirements = requirements_with_expected_tools(
+                    requirements, tuple(self._forced_tools)
+                )
             satisfaction = await self.llm_caller.append_required_tool_context(
                 filtered_message=turn_input.filtered_message,
                 messages=messages,

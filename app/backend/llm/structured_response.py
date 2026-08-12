@@ -43,7 +43,12 @@ STRUCTURED_RESPONSE_INSTRUCTION = (
     'the requested schema. Put the visible user-facing answer into "answer". '
     'Put up to three follow-up suggestions into "suggestions" as plain strings. '
     "Do not wrap the JSON in markdown. When you need a tool, call the tool and "
-    "leave the final answer empty until the tool results are available."
+    "leave the final answer empty until the tool results are available. "
+    'If the schema includes "tool_plan", self-check before finalizing: set '
+    "needs_tool and name the single tool you intend to use (or null). If you are "
+    "unsure whether a tool or action is needed to answer correctly, set "
+    'needs_clarification true and put one short clarifying question in "question" '
+    "instead of guessing an answer."
 )
 STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -52,6 +57,17 @@ STRUCTURED_RESPONSE_SCHEMA: dict[str, object] = {
         "suggestions": {
             "type": "array",
             "items": {"type": "string"},
+        },
+        "tool_plan": {
+            "type": "object",
+            "properties": {
+                "needs_tool": {"type": "boolean"},
+                "tool": {"type": ["string", "null"]},
+                "needs_clarification": {"type": "boolean"},
+                "question": {"type": ["string", "null"]},
+            },
+            "required": ["needs_tool", "tool"],
+            "additionalProperties": False,
         },
     },
     "required": ["answer", "suggestions"],
@@ -163,6 +179,8 @@ class StructuredAssistantContent:
     answer: str
     thinking: str | None = None
     suggestions: list[str] = field(default_factory=list)
+    # Model-declared tool intent: {"needs_tool": bool, "tool": str|None}.
+    tool_plan: dict | None = None
 
 
 def _detect_script_profile(text: str) -> str:
@@ -306,8 +324,11 @@ def parse_structured_response_json(
     trimmed_suggestions = _trim_suggestions(combined_suggestions)
     if not _suggestions_match_content_language(answer, trimmed_suggestions):
         trimmed_suggestions = []
+    raw_tool_plan = raw_data.get("tool_plan")
+    tool_plan = raw_tool_plan if isinstance(raw_tool_plan, dict) else None
     return StructuredAssistantContent(
         answer=answer.strip(),
         thinking=thinking.strip() if thinking else None,
         suggestions=trimmed_suggestions,
+        tool_plan=tool_plan,
     )

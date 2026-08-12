@@ -27,6 +27,7 @@ from backend.agent.agent_loop_helpers import (
 )
 from backend.agent.agent_loop_models import ModelLoopResult
 from backend.agent.finalization import (
+    FinalAnswerDecision,
     RequirementSatisfaction,
     ResponseRequirements,
     build_required_tool_failure_answer,
@@ -36,6 +37,8 @@ from backend.agent.loop import (
     AgenticLoop,
     LoopState,
 )
+from backend.security.policy import get_policy
+from backend.trust.zones import TrustZone, get_zone
 
 
 if TYPE_CHECKING:
@@ -174,6 +177,56 @@ FORCED_WEB_SEARCH_CLASSIFIER_PROMPT = (
     "language.\n"
     "Do not explain your answer."
 )
+
+
+def _tool_to_reask(
+    *,
+    decision: FinalAnswerDecision,
+    requirements: ResponseRequirements,
+    structured_content: object,
+    executed_tools: list[dict],
+) -> str | None:
+    """Pick the single tool to force on reask, or None to force nothing.
+
+    A user-forced or model-declared tool (``must_use_tools`` / ``tool_plan``)
+    forces in ANY trust zone; a context-only required tool forces only when it
+    is RED. Comparison is against the executed-tools record only, so it is
+    language- and provider-independent.
+    """
+    executed = {str(tool.get("name")) for tool in executed_tools}
+    # L2 — a model-declared tool that did not run forces in any zone.
+    tool_plan = getattr(structured_content, "tool_plan", None)
+    if isinstance(tool_plan, dict) and tool_plan.get("needs_tool"):
+        declared = tool_plan.get("tool")
+        if declared and str(declared) not in executed:
+            return str(declared)
+    # L1 / context — missing required tools reported by the finalization gate.
+    if not decision.reason.startswith("missing-required-tools:"):
+        return None
+    missing = [
+        name
+        for name in decision.reason[len("missing-required-tools:") :].split(",")
+        if name and name not in executed
+    ]
+    for name in missing:
+        if name in requirements.must_use_tools or get_zone(name) == TrustZone.RED:
+            return name
+    return None
+
+
+def _clarification_question(structured_content: object) -> str | None:
+    """Return the model's self-check clarifying question, if it flagged one.
+
+    The model sets ``tool_plan.needs_clarification`` and puts a short question in
+    ``tool_plan.question`` when it is unsure whether a tool/action is needed. This
+    is a hint only — its reliability is bounded by the model's self-calibration.
+    """
+    tool_plan = getattr(structured_content, "tool_plan", None)
+    if not isinstance(tool_plan, dict) or not tool_plan.get("needs_clarification"):
+        return None
+    question = tool_plan.get("question")
+    text = str(question).strip() if question else ""
+    return text or None
 
 
 class LLMCaller:
@@ -929,84 +982,151 @@ class LLMCaller:
         if required_tool_failure_answer:
             return ModelLoopResult(raw_final_text=required_tool_failure_answer)
 
-        first_iteration = True
-        while True:
-            state = loop.check_limits()
-            if state != LoopState.RUNNING:
-                break
+        reask_count = 0
+        reask_forced_tool: dict[str, object] | None = None
+        decision = FinalAnswerDecision(accepted=False, reason="")
+        if get_policy().get_bool("tools.reask_enabled"):
+            max_reasks: int = get_policy().get_int("tools.reask_max_retries")
+        else:
+            max_reasks = 0
+        for _ in range(max_reasks + 1):
+            first_iteration = True
+            while True:
+                state = loop.check_limits()
+                if state != LoopState.RUNNING:
+                    break
 
-            forced_choice = None
-            if first_iteration and force_web_search:
-                forced_choice = {
-                    "type": "function",
-                    "function": {"name": "web_search"},
-                }
-            elif first_iteration and forced_tool_choice is not None:
-                forced_choice = forced_tool_choice
+                forced_choice = None
+                if first_iteration and force_web_search:
+                    forced_choice = {
+                        "type": "function",
+                        "function": {"name": "web_search"},
+                    }
+                elif first_iteration and reask_forced_tool is not None:
+                    forced_choice = reask_forced_tool
+                elif first_iteration and forced_tool_choice is not None:
+                    forced_choice = forced_tool_choice
 
-            llm_response = await self.call_once(
-                llm_call=llm_call,
-                messages=messages,
-                openai_tools=openai_tools,
-                call_usages=call_usages,
-                tool_choice=forced_choice,
-                stream_mode=(
-                    LLMStreamMode.THINKING_ONLY
-                    if requirements.required_tools
-                    else LLMStreamMode.ALL
-                ),
-            )
-            first_iteration = False
-            round_result = await tool_executor.run_one_tool_round(
-                llm_response=llm_response,
-                messages=messages,
-                channel=channel,
-                user_intent=user_intent,
-            )
-            if round_result.raw_final_text:
-                raw_final_text = round_result.raw_final_text
-                structured_content = round_result.structured_content
-                break
-            if round_result.executed_immediate_tools:
-                executed_immediate_tools = True
-            if not round_result.should_continue:
-                break
-
-            loop.advance()
-
-        if (
-            requirements.needs_current_data
-            and satisfaction.missing_current_data_targets
-        ):
-            covered = self._current_data_targets_covered_by_tools(
-                messages, satisfaction.missing_current_data_targets
-            )
-            if covered:
-                satisfaction = satisfaction.with_current_data_targets_covered(covered)
-
-        decision = validate_final_answer(
-            raw_final_text=raw_final_text,
-            structured_content=structured_content,
-            requirements=requirements,
-            satisfaction=satisfaction,
-        )
-        if decision.requires_recovery or (
-            executed_immediate_tools and not raw_final_text.strip()
-        ):
-            recovered_response = await request_non_empty_final_answer(
-                llm_call=llm_call,
-                messages=messages,
-                call_usages=call_usages,
-            )
-            if recovered_response is not None and recovered_response.answer.strip():
-                raw_final_text = recovered_response.answer
-                structured_content = recovered_response
-                decision = validate_final_answer(
-                    raw_final_text=raw_final_text,
-                    structured_content=structured_content,
-                    requirements=requirements,
-                    satisfaction=satisfaction,
+                llm_response = await self.call_once(
+                    llm_call=llm_call,
+                    messages=messages,
+                    openai_tools=openai_tools,
+                    call_usages=call_usages,
+                    tool_choice=forced_choice,
+                    stream_mode=(
+                        LLMStreamMode.THINKING_ONLY
+                        if requirements.required_tools
+                        else LLMStreamMode.ALL
+                    ),
                 )
+                first_iteration = False
+                round_result = await tool_executor.run_one_tool_round(
+                    llm_response=llm_response,
+                    messages=messages,
+                    channel=channel,
+                    user_intent=user_intent,
+                )
+                if round_result.raw_final_text:
+                    raw_final_text = round_result.raw_final_text
+                    structured_content = round_result.structured_content
+                    break
+                if round_result.executed_immediate_tools:
+                    executed_immediate_tools = True
+                if not round_result.should_continue:
+                    break
+
+                loop.advance()
+
+            if (
+                requirements.needs_current_data
+                and satisfaction.missing_current_data_targets
+            ):
+                covered = self._current_data_targets_covered_by_tools(
+                    messages, satisfaction.missing_current_data_targets
+                )
+                if covered:
+                    satisfaction = (
+                        satisfaction.with_current_data_targets_covered(covered)
+                    )
+
+            decision = validate_final_answer(
+                raw_final_text=raw_final_text,
+                structured_content=structured_content,
+                requirements=requirements,
+                satisfaction=satisfaction,
+            )
+            # Reask: force a missing tool back through the loop when enabled.
+            # Forced (must_use) and model-declared tools are forced in ANY zone;
+            # a context-only tool is forced only when it is RED. GREEN/YELLOW
+            # context tools fall through to the prose ask + next-turn tool_plan.
+            if get_policy().get_bool("tools.reask_enabled"):
+                force_tool = _tool_to_reask(
+                    decision=decision,
+                    requirements=requirements,
+                    structured_content=structured_content,
+                    executed_tools=tool_executor.executed_tools,
+                )
+                logger.info(
+                    "reask check: required=%s must_use=%s executed=%s "
+                    "declared=%s reason=%r -> force=%s (attempt %d/%d)",
+                    list(requirements.required_tools),
+                    list(requirements.must_use_tools),
+                    [t.get("name") for t in tool_executor.executed_tools],
+                    getattr(structured_content, "tool_plan", None),
+                    decision.reason,
+                    force_tool,
+                    reask_count,
+                    max_reasks,
+                )
+                if force_tool is not None:
+                    if reask_count < max_reasks:
+                        reask_count += 1
+                        reask_forced_tool = {
+                            "type": "function",
+                            "function": {"name": force_tool},
+                        }
+                        continue
+                    # Bound exhausted: honest give-up if a required tool failed,
+                    # otherwise keep the produced answer.
+                    failure = build_required_tool_failure_answer(
+                        requirements=requirements,
+                        satisfaction=satisfaction,
+                    )
+                    if failure:
+                        return ModelLoopResult(raw_final_text=failure)
+
+            if decision.requires_recovery or (
+                executed_immediate_tools and not raw_final_text.strip()
+            ):
+                recovered_response = await request_non_empty_final_answer(
+                    llm_call=llm_call,
+                    messages=messages,
+                    call_usages=call_usages,
+                )
+                if recovered_response is not None and recovered_response.answer.strip():
+                    raw_final_text = recovered_response.answer
+                    structured_content = recovered_response
+                    decision = validate_final_answer(
+                        raw_final_text=raw_final_text,
+                        structured_content=structured_content,
+                        requirements=requirements,
+                        satisfaction=satisfaction,
+                    )
+
+            break
+
+        # Self-check marker (variant A): when the model flagged uncertainty, show
+        # its clarifying question instead of a guessed answer. A hint on top of
+        # the deterministic reask; accuracy is bounded by the model's calibration.
+        if get_policy().get_bool("tools.reask_enabled"):
+            clarification = _clarification_question(structured_content)
+            if clarification:
+                raw_final_text = clarification
+                if structured_content is not None:
+                    structured_content = replace(
+                        structured_content, answer=clarification
+                    )
+                decision = FinalAnswerDecision(accepted=True, reason="clarification")
 
         if raw_final_text.strip():
             if not decision.accepted:

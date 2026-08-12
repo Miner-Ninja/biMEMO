@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
@@ -78,6 +78,9 @@ class ResponseRequirements:
     needs_file_context: bool = False
     needs_memory_recall: bool = False
     required_tools: tuple[str, ...] = ()
+    # Tools the model MUST use (user-forced or model-declared) — forced on reask
+    # in ANY trust zone, unlike context-only required_tools.
+    must_use_tools: tuple[str, ...] = ()
     urls: tuple[str, ...] = ()
     reason: str = ""
 
@@ -215,6 +218,29 @@ def detect_turn_requirements(message: str) -> ResponseRequirements:
         urls=urls,
         reason=",".join(reasons),
     )
+
+
+def requirements_with_expected_tools(
+    base: ResponseRequirements,
+    forced_tools: tuple[str, ...] | list[str] = (),
+    declared_tool: str | None = None,
+) -> ResponseRequirements:
+    """Fold user-forced and model-declared tools into a requirements copy.
+
+    The added tools go into both ``required_tools`` (so the missing-tool
+    detection sees them) and ``must_use_tools`` (so the reask forces them in
+    any trust zone). Context-only keyword tools from ``detect_turn_requirements``
+    are left as required_tools only — they route to the prose ask / RED-force
+    path, not an unconditional force.
+    """
+    extra = [tool for tool in forced_tools if tool]
+    if declared_tool:
+        extra.append(declared_tool)
+    if not extra:
+        return base
+    required = tuple(dict.fromkeys((*base.required_tools, *extra)))
+    must_use = tuple(dict.fromkeys((*base.must_use_tools, *extra)))
+    return replace(base, required_tools=required, must_use_tools=must_use)
 
 
 def _extract_urls(message: str) -> list[str]:
