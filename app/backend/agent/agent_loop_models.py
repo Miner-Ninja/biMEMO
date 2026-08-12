@@ -62,6 +62,7 @@ class AgentResponse:
     retrieved_messages: list[dict[str, str]] | None = None
     stats: ExtendedUsage | None = None
     assistant_message_id: str | None = None
+    used_tools: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

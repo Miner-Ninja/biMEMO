@@ -751,6 +751,7 @@ class AgentOrchestrator:
             retrieved_messages=retrieved_messages,
             stats=finalized_response.stats,
             assistant_message_id=assistant_message_id,
+            used_tools=self.used_tools,
         )
 
     async def _build_prepared_turn_response(

@@ -510,7 +510,7 @@ async def _run_prepared_chat_request(
         response=response,
         transcription=transcription,
         pending_confirmations=_pending_confirmations_from_orchestrator(orch),
-        used_tools=_used_tools_from_orchestrator(orch),
+        used_tools=_used_tools_from_response(response),
     )
 
 
@@ -531,15 +531,15 @@ def _pending_confirmations_from_orchestrator(
     ]
 
 
-def _used_tools_from_orchestrator(
-    orch: object,
+def _used_tools_from_response(
+    response: "AgentResponse",
 ) -> list[dict[str, object]] | None:
     """Return executed tool payloads for the HTTP response."""
     from backend.security.policy import get_policy
 
     if not get_policy().get_bool("tools.manual_control_enabled"):
         return None
-    tools = getattr(orch, "used_tools", [])
+    tools = getattr(response, "used_tools", [])
     if not tools:
         return None
     return list(tools)
