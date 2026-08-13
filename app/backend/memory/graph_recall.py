@@ -144,9 +144,7 @@ async def build_user_fact_lines(client: object) -> list[str]:
         valid_only=True,
     )
     subject_side = [
-        assertion
-        for assertion in assertions
-        if assertion.get("direction") == "subject"
+        assertion for assertion in assertions if assertion.get("direction") == "subject"
     ]
     return [_assertion_line(assertion) for assertion in subject_side]
 
@@ -192,9 +190,7 @@ async def load_graph_evidence_bundle(
             limit=_EVIDENCE_MESSAGE_SCAN_LIMIT,
         )
         source_messages = [
-            message
-            for message in all_messages
-            if str(message.get("id")) in message_ids
+            message for message in all_messages if str(message.get("id")) in message_ids
         ][:_EVIDENCE_MAX_MESSAGES]
     return EvidenceBundle(
         summary={"main_point": best.get("assertion_text", "")},

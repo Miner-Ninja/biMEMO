@@ -194,9 +194,7 @@ async def seed_mcp_tokens_from_env(
             continue
         label = env_name[len(env_prefix) :].lower()
         if ":" not in env_value:
-            raise ValueError(
-                f"{env_name}: expected '<token>:<capability>' format"
-            )
+            raise ValueError(f"{env_name}: expected '<token>:<capability>' format")
         token, capability = env_value.split(":", 1)
         if capability not in _VALID_CAPABILITIES:
             valid = ", ".join(sorted(_VALID_CAPABILITIES))
@@ -452,9 +450,7 @@ def build_mcp_server(
         Returns:
             Dict with "stored", "message_id", and "conversation_id".
         """
-        capability, agent_id = await _resolve_agent_info(
-            headers, credential_client
-        )
+        capability, agent_id = await _resolve_agent_info(headers, credential_client)
         _require_write_capability(capability)
 
         full_content = content
@@ -497,9 +493,7 @@ def build_mcp_server(
         Returns:
             Dict with "answer" text and session identifiers.
         """
-        _capability, agent_id = await _resolve_agent_info(
-            headers, credential_client
-        )
+        _capability, agent_id = await _resolve_agent_info(headers, credential_client)
 
         # R4, R5 — send through orchestrator via typed IPC.
         # The orchestrator resolves the session, runs the LLM loop,

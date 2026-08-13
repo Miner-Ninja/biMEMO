@@ -149,9 +149,6 @@ async def store_embedding(
     )
 
 
-
-
-
 async def list_records(
     client: DBProxyClient,
     limit: int = 100,
@@ -175,7 +172,6 @@ async def list_records(
             "offset": offset,
         },
     )
-
 
 
 async def count_memory_entries(
@@ -309,7 +305,6 @@ async def invalidate_assertion(
         },
     )
     return bool(result.get("invalidated", False))
-
 
 
 async def get_entity(

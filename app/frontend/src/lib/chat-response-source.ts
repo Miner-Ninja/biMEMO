@@ -13,6 +13,7 @@ export type ActiveAssistantStreamState = {
 };
 
 export type RuntimeJournalEvent = {
+  run_id?: string;
   event_type?: string;
   payload?: Record<string, unknown>;
 };
@@ -28,6 +29,26 @@ export type ChatInputAvailabilityState = {
   uploadActive: boolean;
 };
 
+export type PendingInputBinding = {
+  run_id: string;
+  pending_input_id: string;
+  cas_version: number;
+};
+
+export function bindPendingInputReply(
+  body: Record<string, unknown>,
+  pendingInput: PendingInputBinding,
+  value: unknown
+): Record<string, unknown> {
+  return {
+    ...body,
+    run_id: pendingInput.run_id,
+    pending_input_id: pendingInput.pending_input_id,
+    pending_input_version: pendingInput.cas_version,
+    pending_input_value: value,
+  };
+}
+
 export const TERMINAL_RUNTIME_EVENT_TYPES = new Set([
   "final_accepted",
   "run_completed",
@@ -40,6 +61,14 @@ export function shouldApplyHttpChatResponse(streamFinalReceived: boolean): boole
   return !streamFinalReceived;
 }
 
+export function shouldFinalizeAssistantStream(
+  stream: ActiveAssistantStreamState
+): boolean {
+  return Boolean(
+    stream.httpCompleted && stream.realtimeCompleted && stream.finalReceived
+  );
+}
+
 export function runtimeBootstrapHasTerminalEvent(
   payload: RuntimeBootstrapPayload | null | undefined
 ): boolean {
@@ -49,6 +78,22 @@ export function runtimeBootstrapHasTerminalEvent(
       TERMINAL_RUNTIME_EVENT_TYPES.has(String(event.event_type || ""))
     )
   );
+}
+
+export function runtimeBootstrapPausedEvent(
+  payload: RuntimeBootstrapPayload | null | undefined
+): RuntimeJournalEvent | null {
+  const events = payload?.events ?? [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.event_type === "run_paused") {
+      return event;
+    }
+    if (TERMINAL_RUNTIME_EVENT_TYPES.has(String(event.event_type || ""))) {
+      return null;
+    }
+  }
+  return null;
 }
 
 export function chatInputIsDisabled({

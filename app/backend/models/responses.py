@@ -4,10 +4,11 @@ Defines response schemas for serialization. Models ensure only
 declared fields are included in JSON output.
 """
 
+from enum import StrEnum
 from importlib import import_module
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 if TYPE_CHECKING:
@@ -67,6 +68,41 @@ class StructuredAssistantContent(StrictResponseModel):
     suggestions: list[str] = []
 
 
+class TurnError(StrictResponseModel):
+    """User-safe terminal failure exposed by the HTTP API."""
+
+    code: str
+    message: str
+    retryable: bool = False
+
+
+class TurnOutcomeKind(StrEnum):
+    """HTTP mirror of the typed turn outcome values."""
+
+    FINAL = "final"
+    PAUSED = "paused"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PauseReason(StrEnum):
+    """Reason an HTTP chat response is paused."""
+
+    CONFIRMATION = "confirmation"
+    MISSING_INPUT = "missing_input"
+
+
+class PendingInput(StrictResponseModel):
+    """Typed missing value requested by the semantic planner."""
+
+    pending_input_id: str
+    question: str
+    expected_input_schema: dict[str, Any]
+    expires_at: str
+    cas_version: int
+    suggestions: list[str] = Field(default_factory=list, max_length=3)
+
+
 class ChatResponse(StrictResponseModel):
     """Chat endpoint response.
 
@@ -82,6 +118,12 @@ class ChatResponse(StrictResponseModel):
     input_filtered: bool
     output_filtered: bool
     pending_confirmations: list[ConfirmationItem]
+    pause_reason: PauseReason | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    pending_input: PendingInput | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     used_tools: list[UsedToolItem] = []
     retrieved_memories: list[RetrievedDebugItem] | None = None
     retrieved_messages: list[RetrievedDebugItem] | None = None
@@ -89,6 +131,63 @@ class ChatResponse(StrictResponseModel):
     stats: ExtendedUsage | None = None
     structured_content: StructuredAssistantContent | None = None
     stream_enabled: bool = False
+    outcome_kind: TurnOutcomeKind | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    run_id: str = Field(default="", exclude_if=lambda value: not value)
+    finalization_id: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    error: TurnError | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_typed_outcome(self) -> ChatResponse:
+        """Mirror the strict IPC field combinations for typed outcomes."""
+        if self.outcome_kind is None:
+            return self
+        if not self.run_id:
+            raise ValueError("typed outcome requires run_id")
+        if self.outcome_kind is TurnOutcomeKind.FINAL:
+            if self.finalization_id is None or self.structured_content is None:
+                raise ValueError(
+                    "FINAL requires finalization_id and structured_content"
+                )
+            if (
+                self.pending_confirmations
+                or self.pending_input is not None
+                or self.pause_reason is not None
+                or self.error is not None
+            ):
+                raise ValueError("FINAL forbids confirmations and error")
+        elif self.outcome_kind is TurnOutcomeKind.PAUSED:
+            has_confirmations = bool(self.pending_confirmations)
+            has_input = self.pending_input is not None
+            if has_confirmations == has_input or self.pause_reason is None:
+                raise ValueError("PAUSED requires exactly one typed pending form")
+            if has_confirmations and self.pause_reason is not PauseReason.CONFIRMATION:
+                raise ValueError("confirmation pause has the wrong reason")
+            if has_input and self.pause_reason is not PauseReason.MISSING_INPUT:
+                raise ValueError("missing-input pause has the wrong reason")
+            if self.structured_content is not None or self.finalization_id is not None:
+                raise ValueError("PAUSED forbids final content and finalization_id")
+        elif self.outcome_kind is TurnOutcomeKind.FAILED:
+            if self.error is None or self.finalization_id is None:
+                raise ValueError("FAILED requires finalization_id and error")
+            if self.pending_confirmations or self.pending_input is not None:
+                raise ValueError("FAILED forbids pending state")
+        elif (
+            any(
+                value is not None
+                for value in (self.structured_content, self.finalization_id, self.error)
+            )
+            or self.pending_confirmations
+            or self.pending_input is not None
+            or self.pause_reason is not None
+        ):
+            raise ValueError("CANCELLED carries no final payload")
+        return self
 
 
 class ChatStartResponse(StrictResponseModel):
@@ -99,7 +198,7 @@ class ChatStartResponse(StrictResponseModel):
 
     conversation_id: str
     request_id: str
-    run_id: str = ""
+    run_id: str = Field(default="", exclude_if=lambda value: not value)
     stream_started: bool = True
 
 
@@ -111,7 +210,7 @@ class StopResponse(StrictResponseModel):
     """
 
     stopped: bool
-    run_id: str = ""
+    run_id: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class IntegrationListItem(StrictResponseModel):

@@ -148,8 +148,7 @@ def _get_or_create_entity(
     """
     canonical_name = _normalized_entity_name(raw_name)
     existing = db.execute(
-        "SELECT id, aliases FROM entities "
-        "WHERE entity_type = ? AND canonical_name = ?",
+        "SELECT id, aliases FROM entities WHERE entity_type = ? AND canonical_name = ?",
         (entity_type, canonical_name),
     ).fetchone()
     alias_set = {alias for alias in aliases if alias}
@@ -222,19 +221,13 @@ def make_save_assertion_handler(db: DatabaseManager) -> OperationHandler:
         if not p.assertion_text.strip():
             raise ValueError("assertion_text must not be empty")
         if p.object_entity_id is not None and p.object_value is not None:
-            raise ValueError(
-                "object_entity_id and object_value are mutually exclusive"
-            )
+            raise ValueError("object_entity_id and object_value are mutually exclusive")
         if not _entity_exists(db, p.subject_entity_id):
-            raise ValueError(
-                f"subject entity does not exist: {p.subject_entity_id}"
-            )
+            raise ValueError(f"subject entity does not exist: {p.subject_entity_id}")
         if p.object_entity_id is not None and not _entity_exists(
             db, p.object_entity_id
         ):
-            raise ValueError(
-                f"object entity does not exist: {p.object_entity_id}"
-            )
+            raise ValueError(f"object entity does not exist: {p.object_entity_id}")
         assertion_id = str(uuid.uuid4())
         cursor = db.execute(
             "INSERT INTO assertions "
@@ -468,7 +461,7 @@ def make_fetch_unextracted_records_handler(
         ).fetchall():
             try:
                 cited.update(json.loads(source_ids_json))
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
         rows = db.execute(
             "SELECT id, summary, key_facts, action_items, "
@@ -490,7 +483,6 @@ def make_fetch_unextracted_records_handler(
         return {"records": records}
 
     return handle
-
 
 
 def make_prune_graph_handler(db: DatabaseManager) -> OperationHandler:
@@ -562,8 +554,7 @@ def make_get_graph_stats_handler(db: DatabaseManager) -> OperationHandler:
         _validate(params, GetGraphStatsParams)
         entities_by_type = dict(
             db.execute(
-                "SELECT entity_type, COUNT(*) FROM entities "
-                "GROUP BY entity_type",
+                "SELECT entity_type, COUNT(*) FROM entities GROUP BY entity_type",
             ).fetchall()
         )
         assertions_valid = db.execute(
@@ -578,17 +569,15 @@ def make_get_graph_stats_handler(db: DatabaseManager) -> OperationHandler:
             "OR a.object_entity_id = e.id)",
         ).fetchone()[0]
         known_record_ids = {
-            row[0]
-            for row in db.execute("SELECT id FROM records").fetchall()
+            row[0] for row in db.execute("SELECT id FROM records").fetchall()
         }
         missing_evidence = 0
         for (source_ids_json,) in db.execute(
-            "SELECT source_record_ids FROM assertions "
-            "WHERE invalid_from IS NULL",
+            "SELECT source_record_ids FROM assertions WHERE invalid_from IS NULL",
         ).fetchall():
             try:
                 cited = json.loads(source_ids_json)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
             if any(str(record_id) not in known_record_ids for record_id in cited):
                 missing_evidence += 1

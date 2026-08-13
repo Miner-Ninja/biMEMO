@@ -9,9 +9,12 @@ service without changing ToolBroker.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -34,6 +37,54 @@ class DecisionKind(StrEnum):
     BLOCK = "block"
 
 
+class PermissionMode(StrEnum):
+    """Backend-owned reusable permission behavior for one capability."""
+
+    IMPLICIT = "implicit"
+    CONVERSATION_CAPABILITY = "conversation_capability"
+    SCOPED = "scoped"
+    PER_INVOCATION = "per_invocation"
+    BLOCKED = "blocked"
+
+
+@dataclass(frozen=True)
+class PermissionManifest:
+    """Static permission declaration owned by backend code."""
+
+    mode: PermissionMode
+    read_only: bool = False
+    scope_argument: str = ""
+
+
+PERMISSION_POLICY_REVISION = "1"
+PERMISSION_MANIFESTS: dict[str, PermissionManifest] = {
+    "memory_recall": PermissionManifest(PermissionMode.IMPLICIT, read_only=True),
+    "web_search": PermissionManifest(
+        PermissionMode.CONVERSATION_CAPABILITY,
+        read_only=True,
+    ),
+    "http_fetch": PermissionManifest(
+        PermissionMode.CONVERSATION_CAPABILITY,
+        read_only=True,
+    ),
+    "file_read": PermissionManifest(
+        PermissionMode.SCOPED,
+        read_only=True,
+        scope_argument="path",
+    ),
+    "file_search": PermissionManifest(
+        PermissionMode.SCOPED,
+        read_only=True,
+        scope_argument="directory",
+    ),
+    "file_write": PermissionManifest(PermissionMode.PER_INVOCATION),
+    "email_send": PermissionManifest(PermissionMode.PER_INVOCATION),
+    "schedule_task": PermissionManifest(PermissionMode.PER_INVOCATION),
+    "run_command": PermissionManifest(PermissionMode.PER_INVOCATION),
+    "project_command": PermissionManifest(PermissionMode.PER_INVOCATION),
+}
+
+
 @dataclass(frozen=True)
 class ActionContext:
     """Context used to decide whether one tool call may proceed."""
@@ -44,6 +95,7 @@ class ActionContext:
     tool_name: str
     parameters: dict
     trust_zone: str = ""
+    structured_authority: bool = False
 
 
 @dataclass(frozen=True)
@@ -117,35 +169,120 @@ class ActionDecisionService:
         elif tool_name in {"run_command", "project_command"}:
             self._check_command(str(params.get("command", "")))
 
+        if not context.structured_authority:
+            grant_decision = self._lookup_grant(context)
+            if grant_decision == DecisionKind.ALLOW.value:
+                return ActionDecision(
+                    DecisionKind.ALLOW,
+                    "Allowed by saved action grant",
+                    {"source": "grant"},
+                )
+            if grant_decision == DecisionKind.BLOCK.value:
+                return ActionDecision(
+                    DecisionKind.BLOCK,
+                    "Blocked by saved action grant",
+                    {"source": "grant"},
+                )
+            if context.trust_zone == "red":
+                return ActionDecision(
+                    DecisionKind.ASK_ONCE,
+                    "Sensitive action needs user approval",
+                )
+            return ActionDecision(
+                DecisionKind.ALLOW,
+                "Legacy trust-zone policy remains authoritative",
+                {"source": "legacy_trust_zone"},
+            )
+
+        manifest = PERMISSION_MANIFESTS.get(
+            tool_name,
+            PermissionManifest(PermissionMode.PER_INVOCATION),
+        )
+        if manifest.mode is PermissionMode.BLOCKED:
+            return ActionDecision(DecisionKind.BLOCK, "Capability is blocked by policy")
+        details = self._permission_details(context, manifest)
+        if manifest.mode is PermissionMode.IMPLICIT:
+            return ActionDecision(
+                DecisionKind.ALLOW,
+                "Allowed by backend permission manifest",
+                details,
+            )
+
         grant_decision = self._lookup_grant(context)
         if grant_decision == DecisionKind.ALLOW.value:
             return ActionDecision(
                 DecisionKind.ALLOW,
                 "Allowed by saved action grant",
-                {"source": "grant"},
+                {**details, "source": "legacy_grant"},
             )
         if grant_decision == DecisionKind.BLOCK.value:
             return ActionDecision(
                 DecisionKind.BLOCK,
                 "Blocked by saved action grant",
-                {"source": "grant"},
+                {**details, "source": "legacy_grant"},
             )
-        if context.trust_zone == "red":
+        if manifest.mode is PermissionMode.CONVERSATION_CAPABILITY:
             return ActionDecision(
                 DecisionKind.ASK_ONCE,
-                "Sensitive action needs user approval",
+                "Capability needs conversation approval",
+                details,
             )
-
-        return ActionDecision(DecisionKind.ALLOW)
+        if manifest.mode is PermissionMode.SCOPED:
+            return ActionDecision(
+                DecisionKind.ASK_SCOPED,
+                "Capability target needs scoped approval",
+                details,
+            )
+        return ActionDecision(
+            DecisionKind.ASK_ONCE,
+            "Action needs per-invocation approval",
+            details,
+        )
 
     def _lookup_grant(self, context: ActionContext) -> str | None:
-        if self.grants is None:
+        if context.structured_authority or self.grants is None:
             return None
         return self.grants.find_decision(
             conversation_id=context.conversation_id,
             channel=context.channel,
             tool_name=context.tool_name,
         )
+
+    def _permission_details(
+        self,
+        context: ActionContext,
+        manifest: PermissionManifest,
+    ) -> dict[str, object]:
+        scope: dict[str, object]
+        if manifest.mode is PermissionMode.CONVERSATION_CAPABILITY:
+            scope = {"conversation_id": context.conversation_id}
+        elif manifest.mode is PermissionMode.SCOPED:
+            raw_target = str(context.parameters.get(manifest.scope_argument, ""))
+            if not raw_target:
+                raise ValidationError("Scoped action has no canonical target")
+            scope = {
+                "conversation_id": context.conversation_id,
+                "target": str(Path(raw_target).expanduser().resolve(strict=False)),
+            }
+        else:
+            scope = {
+                "conversation_id": context.conversation_id,
+                "arguments": context.parameters,
+            }
+        canonical = json.dumps(
+            scope,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return {
+            "permission_mode": manifest.mode.value,
+            "read_only": manifest.read_only,
+            "scope": scope,
+            "scope_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "policy_revision": PERMISSION_POLICY_REVISION,
+        }
 
     def _check_read_path(self, path: str) -> None:
         check_path_traversal(path)

@@ -131,7 +131,6 @@ def _integration_list_item(item: dict[str, object]) -> IntegrationListItem:
     return IntegrationListItem(name=str(item["name"]), type=str(item["type"]))
 
 
-
 def _chat_bridge_link_item(item: object) -> ChatBridgeLinkItem:
     """Build one chat-bridge response item from stored data or service model."""
     if isinstance(item, dict):
@@ -353,7 +352,6 @@ async def delete_integration(
     _require_valid_reauth(reauth_mgr, reauth_token)
     await cred.delete_integration(name)
     return _detail_response("Integration deleted")
-
 
 
 @admin_router.delete("/conversations/{conversation_id}")

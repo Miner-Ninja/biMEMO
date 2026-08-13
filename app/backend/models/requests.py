@@ -45,6 +45,10 @@ class ChatRequest(StrictRequestModel):
     file_ids: list[str] = Field(default_factory=list, max_length=20)
     voice: str | None = None
     forced_tools: list[str] = Field(default_factory=list, max_length=32)
+    run_id: str = Field(default="", max_length=200)
+    pending_input_id: str = Field(default="", max_length=200)
+    pending_input_version: int | None = Field(default=None, ge=1)
+    pending_input_value: Any | None = None
 
     @field_validator("file_ids")
     @classmethod
@@ -57,6 +61,13 @@ class ChatRequest(StrictRequestModel):
         """Require at least one chat input source."""
         if not self.message.strip() and not self.voice and not self.forced_tools:
             raise ValueError("Either message or voice must be provided")
+        supplied = (
+            bool(self.pending_input_id),
+            self.pending_input_version is not None,
+            self.pending_input_value is not None,
+        )
+        if any(supplied) and (not all(supplied) or not self.run_id):
+            raise ValueError("pending input reply requires run, id, version, and value")
         return self
 
 

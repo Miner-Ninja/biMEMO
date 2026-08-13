@@ -20,12 +20,19 @@ import httpx
 from backend.config import get_settings
 from backend.llm.call_factory import (
     LLM_CALL_TIMEOUT,
+    AttemptRecord,
     LLMResponse,
     LLMToolCall,
     current_thinking_enabled,
 )
-from backend.llm.call_options import LLMCallOptions
+from backend.llm.call_options import (
+    EmptyRetry,
+    EventSink,
+    LLMCallOptions,
+    ResponseStream,
+)
 from backend.llm.capabilities import (
+    CapabilitySupport,
     ContextDetectionError,
     LlmResponseFormat,
     ModelCapabilities,
@@ -38,10 +45,12 @@ from backend.llm.ollama.messages import convert_messages_for_ollama
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.structured_response import (
+    FINAL_ONLY_RESPONSE_SCHEMA,
     STRUCTURED_RESPONSE_INSTRUCTION,
     STRUCTURED_RESPONSE_SCHEMA,
     StructuredAssistantContent,
     normalize_legacy_response_text,
+    parse_final_only_response_json,
     parse_structured_response_json,
 )
 from backend.llm.structured_stream import AnswerFieldStreamExtractor
@@ -50,15 +59,12 @@ from backend.llm.usage import LLMCallUsage
 
 if TYPE_CHECKING:
     import asyncio
+    from collections.abc import Callable
 
     from backend.llm.capabilities_registry import CapabilitiesRegistry
-    from backend.llm.compute_config import (
-        ComputeConfig,
-    )
+    from backend.llm.compute_config import ComputeConfig
     from backend.llm.hardware import ProfileConfig
-    from backend.llm.ollama.provider import (
-        OllamaProvider,
-    )
+    from backend.llm.ollama.provider import OllamaProvider
 
 
 logger = logging.getLogger(__name__)
@@ -93,6 +99,8 @@ class OllamaClient:
         profile_config: Hardware profile configuration.
         compute_config: GPU/CPU compute configuration.
     """
+
+    structured_capability_declarations: ClassVar[dict[str, CapabilitySupport]] = {}
 
     name: ClassVar[str] = "ollama"
 
@@ -342,12 +350,27 @@ class OllamaClient:
         """Return whether this Ollama request should use JSON schema output."""
         return capabilities.llm_response_format is LlmResponseFormat.JSON_SCHEMA
 
-    def _should_stream(self, capabilities: ModelCapabilities) -> bool:
+    def _should_stream(
+        self,
+        capabilities: ModelCapabilities,
+        response_stream: object | None = None,
+    ) -> bool:
         """Return whether this Ollama request should stream token chunks.
 
-        TEXT mode always streams. JSON_SCHEMA mode streams only when the
-        operator opted in via ``BIMEMO_LLM_RESPONSE_STREAM=true``.
+        When ``response_stream`` is explicitly set (from ``LLMCallOptions``),
+        it overrides the default per-format behaviour. TEXT mode streams by
+        default; JSON_SCHEMA streams only when the operator opted in via
+        ``BIMEMO_LLM_RESPONSE_STREAM=true``.
         """
+        if response_stream is not None:
+            if isinstance(response_stream, str):
+                if response_stream in ("enabled", "true", "True", "1"):
+                    return True
+                if response_stream in ("disabled", "false", "False", "0"):
+                    return False
+                # "inherit" or unrecognized: fall through to default logic
+            else:
+                return bool(response_stream)
         if not self._uses_structured_response(capabilities):
             return True
         return get_settings().llm_response_stream
@@ -369,6 +392,9 @@ class OllamaClient:
         *,
         capabilities: ModelCapabilities,
         schema_override: dict | None = None,
+        tool_choice: object | None = None,
+        response_stream: object | None = None,
+        thinking_enabled: bool | None = None,
     ) -> dict[str, object]:
         """Build the Ollama chat request payload.
 
@@ -386,22 +412,32 @@ class OllamaClient:
         payload: dict[str, object] = {
             "model": self.model,
             "messages": convert_messages_for_ollama(request_messages),
-            "stream": self._should_stream(capabilities),
+            "stream": self._should_stream(capabilities, response_stream),
             "options": self._build_options(capabilities),
         }
         # Reasoning switch: Ollama's native flag is a TOP-LEVEL "think"
         # key (a sibling of "stream", not inside "options").
-        if current_thinking_enabled() is False:
+        effective_thinking = (
+            thinking_enabled
+            if thinking_enabled is not None
+            else current_thinking_enabled()
+        )
+        if effective_thinking is False:
             payload["think"] = False
-        if self._uses_structured_response(capabilities):
+        if self._uses_structured_response(capabilities) and not tools:
             payload["format"] = schema_override or STRUCTURED_RESPONSE_SCHEMA
         if tools:
             payload["tools"] = tools
-            # Nudge the model to actually consider the tools. The OpenAI-compatible
-            # client always sent tool_choice="auto"; the native client omitted it,
-            # which (with a structured `format`) biased the model toward emitting
-            # the answer schema and never calling a tool.
-            payload["tool_choice"] = "auto"
+            if tool_choice is not None:
+                if capabilities.exact_named_choice is not CapabilitySupport.SUPPORTED:
+                    raise OllamaClientError(
+                        "Exact named tool choice required but "
+                        f"{capabilities.exact_named_choice.value} for "
+                        f"{capabilities.provider}/{capabilities.model}"
+                    )
+                payload["tool_choice"] = tool_choice
+            else:
+                payload["tool_choice"] = "auto"
         return payload
 
     async def _emit_reasoning_deltas(
@@ -460,6 +496,9 @@ class OllamaClient:
         self,
         chunk: dict[str, object],
         capabilities: ModelCapabilities,
+        *,
+        phase: str = "",
+        attempt: int = 0,
     ) -> LLMCallUsage:
         """Build usage data from the final Ollama done chunk.
 
@@ -468,6 +507,8 @@ class OllamaClient:
             capabilities: Resolved capabilities for this chat call. Its
                 ``max_context_tokens`` populates ``context_total`` so the
                 UI usage indicator reflects the value actually sent.
+            phase: Logical two-stage phase for usage attribution.
+            attempt: Provider-attempt number within the phase.
         """
         prompt_tokens = chunk.get("prompt_eval_count") or 0
         completion_tokens = chunk.get("eval_count") or 0
@@ -485,6 +526,8 @@ class OllamaClient:
             model=chunk.get("model", self.model),
             context_total=capabilities.max_context_tokens,
             context_used=prompt_tokens + completion_tokens,
+            phase=phase,
+            attempt=attempt,
         )
 
     async def _stream_chat_chunks(
@@ -492,6 +535,9 @@ class OllamaClient:
         payload: dict[str, object],
         sse_queue: asyncio.Queue | None,
         capabilities: ModelCapabilities,
+        *,
+        phase: str = "",
+        attempt: int = 0,
     ) -> tuple[list[str], list[LLMToolCall], LLMCallUsage | None]:
         """Stream Ollama chat chunks and collect text, tool calls, and usage.
 
@@ -531,8 +577,7 @@ class OllamaClient:
                     tool_calls.extend(self._extract_tool_calls(message))
                 if chunk.get("done", False):
                     final_usage = await self._build_usage_from_done_chunk(
-                        chunk,
-                        capabilities,
+                        chunk, capabilities, phase=phase, attempt=attempt
                     )
                     break
 
@@ -542,6 +587,9 @@ class OllamaClient:
         self,
         payload: dict[str, object],
         capabilities: ModelCapabilities,
+        *,
+        phase: str = "",
+        attempt: int = 0,
     ) -> tuple[str, str, list[LLMToolCall], LLMCallUsage | None]:
         """Request one non-streaming structured Ollama chat response."""
         response = await self._client.post("/api/chat", json=payload)
@@ -551,7 +599,9 @@ class OllamaClient:
         content = str(message.get("content", ""))
         thinking = str(message.get("thinking", ""))
         tool_calls = self._extract_tool_calls(message)
-        final_usage = await self._build_usage_from_done_chunk(chunk, capabilities)
+        final_usage = await self._build_usage_from_done_chunk(
+            chunk, capabilities, phase=phase, attempt=attempt
+        )
         return content, thinking, tool_calls, final_usage
 
     async def _stream_structured_chat(
@@ -559,6 +609,9 @@ class OllamaClient:
         payload: dict[str, object],
         sse_queue: asyncio.Queue | None,
         capabilities: ModelCapabilities,
+        *,
+        phase: str = "",
+        attempt: int = 0,
     ) -> tuple[str, str, list[LLMToolCall], LLMCallUsage | None]:
         """Stream a JSON-schema response and emit decoded answer deltas.
 
@@ -603,8 +656,7 @@ class OllamaClient:
                     tool_calls.extend(self._extract_tool_calls(message))
                 if chunk.get("done", False):
                     final_usage = await self._build_usage_from_done_chunk(
-                        chunk,
-                        capabilities,
+                        chunk, capabilities, phase=phase, attempt=attempt
                     )
                     break
         return (
@@ -620,16 +672,28 @@ class OllamaClient:
         text: str,
         thinking: str,
         tool_calls: list[LLMToolCall],
+        use_final_only_parser: bool = False,
     ) -> StructuredAssistantContent | None:
         """Build structured assistant content from one Ollama JSON response."""
         if tool_calls:
             return None
+        parser = (
+            parse_final_only_response_json
+            if use_final_only_parser
+            else parse_structured_response_json
+        )
         try:
-            return parse_structured_response_json(
+            return parser(
                 text,
                 thinking=thinking,
             )
         except json.JSONDecodeError, ValueError:
+            if use_final_only_parser:
+                logger.warning(
+                    "Ollama final-only response failed strict parsing",
+                    exc_info=True,
+                )
+                return None
             logger.warning(
                 "Ollama returned non-JSON structured response; "
                 "using plaintext fallback",
@@ -674,7 +738,8 @@ class OllamaClient:
 
     async def _resolve_for_chat(self) -> ModelCapabilities:
         """Resolve capabilities for the configured model via the registry."""
-        return await self.capabilities_registry.get_or_detect(self, self.model)
+        capabilities = await self.capabilities_registry.get_or_detect(self, self.model)
+        return replace(capabilities, **self.structured_capability_declarations)
 
     async def _execute_chat_once(
         self,
@@ -683,6 +748,9 @@ class OllamaClient:
         sse_queue: asyncio.Queue | None,
         *,
         skip_structured_parsing: bool,
+        use_final_only_parser: bool = False,
+        phase: str = "",
+        attempt: int = 0,
     ) -> tuple[
         str,
         list[LLMToolCall],
@@ -694,8 +762,9 @@ class OllamaClient:
         Raises ``httpx.HTTPError`` on transport failure; the caller wraps
         it in ``OllamaClientError``.
         """
+        stream = payload.get("stream", False)
         if self._uses_structured_response(capabilities):
-            if self._should_stream(capabilities):
+            if stream:
                 (
                     raw_text,
                     raw_thinking,
@@ -705,6 +774,8 @@ class OllamaClient:
                     payload,
                     sse_queue,
                     capabilities,
+                    phase=phase,
+                    attempt=attempt,
                 )
             else:
                 (
@@ -712,23 +783,341 @@ class OllamaClient:
                     raw_thinking,
                     tool_calls,
                     final_usage,
-                ) = await self._request_structured_chat(payload, capabilities)
+                ) = await self._request_structured_chat(
+                    payload, capabilities, phase=phase, attempt=attempt
+                )
             if skip_structured_parsing:
                 return raw_text, tool_calls, final_usage, None
             structured_content = self._structured_content_from_ollama(
                 text=raw_text,
                 thinking=raw_thinking,
                 tool_calls=tool_calls,
+                use_final_only_parser=use_final_only_parser,
             )
             text = structured_content.answer if structured_content else ""
             return text, tool_calls, final_usage, structured_content
-        full_text, tool_calls, final_usage = await self._stream_chat_chunks(
+        (
+            full_text,
+            tool_calls,
+            final_usage,
+        ) = await self._stream_chat_chunks(
             payload,
             sse_queue,
             capabilities,
+            phase=phase,
+            attempt=attempt,
         )
         text = self._final_visible_text(full_text)
         return text, tool_calls, final_usage, None
+
+    async def _chat_with_structured_finalization(
+        self,
+        messages: list[dict],
+        sse_queue: asyncio.Queue | None,
+        tools: list[dict],
+        tool_choice: object | None,
+        capabilities: ModelCapabilities,
+        response_stream: object | None,
+        do_empty_retry: bool,
+        schema_override: dict | None,
+        on_attempt: Callable[[AttemptRecord], None] | None,
+        phase: str,
+    ) -> LLMResponse:
+        """Run Stage 1 (TEXT+tools) then Stage 2 (JSON_SCHEMA, non-streaming).
+
+        Stage 1 uses TEXT response format with tools so the model can
+        freely choose between answering and calling tools. If the model
+        returns tool calls those are returned directly. If the model
+        returns text (no tool calls), Stage 2 resubmits the conversation
+        with JSON_SCHEMA format and no tools to force structured output.
+
+        ``on_attempt`` and ``phase`` are threaded through so each HTTP
+        attempt (Stage 1, Stage 1 retry, Stage 2, Stage 2 retry) produces
+        an AttemptRecord via the callback.
+        """
+        # R11: native_tools UNKNOWN/UNSUPPORTED must fail before Stage 1.
+        if capabilities.native_tools is not CapabilitySupport.SUPPORTED:
+            raise OllamaClientError(
+                f"Stage 1 requires native tool calling support, "
+                f"but {capabilities.native_tools.value} for "
+                f"{capabilities.provider}/{capabilities.model}"
+            )
+
+        # R11: non-streaming custom schema must be SUPPORTED for Stage 2.
+        if capabilities.non_streaming_custom_schema is not CapabilitySupport.SUPPORTED:
+            raise OllamaClientError(
+                f"Stage 2 requires non-streaming custom schema support, "
+                f"but {capabilities.non_streaming_custom_schema.value} for "
+                f"{capabilities.provider}/{capabilities.model}"
+            )
+
+        def _fire_attempt(attempt_record: AttemptRecord) -> None:
+            if on_attempt is not None:
+                on_attempt(attempt_record)
+
+        # Stage 1: TEXT + tools + stream
+        stage1_caps = replace(
+            capabilities,
+            llm_response_format=LlmResponseFormat.TEXT,
+        )
+        stage1_payload = self._build_chat_payload(
+            messages,
+            tools,
+            capabilities=stage1_caps,
+            tool_choice=tool_choice,
+            response_stream=response_stream,
+        )
+
+        stage1_phase = "Stage 1"
+        stage1_attempt = 1
+
+        try:
+            (
+                stage1_text,
+                stage1_tool_calls,
+                stage1_usage,
+                stage1_structured,
+            ) = await self._execute_chat_once(
+                stage1_payload,
+                stage1_caps,
+                sse_queue,
+                skip_structured_parsing=False,
+                phase=stage1_phase,
+                attempt=stage1_attempt,
+            )
+        except Exception as exc:
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                    error=str(exc),
+                )
+            )
+            raise
+        _fire_attempt(
+            AttemptRecord(
+                phase=stage1_phase,
+                attempt=stage1_attempt,
+                response=None,
+                usage=stage1_usage,
+            )
+        )
+
+        # Empty-retry for Stage 1
+        if (not stage1_text.strip() and not stage1_tool_calls) and do_empty_retry:
+            logger.warning("Stage 1 returned empty response; retrying once")
+            stage1_attempt += 1
+            try:
+                (
+                    stage1_text,
+                    stage1_tool_calls,
+                    stage1_usage,
+                    stage1_structured,
+                ) = await self._execute_chat_once(
+                    stage1_payload,
+                    stage1_caps,
+                    sse_queue,
+                    skip_structured_parsing=False,
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                )
+            except Exception as exc:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage1_phase,
+                        attempt=stage1_attempt,
+                        error=str(exc),
+                    )
+                )
+                raise
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                    response=None,
+                    usage=stage1_usage,
+                )
+            )
+            if not stage1_text.strip() and not stage1_tool_calls:
+                logger.warning(
+                    "Stage 1 returned empty response on retry; "
+                    "surfacing warning to user"
+                )
+                return LLMResponse(
+                    text=EMPTY_LLM_RESPONSE_WARNING,
+                    tool_calls=[],
+                    raw_message={
+                        "role": "assistant",
+                        "content": EMPTY_LLM_RESPONSE_WARNING,
+                    },
+                    usage=stage1_usage,
+                    llm_response_format=stage1_caps.llm_response_format,
+                    structured_content=StructuredAssistantContent(
+                        answer=EMPTY_LLM_RESPONSE_WARNING,
+                    ),
+                )
+
+        # If Stage 1 returned tool calls, return directly (no Stage 2).
+        if stage1_tool_calls:
+            raw_message = self._raw_assistant_message(stage1_text, stage1_tool_calls)
+            return LLMResponse(
+                text=stage1_text,
+                tool_calls=stage1_tool_calls,
+                raw_message=raw_message,
+                usage=(
+                    replace(
+                        stage1_usage,
+                        tool_capable=True,
+                        tool_used=True,
+                    )
+                    if stage1_usage is not None
+                    else None
+                ),
+                llm_response_format=stage1_caps.llm_response_format,
+                structured_content=stage1_structured,
+            )
+
+        # --- Stage 2: JSON_SCHEMA, non-streaming, no tools ---
+        stage2_format = LlmResponseFormat.JSON_SCHEMA
+
+        # Build Stage 2 payload: JSON_SCHEMA, no tools, non-streaming.
+        assistant_msg: dict = {"role": "assistant", "content": stage1_text or None}
+        stage2_messages = [*messages, assistant_msg]
+        use_final_only_parser = schema_override is None
+
+        stage2_caps = replace(
+            capabilities,
+            llm_response_format=stage2_format,
+        )
+        stage2_payload = self._build_chat_payload(
+            stage2_messages,
+            None,
+            capabilities=stage2_caps,
+            schema_override=schema_override,
+            response_stream=ResponseStream.DISABLED,
+        )
+        # Override format for final-only schema when no custom override.
+        if use_final_only_parser:
+            stage2_payload["format"] = FINAL_ONLY_RESPONSE_SCHEMA
+        stage2_payload["stream"] = False
+
+        # Bounded retry: at most two synthesis HTTP attempts.
+        max_attempts = 2
+        stage2_phase = "Stage 2"
+        last_usage: LLMCallUsage | None = None
+        last_structured: StructuredAssistantContent | None = None
+        last_text = ""
+        for attempt_num in range(1, max_attempts + 1):
+            try:
+                (
+                    s2_text,
+                    s2_tool_calls,
+                    s2_usage,
+                    s2_structured,
+                ) = await self._execute_chat_once(
+                    stage2_payload,
+                    stage2_caps,
+                    sse_queue=None,
+                    skip_structured_parsing=not use_final_only_parser,
+                    use_final_only_parser=use_final_only_parser,
+                    phase=stage2_phase,
+                    attempt=attempt_num,
+                )
+            except Exception as exc:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        error=str(exc),
+                    )
+                )
+                raise
+            last_text = s2_text
+            last_usage = (
+                replace(s2_usage, tool_capable=True, tool_used=False)
+                if s2_usage is not None
+                else None
+            )
+            last_structured = s2_structured
+
+            # Non-retryable: tool calls with no tools offered — fail closed.
+            if s2_tool_calls:
+                error = "Stage 2 returned tool calls with no tools offered"
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        error=error,
+                        usage=s2_usage,
+                    )
+                )
+                raise OllamaClientError(f"{error}; synthesis failed")
+
+            # Custom schema: caller owns parsing; return directly.
+            if not use_final_only_parser:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        response=None,
+                        usage=s2_usage,
+                    )
+                )
+                raw_message = self._raw_assistant_message(last_text, [])
+                return LLMResponse(
+                    text=last_text,
+                    tool_calls=[],
+                    raw_message=raw_message,
+                    usage=last_usage,
+                    llm_response_format=stage2_format,
+                    structured_content=last_structured,
+                )
+
+            # Final-only: check whether structured content was parsed.
+            if s2_structured is not None:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        response=None,
+                        usage=s2_usage,
+                    )
+                )
+                raw_message = self._raw_assistant_message(last_text, [])
+                return LLMResponse(
+                    text=last_text,
+                    tool_calls=[],
+                    raw_message=raw_message,
+                    usage=last_usage,
+                    llm_response_format=stage2_format,
+                    structured_content=last_structured,
+                )
+
+            error = "Stage 2 returned empty or malformed structured output"
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage2_phase,
+                    attempt=attempt_num,
+                    error=error,
+                    usage=s2_usage,
+                )
+            )
+
+            # Empty or malformed: retry if attempts remain.
+            if attempt_num < max_attempts:
+                logger.warning(
+                    "Stage 2 attempt %d returned empty/malformed; "
+                    "retrying (attempt %d of %d)",
+                    attempt_num,
+                    attempt_num + 1,
+                    max_attempts,
+                )
+                continue
+
+        # All attempts exhausted — fail closed (R7: no fallback to Stage 1).
+        raise OllamaClientError(
+            "Stage 2 synthesis exhausted all attempts without valid structured output"
+        )
 
     async def chat(
         self,
@@ -772,26 +1161,97 @@ class OllamaClient:
                 capabilities,
                 llm_response_format=effective.response_format,
             )
+
+        # Resolve explicit call controls from LLMCallOptions.
+        response_stream = effective.response_stream
+        empty_retry = effective.empty_retry
+        event_sink = effective.event_sink
+
+        # Apply event_sink tri-state to SSE queue.
+        if event_sink is EventSink.DISABLED:
+            effective_sse_queue = None
+        elif event_sink is EventSink.ENABLED:
+            pass  # keep effective_sse_queue as resolved above
+
+        # Determine whether to retry on empty response.
+        do_empty_retry = True
+        if empty_retry is EmptyRetry.DISABLED:
+            do_empty_retry = False
+        elif empty_retry is EmptyRetry.ENABLED:
+            do_empty_retry = True
+
+        if effective_tools:
+            capabilities = replace(
+                capabilities,
+                llm_response_format=LlmResponseFormat.TEXT,
+            )
         payload = self._build_chat_payload(
             messages,
             effective_tools,
             capabilities=capabilities,
             schema_override=effective.response_schema,
+            tool_choice=effective.tool_choice,
+            response_stream=response_stream,
+            thinking_enabled=effective.thinking_enabled,
         )
         skip_structured_parsing = effective.response_schema is not None
+        single_phase = effective.phase or "single-call"
+
+        async def _execute_single_attempt(
+            attempt_num: int,
+        ) -> tuple[
+            str,
+            list[LLMToolCall],
+            LLMCallUsage | None,
+            StructuredAssistantContent | None,
+        ]:
+            try:
+                result = await self._execute_chat_once(
+                    payload,
+                    capabilities,
+                    effective_sse_queue,
+                    skip_structured_parsing=skip_structured_parsing,
+                    phase=single_phase,
+                    attempt=attempt_num,
+                )
+            except Exception as exc:
+                if effective.on_attempt is not None:
+                    effective.on_attempt(
+                        AttemptRecord(
+                            phase=single_phase,
+                            attempt=attempt_num,
+                            error=str(exc),
+                        )
+                    )
+                raise
+            text, tool_calls, usage, structured_content = result
+            usage = (
+                replace(
+                    usage,
+                    tool_capable=bool(effective_tools),
+                    tool_used=bool(tool_calls),
+                )
+                if usage is not None
+                else None
+            )
+            if effective.on_attempt is not None:
+                effective.on_attempt(
+                    AttemptRecord(
+                        phase=single_phase,
+                        attempt=attempt_num,
+                        usage=usage,
+                    )
+                )
+            return text, tool_calls, usage, structured_content
+
         try:
             (
                 text,
                 tool_calls,
                 final_usage,
                 structured_content,
-            ) = await self._execute_chat_once(
-                payload,
-                capabilities,
-                effective_sse_queue,
-                skip_structured_parsing=skip_structured_parsing,
-            )
-            if not text.strip() and not tool_calls:
+            ) = await _execute_single_attempt(1)
+            if (not text.strip() and not tool_calls) and do_empty_retry:
                 logger.warning(
                     "Ollama returned empty response with no tool calls; retrying once",
                 )
@@ -800,12 +1260,7 @@ class OllamaClient:
                     tool_calls,
                     final_usage,
                     structured_content,
-                ) = await self._execute_chat_once(
-                    payload,
-                    capabilities,
-                    effective_sse_queue,
-                    skip_structured_parsing=skip_structured_parsing,
-                )
+                ) = await _execute_single_attempt(2)
                 if not text.strip() and not tool_calls:
                     logger.warning(
                         "Ollama returned empty response on retry; "

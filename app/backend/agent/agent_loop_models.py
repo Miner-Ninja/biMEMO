@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from backend.agent.finalization import RequirementSatisfaction, ResponseRequirements
     from backend.agent.loop import LoopResult
+    from backend.agent.turn_state import ToolObligation, TurnOutcome
     from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.memory.classification.question_router import MemoryQuestionRoute
@@ -54,7 +55,7 @@ class AgentResponse:
             conversation's bridge under its real message id.
     """
 
-    structured_content: StructuredAssistantContent
+    structured_content: StructuredAssistantContent | None
     loop_result: LoopResult
     input_filtered: bool = False
     output_filtered: bool = False
@@ -63,6 +64,9 @@ class AgentResponse:
     stats: ExtendedUsage | None = None
     assistant_message_id: str | None = None
     used_tools: list[dict] = field(default_factory=list)
+    outcome: TurnOutcome | None = None
+    run_id: str | None = None
+    finalization_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,7 @@ class ToolRoundResult:
     structured_content: StructuredAssistantContent | None
     executed_immediate_tools: bool
     should_continue: bool
+    outcome: TurnOutcome | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,7 @@ class ModelLoopResult:
 
     raw_final_text: str
     structured_content: StructuredAssistantContent | None = None
+    outcome: TurnOutcome | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +124,10 @@ class TurnPreparation:
     question_route: MemoryQuestionRoute
     requirements: ResponseRequirements
     satisfaction: RequirementSatisfaction
+    run_id: str | None = None
+    finalization_id: str | None = None
+    obligations: tuple[ToolObligation, ...] = ()
+    clarification_question: str | None = None
 
 
 @dataclass(frozen=True)

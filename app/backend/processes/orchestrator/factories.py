@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -435,8 +436,7 @@ def make_mcp_memory_remember_fn(
             # unfiltered and stay retrievable by every reader.
             if filter_input(request.content).injection_flagged:
                 logger.warning(
-                    "MCP remember rejected: injection-flagged content "
-                    "from agent %s",
+                    "MCP remember rejected: injection-flagged content from agent %s",
                     request.agent_id,
                 )
                 return McpMemoryRememberResponse(
@@ -538,7 +538,6 @@ def make_memory_invalidate_fn(db_client: DBProxyClient) -> Callable:
         )
 
     return memory_invalidate_fn
-
 
 
 def make_save_record_fn(db_client: DBProxyClient) -> Callable:
@@ -759,6 +758,12 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
             # Build a ChatRequest and run it through the orchestrator
             chat_req = ChatRequest(
                 request_id=request.request_id,
+                run_id=str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"bimemo:mcp:{request.agent_id}:{request.request_id}",
+                    )
+                ),
                 message=request.question,
                 channel="bridge:mcp",
                 session_id=session_id,
@@ -776,16 +781,34 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
                 result = await result
 
             if isinstance(result, ChatResponse):
-                answer = getattr(
-                    result.structured_content,
-                    "answer",
-                    "",
-                ) if result.structured_content else ""
+                outcome_kind = getattr(result, "outcome_kind", None)
+                if outcome_kind is not None and outcome_kind.value != "final":
+                    terminal_error = getattr(result, "error", None)
+                    return McpAskResponse(
+                        request_id=request.request_id,
+                        error=(
+                            terminal_error.message
+                            if terminal_error is not None
+                            else f"turn_{outcome_kind.value}"
+                        ),
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
+                answer = (
+                    getattr(
+                        result.structured_content,
+                        "answer",
+                        "",
+                    )
+                    if result.structured_content
+                    else ""
+                )
                 return McpAskResponse(
                     request_id=request.request_id,
                     answer=answer,
                     conversation_id=conversation_id,
                     session_id=session_id,
+                    finalization_id=result.finalization_id or "",
                 )
 
             return McpAskResponse(

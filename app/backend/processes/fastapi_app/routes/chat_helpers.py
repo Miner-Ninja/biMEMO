@@ -200,7 +200,7 @@ def build_ipc_chat_request(
     """Build one orchestrator IPC chat request from prepared web-chat input."""
     return IPCChatRequest(
         request_id=str(uuid.uuid4()),
-        run_id=str(uuid.uuid4()),
+        run_id=body.run_id or str(uuid.uuid4()),
         message=chat_input_context.message,
         channel="web",
         session_id=claims.jti,
@@ -209,6 +209,9 @@ def build_ipc_chat_request(
         attached_files=chat_input_context.resolved_files,
         voice=body.voice,
         forced_tools=chat_input_context.forced_tools,
+        pending_input_id=body.pending_input_id,
+        pending_input_version=body.pending_input_version,
+        pending_input_value=body.pending_input_value,
     )
 
 
@@ -283,6 +286,16 @@ def build_http_chat_response(
         pending_confirmations=build_confirmation_items(
             ipc_response.pending_confirmations,
         ),
+        pause_reason=(
+            ipc_response.pause_reason.value
+            if ipc_response.pause_reason is not None
+            else None
+        ),
+        pending_input=(
+            ipc_response.pending_input.model_dump(mode="json")
+            if ipc_response.pending_input is not None
+            else None
+        ),
         used_tools=build_used_tool_items(ipc_response.used_tools),
         retrieved_memories=ipc_response.retrieved_memories,
         retrieved_messages=ipc_response.retrieved_messages,
@@ -290,6 +303,16 @@ def build_http_chat_response(
         stats=ipc_response.stats,
         structured_content=structured_content,
         stream_enabled=ipc_response.stream_enabled,
+        outcome_kind=(
+            ipc_response.outcome_kind.value
+            if ipc_response.outcome_kind is not None
+            else None
+        ),
+        run_id=ipc_response.run_id,
+        finalization_id=ipc_response.finalization_id,
+        error=(
+            ipc_response.error.model_dump() if ipc_response.error is not None else None
+        ),
     )
 
 

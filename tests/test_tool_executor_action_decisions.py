@@ -1,13 +1,17 @@
 """Tests for ToolExecutor action-decision integration."""
 
 import asyncio
+import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from backend.agent.agent_loop_models import ToolCall
 from backend.agent.tool_executor import ToolExecutor
 from backend.permissions import ActionDecision, DecisionKind
+from backend.tools.broker import ToolResult
 from backend.trust.confirmation import ConfirmationManager
+from backend.trust.zones import TrustZone
 
 
 class _BlockingDecisions:
@@ -69,7 +73,13 @@ class TestToolExecutorActionDecisions:
         """Call the broker when a decision allows the call."""
         broker = MagicMock()
         broker.execute = AsyncMock()
-        broker.execute.return_value = "ok"
+        broker.execute.return_value = ToolResult(
+            tool_name="file_read",
+            success=True,
+            result="ok",
+            zone=TrustZone.GREEN,
+            duration_ms=1.0,
+        )
         executor = ToolExecutor(
             broker,
             ConfirmationManager(),
@@ -78,8 +88,147 @@ class TestToolExecutorActionDecisions:
 
         result = await executor._execute_with_status(ToolCall("1", "file_read", {}))
 
-        assert result == "ok"
+        assert result.result == "ok"
         broker.execute.assert_awaited_once_with("file_read", {})
+        assert executor.executed_tools == [
+            {
+                "id": "1",
+                "name": "file_read",
+                "parameters": {},
+                "zone": "green",
+                "status": "succeeded",
+                "success": True,
+            }
+        ]
+
+    def test_identical_model_calls_are_collapsed_before_execution(self):
+        """One duplicated HTTP request produces one canonical invocation."""
+        executor = ToolExecutor(
+            MagicMock(),
+            ConfirmationManager(),
+            action_decisions=_AllowingDecisions(),
+        )
+        url = "https://api.example.test/price"
+        response = SimpleNamespace(
+            tool_calls=[
+                SimpleNamespace(
+                    id=f"call-{index}",
+                    name="http_fetch",
+                    arguments={"url": url},
+                )
+                for index in range(3)
+            ],
+            raw_message={
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": f"call-{index}", "type": "function"}
+                    for index in range(3)
+                ],
+            },
+        )
+
+        calls = executor.build_tool_calls(response)
+        assistant_message = executor._assistant_message_for_calls(response, calls)
+
+        assert [call.id for call in calls] == ["call-0"]
+        assert assistant_message["tool_calls"] == [
+            {"id": "call-0", "type": "function"}
+        ]
+
+    async def test_failed_result_is_not_successful_evidence(self):
+        """A broker failure result remains failed in the execution ledger."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="file_read",
+                success=False,
+                result="read failed",
+                zone=TrustZone.GREEN,
+                duration_ms=1.0,
+            )
+        )
+        executor = ToolExecutor(
+            broker,
+            ConfirmationManager(),
+            action_decisions=_AllowingDecisions(),
+        )
+
+        await executor._execute_with_status(ToolCall("1", "file_read", {}))
+
+        assert executor.executed_tools[0]["status"] == "failed"
+        assert executor.executed_tools[0]["success"] is False
+
+    async def test_truncated_mandatory_result_cannot_satisfy_evidence(self):
+        """A bounded excerpt is audit data, not complete mandatory evidence."""
+        broker = MagicMock()
+        broker.execute = AsyncMock(
+            return_value=ToolResult(
+                tool_name="file_read",
+                success=True,
+                result="x" * 70_000,
+                zone=TrustZone.GREEN,
+                duration_ms=1.0,
+            )
+        )
+        turn_store = SimpleNamespace(
+            claim_agent_invocation=AsyncMock(
+                return_value={"claimed": True, "claim_generation": 1}
+            ),
+            complete_agent_invocation=AsyncMock(),
+        )
+        executor = ToolExecutor(
+            broker,
+            ConfirmationManager(),
+            action_decisions=_AllowingDecisions(),
+            turn_store=turn_store,
+        )
+        executor.current_context = {
+            "agent_run_id": "run-1",
+            "authority_store": "core",
+        }
+        executor.current_obligations = (SimpleNamespace(required_tool="file_read"),)
+
+        await executor._execute_with_status(ToolCall("call-1", "file_read", {}))
+
+        assert executor.executed_tools[0]["status"] == "failed"
+        completion = turn_store.complete_agent_invocation.await_args.kwargs
+        assert completion["status"] == "failed"
+        assert "byte limit" in completion["error"]
+
+    def test_core_tool_message_uses_backend_identity_and_omits_draft(self):
+        """Stage 1 prose is dropped and provenance uses the backend invocation ID."""
+        executor = ToolExecutor(MagicMock(), ConfirmationManager())
+        executor.current_context = {
+            "agent_run_id": "run-1",
+            "authority_store": "core",
+        }
+        messages = []
+        call = ToolCall("provider-call-1", "file_read", {})
+        executor.append_tool_results_to_messages(
+            messages=messages,
+            llm_response=SimpleNamespace(
+                raw_message={
+                    "role": "assistant",
+                    "content": "uncommitted draft",
+                    "tool_calls": [{"id": call.id}],
+                }
+            ),
+            immediate_calls=[call],
+            results=[
+                ToolResult(
+                    tool_name="file_read",
+                    success=True,
+                    result="evidence",
+                    zone=TrustZone.GREEN,
+                    duration_ms=1.0,
+                )
+            ],
+        )
+
+        assert messages[0]["content"] == ""
+        envelope = json.loads(messages[1]["content"])
+        assert envelope["invocation_id"] == executor._invocation_id(call.id)
+        assert envelope["invocation_id"] != call.id
 
     def test_saved_grant_promotes_red_call_to_immediate(self):
         """Promote a red call to immediate execution when grants allow it."""

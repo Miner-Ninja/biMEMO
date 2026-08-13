@@ -71,6 +71,8 @@ export interface Message {
   stats?: ExtendedUsage;
   /** Pending RED zone actions awaiting user confirmation */
   pendingConfirmations?: PendingConfirmation[];
+  /** Typed value requested to resume the same backend run */
+  pendingInput?: PendingInput;
   /** Used tools recorded for this message */
   usedTools?: UsedTool[];
   /** When the message was created */
@@ -94,6 +96,16 @@ export interface PendingConfirmation {
   tool_name: string;
   parameters: Record<string, unknown>;
   status: "pending" | "approved" | "denied" | "expired";
+}
+
+export interface PendingInput {
+  run_id: string;
+  pending_input_id: string;
+  question: string;
+  expected_input_schema: Record<string, unknown>;
+  expires_at: string;
+  cas_version: number;
+  suggestions?: string[];
 }
 
 /**

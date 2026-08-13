@@ -116,12 +116,25 @@ def make_delete_queued_records_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Delete processed queue rows by id."""
         p = _validate_params(params, DeleteQueuedRecordsParams)
-        for queue_id in p.queue_ids:
-            db.execute(
-                "DELETE FROM record_queue WHERE id = ?",
-                (queue_id,),
-            )
-        db.commit()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            for queue_id in p.queue_ids:
+                # Finalization stores the queue identity for idempotent commit
+                # replay, but the pointer must not retain an acknowledged item.
+                if _table_exists(db, "agent_turn_finalizations"):
+                    db.execute(
+                        "UPDATE agent_turn_finalizations SET record_queue_id = NULL "
+                        "WHERE record_queue_id = ?",
+                        (queue_id,),
+                    )
+                db.execute(
+                    "DELETE FROM record_queue WHERE id = ?",
+                    (queue_id,),
+                )
+            db.commit()
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
         return {"deleted": len(p.queue_ids)}
 
     return handle
@@ -454,9 +467,9 @@ def make_get_vector_coverage_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Return embedding coverage over non-tainted records."""
         del params
-        total = db.execute(
-            "SELECT COUNT(*) FROM records WHERE tainted = 0"
-        ).fetchone()[0]
+        total = db.execute("SELECT COUNT(*) FROM records WHERE tainted = 0").fetchone()[
+            0
+        ]
         if not _table_exists(db, "record_embeddings"):
             return {"total": total, "embedded": 0, "unembedded": total}
         embedded = db.execute(
@@ -558,7 +571,7 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
                 continue
             try:
                 ids = json.loads(src_ids)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
             if isinstance(ids, list):
                 referenced_ids.update(str(record_id) for record_id in ids)
@@ -601,5 +614,3 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
         return {"deleted": deleted}
 
     return handle
-
-

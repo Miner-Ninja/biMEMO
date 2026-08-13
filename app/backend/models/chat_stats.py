@@ -51,6 +51,17 @@ class MemoryZones(StrictChatStatsModel):
     total_available: int
 
 
+class StageUsage(StrictChatStatsModel):
+    """Token and timing summary for one processing stage."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    model: str
+    prompt_ms: float
+    generation_ms: float
+
+
 class ExtendedUsage(StrictChatStatsModel):
     """Extended token and timing usage for a chat response."""
 
@@ -62,3 +73,7 @@ class ExtendedUsage(StrictChatStatsModel):
     timing: TimingStats
     model: str
     iterations: int
+    stage1: StageUsage | None = None
+    stage2: StageUsage | None = None
+    tool_capable: bool = False
+    tool_used: bool = False

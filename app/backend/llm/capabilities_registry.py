@@ -12,7 +12,10 @@ Concurrent requests for the same key are serialized through an
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
+
+from backend.llm.capabilities import CapabilitySupport
 
 
 if TYPE_CHECKING:
@@ -72,11 +75,46 @@ class CapabilitiesRegistry:
         key = (provider.name, model)
         async with self._lock:
             cached = self._cache.get(key)
-            if cached is not None:
+            if cached is not None and cached.matches_identity(provider.name, model):
                 return cached
+            if cached is not None:
+                self._cache.pop(key, None)
             resolved = await provider.resolve_capabilities(model)
+            if not resolved.matches_identity(provider.name, model):
+                raise ValueError(
+                    "capability resolver returned mismatched provider/model identity"
+                )
+            declarations = getattr(provider, "structured_capability_declarations", {})
+            if declarations:
+                normalized = {
+                    name: (
+                        value
+                        if isinstance(value, CapabilitySupport)
+                        else CapabilitySupport(str(value))
+                    )
+                    for name, value in declarations.items()
+                    if name
+                    in {
+                        "native_tools",
+                        "exact_named_choice",
+                        "required_native_decision",
+                        "non_streaming_custom_schema",
+                    }
+                }
+                resolved = replace(resolved, **normalized)
             self._cache[key] = resolved
             return resolved
+
+    def invalidate(self, provider_name: str, model: str | None = None) -> int:
+        """Evict cached entries for one provider or one provider/model pair."""
+        keys = [
+            key
+            for key in self._cache
+            if key[0] == provider_name and (model is None or key[1] == model)
+        ]
+        for key in keys:
+            self._cache.pop(key, None)
+        return len(keys)
 
     def clear(self) -> None:
         """Drop all cached capabilities. Intended for tests and diagnostics."""

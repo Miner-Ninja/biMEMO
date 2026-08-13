@@ -319,9 +319,7 @@ def create_app(
                 # StaticFiles("/") SPA catch-all; Starlette matches routes in
                 # order, and this mount is added after create_app's routes.
                 application.router.routes.insert(0, Mount("/mcp", app=mcp_app))
-                await lifespan_stack.enter_async_context(
-                    mcp_app.lifespan(mcp_app)
-                )
+                await lifespan_stack.enter_async_context(mcp_app.lifespan(mcp_app))
                 logger.info("MCP endpoint mounted at /mcp")
 
             logger.info("FastAPI process ready (IPC connected)")

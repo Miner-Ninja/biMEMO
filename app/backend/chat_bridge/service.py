@@ -283,11 +283,28 @@ class ChatBridgeService:
         role: str,
         content: str,
         images: list[str] | None = None,
+        finalization_id: str = "",
     ) -> ChatBridgeMessageLink | None:
         """Send one web message into its linked external bridge target."""
         bridge_link = await self.get_bridge_for_conversation(conversation_id)
         if bridge_link is None or not bridge_link.allows_outbound_sync():
             return None
+        claimed_link: ChatBridgeMessageLink | None = None
+        if finalization_id:
+            claim = await self._admin_client.send_operation(
+                "claim_chat_bridge_finalization",
+                {
+                    "bridge_link_id": bridge_link.id,
+                    "finalization_id": finalization_id,
+                    "message_id": message_id,
+                    "direction": BridgeMessageDirection.OUTBOUND.value,
+                },
+            )
+            claimed_link = self._required_chat_bridge_message_link(
+                claim.get("chat_bridge_message_link")
+            )
+            if not claim.get("claimed"):
+                return claimed_link
         provider_adapter = self._get_provider(bridge_link.provider)
         outbound_message = await self._build_outbound_message(
             bridge_link=bridge_link,
@@ -299,11 +316,24 @@ class ChatBridgeService:
             target=bridge_link.target(),
             message=outbound_message,
         )
+        if finalization_id:
+            completed = await self._admin_client.send_operation(
+                "complete_chat_bridge_finalization",
+                {
+                    "bridge_link_id": bridge_link.id,
+                    "finalization_id": finalization_id,
+                    "external_message_id": provider_message.external_message_id,
+                },
+            )
+            return self._required_chat_bridge_message_link(
+                completed.get("chat_bridge_message_link")
+            )
         return await self._save_message_link(
             bridge_link_id=bridge_link.id,
             message_id=message_id,
             external_message_id=provider_message.external_message_id,
             direction=BridgeMessageDirection.OUTBOUND,
+            finalization_id=finalization_id,
         )
 
     async def sync_recent_conversation_messages(
@@ -447,6 +477,9 @@ class ChatBridgeService:
             "role": role,
             "content": content,
             "images": images,
+            "finalization_id": ChatBridgeService._meta_finalization_id(
+                message.get("meta")
+            ),
         }
 
     @classmethod
@@ -496,6 +529,7 @@ class ChatBridgeService:
             role=str(candidate["role"]),
             content=str(candidate.get("content", "")),
             images=list(images),
+            finalization_id=str(candidate.get("finalization_id", "")),
         )
 
     @staticmethod
@@ -633,6 +667,7 @@ class ChatBridgeService:
         message_id: str,
         external_message_id: str,
         direction: BridgeMessageDirection,
+        finalization_id: str = "",
     ) -> ChatBridgeMessageLink:
         """Persist one bridge message mapping and return the stored mapping."""
         result = await self._admin_client.send_operation(
@@ -642,6 +677,7 @@ class ChatBridgeService:
                 "message_id": message_id,
                 "external_message_id": external_message_id,
                 "direction": direction.value,
+                "finalization_id": finalization_id,
             },
         )
         return self._required_chat_bridge_message_link(
@@ -658,3 +694,18 @@ class ChatBridgeService:
         except json.JSONDecodeError:
             return False
         return payload.get("source") == EXTERNAL_MESSAGE_META_SOURCE
+
+    @staticmethod
+    def _meta_finalization_id(meta: object) -> str:
+        """Extract a finalization identity from persisted assistant metadata."""
+        if isinstance(meta, dict):
+            return str(meta.get("finalization_id", ""))
+        if not isinstance(meta, str) or not meta.strip():
+            return ""
+        try:
+            payload = json.loads(meta)
+        except json.JSONDecodeError:
+            return ""
+        return (
+            str(payload.get("finalization_id", "")) if isinstance(payload, dict) else ""
+        )

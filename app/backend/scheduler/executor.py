@@ -7,14 +7,21 @@ filtering, conversation isolation, and result delivery via SSE.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from backend.agent.conversation_settings import read_suggestions_enabled
+from backend.config import get_settings
 from backend.ipc.models import StreamEventType
+from backend.processes.orchestrator.run_event_recorder import (
+    RunEventContext,
+    RunEventRecorder,
+)
 
 
 if TYPE_CHECKING:
@@ -53,6 +60,7 @@ class SchedulerServices:
     broker: ToolBroker
     sse_publish_fn: Callable | None = None
     bridge_service: object | None = None
+    atomic_task_result_committed: bool = False
 
 
 async def execute_task(
@@ -68,6 +76,7 @@ async def execute_task(
     Returns:
         Tuple of (result_text, success).
     """
+    services.atomic_task_result_committed = False
     task_type = task["task_type"]
 
     if task_type == "reminder":
@@ -118,6 +127,11 @@ async def _execute_agent_task(
     allowed_set = set(allowed_tools) if allowed_tools else set()
     orch.prompt_builder.allowed_tool_names = allowed_set
     orch.prompt_builder.scheduled_task_mode = True
+    scheduled_started_at = datetime.now(tz=UTC)
+    orch.scheduled_task_run = {
+        "task_id": task_id,
+        "started_at": scheduled_started_at.isoformat(),
+    }
     orch.tool_executor.allowed_tool_names = allowed_set
     # Suggestions are off for a task chat by default (an autonomous run has no
     # one to click them), but the per-chat toggle can turn them back on.
@@ -125,68 +139,188 @@ async def _execute_agent_task(
         services.db_client, conversation_id, default=False
     )
 
-    # Run the agentic loop, requiring the task's declared tools to actually be
-    # applied. The task's allowlist IS the list of tools that must run for a
-    # successful execution; if the model does not call them, reinforce and retry
-    # (up to MAX_TOOL_ENFORCE_ATTEMPTS). After that, report transparently which
-    # tools were never applied instead of silently rejecting.
+    # In structured mode the task is one authoritative turn. Tool enforcement
+    # and bounded retries happen inside that state machine; the scheduler never
+    # starts a second chat attempt or treats a requested tool as successful.
     required_tools = set(allowed_set)
-    attempt_prompt = prompt
     response = None
+    turn_id = ""
     missing_tools: set[str] = set()
+    cumulative_used: set[str] = set()
     try:
-        for _attempt in range(MAX_TOOL_ENFORCE_ATTEMPTS):
+        if get_settings().structured_finalization_enabled:
+            turn_id = str(uuid.uuid4())
+            await services.db_client.create_agent_turn(
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                session_id=f"sched_{task_id}",
+                channel="scheduler",
+            )
+            orch.run_event_recorder = RunEventRecorder(
+                db_client=services.db_client,
+                context=RunEventContext(
+                    run_id=turn_id,
+                    request_id=f"sched_{task_id}",
+                    conversation_id=conversation_id,
+                    authority_store="core",
+                    architecture_version="structured_v1",
+                ),
+            )
             response = await orch.process_message(
-                message=attempt_prompt,
+                message=prompt,
                 channel="scheduler",
                 llm_call=services.llm_call,
                 session_id=f"sched_{task_id}",
                 conversation_id=conversation_id,
+                agent_run_id=turn_id,
+                forced_tools=sorted(required_tools),
             )
-            used = set(orch.tool_executor.tool_names_used)
-            missing_tools = required_tools - used
-            if not missing_tools:
-                break
-            attempt_prompt = (
-                f"{prompt}\n\n"
-                "IMPORTANT — this is an autonomous scheduled task. You MUST "
-                "actually CALL these tools to complete it: "
-                f"{', '.join(sorted(missing_tools))}. Do not answer from memory "
-                "or earlier context — call the tools now. If a tool cannot be "
-                "used or returns nothing, state that explicitly in your answer, "
-                "naming the tool and the reason."
+            services.atomic_task_result_committed = bool(
+                getattr(response, "outcome", None) is not None
             )
+            canonical = await services.db_client.get_agent_turn(turn_id)
+            obligations = {
+                str(item.get("obligation_id", "")): str(item.get("required_tool", ""))
+                for item in (canonical or {}).get("obligations", [])
+                if isinstance(item, dict)
+            }
+            bound_ids = {
+                str(item.get("obligation_id", ""))
+                for item in (canonical or {}).get("binds", [])
+                if isinstance(item, dict)
+            }
+            cumulative_used = {
+                tool_name
+                for obligation_id, tool_name in obligations.items()
+                if obligation_id in bound_ids
+            }
+        else:
+            attempt_prompt = prompt
+            for _attempt in range(MAX_TOOL_ENFORCE_ATTEMPTS):
+                response = await orch.process_message(
+                    message=attempt_prompt,
+                    channel="scheduler",
+                    llm_call=services.llm_call,
+                    session_id=f"sched_{task_id}",
+                    conversation_id=conversation_id,
+                    forced_tools=sorted(missing_tools or required_tools),
+                )
+                used = {
+                    str(record.get("name"))
+                    for record in orch.tool_executor.executed_tools
+                    if record.get("success") is True
+                    or record.get("status") == "succeeded"
+                }
+                cumulative_used |= used
+                missing_tools = required_tools - cumulative_used
+                if not missing_tools:
+                    break
+                attempt_prompt = (
+                    f"{prompt}\n\n"
+                    "IMPORTANT — this is an autonomous scheduled task. You MUST "
+                    "actually CALL these tools to complete it: "
+                    f"{', '.join(sorted(missing_tools))}."
+                )
         result_text = (
             response.structured_content.answer
             if response is not None and response.structured_content
             else ""
         ) or ""
-        success = True
+        typed_failure = bool(
+            response is not None
+            and getattr(response, "outcome", None) is not None
+            and response.outcome.kind.value != "final"
+        )
+        if typed_failure or (required_tools and not cumulative_used >= required_tools):
+            missing_tools = required_tools - cumulative_used
+            if missing_tools:
+                result_text = (
+                    "Scheduled task failed because required tools were not applied: "
+                    f"{', '.join(sorted(missing_tools))}."
+                )
+            elif not result_text:
+                result_text = "Scheduled task failed before producing a final result."
+            success = False
+        else:
+            success = True
+    except asyncio.CancelledError:
+        finished_at = datetime.now(tz=UTC)
+        if turn_id:
+            await services.db_client.cancel_agent_turn(
+                turn_id,
+                reason="Scheduled task execution timed out.",
+                timeout=True,
+                task_result={
+                    "task_id": task_id,
+                    "started_at": scheduled_started_at.isoformat(),
+                    "finished_at": finished_at.isoformat(),
+                    "status": "timeout",
+                    "result_text": "",
+                    "error_message": "Scheduled task execution timed out.",
+                    "duration_ms": max(
+                        0,
+                        int(
+                            (finished_at - scheduled_started_at).total_seconds() * 1000
+                        ),
+                    ),
+                },
+            )
+            services.atomic_task_result_committed = True
+        raise
     except Exception as exc:
         logger.exception("Agent task %s (%s) failed", task_id, task_name)
-        result_text = str(exc)
-        success = False
+        canonical = (
+            await services.db_client.get_agent_turn(turn_id) if turn_id else None
+        )
+        terminal_outcome = str((canonical or {}).get("terminal_outcome") or "")
+        if terminal_outcome in {"final", "failed"}:
+            services.atomic_task_result_committed = True
+            payload = (canonical or {}).get("outcome_payload")
+            outcome_payload = payload if isinstance(payload, dict) else {}
+            structured = outcome_payload.get("structured_content")
+            structured_payload = structured if isinstance(structured, dict) else {}
+            error = outcome_payload.get("error")
+            error_payload = error if isinstance(error, dict) else {}
+            result_text = str(
+                structured_payload.get("answer")
+                or error_payload.get("message")
+                or "Scheduled task failed after committing its outcome."
+            )
+            success = terminal_outcome == "final"
+        else:
+            result_text = str(exc)
+            success = False
+            if turn_id:
+                finished_at = datetime.now(tz=UTC)
+                await services.db_client.cancel_agent_turn(
+                    turn_id,
+                    reason=result_text[:1000] or "Scheduled task execution failed.",
+                    failure=True,
+                    task_result={
+                        "task_id": task_id,
+                        "started_at": scheduled_started_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "status": "error",
+                        "result_text": "",
+                        "error_message": result_text[:1000],
+                        "duration_ms": max(
+                            0,
+                            int(
+                                (finished_at - scheduled_started_at).total_seconds()
+                                * 1000
+                            ),
+                        ),
+                    },
+                )
+                services.atomic_task_result_committed = True
         missing_tools = set()
     finally:
         orch.prompt_builder.allowed_tool_names = None
         orch.prompt_builder.scheduled_task_mode = False
         orch.prompt_builder.suggestions_enabled = True
         orch.tool_executor.allowed_tool_names = None
-
-    # Transparent report: declared tools that never ran across all attempts.
-    if success and required_tools and missing_tools:
-        logger.warning(
-            "Task %s (%s): required tools not applied after %d attempts: %s",
-            task_id,
-            task_name,
-            MAX_TOOL_ENFORCE_ATTEMPTS,
-            sorted(missing_tools),
-        )
-        result_text = (
-            f"{result_text}\n\n_Note: these required tools were not applied "
-            f"after {MAX_TOOL_ENFORCE_ATTEMPTS} attempts: "
-            f"{', '.join(sorted(missing_tools))}._"
-        ).strip()
+        orch.run_event_recorder = None
+        orch.scheduled_task_run = None
 
     # Detect [SILENT] marker — agent decided nothing is worth reporting
     is_silent = success and result_text.strip().startswith("[SILENT]")

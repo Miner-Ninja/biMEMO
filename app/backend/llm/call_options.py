@@ -12,13 +12,40 @@ LLM call". This is the single per-call entry point documented by the
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
     import asyncio
+    from collections.abc import Callable
 
+    from backend.llm.call_factory import AttemptRecord
     from backend.llm.capabilities import LlmResponseFormat
+
+
+class EventSink(StrEnum):
+    """Whether to forward events to an SSE queue for this call."""
+
+    INHERIT = "inherit"
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+
+
+class ResponseStream(StrEnum):
+    """Whether to stream the LLM response for this call."""
+
+    INHERIT = "inherit"
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+
+
+class EmptyRetry(StrEnum):
+    """Whether to retry on an empty LLM response for this call."""
+
+    INHERIT = "inherit"
+    ENABLED = "enabled"
+    DISABLED = "disabled"
 
 
 @dataclass(frozen=True)
@@ -37,6 +64,19 @@ class LLMCallOptions:
             call only. ``None`` leaves the provider to auto-select.
         sse_queue: Override the SSE queue target for this call only.
             ``None`` keeps the caller-scoped default.
+        event_sink: Override the event-sink tri-state (INHERIT / ENABLED /
+            DISABLED) for this call only. ``None`` keeps the default.
+        response_stream: Override the response-stream tri-state for this
+            call only. ``None`` keeps the default.
+        empty_retry: Override the empty-retry tri-state for this call only.
+            ``None`` keeps the default.
+        thinking_enabled: Override provider-side reasoning for this call only.
+            ``None`` keeps the per-turn UI setting.
+        on_attempt: Callback invoked after every HTTP attempt, including
+            failures without usage data. Used by the two-stage flow to
+            record each provider attempt. ``None`` means no callback.
+        phase: Phase label for attempt records (e.g. ``"Stage 1"``,
+            ``"Stage 2"``). Used with ``on_attempt``.
     """
 
     response_format: LlmResponseFormat | None = None
@@ -44,3 +84,9 @@ class LLMCallOptions:
     tools: list[dict] | None = None
     tool_choice: object | None = None
     sse_queue: asyncio.Queue | None = None
+    event_sink: EventSink | None = None
+    response_stream: ResponseStream | None = None
+    empty_retry: EmptyRetry | None = None
+    thinking_enabled: bool | None = None
+    on_attempt: Callable[[AttemptRecord], None] | None = None
+    phase: str = ""

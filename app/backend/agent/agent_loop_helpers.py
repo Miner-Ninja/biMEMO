@@ -20,6 +20,7 @@ from backend.llm.structured_response import (
     StructuredAssistantContent,
     normalize_legacy_response_text,
 )
+from backend.security.provenance import serialize_tool_result
 from backend.trust.zones import TrustZone, get_zone, user_intent_authorizes
 
 
@@ -400,12 +401,14 @@ def split_by_zone(
 def build_tool_result_messages(
     calls: list[ToolCall],
     results: list[ToolResult],
+    invocation_ids: dict[str, str] | None = None,
 ) -> list[dict]:
     """Build OpenAI-format tool result messages.
 
     Args:
         calls: Tool calls that were executed.
         results: Corresponding execution results.
+        invocation_ids: Optional backend-owned IDs keyed by provider call ID.
 
     Returns:
         List of ``role: tool`` message dicts.
@@ -414,7 +417,11 @@ def build_tool_result_messages(
         {
             "role": "tool",
             "tool_call_id": call.id,
-            "content": str(result.result),
+            "content": serialize_tool_result(
+                result.result,
+                tool_name=call.name,
+                invocation_id=(invocation_ids or {}).get(call.id, call.id),
+            ),
         }
         for call, result in zip(calls, results, strict=True)
     ]
@@ -441,6 +448,15 @@ def llm_accepts_tools_override(llm_call: object) -> bool:
         parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
+
+
+def llm_accepts_call_options(llm_call: object) -> bool:
+    """Check whether the LLM callable accepts typed per-call options."""
+    try:
+        parameters = inspect.signature(llm_call).parameters
+    except TypeError, ValueError:
+        return False
+    return "options" in parameters
 
 
 def message_allows_file_write_tool(message: str) -> bool:

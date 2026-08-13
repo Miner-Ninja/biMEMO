@@ -92,9 +92,7 @@ async def _store_assertion(
         valid_only=True,
     )
     subject_side = [
-        entry
-        for entry in existing_valid
-        if entry.get("direction") == "subject"
+        entry for entry in existing_valid if entry.get("direction") == "subject"
     ]
     action, existing_id = resolve_conflict_action(
         new_relation=relation,
@@ -213,4 +211,3 @@ def _chat_message(role: str, content: str) -> object:
     from backend.llm.ollama.models import ChatMessage
 
     return ChatMessage(role=role, content=content)
-

@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
     message_allows_file_read_tools,
     message_may_need_memory_recall,
+)
+from backend.agent.turn_state import (
+    ObligationStatus,
+    SatisfactionBind,
+    ToolObligation,
 )
 
 
@@ -83,6 +90,30 @@ class ResponseRequirements:
     must_use_tools: tuple[str, ...] = ()
     urls: tuple[str, ...] = ()
     reason: str = ""
+    invocations: tuple[InvocationRequirement, ...] = ()
+
+
+class RequirementStatus(Enum):
+    """Status of a single required evidence invocation."""
+
+    PENDING = "pending"
+    SATISFIED = "satisfied"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class InvocationRequirement:
+    """One required evidence invocation with identity and state.
+
+    Each instance is created when a URL or target is detected in the
+    user message and is later marked satisfied or failed as the
+    gateway processes tool invocations.
+    """
+
+    key: str
+    description: str
+    status: RequirementStatus = RequirementStatus.PENDING
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +124,7 @@ class RequirementSatisfaction:
     failed_tools: dict[str, str] = field(default_factory=dict)
     current_data_targets: tuple[str, ...] = ()
     missing_current_data_targets: tuple[str, ...] = ()
+    invocations: tuple[InvocationRequirement, ...] = ()
 
     def with_success(self, tool_name: str) -> RequirementSatisfaction:
         """Return a copy with one tool marked successful."""
@@ -101,6 +133,7 @@ class RequirementSatisfaction:
             failed_tools=dict(self.failed_tools),
             current_data_targets=self.current_data_targets,
             missing_current_data_targets=self.missing_current_data_targets,
+            invocations=self.invocations,
         )
 
     def with_failure(self, tool_name: str, reason: str) -> RequirementSatisfaction:
@@ -112,6 +145,7 @@ class RequirementSatisfaction:
             failed_tools=failed_tools,
             current_data_targets=self.current_data_targets,
             missing_current_data_targets=self.missing_current_data_targets,
+            invocations=self.invocations,
         )
 
     def with_current_data_targets(
@@ -126,6 +160,7 @@ class RequirementSatisfaction:
             failed_tools=dict(self.failed_tools),
             current_data_targets=targets,
             missing_current_data_targets=missing_targets,
+            invocations=self.invocations,
         )
 
     def with_current_data_targets_covered(
@@ -147,6 +182,64 @@ class RequirementSatisfaction:
                 for target in self.missing_current_data_targets
                 if target.casefold() not in covered_folded
             ),
+            invocations=self.invocations,
+        )
+
+    def with_invocation_status(
+        self,
+        key: str,
+        status: RequirementStatus,
+        error: str | None = None,
+    ) -> RequirementSatisfaction:
+        """Return a copy with one invocation's status updated."""
+        updated = tuple(
+            replace(inv, status=status, error=error) if inv.key == key else inv
+            for inv in self.invocations
+        )
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools,
+            failed_tools=dict(self.failed_tools),
+            current_data_targets=self.current_data_targets,
+            missing_current_data_targets=self.missing_current_data_targets,
+            invocations=updated,
+        )
+
+    def add_invocation(
+        self,
+        key: str,
+        description: str,
+    ) -> RequirementSatisfaction:
+        """Return a copy with one new pending invocation appended."""
+        return RequirementSatisfaction(
+            satisfied_tools=self.satisfied_tools,
+            failed_tools=dict(self.failed_tools),
+            current_data_targets=self.current_data_targets,
+            missing_current_data_targets=self.missing_current_data_targets,
+            invocations=(*self.invocations, InvocationRequirement(key, description)),
+        )
+
+    def with_execution_records(
+        self,
+        records: list[dict[str, object]],
+    ) -> RequirementSatisfaction:
+        """Return a copy reconciled with successful and failed tool records."""
+        satisfied = set(self.satisfied_tools)
+        failed = dict(self.failed_tools)
+        for record in records:
+            name = str(record.get("name", "")).strip()
+            if not name:
+                continue
+            status = str(record.get("status", ""))
+            success = record.get("success") is True or status == "succeeded"
+            if success:
+                satisfied.add(name)
+                failed.pop(name, None)
+            elif status in {"blocked", "failed"}:
+                failed[name] = str(record.get("error", status))
+        return replace(
+            self,
+            satisfied_tools=frozenset(satisfied),
+            failed_tools=failed,
         )
 
 
@@ -170,7 +263,22 @@ def build_required_tool_failure_answer(
         for tool in requirements.required_tools
         if tool in satisfaction.failed_tools
     ]
-    if not failed_required_tools:
+    incomplete_invocations = [
+        invocation
+        for invocation in satisfaction.invocations
+        if invocation.status is not RequirementStatus.SATISFIED
+    ]
+    missing_required_tools = [
+        tool
+        for tool in requirements.required_tools
+        if tool not in satisfaction.satisfied_tools
+        and tool not in satisfaction.failed_tools
+    ]
+    if (
+        not failed_required_tools
+        and not missing_required_tools
+        and not incomplete_invocations
+    ):
         return ""
 
     if "web_search" in failed_required_tools and requirements.needs_current_data:
@@ -185,8 +293,17 @@ def build_required_tool_failure_answer(
             "answer this request reliably."
         )
 
-    tool_names = ", ".join(failed_required_tools)
-    return f"I could not fetch required evidence for this answer through: {tool_names}."
+    tool_names = ", ".join((*failed_required_tools, *missing_required_tools))
+    invocation_keys = ", ".join(item.key for item in incomplete_invocations)
+    details = "; ".join(
+        part
+        for part in (
+            f"tools: {tool_names}" if tool_names else "",
+            f"invocations: {invocation_keys}" if invocation_keys else "",
+        )
+        if part
+    )
+    return f"I could not complete the required tool evidence ({details})."
 
 
 def detect_turn_requirements(message: str) -> ResponseRequirements:
@@ -209,6 +326,12 @@ def detect_turn_requirements(message: str) -> ResponseRequirements:
         reasons.append("file-context")
     if needs_memory_recall:
         reasons.append("memory-recall")
+    invocations: list[InvocationRequirement] = [
+        InvocationRequirement(key=f"url:{i + 1}", description=url)
+        for i, url in enumerate(urls)
+    ]
+    if invocations:
+        reasons.append("url-evidence")
     return ResponseRequirements(
         needs_current_data=needs_current_data,
         needs_url_fetch=needs_url_fetch,
@@ -216,6 +339,7 @@ def detect_turn_requirements(message: str) -> ResponseRequirements:
         needs_memory_recall=needs_memory_recall,
         required_tools=tuple(dict.fromkeys(required_tools)),
         urls=urls,
+        invocations=tuple(invocations),
         reason=",".join(reasons),
     )
 
@@ -241,6 +365,72 @@ def requirements_with_expected_tools(
     required = tuple(dict.fromkeys((*base.required_tools, *extra)))
     must_use = tuple(dict.fromkeys((*base.must_use_tools, *extra)))
     return replace(base, required_tools=required, must_use_tools=must_use)
+
+
+def build_tool_obligations(
+    *,
+    run_id: str,
+    requirements: ResponseRequirements,
+) -> tuple[ToolObligation, ...]:
+    """Create stable concrete evidence obligations for an enabled turn."""
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, f"bimemo-agent-turn:{run_id}")
+    obligations: list[ToolObligation] = []
+    ordinal = 0
+
+    def append(
+        tool_name: str,
+        *,
+        source: str,
+        evidence_key: str,
+        argument_predicate: dict[str, object] | None = None,
+    ) -> None:
+        nonlocal ordinal
+        ordinal += 1
+        obligation_id = str(
+            uuid.uuid5(
+                namespace,
+                f"{ordinal}:{tool_name}:{evidence_key}",
+            )
+        )
+        obligations.append(
+            ToolObligation(
+                run_id=run_id,
+                obligation_id=obligation_id,
+                required_tool=tool_name,
+                source=source,
+                evidence_key=evidence_key,
+                argument_predicate=argument_predicate,
+            )
+        )
+
+    for tool_name in requirements.required_tools:
+        if tool_name == "http_fetch" and requirements.urls:
+            continue
+        append(
+            tool_name,
+            source="explicit" if tool_name in requirements.must_use_tools else "route",
+            evidence_key=f"tool:{tool_name}",
+        )
+    for index, url in enumerate(requirements.urls, start=1):
+        append(
+            "http_fetch",
+            source="url",
+            evidence_key=f"url:{index}:{url}",
+            argument_predicate={"url": url},
+        )
+    hinted_tools: list[tuple[bool, str, str]] = [
+        (requirements.needs_file_context, "file_read", "file-context"),
+        (requirements.needs_memory_recall, "memory_recall", "memory-recall"),
+    ]
+    existing = {(item.required_tool, item.evidence_key) for item in obligations}
+    for enabled, tool_name, evidence_key in hinted_tools:
+        if enabled and (tool_name, evidence_key) not in existing:
+            append(
+                tool_name,
+                source="route-hint",
+                evidence_key=evidence_key,
+            )
+    return tuple(obligations)
 
 
 def _extract_urls(message: str) -> list[str]:
@@ -280,6 +470,8 @@ def validate_final_answer(
     structured_content: StructuredAssistantContent | None,
     requirements: ResponseRequirements,
     satisfaction: RequirementSatisfaction,
+    obligations: tuple[ToolObligation, ...] | None = None,
+    binds: tuple[SatisfactionBind, ...] = (),
 ) -> FinalAnswerDecision:
     """Decide whether one model output is acceptable as final."""
     answer_text = _answer_text(raw_final_text, structured_content).strip()
@@ -295,6 +487,23 @@ def validate_final_answer(
             reason="status-only-answer",
             requires_recovery=True,
         )
+    if obligations is not None:
+        bound_obligation_ids = {bind.obligation_id for bind in binds}
+        missing_obligations = [
+            obligation.obligation_id
+            for obligation in obligations
+            if obligation.status is not ObligationStatus.SATISFIED
+            or obligation.obligation_id not in bound_obligation_ids
+        ]
+        if missing_obligations:
+            return FinalAnswerDecision(
+                accepted=False,
+                reason=(
+                    f"missing-required-obligations:{','.join(missing_obligations)}"
+                ),
+                requires_recovery=True,
+            )
+        return FinalAnswerDecision(accepted=True, reason="accepted")
     missing_tools = [
         tool
         for tool in requirements.required_tools
@@ -306,6 +515,29 @@ def validate_final_answer(
             accepted=False,
             reason=f"missing-required-tools:{','.join(missing_tools)}",
             requires_recovery=True,
+        )
+    failed_tools = [
+        tool
+        for tool in requirements.required_tools
+        if tool in satisfaction.failed_tools
+    ]
+    if failed_tools:
+        return FinalAnswerDecision(
+            accepted=False,
+            reason=f"failed-required-tools:{','.join(failed_tools)}",
+            requires_recovery=False,
+        )
+    incomplete_invocations = [
+        invocation
+        for invocation in satisfaction.invocations
+        if invocation.status is not RequirementStatus.SATISFIED
+    ]
+    if incomplete_invocations:
+        keys = ",".join(invocation.key for invocation in incomplete_invocations)
+        return FinalAnswerDecision(
+            accepted=False,
+            reason=f"incomplete-required-invocations:{keys}",
+            requires_recovery=False,
         )
     if requirements.needs_current_data and satisfaction.missing_current_data_targets:
         normalized_answer = " ".join(answer_text.casefold().split())

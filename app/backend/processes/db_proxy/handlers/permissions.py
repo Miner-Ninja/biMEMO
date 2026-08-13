@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +20,7 @@ from backend.security.runtime_schema import prune_runtime_state
 from ..common import OperationHandler, validate_params
 from ..params import (
     AddProjectRootParams,
+    AuthorizeAgentInvocationParams,
     CompletePendingActionParams,
     CreateAgentRunEventParams,
     CreateAgentRunParams,
@@ -35,6 +38,7 @@ from ..params import (
     ListPendingActionsParams,
     ListProjectRootsParams,
     LookupCapabilityGrantParams,
+    ProjectAgentTurnEventParams,
     ProjectRootIdParams,
     PruneRuntimeStateParams,
     RenameProjectRootParams,
@@ -50,6 +54,14 @@ _RUN_TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed", "stopped
 def _new_id() -> str:
     """Return a new stable row identifier."""
     return str(uuid.uuid4())
+
+
+def _begin(db: DatabaseManager) -> None:
+    db.execute("BEGIN IMMEDIATE")
+
+
+def _rollback(db: DatabaseManager) -> None:
+    db.execute("ROLLBACK")
 
 
 def _project_root_record(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -72,10 +84,22 @@ def _grant_record(row: tuple[Any, ...]) -> dict[str, Any]:
         "capability": row[3],
         "decision": row[4],
         "channel": row[5],
-        "expires_at": row[6],
-        "created_at": row[7],
-        "updated_at": row[8],
+        "scope_json": json.loads(row[6]),
+        "scope_hash": row[7],
+        "policy_revision": row[8],
+        "origin_confirmation_id": row[9],
+        "revoked_at": row[10],
+        "expires_at": row[11],
+        "created_at": row[12],
+        "updated_at": row[13],
     }
+
+
+_GRANT_COLUMNS = (
+    "id, scope_type, scope_value, capability, decision, channel, scope_json, "
+    "scope_hash, policy_revision, origin_confirmation_id, revoked_at, expires_at, "
+    "created_at, updated_at"
+)
 
 
 def _json_dump(value: dict[str, Any]) -> str:
@@ -268,10 +292,15 @@ def make_create_capability_grant_handler(db: DatabaseManager) -> OperationHandle
         grant_id = _new_id()
         db.execute(
             "INSERT INTO capability_grants "
-            "(id, scope_type, scope_value, capability, decision, channel, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "(id, scope_type, scope_value, capability, decision, channel, scope_json, "
+            "scope_hash, policy_revision, origin_confirmation_id, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(scope_type, scope_value, capability, channel) DO UPDATE SET "
-            "decision = excluded.decision, expires_at = excluded.expires_at, "
+            "decision = excluded.decision, scope_json = excluded.scope_json, "
+            "scope_hash = excluded.scope_hash, "
+            "policy_revision = excluded.policy_revision, "
+            "origin_confirmation_id = excluded.origin_confirmation_id, "
+            "revoked_at = NULL, expires_at = excluded.expires_at, "
             "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')",
             (
                 grant_id,
@@ -280,13 +309,16 @@ def make_create_capability_grant_handler(db: DatabaseManager) -> OperationHandle
                 p.capability,
                 p.decision,
                 p.channel,
+                json.dumps(p.scope_json, ensure_ascii=False, sort_keys=True),
+                p.scope_hash,
+                p.policy_revision,
+                p.origin_confirmation_id,
                 p.expires_at,
             ),
         )
         db.commit()
         row = db.execute(
-            "SELECT id, scope_type, scope_value, capability, decision, channel, "
-            "expires_at, created_at, updated_at FROM capability_grants "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "
             "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
             "AND channel = ?",
             (p.scope_type, p.scope_value, p.capability, p.channel),
@@ -311,8 +343,7 @@ def make_list_capability_grants_handler(db: DatabaseManager) -> OperationHandler
             values.append(value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = db.execute(
-            "SELECT id, scope_type, scope_value, capability, decision, channel, "
-            f"expires_at, created_at, updated_at FROM capability_grants {where} "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants {where} "
             "ORDER BY created_at DESC",
             tuple(values),
         ).fetchall()
@@ -327,17 +358,195 @@ def make_lookup_capability_grant_handler(db: DatabaseManager) -> OperationHandle
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, LookupCapabilityGrantParams)
         row = db.execute(
-            "SELECT id, scope_type, scope_value, capability, decision, channel, "
-            "expires_at, created_at, updated_at FROM capability_grants "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "
             "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
-            "AND channel IN (?, '') "
+            "AND channel = ? "
             "AND (expires_at IS NULL OR expires_at > "
             "strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
-            "ORDER BY CASE WHEN channel = ? THEN 0 ELSE 1 END, created_at DESC "
+            "AND revoked_at IS NULL AND scope_hash = ? AND policy_revision = ? "
+            "ORDER BY created_at DESC "
             "LIMIT 1",
-            (p.scope_type, p.scope_value, p.capability, p.channel, p.channel),
+            (
+                p.scope_type,
+                p.scope_value,
+                p.capability,
+                p.channel,
+                p.scope_hash,
+                p.policy_revision,
+            ),
         ).fetchone()
         return {"grant": _grant_record(row) if row else None}
+
+    return handle
+
+
+def make_authorize_agent_invocation_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Atomically validate/create a scoped grant and claim an invocation."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, AuthorizeAgentInvocationParams)
+        try:
+            _begin(db)
+            invocation = db.execute(
+                "SELECT i.status, i.claim_generation, i.idempotency_key, "
+                "i.tool_name, t.conversation_id, t.terminal_outcome, t.channel "
+                "FROM agent_tool_invocations i JOIN agent_turns t "
+                "ON t.id = i.turn_id WHERE i.id = ? AND i.turn_id = ?",
+                (p.invocation_id, p.turn_id),
+            ).fetchone()
+            if invocation is None:
+                raise ValueError("unknown invocation")
+            if invocation[3] != p.capability:
+                raise PermissionError("grant capability does not match invocation")
+            if invocation[5] not in (None, "paused"):
+                raise RuntimeError("terminal turn cannot dispatch another invocation")
+            canonical_scope = json.dumps(
+                p.scope_json,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            canonical_hash = hashlib.sha256(
+                canonical_scope.encode("utf-8")
+            ).hexdigest()
+            if canonical_hash != p.scope_hash:
+                raise PermissionError("grant scope hash does not match scope payload")
+            if p.scope_json.get("conversation_id") != invocation[4]:
+                raise PermissionError("grant belongs to another conversation")
+            if p.channel != invocation[6]:
+                raise PermissionError("grant channel does not match invocation")
+            if p.scope_type == "conversation_capability":
+                if p.scope_value != invocation[4]:
+                    raise PermissionError("conversation grant scope is invalid")
+            elif not p.scope_value.startswith(f"{invocation[4]}:"):
+                raise PermissionError("scoped grant belongs to another conversation")
+            if invocation[0] == "executing" and invocation[2] == p.idempotency_key:
+                db.commit()
+                return {
+                    "claimed": False,
+                    "status": "executing",
+                    "claim_generation": invocation[1],
+                }
+            if invocation[0] not in p.expected_statuses:
+                raise RuntimeError(
+                    f"invocation cannot be claimed from {invocation[0]}"
+                )
+
+            grant_id: str | None = None
+            if p.confirmation_id is not None:
+                confirmation = db.execute(
+                    "SELECT status, invocation_id, expires_at, "
+                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+                    "FROM agent_confirmations WHERE id = ? AND turn_id = ?",
+                    (p.confirmation_id, p.turn_id),
+                ).fetchone()
+                if confirmation is None or confirmation[1] != p.invocation_id:
+                    raise PermissionError("confirmation does not match invocation")
+                if confirmation[0] != "pending":
+                    raise RuntimeError("confirmation is no longer pending")
+                if str(confirmation[2]) <= str(confirmation[3]):
+                    raise RuntimeError("confirmation expired before authorization")
+                db.execute(
+                    "UPDATE agent_confirmations SET status = 'approved', decided_at = "
+                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
+                    (p.confirmation_id,),
+                )
+                if p.create_reusable_grant:
+                    if p.grant_expires_at is None:
+                        raise ValueError("reusable grant requires an expiration")
+                    try:
+                        grant_expiry = datetime.fromisoformat(p.grant_expires_at)
+                    except ValueError as exc:
+                        raise ValueError(
+                            "reusable grant expiration is invalid"
+                        ) from exc
+                    if grant_expiry.tzinfo is None or grant_expiry <= datetime.now(UTC):
+                        raise ValueError(
+                            "reusable grant expiration must be in the future"
+                        )
+                    canonical_grant_expiry = grant_expiry.astimezone(UTC).isoformat()
+                    grant_id = _new_id()
+                    db.execute(
+                        "INSERT INTO capability_grants "
+                        "(id, scope_type, scope_value, capability, decision, channel, "
+                        "scope_json, scope_hash, policy_revision, "
+                        "origin_confirmation_id, expires_at) "
+                        "VALUES (?, ?, ?, ?, 'allow', ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(scope_type, scope_value, capability, channel) "
+                        "DO UPDATE SET decision = 'allow', "
+                        "scope_json = excluded.scope_json, "
+                        "scope_hash = excluded.scope_hash, "
+                        "policy_revision = excluded.policy_revision, "
+                        "origin_confirmation_id = excluded.origin_confirmation_id, "
+                        "expires_at = excluded.expires_at, "
+                        "revoked_at = NULL, updated_at = "
+                        "strftime('%Y-%m-%dT%H:%M:%f', 'now')",
+                        (
+                            grant_id,
+                            p.scope_type,
+                            p.scope_value,
+                            p.capability,
+                            p.channel,
+                            json.dumps(
+                                p.scope_json,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                            p.scope_hash,
+                            p.policy_revision,
+                            p.confirmation_id,
+                            canonical_grant_expiry,
+                        ),
+                    )
+            else:
+                grant = db.execute(
+                    "SELECT id FROM capability_grants WHERE scope_type = ? "
+                    "AND scope_value = ? AND capability = ? AND channel = ? "
+                    "AND decision = 'allow' AND revoked_at IS NULL "
+                    "AND scope_hash = ? AND policy_revision = ? "
+                    "AND expires_at IS NOT NULL AND expires_at > "
+                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (
+                        p.scope_type,
+                        p.scope_value,
+                        p.capability,
+                        p.channel,
+                        p.scope_hash,
+                        p.policy_revision,
+                    ),
+                ).fetchone()
+                if grant is None:
+                    raise PermissionError("no active compatible capability grant")
+                grant_id = str(grant[0])
+
+            generation = int(invocation[1]) + 1
+            db.execute(
+                "UPDATE agent_tool_invocations SET status = 'executing', "
+                "claim_generation = ?, idempotency_key = ?, updated_at = "
+                "strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ? AND turn_id = ?",
+                (generation, p.idempotency_key, p.invocation_id, p.turn_id),
+            )
+            db.execute(
+                "UPDATE agent_turns SET status = 'tool_execution', "
+                "terminal_outcome = NULL, updated_at = "
+                "strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
+                (p.turn_id,),
+            )
+            db.commit()
+        except Exception:
+            _rollback(db)
+            raise
+        return {
+            "claimed": True,
+            "status": "executing",
+            "claim_generation": generation,
+            "grant_id": grant_id,
+        }
 
     return handle
 
@@ -347,7 +556,13 @@ def make_revoke_capability_grant_handler(db: DatabaseManager) -> OperationHandle
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, RevokeCapabilityGrantParams)
-        cursor = db.execute("DELETE FROM capability_grants WHERE id = ?", (p.id,))
+        cursor = db.execute(
+            "UPDATE capability_grants SET revoked_at = "
+            "strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+            "WHERE id = ? AND revoked_at IS NULL",
+            (p.id,),
+        )
         db.commit()
         return {"revoked": cursor.rowcount > 0}
 
@@ -459,6 +674,38 @@ def make_create_agent_run_event_handler(db: DatabaseManager) -> OperationHandler
             (event_id,),
         ).fetchone()
         return {"event": _run_event_record(row)}
+
+    return handle
+
+
+def make_project_agent_turn_event_handler(db: DatabaseManager) -> OperationHandler:
+    """Create the idempotent runtime projection write handler."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, ProjectAgentTurnEventParams)
+        db.execute(
+            "INSERT OR IGNORE INTO agent_runs "
+            "(id, conversation_id, session_id, channel, status, current_step, "
+            "request_id, resume_payload) VALUES (?, ?, ?, ?, 'projection', "
+            "'core_projection', '', '{}')",
+            (p.turn_id, p.conversation_id, p.session_id, p.channel),
+        )
+        cursor = db.execute(
+            "INSERT OR IGNORE INTO agent_run_events "
+            "(id, run_id, request_id, conversation_id, sequence, event_type, "
+            "payload_json, created_at) VALUES (?, ?, '', ?, ?, ?, ?, ?)",
+            (
+                p.event_id,
+                p.turn_id,
+                p.conversation_id,
+                p.sequence,
+                p.event_type,
+                _json_dump(p.payload),
+                p.created_at,
+            ),
+        )
+        db.commit()
+        return {"projected": cursor.rowcount == 1}
 
     return handle
 

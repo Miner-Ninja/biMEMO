@@ -65,6 +65,7 @@ const ru = {
     allow: "Разрешить",
     approvalRequired: "Требуется подтверждение",
     approvalRequiredHint: "Ассистент запрашивает разрешение на выполнение действия",
+    toolPermissionPrompt: "Разрешить {{tools}} для этого чата? Ответьте да или нет.",
     approve: "Одобрить",
     approved: "Одобрено",
     askAboutData: "Задайте вопрос о ваших данных...",

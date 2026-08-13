@@ -511,6 +511,7 @@ def _db_proxy_target(
                 backup_databases,
                 settings.database_path,
                 core_db,
+                registry,
             )
         )
 

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
+    ClaimChatBridgeFinalizationParams,
+    CompleteChatBridgeFinalizationParams,
     CreateChatBridgeLinkParams,
     CreateChatBridgeMessageLinkParams,
     DisableChatBridgeLinkParams,
@@ -13,6 +15,7 @@ from ..params import (
     GetChatBridgeForConversationParams,
     GetChatBridgeLinkParams,
     GetChatBridgeMessageLinkByExternalMessageParams,
+    GetChatBridgeMessageLinkByFinalizationParams,
     GetChatBridgeMessageLinkByMessageIdParams,
     ListChatBridgeLinksParams,
     ListChatBridgeMessageLinksParams,
@@ -32,7 +35,7 @@ SELECT_CHAT_BRIDGE_LINK_COLUMNS_SQL = (
 )
 SELECT_CHAT_BRIDGE_MESSAGE_LINK_COLUMNS_SQL = (
     "SELECT id, bridge_link_id, message_id, external_message_id, "
-    "direction, created_at "
+    "direction, finalization_id, created_at "
     "FROM chat_bridge_message_links"
 )
 
@@ -70,7 +73,8 @@ def _bridge_message_link_from_row(row: tuple[Any, ...]) -> dict[str, object]:
         "message_id": row[2],
         "external_message_id": row[3],
         "direction": row[4],
-        "created_at": row[5],
+        "finalization_id": row[5],
+        "created_at": row[6],
     }
 
 
@@ -319,14 +323,15 @@ def make_create_chat_bridge_message_link_handler(
         mapping_id = str(uuid.uuid4())
         db.execute(
             "INSERT INTO chat_bridge_message_links ("
-            "id, bridge_link_id, message_id, external_message_id, direction"
-            ") VALUES (?, ?, ?, ?, ?)",
+            "id, bridge_link_id, message_id, external_message_id, direction, "
+            "finalization_id) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 mapping_id,
                 p.bridge_link_id,
                 p.message_id,
                 p.external_message_id,
                 p.direction,
+                p.finalization_id,
             ),
         )
         db.commit()
@@ -335,6 +340,90 @@ def make_create_chat_bridge_message_link_handler(
             (mapping_id,),
         ).fetchone()
         return {"chat_bridge_message_link": _bridge_message_link_from_row(row)}
+
+    return handle
+
+
+def make_get_chat_bridge_message_link_by_finalization_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Create handler for durable bridge finalization deduplication."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, GetChatBridgeMessageLinkByFinalizationParams)
+        row = db.execute(
+            f"{SELECT_CHAT_BRIDGE_MESSAGE_LINK_COLUMNS_SQL} "
+            "WHERE bridge_link_id = ? AND finalization_id = ? LIMIT 1",
+            (p.bridge_link_id, p.finalization_id),
+        ).fetchone()
+        return _chat_bridge_message_link_result(row)
+
+    return handle
+
+
+def make_claim_chat_bridge_finalization_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Durably claim one finalization before any external side effect."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, ClaimChatBridgeFinalizationParams)
+        mapping_id = str(uuid.uuid4())
+        cursor = db.execute(
+            "INSERT OR IGNORE INTO chat_bridge_message_links "
+            "(id, bridge_link_id, message_id, external_message_id, direction, "
+            "finalization_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                mapping_id,
+                p.bridge_link_id,
+                p.message_id,
+                f"pending:{p.finalization_id}",
+                p.direction,
+                p.finalization_id,
+            ),
+        )
+        db.commit()
+        row = db.execute(
+            f"{SELECT_CHAT_BRIDGE_MESSAGE_LINK_COLUMNS_SQL} "
+            "WHERE bridge_link_id = ? AND finalization_id = ? LIMIT 1",
+            (p.bridge_link_id, p.finalization_id),
+        ).fetchone()
+        return {
+            "claimed": cursor.rowcount == 1,
+            "chat_bridge_message_link": _bridge_message_link_from_row(row),
+        }
+
+    return handle
+
+
+def make_complete_chat_bridge_finalization_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Complete one already claimed finalization delivery mapping."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, CompleteChatBridgeFinalizationParams)
+        cursor = db.execute(
+            "UPDATE chat_bridge_message_links SET external_message_id = ? "
+            "WHERE bridge_link_id = ? AND finalization_id = ? "
+            "AND external_message_id = ?",
+            (
+                p.external_message_id,
+                p.bridge_link_id,
+                p.finalization_id,
+                f"pending:{p.finalization_id}",
+            ),
+        )
+        db.commit()
+        row = db.execute(
+            f"{SELECT_CHAT_BRIDGE_MESSAGE_LINK_COLUMNS_SQL} "
+            "WHERE bridge_link_id = ? AND finalization_id = ? LIMIT 1",
+            (p.bridge_link_id, p.finalization_id),
+        ).fetchone()
+        return {
+            "completed": cursor.rowcount == 1,
+            "chat_bridge_message_link": _bridge_message_link_from_row(row),
+        }
 
     return handle
 

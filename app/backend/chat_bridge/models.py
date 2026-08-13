@@ -216,6 +216,7 @@ class ChatBridgeMessageLink:
     external_message_id: str
     direction: BridgeMessageDirection
     created_at: str
+    finalization_id: str = ""
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> ChatBridgeMessageLink:
@@ -226,6 +227,7 @@ class ChatBridgeMessageLink:
             message_id=_payload_string(payload, "message_id"),
             external_message_id=_payload_string(payload, "external_message_id"),
             direction=_payload_enum(payload, "direction", BridgeMessageDirection),
+            finalization_id=_payload_string(payload, "finalization_id"),
             created_at=_payload_string(payload, "created_at"),
         )
 

@@ -72,8 +72,7 @@ class ExtractionAttemptTracker:
         return [
             record
             for record in records
-            if self._attempts.get(self._record_id(record), 0)
-            < self.max_attempts
+            if self._attempts.get(self._record_id(record), 0) < self.max_attempts
         ]
 
     def register_batch(self, records: list[dict]) -> None:
@@ -411,7 +410,6 @@ async def run_dialog_recorder_loop(
     except asyncio.CancelledError:
         logger.info("Dialog Recorder background loop cancelled")
         raise
-
 
 
 async def run_graph_extractor_loop(

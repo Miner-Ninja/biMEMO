@@ -25,6 +25,11 @@ def _set_test_env(monkeypatch):
         "BIMEMO_PORT": "8000",
         "BIMEMO_LLM_RESPONSE_FORMAT": "text",
         "BIMEMO_LLM_RESPONSE_STREAM": "false",
+        "BIMEMO_STRUCTURED_FINALIZATION_ENABLED": "false",
+        "BIMEMO_LLM_NATIVE_TOOLS_SUPPORT": "unknown",
+        "BIMEMO_LLM_EXACT_NAMED_CHOICE_SUPPORT": "unknown",
+        "BIMEMO_LLM_REQUIRED_NATIVE_DECISION_SUPPORT": "unknown",
+        "BIMEMO_LLM_CUSTOM_SCHEMA_SUPPORT": "unknown",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)

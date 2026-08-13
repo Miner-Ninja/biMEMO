@@ -1,10 +1,12 @@
 """Tests for provider-neutral chat bridge service and Discord provider."""
 
+import asyncio
 import json
 import types
 
 import httpx
 import pytest
+
 from backend.chat_bridge.models import (
     BridgeDeliveryMode,
     BridgeMessageDirection,
@@ -38,6 +40,9 @@ class FakeAdminClient:
         self._links_by_target: dict[tuple[str, str, str], dict[str, object]] = {}
         self._message_links_by_external: dict[tuple[str, str], dict[str, object]] = {}
         self._message_links_by_message_id: dict[tuple[str, str], dict[str, object]] = {}
+        self._message_links_by_finalization: dict[
+            tuple[str, str], dict[str, object]
+        ] = {}
         self.saved_messages: list[dict[str, object]] = []
         self.messages: list[dict[str, object]] = []
         self.profile: dict[str, str] = {}
@@ -122,6 +127,7 @@ class FakeAdminClient:
                 "message_id": str(operation_parameters["message_id"]),
                 "external_message_id": str(operation_parameters["external_message_id"]),
                 "direction": str(operation_parameters["direction"]),
+                "finalization_id": str(operation_parameters.get("finalization_id", "")),
                 "created_at": "2026-03-25T10:01:00.000",
             }
             self._message_links_by_external[
@@ -130,6 +136,10 @@ class FakeAdminClient:
             self._message_links_by_message_id[
                 (link["bridge_link_id"], link["message_id"])
             ] = link
+            if link["finalization_id"]:
+                self._message_links_by_finalization[
+                    (link["bridge_link_id"], link["finalization_id"])
+                ] = link
             return {"chat_bridge_message_link": link}
         if operation == "get_chat_bridge_message_link_by_external_message":
             key = (
@@ -147,6 +157,47 @@ class FakeAdminClient:
             return {
                 "chat_bridge_message_link": self._message_links_by_message_id.get(key)
             }
+        if operation == "get_chat_bridge_message_link_by_finalization":
+            key = (
+                str(operation_parameters["bridge_link_id"]),
+                str(operation_parameters["finalization_id"]),
+            )
+            return {
+                "chat_bridge_message_link": self._message_links_by_finalization.get(key)
+            }
+        if operation == "claim_chat_bridge_finalization":
+            key = (
+                str(operation_parameters["bridge_link_id"]),
+                str(operation_parameters["finalization_id"]),
+            )
+            existing = self._message_links_by_finalization.get(key)
+            if existing is not None:
+                return {"claimed": False, "chat_bridge_message_link": existing}
+            link = {
+                "id": f"bridge-message-{len(self._message_links_by_external) + 1}",
+                "bridge_link_id": key[0],
+                "message_id": str(operation_parameters["message_id"]),
+                "external_message_id": f"pending:{key[1]}",
+                "direction": str(operation_parameters["direction"]),
+                "finalization_id": key[1],
+                "created_at": "2026-03-25T10:01:00.000",
+            }
+            self._message_links_by_finalization[key] = link
+            self._message_links_by_message_id[(key[0], link["message_id"])] = link
+            return {"claimed": True, "chat_bridge_message_link": link}
+        if operation == "complete_chat_bridge_finalization":
+            key = (
+                str(operation_parameters["bridge_link_id"]),
+                str(operation_parameters["finalization_id"]),
+            )
+            link = self._message_links_by_finalization[key]
+            link["external_message_id"] = str(
+                operation_parameters["external_message_id"]
+            )
+            self._message_links_by_external[(key[0], link["external_message_id"])] = (
+                link
+            )
+            return {"completed": True, "chat_bridge_message_link": link}
         if operation == "save_message":
             payload = dict(operation_parameters)
             self.saved_messages.append(payload)
@@ -384,6 +435,109 @@ class TestChatBridgeService:
                 ),
             )
         ]
+
+    @pytest.mark.asyncio
+    async def test_sync_outbound_deduplicates_durable_finalization_id(self) -> None:
+        """A replayed final outcome does not create a second bridge message."""
+        admin_client = FakeAdminClient()
+        provider = FakeProvider()
+        service = ChatBridgeService(
+            admin_client=admin_client,
+            providers={BridgeProvider.DISCORD: provider},
+        )
+        await service.create_bridge(
+            conversation_id="conversation-1",
+            provider=BridgeProvider.DISCORD,
+            created_by="admin-user",
+        )
+
+        first = await service.sync_outbound_message(
+            conversation_id="conversation-1",
+            message_id="assistant-1",
+            role="assistant",
+            content="Done.",
+            finalization_id="final-1",
+        )
+        replay = await service.sync_outbound_message(
+            conversation_id="conversation-1",
+            message_id="assistant-replay",
+            role="assistant",
+            content="Done.",
+            finalization_id="final-1",
+        )
+
+        assert replay == first
+        assert len(provider.sent_messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_finalization_delivery_claims_before_send(self) -> None:
+        """Concurrent replay performs one external provider side effect."""
+        admin_client = FakeAdminClient()
+        provider = FakeProvider()
+        service = ChatBridgeService(
+            admin_client=admin_client,
+            providers={BridgeProvider.DISCORD: provider},
+        )
+        await service.create_bridge(
+            conversation_id="conversation-1",
+            provider=BridgeProvider.DISCORD,
+            created_by="admin-user",
+        )
+
+        results = await asyncio.gather(
+            service.sync_outbound_message(
+                conversation_id="conversation-1",
+                message_id="assistant-1",
+                role="assistant",
+                content="Done.",
+                finalization_id="final-race",
+            ),
+            service.sync_outbound_message(
+                conversation_id="conversation-1",
+                message_id="assistant-2",
+                role="assistant",
+                content="Done.",
+                finalization_id="final-race",
+            ),
+        )
+
+        assert len(provider.sent_messages) == 1
+        assert results[0].finalization_id == results[1].finalization_id == "final-race"
+
+    @pytest.mark.asyncio
+    async def test_unknown_claim_is_not_automatically_redispatched(self) -> None:
+        """Crash-window state favors no duplicate external side effect."""
+        admin_client = FakeAdminClient()
+        provider = FakeProvider()
+        service = ChatBridgeService(
+            admin_client=admin_client,
+            providers={BridgeProvider.DISCORD: provider},
+        )
+        bridge = await service.create_bridge(
+            conversation_id="conversation-1",
+            provider=BridgeProvider.DISCORD,
+            created_by="admin-user",
+        )
+        await admin_client.send_operation(
+            "claim_chat_bridge_finalization",
+            {
+                "bridge_link_id": bridge.id,
+                "finalization_id": "final-unknown",
+                "message_id": "assistant-1",
+                "direction": "outbound",
+            },
+        )
+
+        result = await service.sync_outbound_message(
+            conversation_id="conversation-1",
+            message_id="assistant-1",
+            role="assistant",
+            content="Done.",
+            finalization_id="final-unknown",
+        )
+
+        assert result.external_message_id == "pending:final-unknown"
+        assert provider.sent_messages == []
 
     @pytest.mark.asyncio
     async def test_sync_inbound_message_saves_internal_message_and_mapping(

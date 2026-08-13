@@ -7,10 +7,11 @@ that exposes only predefined operations, preventing raw SQL execution
 from untrusted processes.
 """
 
+import asyncio
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
 from backend.ipc.models import DBOperation, DBResult
 
@@ -35,6 +36,19 @@ OperationHandler = Callable[
     [dict[str, Any] | None],
     Coroutine[Any, Any, dict[str, Any]],
 ]
+
+SerializedResult = TypeVar("SerializedResult")
+
+
+class TransactionResource(Protocol):
+    """Minimal transaction surface owned by the DB Proxy registry."""
+
+    @property
+    def in_transaction(self) -> bool:
+        """Return whether the resource has an open transaction."""
+
+    def rollback(self) -> None:
+        """Roll back the current transaction."""
 
 
 @dataclass
@@ -71,10 +85,51 @@ class OperationRegistry:
         )
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        transaction_resources: Iterable[TransactionResource] = (),
+    ) -> None:
         """Initialize an empty operation registry."""
         self._handlers: dict[str, OperationHandler] = {}
         self.stats = OperationStats()
+        # IPC sockets dispatch concurrently while handlers share long-lived
+        # SQLite connections. Keep each operation, including its transaction,
+        # indivisible on those connections.
+        self._dispatch_lock = asyncio.Lock()
+        self._transaction_resources = tuple(
+            {id(resource): resource for resource in transaction_resources}.values()
+        )
+
+    def _rollback_open_transactions(self) -> None:
+        """Restore every owned connection to a clean transaction boundary."""
+        for resource in self._transaction_resources:
+            if not resource.in_transaction:
+                continue
+            try:
+                resource.rollback()
+            except Exception:
+                logger.exception("Failed to roll back a DB Proxy transaction")
+
+    def _ensure_transactions_closed(self) -> None:
+        """Reject a handler that returned while retaining an open transaction."""
+        if not any(resource.in_transaction for resource in self._transaction_resources):
+            return
+        self._rollback_open_transactions()
+        raise RuntimeError("DB Proxy operation left a transaction open")
+
+    async def run_serialized(
+        self,
+        callback: Callable[[], SerializedResult],
+    ) -> SerializedResult:
+        """Run synchronous maintenance under the operation transaction guard."""
+        async with self._dispatch_lock:
+            try:
+                result = callback()
+                self._ensure_transactions_closed()
+                return result
+            except Exception:
+                self._rollback_open_transactions()
+                raise
 
     @staticmethod
     def _error_result(request_id: str, message: str) -> DBResult:
@@ -147,17 +202,20 @@ class OperationRegistry:
             return self._rejected_unknown_operation(operation)
 
         self.stats.total_operations += 1
-        try:
-            result_data = await handler(operation.parameters)
-            return self._success_result(operation.request_id, result_data)
-        except Exception as e:
-            self.stats.failed_operations += 1
-            logger.error(
-                "Operation '%s' failed: %s",
-                operation.operation,
-                e,
-            )
-            return self._error_result(operation.request_id, str(e))
+        async with self._dispatch_lock:
+            try:
+                result_data = await handler(operation.parameters)
+                self._ensure_transactions_closed()
+                return self._success_result(operation.request_id, result_data)
+            except Exception as e:
+                self._rollback_open_transactions()
+                self.stats.failed_operations += 1
+                logger.error(
+                    "Operation '%s' failed: %s",
+                    operation.operation,
+                    e,
+                )
+                return self._error_result(operation.request_id, str(e))
 
 
 class ChannelAllowlist:

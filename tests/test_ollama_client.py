@@ -743,31 +743,37 @@ class TestChat:
 
         async def handler(request):
             body = json.loads(request.content)
-            assert body["stream"] is False
+            assert body["stream"] is True
+            assert "format" not in body
             return httpx.Response(
                 200,
-                json={
-                    "model": "qwen3:8b",
-                    "message": {
-                        "role": "assistant",
-                        "content": "",
-                        "thinking": "search first",
-                        "tool_calls": [
-                            {
-                                "function": {
-                                    "name": "web_search",
-                                    "arguments": {"query": "bitcoin price"},
-                                }
-                            }
-                        ],
-                    },
-                    "prompt_eval_count": 3,
-                    "eval_count": 2,
-                    "prompt_eval_duration": 10,
-                    "eval_duration": 20,
-                    "total_duration": 30,
-                    "done": True,
-                },
+                text=(
+                    json.dumps(
+                        {
+                            "model": "qwen3:8b",
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "thinking": "search first",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "web_search",
+                                            "arguments": {"query": "bitcoin price"},
+                                        }
+                                    }
+                                ],
+                            },
+                            "prompt_eval_count": 3,
+                            "eval_count": 2,
+                            "prompt_eval_duration": 10,
+                            "eval_duration": 20,
+                            "total_duration": 30,
+                            "done": True,
+                        }
+                    )
+                    + "\n"
+                ),
             )
 
         transport = httpx.MockTransport(handler)

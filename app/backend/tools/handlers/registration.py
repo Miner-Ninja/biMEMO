@@ -72,6 +72,8 @@ def set_recall_embed_fn(embed_fn: object | None) -> None:
     """Register (or clear) the query-embedding callable used by recall."""
     global _recall_embed_fn
     _recall_embed_fn = embed_fn
+
+
 NO_RELEVANT_MEMORIES_TEXT = "No relevant memories found."
 SUMMARY_SECTION_TITLE = "Summary memory:"
 RECORDS_SECTION_TITLE = "Linked records:"

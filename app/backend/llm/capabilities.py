@@ -34,6 +34,14 @@ DETECTION_ERROR_TEMPLATE = (
 )
 
 
+class CapabilitySupport(StrEnum):
+    """Whether a model supports a specific capability."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
+
+
 class LlmResponseFormat(StrEnum):
     """Supported transport formats for LLM responses."""
 
@@ -55,6 +63,13 @@ class ModelCapabilities:
             ``"env-override"``, ``"ui-override"``, ``"ollama:/api/ps"``.
         llm_response_format: Preferred response transport mode for this
             provider/model pair. Defaults to plain text.
+        native_tools: Whether the model natively supports tool calls.
+        exact_named_choice: Whether the model supports exact named choice
+            (structured output with a named choice field).
+        required_native_decision: Whether the model/provider honors a request that
+            requires one native function decision from the exposed schemas.
+        non_streaming_custom_schema: Whether the model supports a custom
+            JSON schema in non-streaming mode.
         detected_at: Monotonic timestamp captured at construction, used for
             diagnostics. Defaults to ``time.monotonic()`` at instantiation.
     """
@@ -65,6 +80,10 @@ class ModelCapabilities:
     source: str
     llm_response_format: LlmResponseFormat = LlmResponseFormat.TEXT
     detected_at: float = field(default_factory=time.monotonic)
+    native_tools: CapabilitySupport = CapabilitySupport.UNKNOWN
+    exact_named_choice: CapabilitySupport = CapabilitySupport.UNKNOWN
+    required_native_decision: CapabilitySupport = CapabilitySupport.UNKNOWN
+    non_streaming_custom_schema: CapabilitySupport = CapabilitySupport.UNKNOWN
 
     def __post_init__(self) -> None:
         """Validate fields and reject malformed inputs."""
@@ -84,6 +103,30 @@ class ModelCapabilities:
                     value=self.llm_response_format,
                 )
             )
+        if not isinstance(self.native_tools, CapabilitySupport):
+            raise ValueError(
+                "native_tools must be a CapabilitySupport value, got "
+                f"{self.native_tools!r}"
+            )
+        if not isinstance(self.exact_named_choice, CapabilitySupport):
+            raise ValueError(
+                "exact_named_choice must be a CapabilitySupport value, got "
+                f"{self.exact_named_choice!r}"
+            )
+        if not isinstance(self.required_native_decision, CapabilitySupport):
+            raise ValueError(
+                "required_native_decision must be a CapabilitySupport value, got "
+                f"{self.required_native_decision!r}"
+            )
+        if not isinstance(self.non_streaming_custom_schema, CapabilitySupport):
+            raise ValueError(
+                "non_streaming_custom_schema must be a CapabilitySupport value, got "
+                f"{self.non_streaming_custom_schema!r}"
+            )
+
+    def matches_identity(self, provider: str, model: str) -> bool:
+        """Return whether this value belongs to the requested cache identity."""
+        return self.provider == provider and self.model == model
 
 
 class ContextDetectionError(Exception):

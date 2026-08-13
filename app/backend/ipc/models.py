@@ -13,7 +13,7 @@ from enum import StrEnum
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 if TYPE_CHECKING:
@@ -50,6 +50,21 @@ class ChatRequest(IPCModel):
     attached_files: list[str] = []
     voice: str | None = None
     forced_tools: list[str] = []
+    pending_input_id: str = ""
+    pending_input_version: int | None = None
+    pending_input_value: Any | None = None
+
+    @model_validator(mode="after")
+    def validate_pending_input_reply(self) -> ChatRequest:
+        """Require a complete same-run identity for pending-input replies."""
+        supplied = (
+            bool(self.pending_input_id),
+            self.pending_input_version is not None,
+            self.pending_input_value is not None,
+        )
+        if any(supplied) and (not all(supplied) or not self.run_id):
+            raise ValueError("pending input reply requires run, id, version, and value")
+        return self
 
 
 class StopRequest(IPCModel):
@@ -189,6 +204,9 @@ class StreamEventType(StrEnum):
     TOOL_STATUS = "tool_status"
     CONFIRMATION = "confirmation"
     FINAL = "final"
+    PAUSED = "paused"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
     ERROR = "error"
     DONE = "done"
     MEMORY_EVENT = "memory_event"
@@ -209,6 +227,41 @@ class StructuredAssistantContent(IPCModel):
     suggestions: list[str] = []
 
 
+class TurnOutcomeKind(StrEnum):
+    """Closed typed result set for one chat turn."""
+
+    FINAL = "final"
+    PAUSED = "paused"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PauseReason(StrEnum):
+    """Typed reason why a run is paused without a final answer."""
+
+    CONFIRMATION = "confirmation"
+    MISSING_INPUT = "missing_input"
+
+
+class PendingInput(IPCModel):
+    """One typed missing value required to resume a run."""
+
+    pending_input_id: str
+    question: str
+    expected_input_schema: dict[str, Any]
+    expires_at: str
+    cas_version: int
+    suggestions: list[str] = Field(default_factory=list, max_length=3)
+
+
+class TurnError(IPCModel):
+    """User-safe terminal failure transported over IPC."""
+
+    code: str
+    message: str
+    retryable: bool = False
+
+
 class ChatResponse(IPCModel):
     """Final response from orchestrator after completing the agentic loop.
 
@@ -223,16 +276,69 @@ class ChatResponse(IPCModel):
     """
 
     request_id: str
-    structured_content: StructuredAssistantContent
+    structured_content: StructuredAssistantContent | None = None
     input_filtered: bool = False
     output_filtered: bool = False
     pending_confirmations: list[dict[str, Any]] | None = None
+    pause_reason: PauseReason | None = None
+    pending_input: PendingInput | None = None
     used_tools: list[dict[str, Any]] | None = None
     retrieved_memories: list[dict[str, str]] | None = None
     retrieved_messages: list[dict[str, str]] | None = None
     transcription: str | None = None
     stats: ExtendedUsage | None = None
     stream_enabled: bool = False
+    outcome_kind: TurnOutcomeKind | None = None
+    run_id: str = ""
+    finalization_id: str | None = None
+    error: TurnError | None = None
+
+    @model_validator(mode="after")
+    def validate_typed_outcome(self) -> ChatResponse:
+        """Reject incompatible fields when the new lifecycle is selected."""
+        if self.outcome_kind is None:
+            return self
+        if not self.run_id:
+            raise ValueError("typed outcome requires run_id")
+        if self.outcome_kind is TurnOutcomeKind.FINAL:
+            if self.finalization_id is None or self.structured_content is None:
+                raise ValueError(
+                    "FINAL requires finalization_id and structured_content"
+                )
+            if (
+                self.pending_confirmations
+                or self.pending_input is not None
+                or self.pause_reason is not None
+                or self.error is not None
+            ):
+                raise ValueError("FINAL forbids confirmations and error")
+        elif self.outcome_kind is TurnOutcomeKind.PAUSED:
+            has_confirmations = bool(self.pending_confirmations)
+            has_input = self.pending_input is not None
+            if has_confirmations == has_input or self.pause_reason is None:
+                raise ValueError("PAUSED requires exactly one typed pending form")
+            if has_confirmations and self.pause_reason is not PauseReason.CONFIRMATION:
+                raise ValueError("confirmation pause has the wrong reason")
+            if has_input and self.pause_reason is not PauseReason.MISSING_INPUT:
+                raise ValueError("missing-input pause has the wrong reason")
+            if self.structured_content is not None or self.finalization_id is not None:
+                raise ValueError("PAUSED forbids final content and finalization_id")
+        elif self.outcome_kind is TurnOutcomeKind.FAILED:
+            if self.error is None or self.finalization_id is None:
+                raise ValueError("FAILED requires finalization_id and typed error")
+            if self.pending_confirmations or self.pending_input is not None:
+                raise ValueError("FAILED forbids pending state")
+        elif (
+            any(
+                value is not None
+                for value in (self.structured_content, self.finalization_id, self.error)
+            )
+            or self.pending_confirmations
+            or self.pending_input is not None
+            or self.pause_reason is not None
+        ):
+            raise ValueError("CANCELLED carries no final payload")
+        return self
 
 
 class StopResponse(IPCModel):
@@ -331,6 +437,7 @@ class McpAskResponse(IPCModel):
     answer: str = ""
     conversation_id: str = ""
     session_id: str = ""
+    finalization_id: str = ""
     error: str = ""
 
 

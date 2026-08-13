@@ -114,7 +114,6 @@ def _record_entry(row: tuple[object, ...]) -> dict[str, object]:
     }
 
 
-
 def _message_entry(row: tuple[object, ...]) -> dict[str, object]:
     """Build one message listing entry from a DB row."""
     return {
@@ -221,18 +220,25 @@ def make_record_rate_limit_call_handler(db: DatabaseManager) -> OperationHandler
         "called_at REAL NOT NULL"
         ")"
     )
+    db.commit()
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Record a rate-limit call timestamp."""
         p = validate_params(params, RecordRateLimitCallParams)
-        db.execute(
-            "INSERT INTO rate_limit_calls (tool_name, called_at) VALUES (?, ?)",
-            (p.tool_name, p.called_at),
-        )
-        db.execute(
-            "DELETE FROM rate_limit_calls WHERE called_at < ?",
-            (p.called_at - RATE_LIMIT_RETENTION_SECONDS,),
-        )
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "INSERT INTO rate_limit_calls (tool_name, called_at) VALUES (?, ?)",
+                (p.tool_name, p.called_at),
+            )
+            db.execute(
+                "DELETE FROM rate_limit_calls WHERE called_at < ?",
+                (p.called_at - RATE_LIMIT_RETENTION_SECONDS,),
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         return {"ok": True}
 
     return handle
@@ -392,7 +398,7 @@ def make_get_loop_heartbeats_handler(db: DatabaseManager) -> OperationHandler:
             (LOOP_HEARTBEAT_KEY_PREFIX + "%",),
         ).fetchall()
         heartbeats = {
-            row[0][len(LOOP_HEARTBEAT_KEY_PREFIX):]: (
+            row[0][len(LOOP_HEARTBEAT_KEY_PREFIX) :]: (
                 row[1].decode() if isinstance(row[1], bytes) else str(row[1])
             )
             for row in rows
@@ -497,7 +503,7 @@ def make_get_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
             return {"settings": {}}
         try:
             settings = json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             logger.warning("Stored UI settings are not valid JSON; returning empty")
             return {"settings": {}}
         if not isinstance(settings, dict):
@@ -519,9 +525,7 @@ def make_store_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
         p = validate_params(params, StoreUiSettingsParams)
         encoded = json.dumps(p.settings, ensure_ascii=False)
         if len(encoded.encode("utf-8")) > UI_SETTINGS_MAX_BYTES:
-            raise ValueError(
-                f"UI settings blob exceeds {UI_SETTINGS_MAX_BYTES} bytes"
-            )
+            raise ValueError(f"UI settings blob exceeds {UI_SETTINGS_MAX_BYTES} bytes")
         _store_metadata_value(db, "ui_settings", encoded)
         return {"ok": True}
 
@@ -641,7 +645,6 @@ def make_list_records_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-
 def make_list_messages_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for list_messages operation."""
 
@@ -704,15 +707,17 @@ def make_mcp_memory_recent_handler(db: DatabaseManager) -> OperationHandler:
         ).fetchall()
         entries = []
         for row in rows:
-            entries.append({
-                "id": row[1],
-                "table": row[0],
-                "role": row[2],
-                "content": parse_content(row[3]),
-                "conversation_id": row[4],
-                "created_at": row[5],
-                "meta": row[6],
-            })
+            entries.append(
+                {
+                    "id": row[1],
+                    "table": row[0],
+                    "role": row[2],
+                    "content": parse_content(row[3]),
+                    "conversation_id": row[4],
+                    "created_at": row[5],
+                    "meta": row[6],
+                }
+            )
         return {"entries": entries}
 
     return handle
@@ -768,20 +773,22 @@ def make_mcp_memory_get_handler(db: DatabaseManager) -> OperationHandler:
         ).fetchone()
         if row is None:
             return {"entry": None}
-        return {"entry": {
-            "id": row[0],
-            "subject_entity_id": row[1],
-            "relation": row[2],
-            "object_entity_id": row[3],
-            "object_value": row[4],
-            "assertion_text": row[5],
-            "trust_level": row[6],
-            "scope": row[7],
-            "valid_from": row[8],
-            "invalid_from": row[9],
-            "source_record_ids": row[10],
-            "created_at": row[11],
-        }}
+        return {
+            "entry": {
+                "id": row[0],
+                "subject_entity_id": row[1],
+                "relation": row[2],
+                "object_entity_id": row[3],
+                "object_value": row[4],
+                "assertion_text": row[5],
+                "trust_level": row[6],
+                "scope": row[7],
+                "valid_from": row[8],
+                "invalid_from": row[9],
+                "source_record_ids": row[10],
+                "created_at": row[11],
+            }
+        }
 
     return handle
 
@@ -837,5 +844,3 @@ def make_list_audit_log_handler(db: DatabaseManager) -> OperationHandler:
         return {"entries": [_audit_log_entry(row) for row in rows]}
 
     return handle
-
-

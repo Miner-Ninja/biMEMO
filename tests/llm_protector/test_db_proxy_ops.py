@@ -50,9 +50,9 @@ from backend.processes.db_proxy import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 105
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 68
-EXPECTED_SOCKET_B_OPERATION_COUNT = 102
+EXPECTED_SOCKET_A_OPERATION_COUNT = 133
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 69
+EXPECTED_SOCKET_B_OPERATION_COUNT = 106
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -71,6 +71,15 @@ class FakeDB:
         self.connection = sqlite3.connect(":memory:")
         self.connection.execute("PRAGMA foreign_keys = ON")
         self._init_schema()
+
+    @property
+    def in_transaction(self) -> bool:
+        """Return whether the SQLite test connection has an open transaction."""
+        return self.connection.in_transaction
+
+    def rollback(self) -> None:
+        """Roll back the current test transaction."""
+        self.connection.rollback()
 
     def _init_schema(self) -> None:
         """Create all tables used by the tested DB proxy handlers."""
@@ -340,7 +349,6 @@ class TestContextOperation:
         assert "summaries" not in result
 
 
-
 class TestAuditOperations:
     """Verify audit log writing and integrity checks."""
 
@@ -490,9 +498,7 @@ class TestUiSettingsOperations:
         store_handler = make_store_ui_settings_handler(db)
         await store_handler({"settings": {"theme": "light"}})
         with pytest.raises(ValueError, match="exceeds"):
-            await store_handler(
-                {"settings": {"command_history": ["x" * 200] * 200}}
-            )
+            await store_handler({"settings": {"command_history": ["x" * 200] * 200}})
         get_handler = make_get_ui_settings_handler(db)
         stored = await get_handler({})
         assert stored["settings"] == {"theme": "light"}
@@ -520,9 +526,7 @@ class TestListEntitiesOperation:
             "('a2', 'e1', 'prefers', 'y', 'User prefers y'), "
             "('a3', 'e2', 'states', 'z', 'Docker states z')"
         )
-        db.execute(
-            "UPDATE assertions SET invalid_from = '2026-01-01' WHERE id = 'a2'"
-        )
+        db.execute("UPDATE assertions SET invalid_from = '2026-01-01' WHERE id = 'a2'")
         handler = make_list_entities_handler(db)
         result = await handler({"limit": 10, "offset": 0})
         assert result["total"] == 2
@@ -764,7 +768,6 @@ class TestRecordQueueOperations:
         await delete_handler({"queue_ids": [queue_id]})
         listed = await list_handler({})
         assert listed["items"] == []
-
 
 
 class TestConversationOperations:

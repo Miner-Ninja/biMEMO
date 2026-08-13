@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
+from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCSocketServer
 from backend.ipc.models import (
     BridgeInboundSyncRequest,
@@ -31,6 +32,7 @@ from backend.ipc.models import (
     StreamEvent,
     StreamEventType,
     StructuredAssistantContent,
+    TurnOutcomeKind,
 )
 
 
@@ -350,10 +352,17 @@ class OrchestratorIPCServer:
         try:
             response = await self._orchestrator_fn(request)
         except asyncio.CancelledError:
-            response = ChatResponse(
-                request_id=request.request_id,
-                structured_content=StructuredAssistantContent(answer="Stopped."),
-            )
+            if get_settings().structured_finalization_enabled:
+                response = ChatResponse(
+                    request_id=request.request_id,
+                    outcome_kind=TurnOutcomeKind.CANCELLED,
+                    run_id=request.run_id,
+                )
+            else:
+                response = ChatResponse(
+                    request_id=request.request_id,
+                    structured_content=StructuredAssistantContent(answer="Stopped."),
+                )
         except Exception as error:
             logger.error("Orchestrator error: %s", error, exc_info=True)
             error_text = self._build_internal_error_text(error)

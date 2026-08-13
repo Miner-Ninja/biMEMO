@@ -29,8 +29,6 @@ def _delete_conversation_embeddings(
     )
 
 
-
-
 def delete_conversation(db: DatabaseManager, conversation_id: str) -> None:
     """Delete a conversation and all associated data.
 
@@ -48,7 +46,6 @@ def delete_conversation(db: DatabaseManager, conversation_id: str) -> None:
 
     _vacuum(db)
     logger.info("Conversation %s securely deleted", conversation_id)
-
 
 
 def _vacuum(db: DatabaseManager) -> None:

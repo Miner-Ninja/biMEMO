@@ -648,7 +648,6 @@ def make_write_summary_processing_diagnostic_handler(
     return handle
 
 
-
 def make_list_memory_route_diagnostics_handler(
     diagnostics_db: DatabaseManager,
 ) -> OperationHandler:

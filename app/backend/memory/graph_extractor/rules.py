@@ -38,9 +38,7 @@ def _same_object(
     existing_value = existing.get("object_value")
     if new_object_value is None or existing_value is None:
         return new_object_value == existing_value
-    return new_object_value.strip().casefold() == str(
-        existing_value
-    ).strip().casefold()
+    return new_object_value.strip().casefold() == str(existing_value).strip().casefold()
 
 
 def resolve_conflict_action(

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 21
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -389,11 +389,18 @@ CREATE TABLE IF NOT EXISTS chat_bridge_message_links (
     message_id TEXT NOT NULL,
     external_message_id TEXT NOT NULL,
     direction TEXT NOT NULL,
+    finalization_id TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     FOREIGN KEY (bridge_link_id) REFERENCES chat_bridge_links(id) ON DELETE CASCADE,
     UNIQUE(bridge_link_id, external_message_id),
     UNIQUE(bridge_link_id, message_id, direction)
 )
+"""
+
+CREATE_CHAT_BRIDGE_FINALIZATION_IDX = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_bridge_finalization
+ON chat_bridge_message_links(bridge_link_id, finalization_id)
+WHERE finalization_id != ''
 """
 
 # --- Index creation SQL ---
@@ -465,6 +472,11 @@ CREATE TABLE IF NOT EXISTS capability_grants (
     capability TEXT NOT NULL,
     decision TEXT NOT NULL,
     channel TEXT NOT NULL DEFAULT '',
+    scope_json TEXT NOT NULL DEFAULT '{}',
+    scope_hash TEXT NOT NULL DEFAULT '',
+    policy_revision TEXT NOT NULL DEFAULT 'legacy',
+    origin_confirmation_id TEXT,
+    revoked_at TEXT,
     expires_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
@@ -475,6 +487,231 @@ CREATE TABLE IF NOT EXISTS capability_grants (
 CREATE_CAPABILITY_GRANTS_LOOKUP_IDX = """
 CREATE INDEX IF NOT EXISTS idx_capability_grants_lookup
 ON capability_grants(scope_type, scope_value, capability, channel, expires_at)
+"""
+
+CREATE_AGENT_TURNS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_turns (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    architecture_version TEXT NOT NULL
+        CHECK (architecture_version IN ('legacy', 'structured_v1')),
+    authority_store TEXT NOT NULL CHECK (authority_store IN ('core', 'runtime')),
+    status TEXT NOT NULL DEFAULT 'prepared',
+    terminal_outcome TEXT CHECK (
+        terminal_outcome IS NULL OR
+        terminal_outcome IN ('final', 'paused', 'failed', 'cancelled')
+    ),
+    finalization_id TEXT NOT NULL UNIQUE,
+    active_time_ms INTEGER NOT NULL DEFAULT 0,
+    provider_calls INTEGER NOT NULL DEFAULT 0,
+    tool_rounds INTEGER NOT NULL DEFAULT 0,
+    enforcement_reasks INTEGER NOT NULL DEFAULT 0,
+    synthesis_attempts INTEGER NOT NULL DEFAULT 0,
+    cancellation_requested INTEGER NOT NULL DEFAULT 0,
+    terminal_error TEXT,
+    outcome_payload TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_TOOL_OBLIGATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_tool_obligations (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    required_tool TEXT NOT NULL,
+    source TEXT NOT NULL,
+    evidence_key TEXT NOT NULL DEFAULT '',
+    argument_predicate TEXT,
+    status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'satisfied', 'closed')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_TOOL_BATCHES_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_tool_batches (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    assistant_message TEXT NOT NULL,
+    transcript_snapshot TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_TOOL_INVOCATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_tool_invocations (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    tool_call_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    canonical_arguments TEXT NOT NULL,
+    canonical_args_hash TEXT NOT NULL,
+    evidence_key TEXT,
+    source TEXT NOT NULL DEFAULT 'model',
+    trust_zone TEXT,
+    status TEXT NOT NULL DEFAULT 'required' CHECK (status IN (
+        'required', 'pending_confirmation', 'executing', 'succeeded',
+        'failed', 'denied', 'expired', 'unknown'
+    )),
+    claim_generation INTEGER NOT NULL DEFAULT 0,
+    idempotency_key TEXT,
+    result_payload TEXT,
+    error TEXT,
+    confirmation_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE,
+    FOREIGN KEY (batch_id) REFERENCES agent_tool_batches(id) ON DELETE CASCADE,
+    UNIQUE(turn_id, tool_call_id)
+)
+"""
+
+CREATE_AGENT_OBLIGATION_CANDIDATES_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_obligation_candidates (
+    obligation_id TEXT NOT NULL,
+    invocation_id TEXT NOT NULL,
+    PRIMARY KEY (obligation_id, invocation_id),
+    FOREIGN KEY (obligation_id) REFERENCES agent_tool_obligations(id) ON DELETE CASCADE,
+    FOREIGN KEY (invocation_id) REFERENCES agent_tool_invocations(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_OBLIGATION_BINDS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_obligation_binds (
+    obligation_id TEXT NOT NULL,
+    invocation_id TEXT NOT NULL,
+    evidence_key TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    PRIMARY KEY (obligation_id, invocation_id),
+    UNIQUE(obligation_id),
+    FOREIGN KEY (obligation_id) REFERENCES agent_tool_obligations(id) ON DELETE CASCADE,
+    FOREIGN KEY (invocation_id) REFERENCES agent_tool_invocations(id) ON DELETE RESTRICT
+)
+"""
+
+CREATE_AGENT_CONFIRMATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_confirmations (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    invocation_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'denied', 'expired')),
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL,
+    decided_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE,
+    FOREIGN KEY (invocation_id) REFERENCES agent_tool_invocations(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_CLARIFICATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_clarifications (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    proposed_tool TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'rejected', 'expired')),
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_PENDING_INPUTS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_pending_inputs (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    suggestions TEXT NOT NULL DEFAULT '[]',
+    expected_input_schema TEXT NOT NULL,
+    transcript_snapshot TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'answered', 'expired')),
+    cas_version INTEGER NOT NULL DEFAULT 1,
+    answer_payload TEXT,
+    expires_at TEXT NOT NULL,
+    answered_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
+)
+"""
+
+CREATE_AGENT_PENDING_INPUTS_TURN_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_pending_inputs_turn
+ON agent_pending_inputs(turn_id, status, created_at)
+"""
+
+CREATE_AGENT_PENDING_INPUTS_ACTIVE_IDX = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_pending_inputs_one_active
+ON agent_pending_inputs(turn_id) WHERE status = 'pending'
+"""
+
+CREATE_AGENT_TURN_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_turn_events (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    phase TEXT NOT NULL DEFAULT '',
+    attempt INTEGER NOT NULL DEFAULT 0,
+    payload TEXT NOT NULL DEFAULT '{}',
+    projection_version INTEGER NOT NULL DEFAULT 1,
+    projected_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE,
+    UNIQUE(turn_id, sequence)
+)
+"""
+
+CREATE_AGENT_TURN_FINALIZATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_turn_finalizations (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL UNIQUE,
+    outcome_kind TEXT NOT NULL CHECK (outcome_kind IN ('final', 'failed')),
+    canonical_payload TEXT NOT NULL,
+    assistant_message_id TEXT UNIQUE,
+    record_queue_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+    FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE RESTRICT,
+    FOREIGN KEY (assistant_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
+    FOREIGN KEY (record_queue_id) REFERENCES record_queue(id) ON DELETE RESTRICT
+)
+"""
+
+CREATE_AGENT_TURNS_STATUS_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_turns_status ON agent_turns(status, updated_at)
+"""
+
+CREATE_AGENT_OBLIGATIONS_TURN_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_obligations_turn
+ON agent_tool_obligations(turn_id, status)
+"""
+
+CREATE_AGENT_INVOCATIONS_TURN_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_invocations_turn
+ON agent_tool_invocations(turn_id, status)
+"""
+
+CREATE_AGENT_CONFIRMATIONS_TURN_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_confirmations_turn
+ON agent_confirmations(turn_id, status, expires_at)
+"""
+
+CREATE_AGENT_TURN_EVENTS_PROJECTION_IDX = """
+CREATE INDEX IF NOT EXISTS idx_agent_turn_events_projection
+ON agent_turn_events(projected_at, turn_id, sequence)
 """
 
 # --- Ordered list for schema initialization ---
@@ -525,6 +762,24 @@ SCHEMA_STATEMENTS = [
     CREATE_PROJECT_ROOTS_TABLE,
     CREATE_CAPABILITY_GRANTS_TABLE,
     CREATE_CAPABILITY_GRANTS_LOOKUP_IDX,
+    CREATE_AGENT_TURNS_TABLE,
+    CREATE_AGENT_TOOL_OBLIGATIONS_TABLE,
+    CREATE_AGENT_TOOL_BATCHES_TABLE,
+    CREATE_AGENT_TOOL_INVOCATIONS_TABLE,
+    CREATE_AGENT_OBLIGATION_CANDIDATES_TABLE,
+    CREATE_AGENT_OBLIGATION_BINDS_TABLE,
+    CREATE_AGENT_CONFIRMATIONS_TABLE,
+    CREATE_AGENT_CLARIFICATIONS_TABLE,
+    CREATE_AGENT_PENDING_INPUTS_TABLE,
+    CREATE_AGENT_PENDING_INPUTS_TURN_IDX,
+    CREATE_AGENT_PENDING_INPUTS_ACTIVE_IDX,
+    CREATE_AGENT_TURN_EVENTS_TABLE,
+    CREATE_AGENT_TURN_FINALIZATIONS_TABLE,
+    CREATE_AGENT_TURNS_STATUS_IDX,
+    CREATE_AGENT_OBLIGATIONS_TURN_IDX,
+    CREATE_AGENT_INVOCATIONS_TURN_IDX,
+    CREATE_AGENT_CONFIRMATIONS_TURN_IDX,
+    CREATE_AGENT_TURN_EVENTS_PROJECTION_IDX,
 ]
 
 
@@ -674,6 +929,61 @@ def _ensure_chat_bridge_schema(
             "ALTER TABLE chat_bridge_links "
             "ADD COLUMN persona_user_id TEXT NOT NULL DEFAULT ''"
         )
+    message_columns = _table_columns(db, "chat_bridge_message_links")
+    if "finalization_id" not in message_columns:
+        db.execute(
+            "ALTER TABLE chat_bridge_message_links "
+            "ADD COLUMN finalization_id TEXT NOT NULL DEFAULT ''"
+        )
+    db.execute(CREATE_CHAT_BRIDGE_FINALIZATION_IDX)
+
+
+def _ensure_capability_grants_schema(db: DatabaseManager) -> None:
+    """Add structured permission authority fields to legacy grants."""
+    columns = _table_columns(db, "capability_grants")
+    additions = {
+        "scope_json": "TEXT NOT NULL DEFAULT '{}'",
+        "scope_hash": "TEXT NOT NULL DEFAULT ''",
+        "policy_revision": "TEXT NOT NULL DEFAULT 'legacy'",
+        "origin_confirmation_id": "TEXT",
+        "revoked_at": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            db.execute(
+                f"ALTER TABLE capability_grants ADD COLUMN {name} {declaration}"
+            )
+
+
+def _ensure_agent_pending_inputs_schema(db: DatabaseManager) -> None:
+    """Allow sequential missing-input pauses while retaining one active pause."""
+    row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'agent_pending_inputs'"
+    ).fetchone()
+    table_sql = str(row[0] or "") if row is not None else ""
+    if "turn_id TEXT NOT NULL UNIQUE" not in table_sql:
+        if "suggestions" not in _table_columns(db, "agent_pending_inputs"):
+            db.execute(
+                "ALTER TABLE agent_pending_inputs ADD COLUMN "
+                "suggestions TEXT NOT NULL DEFAULT '[]'"
+            )
+        db.execute(CREATE_AGENT_PENDING_INPUTS_TURN_IDX)
+        db.execute(CREATE_AGENT_PENDING_INPUTS_ACTIVE_IDX)
+        return
+    db.execute("ALTER TABLE agent_pending_inputs RENAME TO agent_pending_inputs_old")
+    db.execute(CREATE_AGENT_PENDING_INPUTS_TABLE)
+    db.execute(
+        "INSERT INTO agent_pending_inputs "
+        "(id, turn_id, question, expected_input_schema, transcript_snapshot, status, "
+        "cas_version, answer_payload, expires_at, answered_at, created_at, updated_at) "
+        "SELECT id, turn_id, question, expected_input_schema, transcript_snapshot, "
+        "status, cas_version, answer_payload, expires_at, answered_at, created_at, "
+        "updated_at FROM agent_pending_inputs_old"
+    )
+    db.execute("DROP TABLE agent_pending_inputs_old")
+    db.execute(CREATE_AGENT_PENDING_INPUTS_TURN_IDX)
+    db.execute(CREATE_AGENT_PENDING_INPUTS_ACTIVE_IDX)
 
 
 def _parse_content_sections(content: str) -> dict[str, str]:
@@ -797,6 +1107,8 @@ def initialize_schema(
     _ensure_summaries_removed(db)
     _ensure_file_context_schema(db)
     _ensure_chat_bridge_schema(db)
+    _ensure_capability_grants_schema(db)
+    _ensure_agent_pending_inputs_schema(db)
     _ensure_skills_schema(db)
     _migrate_reminders_to_scheduled_tasks(db)
     _ensure_scheduled_tasks_schema(db)

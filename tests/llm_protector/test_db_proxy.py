@@ -4,7 +4,11 @@ Covers operation dispatch, unknown operation rejection, allowlist
 enforcement per channel, and health check handler.
 """
 
+import asyncio
+import sqlite3
+
 import pytest
+
 from backend.ipc.db_proxy import (
     ChannelAllowlist,
     OperationNotAllowedError,
@@ -111,6 +115,78 @@ class TestOperationRegistry:
         await registry.dispatch(DBOperation(request_id="3", operation="unknown"))
         assert registry.stats.total_operations == 2
         assert registry.stats.rejected_operations == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_dispatches_are_serialized(self):
+        """Handlers cannot interleave transactions on shared DB connections."""
+        registry = OperationRegistry()
+        active = 0
+        max_active = 0
+
+        async def handler(_params):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0)
+            active -= 1
+            return {}
+
+        registry.register("op", handler)
+        results = await asyncio.gather(
+            registry.dispatch(DBOperation(request_id="1", operation="op")),
+            registry.dispatch(DBOperation(request_id="2", operation="op")),
+        )
+
+        assert [result.status for result in results] == ["success", "success"]
+        assert max_active == 1
+
+    @pytest.mark.asyncio
+    async def test_transaction_hygiene_matrix(self):
+        """Failed handlers and maintenance cannot leak a transaction."""
+
+        class TransactionResource:
+            def __init__(self) -> None:
+                self.connection = sqlite3.connect(":memory:")
+                self.connection.execute("CREATE TABLE values_table (value TEXT)")
+                self.connection.commit()
+
+            @property
+            def in_transaction(self) -> bool:
+                return self.connection.in_transaction
+
+            def rollback(self) -> None:
+                self.connection.rollback()
+
+        resource = TransactionResource()
+        registry = OperationRegistry([resource])
+
+        async def failing_handler(_params):
+            resource.connection.execute(
+                "INSERT INTO values_table (value) VALUES ('handler')"
+            )
+            raise RuntimeError("handler failed")
+
+        registry.register("failing", failing_handler)
+        result = await registry.dispatch(
+            DBOperation(request_id="failure", operation="failing")
+        )
+
+        assert result.status == "error"
+        assert resource.in_transaction is False
+
+        def failing_maintenance() -> None:
+            resource.connection.execute(
+                "INSERT INTO values_table (value) VALUES ('maintenance')"
+            )
+            raise RuntimeError("maintenance failed")
+
+        with pytest.raises(RuntimeError, match="maintenance failed"):
+            await registry.run_serialized(failing_maintenance)
+
+        assert resource.in_transaction is False
+        assert resource.connection.execute(
+            "SELECT COUNT(*) FROM values_table"
+        ).fetchone() == (0,)
 
 
 class TestChannelAllowlist:

@@ -4,9 +4,9 @@ Each model validates the parameters dict from a DBOperation message.
 All models use ``extra="forbid"`` to reject unexpected fields.
 """
 
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ForbidExtraParams(BaseModel):
@@ -690,7 +690,6 @@ class GetMemoryEntryParams(ForbidExtraParams):
     table: str
 
 
-
 class CreateFileMetadataParams(ForbidExtraParams):
     """Parameters for create_file_metadata operation."""
 
@@ -770,6 +769,7 @@ class CreateChatBridgeMessageLinkParams(BridgeLinkIdParams):
     message_id: str
     external_message_id: str
     direction: str
+    finalization_id: str = Field(default="", max_length=128)
 
 
 class ListChatBridgeMessageLinksParams(BridgeLinkIdParams, LimitOffsetParams):
@@ -790,6 +790,27 @@ class GetChatBridgeMessageLinkByMessageIdParams(BridgeLinkIdParams):
     """Parameters for get_chat_bridge_message_link_by_message_id operation."""
 
     message_id: str
+
+
+class GetChatBridgeMessageLinkByFinalizationParams(BridgeLinkIdParams):
+    """Parameters for bridge outcome deduplication lookup."""
+
+    finalization_id: str = Field(min_length=1, max_length=128)
+
+
+class ClaimChatBridgeFinalizationParams(GetChatBridgeMessageLinkByFinalizationParams):
+    """Parameters for an at-most-once external finalization delivery claim."""
+
+    message_id: str = Field(min_length=1, max_length=128)
+    direction: str = Field(default="outbound", max_length=32)
+
+
+class CompleteChatBridgeFinalizationParams(
+    GetChatBridgeMessageLinkByFinalizationParams
+):
+    """Parameters for completing a claimed external delivery."""
+
+    external_message_id: str = Field(min_length=1, max_length=256)
 
 
 class FileContextChunkParams(ForbidExtraParams):
@@ -942,6 +963,10 @@ class CreateCapabilityGrantParams(ForbidExtraParams):
     capability: str = Field(min_length=1, max_length=128)
     decision: str = Field(min_length=1, max_length=64)
     channel: str = Field(default="", max_length=128)
+    scope_json: dict[str, Any] = Field(default_factory=dict)
+    scope_hash: str = Field(default="", max_length=128)
+    policy_revision: str = Field(default="legacy", max_length=128)
+    origin_confirmation_id: str | None = Field(default=None, max_length=128)
     expires_at: str | None = None
 
 
@@ -961,6 +986,29 @@ class LookupCapabilityGrantParams(ForbidExtraParams):
     scope_value: str = Field(min_length=1, max_length=4096)
     capability: str = Field(min_length=1, max_length=128)
     channel: str = Field(default="", max_length=128)
+    scope_hash: str = Field(default="", max_length=128)
+    policy_revision: str = Field(default="legacy", max_length=128)
+
+
+class AuthorizeAgentInvocationParams(ForbidExtraParams):
+    """Atomically validate permission and claim one structured invocation."""
+
+    turn_id: str = Field(min_length=1, max_length=128)
+    invocation_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+    capability: str = Field(min_length=1, max_length=128)
+    channel: str = Field(default="", max_length=128)
+    scope_type: str = Field(min_length=1, max_length=64)
+    scope_value: str = Field(min_length=1, max_length=4096)
+    scope_json: dict[str, Any] = Field(default_factory=dict)
+    scope_hash: str = Field(min_length=1, max_length=128)
+    policy_revision: str = Field(min_length=1, max_length=128)
+    confirmation_id: str | None = Field(default=None, max_length=128)
+    create_reusable_grant: bool = False
+    grant_expires_at: str | None = Field(default=None, max_length=64)
+    expected_statuses: list[str] = Field(
+        default_factory=lambda: ["required", "pending_confirmation"]
+    )
 
 
 class RevokeCapabilityGrantParams(ForbidExtraParams):
@@ -1005,6 +1053,20 @@ class CreateAgentRunEventParams(AgentRunIdParams):
     conversation_id: str = Field(min_length=1, max_length=128)
     event_type: str = Field(min_length=1, max_length=64)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectAgentTurnEventParams(ForbidExtraParams):
+    """Idempotently project one authoritative core event into runtime storage."""
+
+    event_id: str = Field(min_length=1, max_length=128)
+    turn_id: str = Field(min_length=1, max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(default="", max_length=128)
+    channel: str = Field(default="", max_length=64)
+    sequence: int = Field(ge=1)
+    event_type: str = Field(min_length=1, max_length=128)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(min_length=1, max_length=64)
 
 
 class ListAgentRunEventsParams(ForbidExtraParams):
@@ -1096,3 +1158,228 @@ class PruneRuntimeStateParams(ForbidExtraParams):
     now: str | None = None
     snapshot_retention_hours: int = Field(default=24, ge=1, le=720)
     run_retention_days: int = Field(default=7, ge=1, le=365)
+
+
+# --- Core-authority agent turns ---
+
+
+class CreateAgentTurnParams(ForbidExtraParams):
+    """Create one architecture-pinned authoritative turn."""
+
+    turn_id: str | None = Field(default=None, max_length=128)
+    finalization_id: str | None = Field(default=None, max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(default="", max_length=128)
+    channel: str = Field(default="", max_length=128)
+    architecture_version: str = Field(default="structured_v1", max_length=64)
+    authority_store: str = Field(default="core", max_length=32)
+
+
+class AgentTurnIdParams(ForbidExtraParams):
+    """Common core-authority turn identifier."""
+
+    turn_id: str = Field(min_length=1, max_length=128)
+
+
+class GetAgentTurnParams(AgentTurnIdParams):
+    """Read one turn with its complete authoritative ledger."""
+
+
+class ToolObligationInput(ForbidExtraParams):
+    """One required evidence record supplied at turn preparation."""
+
+    obligation_id: str = Field(min_length=1, max_length=128)
+    required_tool: str = Field(min_length=1, max_length=128)
+    source: str = Field(min_length=1, max_length=128)
+    evidence_key: str = Field(default="", max_length=1024)
+    argument_predicate: dict[str, Any] | None = None
+
+
+class UpsertAgentTurnObligationsParams(AgentTurnIdParams):
+    """Idempotently insert obligations without changing their identity."""
+
+    obligations: list[ToolObligationInput] = Field(max_length=128)
+
+
+class ToolInvocationInput(ForbidExtraParams):
+    """One concrete invocation in a native-call batch."""
+
+    invocation_id: str = Field(min_length=1, max_length=128)
+    tool_call_id: str = Field(min_length=1, max_length=256)
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    evidence_key: str | None = Field(default=None, max_length=1024)
+    source: str = Field(default="model", max_length=128)
+    trust_zone: str | None = Field(default=None, max_length=32)
+    candidate_obligation_ids: list[str] = Field(default_factory=list, max_length=128)
+    confirmation_id: str | None = Field(default=None, max_length=128)
+    confirmation_title: str = Field(default="", max_length=256)
+    confirmation_description: str = Field(default="", max_length=4096)
+    confirmation_expires_at: str | None = None
+
+
+class UpsertAgentToolBatchParams(AgentTurnIdParams):
+    """Persist one complete assistant tool-call message and its siblings."""
+
+    batch_id: str = Field(min_length=1, max_length=128)
+    assistant_message: dict[str, Any]
+    transcript_snapshot: list[dict[str, Any]] = Field(default_factory=list)
+    invocations: list[ToolInvocationInput] = Field(min_length=1, max_length=128)
+
+
+class ClaimAgentInvocationParams(AgentTurnIdParams):
+    """CAS one invocation into EXECUTING before external dispatch."""
+
+    invocation_id: str = Field(min_length=1, max_length=128)
+    expected_statuses: list[str] = Field(
+        default_factory=lambda: ["required", "pending_confirmation"]
+    )
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
+class CompleteAgentInvocationParams(AgentTurnIdParams):
+    """Record a generation-fenced terminal invocation result."""
+
+    invocation_id: str = Field(min_length=1, max_length=128)
+    claim_generation: int = Field(ge=1)
+    status: str = Field(pattern="^(succeeded|failed|unknown)$")
+    result: dict[str, Any] | None = None
+    error: str | None = Field(default=None, max_length=16384)
+
+
+class DecideAgentConfirmationParams(ForbidExtraParams):
+    """CAS a canonical core confirmation decision."""
+
+    confirmation_id: str = Field(min_length=1, max_length=128)
+    decision: str = Field(pattern="^(approved|denied|expired)$")
+
+
+class GetAgentConfirmationParams(ForbidExtraParams):
+    """Read one canonical structured confirmation without deciding it."""
+
+    confirmation_id: str = Field(min_length=1, max_length=128)
+
+
+class ListPendingAgentConfirmationsParams(ForbidExtraParams):
+    """List pending structured confirmations for one conversation."""
+
+    conversation_id: str = Field(min_length=1, max_length=128)
+
+
+class AppendAgentTurnEventParams(AgentTurnIdParams):
+    """Append one authoritative provider or transition event."""
+
+    event_id: str | None = Field(default=None, max_length=128)
+    event_type: str = Field(min_length=1, max_length=128)
+    phase: str = Field(default="", max_length=128)
+    attempt: int = Field(default=0, ge=0)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CancelAgentTurnParams(AgentTurnIdParams):
+    """Request cancellation or timeout using the run-state CAS domain."""
+
+    reason: str = Field(default="cancelled", max_length=4096)
+    timeout: bool = False
+    failure: bool = False
+    task_result: RecordTaskRunParams | None = None
+
+
+class CommitAgentTurnFinalizationParams(AgentTurnIdParams):
+    """Atomically persist one interactive FINAL or FAILED outcome."""
+
+    finalization_id: str = Field(min_length=1, max_length=128)
+    outcome_kind: str = Field(pattern="^(final|failed)$")
+    conversation_id: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(default="", max_length=128)
+    assistant_content: str
+    assistant_meta: dict[str, Any] | None = None
+    dialog_content: str = ""
+    source_message_ids: list[str] = Field(default_factory=list)
+    outcome_payload: dict[str, Any]
+    persist_chat: bool = True
+    task_result: RecordTaskRunParams | None = None
+
+
+class ListUnprojectedAgentTurnEventsParams(ForbidExtraParams):
+    """Read a bounded core outbox slice for optional runtime projection."""
+
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+class ListAgentTurnEventsParams(ForbidExtraParams):
+    """Read authoritative events by run or conversation for reconnect."""
+
+    turn_id: str | None = Field(default=None, max_length=128)
+    conversation_id: str | None = Field(default=None, max_length=128)
+    after_sequence: int = Field(default=0, ge=0)
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+class MarkAgentTurnEventProjectedParams(ForbidExtraParams):
+    """Mark one stable outbox event projection complete."""
+
+    event_id: str = Field(min_length=1, max_length=128)
+    projection_version: int = Field(default=1, ge=1)
+
+
+class RecoverAgentTurnsParams(ForbidExtraParams):
+    """Fence execution claims left in-flight by a dead orchestrator."""
+
+
+class CreateAgentClarificationParams(AgentTurnIdParams):
+    """Persist one backend-owned low-confidence tool proposal."""
+
+    clarification_id: str = Field(min_length=1, max_length=128)
+    proposed_tool: str = Field(min_length=1, max_length=128)
+    reason: str = Field(min_length=1, max_length=4096)
+    expires_at: str = Field(min_length=1, max_length=64)
+
+
+class GetPendingAgentClarificationParams(ForbidExtraParams):
+    """Read the latest unexpired proposal for one conversation."""
+
+    conversation_id: str = Field(min_length=1, max_length=128)
+
+
+class DecideAgentClarificationParams(ForbidExtraParams):
+    """Close a proposal after bounded follow-up classification."""
+
+    clarification_id: str = Field(min_length=1, max_length=128)
+    decision: str = Field(pattern="^(accepted|rejected|expired)$")
+
+
+class CreateAgentPendingInputParams(AgentTurnIdParams):
+    """Persist one typed missing-input pause for a structured turn."""
+
+    pending_input_id: str = Field(min_length=1, max_length=128)
+    question: str = Field(min_length=1, max_length=4096)
+    suggestions: list[str] = Field(default_factory=list, max_length=3)
+    expected_input_schema: dict[str, Any]
+    transcript_snapshot: list[dict[str, Any]]
+    expires_at: str = Field(min_length=1, max_length=64)
+
+
+class GetAgentPendingInputParams(ForbidExtraParams):
+    """Read one pending input by stable identity or conversation."""
+
+    pending_input_id: str | None = Field(default=None, max_length=128)
+    conversation_id: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def require_exactly_one_identity(self) -> Self:
+        """Require a stable input id or conversation lookup, never both."""
+        if bool(self.pending_input_id) == bool(self.conversation_id):
+            raise ValueError(
+                "exactly one of pending_input_id or conversation_id is required"
+            )
+        return self
+
+
+class ReplyAgentPendingInputParams(AgentTurnIdParams):
+    """CAS one validated value into a pending input."""
+
+    pending_input_id: str = Field(min_length=1, max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)
+    cas_version: int = Field(ge=1)
+    value: Any

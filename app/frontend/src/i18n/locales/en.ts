@@ -63,6 +63,7 @@ const en = {
     allow: "Allow",
     approvalRequired: "Approval required",
     approvalRequiredHint: "The assistant is requesting permission to run this action",
+    toolPermissionPrompt: "Allow {{tools}} for this chat? Reply yes or no.",
     approve: "Approve",
     approved: "Approved",
     askAboutData: "Ask a question about your data...",

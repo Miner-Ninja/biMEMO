@@ -173,6 +173,15 @@ class DatabaseManager:
         """
         self._require_connection().commit()
 
+    def rollback(self) -> None:
+        """Roll back the current transaction, if any."""
+        self._require_connection().rollback()
+
+    @property
+    def in_transaction(self) -> bool:
+        """Return whether the live connection has an open transaction."""
+        return bool(self._require_connection().in_transaction)
+
     @property
     def is_open(self) -> bool:
         """Check if the database connection is open.

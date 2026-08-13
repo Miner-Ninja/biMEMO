@@ -15,26 +15,34 @@ import asyncio
 import inspect
 import json
 import logging
-from dataclasses import dataclass, field, replace
+import uuid
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import TYPE_CHECKING
 
+from backend.agent.agent_loop_helpers import (
+    build_assistant_message_meta,
+    build_dialog_step_record_input,
+)
 from backend.agent.agent_loop_models import (
     AgentResponse,
     FinalizedAssistantResponse,
+    PreparedContext,
     TurnInputState,
     TurnPreparation,
 )
 from backend.agent.finalization import (
     RequirementSatisfaction,
     ResponseRequirements,
+    build_tool_obligations,
     detect_turn_requirements,
     requirements_with_expected_tools,
 )
 from backend.agent.llm_caller import (
     FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
     LLMCaller,
+    LLMStreamMode,
 )
 from backend.agent.loop import (
     AgenticLoop,
@@ -42,26 +50,56 @@ from backend.agent.loop import (
 from backend.agent.memory_context import MemoryContextLoader
 from backend.agent.message_persistence import MessagePersistence
 from backend.agent.prompt_builder import PromptBuilder
+from backend.agent.semantic_planning import (
+    SemanticDecisionKind,
+    SemanticProtocolError,
+    parse_semantic_decision,
+    with_semantic_controls,
+)
 from backend.agent.stage_timings import StageTimings
+from backend.agent.structured_finalization import (
+    StructuredFinalizationError,
+    StructuredFinalizer,
+)
 from backend.agent.tool_executor import ToolExecutor
+from backend.agent.turn_state import (
+    ConfirmationStatus,
+    ObligationStatus,
+    PendingInput,
+    PendingInputStatus,
+    TerminalError,
+    ToolObligation,
+    TurnOutcome,
+    TurnOutcomeKind,
+)
+from backend.agent.turn_state import (
+    PendingConfirmation as TurnPendingConfirmation,
+)
 from backend.ipc.models import build_multimodal_content
 from backend.llm.call_options import LLMCallOptions
-from backend.llm.capabilities import LlmResponseFormat
+from backend.llm.capabilities import CapabilitySupport, LlmResponseFormat
 from backend.llm.structured_response import (
     SKILL_EXTRACTION_SCHEMA,
     SKILL_QUALITY_SCHEMA,
     StructuredAssistantContent,
 )
 from backend.llm.usage import aggregate_call_usages
+from backend.memory.classification.question_router import route_memory_question
 from backend.memory.classification.resolver import (
     LongTermMemoryResolver,
 )
-from backend.permissions import ActionDecisionService, ActionGrantReader
+from backend.permissions import (
+    ActionContext,
+    ActionDecisionService,
+    ActionGrantReader,
+    DecisionKind,
+)
 from backend.security.content_filter import (
     filter_input,
     filter_output,
 )
 from backend.security.policy import get_policy
+from backend.security.provenance import serialize_tool_result
 from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
@@ -74,6 +112,7 @@ if TYPE_CHECKING:
 
     from backend.agent.concurrency import AgentConcurrency
     from backend.agent.tool_executor import PendingActionRecorder
+    from backend.llm.call_factory import AttemptRecord
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
@@ -120,6 +159,29 @@ def _require_structured_content(
     if structured_content is not None:
         return structured_content
     return StructuredAssistantContent(answer=response_text)
+
+
+def _semantic_tool_choice(
+    *,
+    target: ToolObligation | None,
+    canonical: dict[str, object],
+    max_rounds: int,
+) -> dict[str, object] | str:
+    """Force obligations and bound optional evidence collection."""
+    if target is not None:
+        return {
+            "type": "function",
+            "function": {"name": target.required_tool},
+        }
+    successful_evidence = sum(
+        isinstance(item, dict) and item.get("status") == "succeeded"
+        for item in canonical.get("invocations", [])
+    )
+    # One follow-up tool decision preserves useful chains such as
+    # search -> fetch. Afterwards require an ordinary final answer.
+    if successful_evidence >= 2:
+        return "none"
+    return "auto"
 
 
 @dataclass(frozen=True)
@@ -200,6 +262,9 @@ class AgentOrchestrator:
     log_skill_usage_fn: Callable | None = None
     action_grants: ActionGrantReader | None = None
     pending_action_recorder: PendingActionRecorder | None = None
+    turn_store: object | None = None
+    run_event_recorder: object | None = None
+    scheduled_task_run: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         """Initialize delegate objects after dataclass construction."""
@@ -208,6 +273,7 @@ class AgentOrchestrator:
             self.confirmation_mgr,
             action_decisions=ActionDecisionService(self.action_grants),
             pending_action_recorder=self.pending_action_recorder,
+            turn_store=self.turn_store,
         )
         # Per-turn accumulator for the processing-stage timing breakdown; reset
         # at the start of each turn (see process_message) and read at finalize.
@@ -222,6 +288,8 @@ class AgentOrchestrator:
             self.memory_recall_classifier_fn,
             self.broker,
         )
+        self._provider_attempt_tasks: list[asyncio.Task] = []
+        self.llm_caller.on_attempt = self._record_provider_attempt
         self.prompt_builder = PromptBuilder(
             self.model_name,
             self.user_profile,
@@ -836,6 +904,17 @@ class AgentOrchestrator:
             prepared_turn=prepared_turn,
             session_id=session_id,
         )
+        if prepared_turn.run_id:
+            return await self._commit_structured_final(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                structured_content=StructuredAssistantContent(
+                    answer=raw_final_text,
+                ),
+                output_filtered=False,
+            )
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
             raw_final_text=raw_final_text,
@@ -856,6 +935,27 @@ class AgentOrchestrator:
         loop: AgenticLoop,
     ) -> AgentResponse:
         """Persist and return the final response for one prepared turn."""
+        if prepared_turn.run_id:
+            finalized = self._finalize_assistant_response(
+                raw_final_text=raw_final_text,
+                structured_content=structured_content,
+                loop=loop,
+                call_usages=prepared_turn.call_usages,
+                request_started_at=prepared_turn.request_started_at,
+                zone_usage=prepared_turn.prepared_context.zone_usage,
+            )
+            content = _require_structured_content(
+                finalized.structured_content,
+                finalized.response_text,
+            )
+            return await self._commit_structured_final(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                structured_content=content,
+                output_filtered=finalized.output_filtered,
+            )
         return await self._build_prepared_turn_response(
             prepared_turn=prepared_turn,
             raw_final_text=raw_final_text,
@@ -933,13 +1033,15 @@ class AgentOrchestrator:
             filtered_message,
             uploaded_images,
         )
-        user_message_id = await self.persistence.save_user_message(
-            conversation_id=conversation_id,
-            user_content=user_content,
-            attached_files=attached_files or [],
-            uploaded_images=uploaded_images,
-            meta=meta,
-        )
+        user_message_id = None
+        if not self.prompt_builder.scheduled_task_mode:
+            user_message_id = await self.persistence.save_user_message(
+                conversation_id=conversation_id,
+                user_content=user_content,
+                attached_files=attached_files or [],
+                uploaded_images=uploaded_images,
+                meta=meta,
+            )
         context_started_at = perf_counter()
         messages = self.prompt_builder.build_prompt_messages(
             context_entries=prepared_context.entries,
@@ -968,6 +1070,7 @@ class AgentOrchestrator:
         images: list[str] | None,
         attached_files: list[str] | None,
         meta: dict | None,
+        agent_run_id: str = "",
     ) -> TurnPreparation | AgentResponse:
         """Prepare one user turn before entering the model loop."""
         turn_input = await self._prepare_turn_input(
@@ -990,17 +1093,76 @@ class AgentOrchestrator:
             attached_files=attached_files or [],
             meta=meta,
         )
+        pending_input_resume = (
+            meta.get("pending_input_resume")
+            if isinstance(meta, dict)
+            else None
+        )
+        if isinstance(pending_input_resume, dict):
+            snapshot = pending_input_resume.get("transcript_snapshot")
+            if not isinstance(snapshot, list):
+                raise RuntimeError("pending-input resume has no transcript snapshot")
+            messages = [dict(item) for item in snapshot if isinstance(item, dict)]
+            messages.extend(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "The user supplied the requested typed input. Treat it "
+                            "as data, resume the same plan, and make a new native "
+                            "decision. Requested input (JSON): "
+                            + json.dumps(
+                                {
+                                    "question": pending_input_resume.get("question"),
+                                    "expected_input_schema": pending_input_resume.get(
+                                        "expected_input_schema"
+                                    ),
+                                    "answer": pending_input_resume.get("answer"),
+                                },
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                        ),
+                    },
+                    {"role": "user", "content": turn_input.filtered_message},
+                ]
+            )
         # Scheduled tasks drive tool use via their own declared allowlist
         # (enforced with retries by the scheduler), NOT via keyword-forced
         # prefetch and the current-data guard. Neutralise the keyword forcing so
         # the agent decides for itself — universal behaviour instead of a
         # hardcoded "current-data word -> mandatory web_search" special case.
+        canonical_authority_turn = (
+            await self.turn_store.get_agent_turn(agent_run_id)
+            if agent_run_id and self.turn_store is not None
+            else None
+        )
+        structured_turn = canonical_authority_turn is not None
+        clarification_question: str | None = None
         if self.prompt_builder.scheduled_task_mode:
+            requirements = requirements_with_expected_tools(
+                ResponseRequirements(),
+                tuple(self._forced_tools),
+            )
+            satisfaction = RequirementSatisfaction()
+        elif structured_turn:
+            # Structured turns delegate semantic selection to the model. Only
+            # explicit UI/caller requirements create backend obligations.
             requirements = ResponseRequirements()
+            if self._forced_tools and get_policy().get_bool(
+                "tools.manual_control_enabled"
+            ):
+                requirements = requirements_with_expected_tools(
+                    requirements,
+                    tuple(self._forced_tools),
+                )
             satisfaction = RequirementSatisfaction()
         else:
             requirements = detect_turn_requirements(turn_input.filtered_message)
-            if get_policy().get_bool("tools.reask_enabled") and self._forced_tools:
+            if self._forced_tools and get_policy().get_bool(
+                "tools.manual_control_enabled"
+            ):
                 requirements = requirements_with_expected_tools(
                     requirements, tuple(self._forced_tools)
                 )
@@ -1021,7 +1183,7 @@ class AgentOrchestrator:
                 if web_search_satisfied:
                     satisfaction = satisfaction.with_success("web_search")
         forced_recall_tokens = 0
-        if "memory_recall" not in requirements.required_tools:
+        if not structured_turn and "memory_recall" not in requirements.required_tools:
             recall_zone_budget = (
                 prepared_context.zone_budget.get("recall_results")
                 if prepared_context.zone_budget is not None
@@ -1051,6 +1213,75 @@ class AgentOrchestrator:
             append_memory_context_fn=self.prompt_builder.append_memory_context_messages_async,
         )
 
+        if structured_turn and isinstance(pending_input_resume, dict):
+            obligations = tuple(
+                ToolObligation(
+                    run_id=agent_run_id,
+                    obligation_id=str(item.get("obligation_id", "")),
+                    required_tool=str(item.get("required_tool", "")),
+                    source=str(item.get("source", "")),
+                    evidence_key=str(item.get("evidence_key", "")),
+                    argument_predicate=(
+                        dict(item["argument_predicate"])
+                        if isinstance(item.get("argument_predicate"), dict)
+                        else None
+                    ),
+                    status=ObligationStatus(str(item.get("status", "open"))),
+                )
+                for item in (canonical_authority_turn or {}).get("obligations", [])
+                if isinstance(item, dict)
+            )
+        else:
+            obligations = (
+                build_tool_obligations(
+                    run_id=agent_run_id,
+                    requirements=requirements,
+                )
+                if structured_turn
+                else ()
+            )
+        required_names = {
+            obligation.required_tool for obligation in obligations
+        } or set(requirements.must_use_tools)
+        openai_tools = self.prompt_builder.select_openai_tools(
+            turn_input.filtered_message,
+            attached_files=attached_files or [],
+            required_names=required_names,
+            required_only=False,
+            semantic_selection=structured_turn,
+        )
+        if structured_turn:
+            openai_tools = with_semantic_controls(openai_tools)
+        if obligations:
+            exposed_names = {
+                str(item.get("function", {}).get("name", ""))
+                for item in openai_tools or []
+                if isinstance(item.get("function"), dict)
+            }
+            missing_schemas = sorted(required_names - exposed_names)
+            if missing_schemas:
+                raise RuntimeError(
+                    "Required tool schemas are unavailable: "
+                    f"{', '.join(missing_schemas)}"
+                )
+            await self.turn_store.upsert_agent_turn_obligations(
+                agent_run_id,
+                [
+                    {
+                        "obligation_id": item.obligation_id,
+                        "required_tool": item.required_tool,
+                        "source": item.source,
+                        "evidence_key": item.evidence_key,
+                        "argument_predicate": item.argument_predicate,
+                    }
+                    for item in obligations
+                ],
+            )
+        canonical_turn = (
+            await self.turn_store.get_agent_turn(agent_run_id)
+            if structured_turn
+            else None
+        )
         return TurnPreparation(
             filtered_message=turn_input.filtered_message,
             input_filtered=turn_input.input_filtered,
@@ -1059,13 +1290,18 @@ class AgentOrchestrator:
             prepared_context=prepared_context,
             user_message_id=user_message_id,
             messages=messages,
-            openai_tools=self.prompt_builder.select_openai_tools(
-                turn_input.filtered_message,
-                attached_files=attached_files or [],
-            ),
+            openai_tools=openai_tools,
             question_route=question_route,
             requirements=requirements,
             satisfaction=satisfaction,
+            run_id=agent_run_id if structured_turn else None,
+            finalization_id=(
+                str(canonical_turn.get("finalization_id", ""))
+                if canonical_turn is not None
+                else None
+            ),
+            obligations=obligations,
+            clarification_question=clarification_question,
         )
 
     async def process_message(
@@ -1106,6 +1342,11 @@ class AgentOrchestrator:
         if not conversation_id:
             raise ValueError("conversation_id is required")
         self._forced_tools = forced_tools or []
+        if self._forced_tools:
+            registered_tools = set(self.broker.registry.tool_names)
+            unknown_tools = sorted(set(self._forced_tools) - registered_tools)
+            if unknown_tools:
+                raise ValueError(f"Unknown forced tool(s): {', '.join(unknown_tools)}")
         await self.concurrency.acquire()
         try:
             return await self._process_turn(
@@ -1122,6 +1363,566 @@ class AgentOrchestrator:
             )
         finally:
             self.concurrency.release()
+
+    async def resume_structured_confirmation(
+        self,
+        *,
+        confirmation_id: str,
+        decision: str,
+        llm_call: object,
+        preliminary_call_usages: list[LLMCallUsage] | None = None,
+    ) -> AgentResponse:
+        """Decide and resume one core-authority confirmation continuation."""
+        active_started_at = perf_counter()
+        if self.turn_store is None:
+            raise RuntimeError("structured confirmation has no core authority store")
+        confirmation = await self.turn_store.get_agent_confirmation(confirmation_id)
+        legacy_decision: dict[str, object] | None = None
+        if not isinstance(confirmation, dict):
+            legacy_decision = await self.turn_store.decide_agent_confirmation(
+                confirmation_id,
+                decision,
+            )
+            confirmation = legacy_decision
+        turn_id = str(confirmation.get("turn_id", ""))
+        invocation_id = str(confirmation.get("invocation_id", ""))
+        canonical = await self.turn_store.get_agent_turn(turn_id)
+        if canonical is None:
+            raise RuntimeError("authoritative confirmation turn disappeared")
+        replay = self._agent_response_from_terminal_turn(canonical)
+        if replay is not None:
+            return replay
+
+        await self.concurrency.acquire()
+        try:
+            self._provider_attempt_tasks = []
+            self.tool_executor.clear_pending()
+            self.tool_executor.tool_call_count = 0
+            self.tool_executor.tool_names_used = []
+            self.tool_executor.executed_tools = []
+            self.tool_executor.current_context = {
+                "conversation_id": str(canonical.get("conversation_id", "")),
+                "session_id": str(canonical.get("session_id", "")),
+                "channel": str(canonical.get("channel", "")),
+                "agent_run_id": turn_id,
+                "authority_store": "core",
+            }
+            prepared = self._restore_structured_preparation(canonical, invocation_id)
+            prepared.call_usages.extend(preliminary_call_usages or [])
+            loop = AgenticLoop(injection_flag=False)
+            loop.start()
+            pending_confirmations = [
+                item
+                for item in canonical.get("confirmations", [])
+                if item.get("status") == "pending"
+            ]
+            canonical_decision = confirmation
+            if decision == "denied":
+                canonical_decision = legacy_decision or (
+                    await self.turn_store.decide_agent_confirmation(
+                        confirmation_id,
+                        decision,
+                    )
+                )
+                refreshed = await self.turn_store.get_agent_turn(turn_id)
+                if refreshed is None:
+                    raise RuntimeError(
+                        "authoritative confirmation turn disappeared after decision"
+                    )
+                canonical = refreshed
+                pending_confirmations = [
+                    item
+                    for item in canonical.get("confirmations", [])
+                    if item.get("status") == "pending"
+                ]
+            if canonical_decision.get("status") == "expired":
+                if pending_confirmations:
+                    return self._paused_response_from_canonical(canonical, loop)
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="tool_confirmation_expired",
+                    message="The requested action expired before it was approved.",
+                )
+            if decision == "denied" and not canonical_decision.get("changed"):
+                invocation_status = next(
+                    (
+                        str(item.get("status", ""))
+                        for item in canonical.get("invocations", [])
+                        if item.get("invocation_id") == invocation_id
+                    ),
+                    "",
+                )
+                pending = [
+                    item
+                    for item in canonical.get("confirmations", [])
+                    if item.get("status") == "pending"
+                ]
+                if pending:
+                    return self._paused_response_from_canonical(canonical, loop)
+                if invocation_status == "succeeded":
+                    return await self._run_structured_authority_turn(
+                        prepared_turn=prepared,
+                        session_id=str(canonical.get("session_id", "")),
+                        conversation_id=str(canonical.get("conversation_id", "")),
+                        loop=loop,
+                        llm_call=llm_call,
+                        channel=str(canonical.get("channel", "")),
+                    )
+                approval_needs_claim = (
+                    canonical_decision.get("status") == "approved"
+                    and invocation_status == "pending_confirmation"
+                )
+                if not approval_needs_claim:
+                    raise RuntimeError(
+                        "confirmation is already "
+                        f"{canonical_decision.get('status', 'decided')}"
+                    )
+            if decision == "denied":
+                if pending_confirmations:
+                    return self._paused_response_from_canonical(canonical, loop)
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="tool_confirmation_denied",
+                    message=(
+                        "The requested action was denied, so the turn could not "
+                        "be completed."
+                    ),
+                )
+
+            active_timeout_ms = (
+                get_policy().get_int("agent_limits.loop_timeout_seconds") * 1000
+            )
+            live_resume_ms = max(
+                0,
+                int((perf_counter() - active_started_at) * 1000),
+            )
+            if (
+                int(canonical.get("active_time_ms", 0)) + live_resume_ms
+                >= active_timeout_ms
+            ):
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="active_deadline_exhausted",
+                    message="The active execution deadline was exhausted.",
+                )
+
+            invocation = next(
+                (
+                    item
+                    for item in canonical.get("invocations", [])
+                    if item.get("invocation_id") == invocation_id
+                ),
+                None,
+            )
+            if not isinstance(invocation, dict):
+                raise RuntimeError("confirmed invocation is missing")
+            permission = self.tool_executor.action_decisions.decide(
+                ActionContext(
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    channel=str(canonical.get("channel", "")),
+                    session_id=str(canonical.get("session_id", "")),
+                    tool_name=str(invocation.get("tool_name", "")),
+                    parameters=dict(invocation.get("arguments", {})),
+                    trust_zone=str(invocation.get("trust_zone", "")),
+                    structured_authority=True,
+                )
+            )
+            if permission.kind == DecisionKind.BLOCK:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="tool_authorization_blocked",
+                    message="The approved action is blocked by the current policy.",
+                )
+            coordinates = self.tool_executor._grant_coordinates(permission)
+            reusable = str(permission.details.get("permission_mode", "")) in {
+                "conversation_capability",
+                "scoped",
+            }
+            if canonical_decision.get("status") == "approved":
+                claim = await self.turn_store.claim_agent_invocation(
+                    turn_id=turn_id,
+                    invocation_id=invocation_id,
+                    idempotency_key=f"{turn_id}:{invocation_id}",
+                    expected_statuses=["pending_confirmation"],
+                )
+            else:
+                claim = await self.turn_store.authorize_agent_invocation(
+                    turn_id=turn_id,
+                    invocation_id=invocation_id,
+                    idempotency_key=f"{turn_id}:{invocation_id}",
+                    capability=str(invocation.get("tool_name", "")),
+                    channel=str(canonical.get("channel", "")),
+                    scope_type=str(coordinates["scope_type"]),
+                    scope_value=str(coordinates["scope_value"]),
+                    scope_json=dict(coordinates["scope"]),
+                    scope_hash=str(coordinates["scope_hash"]),
+                    policy_revision=str(coordinates["policy_revision"]),
+                    confirmation_id=confirmation_id,
+                    create_reusable_grant=reusable,
+                    grant_expires_at=(
+                        (
+                            datetime.now(UTC)
+                            + timedelta(
+                                days=get_policy().get_int(
+                                    "trust.capability_grant_ttl_days"
+                                )
+                            )
+                        ).isoformat()
+                        if reusable
+                        else None
+                    ),
+                    expected_statuses=["pending_confirmation"],
+                )
+            if not claim.get("claimed"):
+                raise RuntimeError("confirmed invocation was already dispatched")
+            generation = int(claim["claim_generation"])
+            self.broker.set_context(self.tool_executor.current_context)
+            try:
+                result = await self.broker.execute(
+                    str(invocation.get("tool_name", "")),
+                    dict(invocation.get("arguments", {})),
+                )
+            except Exception as exc:
+                await self.turn_store.complete_agent_invocation(
+                    turn_id=turn_id,
+                    invocation_id=invocation_id,
+                    claim_generation=generation,
+                    status="failed",
+                    error=str(exc),
+                )
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="tool_execution_failed",
+                    message="The approved action failed during execution.",
+                )
+            finally:
+                self.broker.clear_context()
+            success = bool(getattr(result, "success", False))
+            result_data = self._json_safe(getattr(result, "result", None))
+            envelope = json.loads(
+                serialize_tool_result(
+                    result_data,
+                    tool_name=str(invocation.get("tool_name", "")),
+                    invocation_id=invocation_id,
+                )
+            )
+            if success and envelope["truncated"]:
+                success = False
+                result_data = None
+            await self.turn_store.complete_agent_invocation(
+                turn_id=turn_id,
+                invocation_id=invocation_id,
+                claim_generation=generation,
+                status="succeeded" if success else "failed",
+                result={
+                    "data": result_data,
+                    "duration_ms": float(getattr(result, "duration_ms", 0)),
+                    "zone": str(getattr(getattr(result, "zone", ""), "value", "")),
+                }
+                if success
+                else None,
+                error=None
+                if success
+                else (
+                    "Mandatory tool result exceeded the synthesis evidence limit."
+                    if envelope["truncated"]
+                    else str(getattr(result, "result", "tool failed"))
+                ),
+            )
+            if not success:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="tool_execution_failed",
+                    message="The approved action did not complete successfully.",
+                )
+            canonical = await self.turn_store.get_agent_turn(turn_id)
+            if canonical is None:
+                raise RuntimeError("authoritative turn disappeared after execution")
+            pending = [
+                item
+                for item in canonical.get("confirmations", [])
+                if item.get("status") == "pending"
+            ]
+            if pending:
+                return self._paused_response_from_canonical(canonical, loop)
+            prepared = self._restore_structured_preparation(canonical, invocation_id)
+            return await self._run_structured_authority_turn(
+                prepared_turn=prepared,
+                session_id=str(canonical.get("session_id", "")),
+                conversation_id=str(canonical.get("conversation_id", "")),
+                loop=loop,
+                llm_call=llm_call,
+                channel=str(canonical.get("channel", "")),
+            )
+        finally:
+            await self._flush_provider_attempts()
+            try:
+                await self.turn_store.append_agent_turn_event(
+                    turn_id=turn_id,
+                    event_type="active_time_recorded",
+                    phase="foreground_resume",
+                    payload={
+                        "duration_ms": max(
+                            0,
+                            int((perf_counter() - active_started_at) * 1000),
+                        )
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to persist confirmation resume active time")
+            self.concurrency.release()
+
+    def _record_provider_attempt(self, record: AttemptRecord) -> None:
+        """Queue one durable provider-attempt event from a sync callback."""
+        recorder = self.run_event_recorder
+        if recorder is None:
+            return
+        payload: dict[str, object] = {"error": record.error or ""}
+        if record.usage is not None:
+            payload["usage"] = asdict(record.usage)
+        task = asyncio.create_task(
+            recorder.record_provider_attempt(
+                phase=record.phase,
+                attempt=record.attempt,
+                payload=payload,
+            )
+        )
+        self._provider_attempt_tasks.append(task)
+
+    async def _flush_provider_attempts(self) -> None:
+        """Wait until all authoritative provider-attempt events are stored."""
+        tasks, self._provider_attempt_tasks = self._provider_attempt_tasks, []
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    @staticmethod
+    def _json_safe(value: object) -> object:
+        """Normalize an arbitrary tool result into JSON-compatible data."""
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+    def _restore_structured_preparation(
+        self,
+        canonical: dict[str, object],
+        invocation_id: str,
+    ) -> TurnPreparation:
+        """Rebuild a structured turn from its canonical batch transcript."""
+        invocations = [
+            item for item in canonical.get("invocations", []) if isinstance(item, dict)
+        ]
+        selected = next(
+            (
+                item
+                for item in invocations
+                if item.get("invocation_id") == invocation_id
+            ),
+            invocations[-1] if invocations else None,
+        )
+        batch_id = str((selected or {}).get("batch_id", ""))
+        batches = [
+            item for item in canonical.get("batches", []) if isinstance(item, dict)
+        ]
+        batch = next(
+            (item for item in batches if item.get("batch_id") == batch_id),
+            batches[-1] if batches else None,
+        )
+        if not isinstance(batch, dict):
+            raise RuntimeError("confirmation resume transcript is missing")
+        messages = list(batch.get("transcript_snapshot", []))
+        assistant_message = batch.get("assistant_message")
+        if not isinstance(assistant_message, dict):
+            raise RuntimeError("confirmation assistant batch is malformed")
+        messages.append(assistant_message)
+        siblings = [item for item in invocations if item.get("batch_id") == batch_id]
+        for sibling in siblings:
+            status = str(sibling.get("status", ""))
+            if status in {"required", "pending_confirmation", "executing"}:
+                continue
+            payload = (
+                sibling.get("result")
+                if status == "succeeded"
+                else {
+                    "error": str(sibling.get("error") or status),
+                    "status": status,
+                }
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": str(sibling.get("tool_call_id", "")),
+                    "content": serialize_tool_result(
+                        tool_name=str(sibling.get("tool_name", "tool")),
+                        invocation_id=str(sibling.get("invocation_id", "")),
+                        data=payload,
+                    ),
+                }
+            )
+        obligations = tuple(
+            ToolObligation(
+                run_id=str(canonical.get("turn_id", "")),
+                obligation_id=str(item.get("obligation_id", "")),
+                required_tool=str(item.get("required_tool", "")),
+                source=str(item.get("source", "")),
+                evidence_key=str(item.get("evidence_key", "")),
+                argument_predicate=item.get("argument_predicate"),
+                status=ObligationStatus(str(item.get("status", "open"))),
+            )
+            for item in canonical.get("obligations", [])
+            if isinstance(item, dict)
+        )
+        required_names = tuple(
+            dict.fromkeys(item.required_tool for item in obligations)
+        )
+        filtered_message = self._last_user_text(messages)
+        tools = self.prompt_builder.select_openai_tools(
+            filtered_message,
+            required_names=set(required_names),
+            semantic_selection=True,
+        )
+        tools = with_semantic_controls(tools)
+        return TurnPreparation(
+            filtered_message=filtered_message,
+            input_filtered=False,
+            request_started_at=perf_counter(),
+            call_usages=[],
+            prepared_context=PreparedContext(
+                entries=[],
+                retrieved_memories=[],
+                retrieved_messages=None,
+                memory_guidance=None,
+            ),
+            user_message_id=None,
+            messages=messages,
+            openai_tools=tools,
+            question_route=route_memory_question(""),
+            requirements=ResponseRequirements(
+                required_tools=required_names,
+                must_use_tools=required_names,
+            ),
+            satisfaction=RequirementSatisfaction(),
+            run_id=str(canonical.get("turn_id", "")),
+            finalization_id=str(canonical.get("finalization_id", "")),
+            obligations=obligations,
+        )
+
+    @staticmethod
+    def _last_user_text(messages: list[dict[str, object]]) -> str:
+        """Extract a conservative text hint from the latest user message."""
+        for message in reversed(messages):
+            if message.get("role") != "user":
+                continue
+            content = message.get("content", "")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return " ".join(
+                    str(item.get("text", ""))
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
+                )
+        return ""
+
+    def _paused_response_from_canonical(
+        self,
+        canonical: dict[str, object],
+        loop: AgenticLoop,
+    ) -> AgentResponse:
+        """Build PAUSED from canonical confirmation rows after a sibling decision."""
+        confirmations = tuple(
+            TurnPendingConfirmation(
+                run_id=str(canonical.get("turn_id", "")),
+                confirmation_id=str(item.get("confirmation_id", "")),
+                invocation_id=str(item.get("invocation_id", "")),
+                status=ConfirmationStatus.PENDING,
+                expires_at=str(item.get("expires_at", "")),
+                title=str(item.get("title", "")),
+                description=str(item.get("description", "")),
+                tool_name=str(item.get("tool_name", "")),
+                parameters=dict(item.get("parameters", {})),
+            )
+            for item in canonical.get("confirmations", [])
+            if isinstance(item, dict) and item.get("status") == "pending"
+        )
+        outcome = TurnOutcome(
+            kind=TurnOutcomeKind.PAUSED,
+            run_id=str(canonical.get("turn_id", "")),
+            confirmations=confirmations,
+        )
+        return AgentResponse(
+            structured_content=None,
+            loop_result=loop.complete(""),
+            outcome=outcome,
+            run_id=str(canonical.get("turn_id", "")),
+        )
+
+    @staticmethod
+    def _agent_response_from_terminal_turn(
+        canonical: dict[str, object],
+    ) -> AgentResponse | None:
+        """Return a replay response when a confirmation targets a terminal turn."""
+        terminal = str(canonical.get("terminal_outcome") or "")
+        if terminal not in {"final", "failed"}:
+            return None
+        payload = canonical.get("outcome_payload")
+        data = payload if isinstance(payload, dict) else {}
+        raw_content = data.get("structured_content")
+        structured = (
+            StructuredAssistantContent(
+                answer=str(raw_content.get("answer", "")),
+                thinking=(
+                    str(raw_content["thinking"])
+                    if raw_content.get("thinking") is not None
+                    else None
+                ),
+                suggestions=[str(item) for item in raw_content.get("suggestions", [])],
+            )
+            if isinstance(raw_content, dict)
+            else StructuredAssistantContent(answer="The turn is already complete.")
+        )
+        raw_error = data.get("error")
+        error = (
+            TerminalError(
+                code=str(raw_error.get("code", "failed")),
+                message=str(raw_error.get("message", structured.answer)),
+                retryable=bool(raw_error.get("retryable", False)),
+            )
+            if isinstance(raw_error, dict)
+            else None
+        )
+        kind = TurnOutcomeKind(terminal)
+        outcome = TurnOutcome(
+            kind=kind,
+            run_id=str(canonical.get("turn_id", "")),
+            finalization_id=str(canonical.get("finalization_id", "")),
+            structured_content=structured,
+            error=error,
+        )
+        loop = AgenticLoop(injection_flag=False)
+        loop.start()
+        return AgentResponse(
+            structured_content=structured,
+            loop_result=loop.complete(structured.answer),
+            outcome=outcome,
+            run_id=outcome.run_id,
+            finalization_id=outcome.finalization_id,
+        )
 
     async def _process_turn(
         self,
@@ -1153,19 +1954,32 @@ class AgentOrchestrator:
         Returns:
             AgentResponse with results.
         """
+        active_started_at = perf_counter()
+        active_core_turn_id = ""
         try:
+            self._provider_attempt_tasks = []
             await self._load_skill_index()
             self.tool_executor.tool_call_count = 0
             self.tool_executor.tool_names_used = []
             self.tool_executor.executed_tools = []
             self._stage_timings = StageTimings()
             self.tool_executor.stage_timings = self._stage_timings
+            canonical_authority_turn = (
+                await self.turn_store.get_agent_turn(agent_run_id)
+                if agent_run_id and self.turn_store is not None
+                else None
+            )
+            if canonical_authority_turn is not None:
+                active_core_turn_id = agent_run_id
             # Propagate turn context to tool handlers via the broker.
             self.tool_executor.current_context = {
                 "conversation_id": conversation_id,
                 "session_id": session_id,
                 "channel": channel,
                 "agent_run_id": agent_run_id,
+                "authority_store": (
+                    "core" if canonical_authority_turn is not None else "runtime"
+                ),
             }
 
             # Programmatic skill search before processing
@@ -1184,18 +1998,23 @@ class AgentOrchestrator:
                 images=images,
                 attached_files=attached_files,
                 meta=meta,
+                agent_run_id=agent_run_id,
             )
 
             # Background skill generation after processing
             completion_tokens = (
                 response.stats.completion_tokens if response.stats else 0
             )
-            self._schedule_skill_generation(
-                message=message,
-                tool_call_count=self.tool_executor.tool_call_count,
-                completion_tokens=completion_tokens,
-                llm_call=llm_call,
-            )
+            if (
+                response.outcome is None
+                or response.outcome.kind is TurnOutcomeKind.FINAL
+            ):
+                self._schedule_skill_generation(
+                    message=message,
+                    tool_call_count=self.tool_executor.tool_call_count,
+                    completion_tokens=completion_tokens,
+                    llm_call=llm_call,
+                )
 
             # Log skill usage if skills were matched
             duration_ms = int(response.stats.timing.total_ms if response.stats else 0)
@@ -1203,6 +2022,22 @@ class AgentOrchestrator:
 
             return response
         finally:
+            await self._flush_provider_attempts()
+            if active_core_turn_id and self.turn_store is not None:
+                try:
+                    await self.turn_store.append_agent_turn_event(
+                        turn_id=active_core_turn_id,
+                        event_type="active_time_recorded",
+                        phase="foreground",
+                        payload={
+                            "duration_ms": max(
+                                0,
+                                int((perf_counter() - active_started_at) * 1000),
+                            )
+                        },
+                    )
+                except Exception:
+                    logger.exception("Failed to persist structured turn active time")
             self.prompt_builder.active_skill_context = None
             self._notify_primary_finished()
 
@@ -1228,6 +2063,7 @@ class AgentOrchestrator:
         images: list[str] | None,
         attached_files: list[str] | None,
         meta: dict | None,
+        agent_run_id: str = "",
     ) -> AgentResponse:
         """Run one turn after the primary-start notification is already sent."""
         loop = AgenticLoop(injection_flag=injection_flag)
@@ -1243,8 +2079,43 @@ class AgentOrchestrator:
             images=images,
             attached_files=attached_files,
             meta=meta,
+            agent_run_id=agent_run_id,
         )
         if isinstance(prepared_turn, AgentResponse):
+            canonical = (
+                await self.turn_store.get_agent_turn(agent_run_id)
+                if agent_run_id and self.turn_store is not None
+                else None
+            )
+            if canonical is not None:
+                minimal = TurnPreparation(
+                    filtered_message=message,
+                    input_filtered=True,
+                    request_started_at=perf_counter(),
+                    call_usages=[],
+                    prepared_context=PreparedContext(
+                        entries=[],
+                        retrieved_memories=[],
+                        retrieved_messages=None,
+                        memory_guidance=None,
+                    ),
+                    user_message_id=None,
+                    messages=[],
+                    openai_tools=None,
+                    question_route=route_memory_question(""),
+                    requirements=ResponseRequirements(),
+                    satisfaction=RequirementSatisfaction(),
+                    run_id=agent_run_id,
+                    finalization_id=str(canonical.get("finalization_id", "")),
+                )
+                return await self._commit_structured_failure(
+                    prepared_turn=minimal,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code="input_blocked",
+                    message="The request was blocked by the input safety policy.",
+                )
             return prepared_turn
         return await self._run_prepared_turn(
             prepared_turn=prepared_turn,
@@ -1266,6 +2137,18 @@ class AgentOrchestrator:
         channel: str,
     ) -> AgentResponse:
         """Run one already prepared turn either through memory-only or model path."""
+        if prepared_turn.clarification_question:
+            return await self._commit_structured_final(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                structured_content=StructuredAssistantContent(
+                    answer=prepared_turn.clarification_question,
+                    suggestions=[],
+                ),
+                output_filtered=False,
+            )
         if prepared_turn.question_route.long_term_memory_question:
             return await self._build_long_term_memory_response(
                 prepared_turn=prepared_turn,
@@ -1274,20 +2157,30 @@ class AgentOrchestrator:
                 loop=loop,
             )
 
+        if prepared_turn.run_id and (
+            prepared_turn.obligations or prepared_turn.openai_tools
+        ):
+            return await self._run_structured_authority_turn(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                llm_call=llm_call,
+                channel=channel,
+            )
+
         user_intent = extract_user_intent(
             prepared_turn.filtered_message,
         )
-        # Forced tools (chat-input chips): only when manual tool control is on.
-        # One tool -> force that exact function; several -> require a tool call.
+        # Force the first exact tool. The final gate selects each remaining
+        # required tool after successful execution.
         forced = self._forced_tools
-        # Either a specific-function choice dict or the literal "required".
         forced_tool_choice: dict[str, object] | str | None = None
         if forced and get_policy().get_bool("tools.manual_control_enabled"):
-            forced_tool_choice = (
-                {"type": "function", "function": {"name": forced[0]}}
-                if len(forced) == 1
-                else "required"
-            )
+            forced_tool_choice = {
+                "type": "function",
+                "function": {"name": forced[0]},
+            }
         model_loop_result = await self.llm_caller.run_model_loop(
             loop=loop,
             llm_call=llm_call,
@@ -1301,6 +2194,16 @@ class AgentOrchestrator:
             requirements=prepared_turn.requirements,
             satisfaction=prepared_turn.satisfaction,
             suggestions_enabled=self.prompt_builder.suggestions_enabled,
+            thinking_enabled=(
+                False
+                if prepared_turn.run_id and not prepared_turn.openai_tools
+                else None
+            ),
+            response_format=(
+                LlmResponseFormat.TEXT
+                if prepared_turn.run_id and not prepared_turn.openai_tools
+                else None
+            ),
         )
 
         return await self._complete_prepared_turn(
@@ -1310,6 +2213,785 @@ class AgentOrchestrator:
             session_id=session_id,
             conversation_id=conversation_id,
             loop=loop,
+        )
+
+    async def _run_structured_authority_turn(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        session_id: str,
+        conversation_id: str,
+        loop: AgenticLoop,
+        llm_call: object,
+        channel: str,
+    ) -> AgentResponse:
+        """Run native action rounds, evidence gate, synthesis, and core commit."""
+        if self.turn_store is None or prepared_turn.run_id is None:
+            raise RuntimeError("structured turn has no core authority store")
+        active_timeout_ms = (
+            get_policy().get_int("agent_limits.loop_timeout_seconds") * 1000
+        )
+
+        def active_deadline_exhausted(canonical_turn: dict[str, object]) -> bool:
+            current_segment_ms = max(
+                0,
+                int((perf_counter() - prepared_turn.request_started_at) * 1000),
+            )
+            return (
+                int(canonical_turn.get("active_time_ms", 0)) + current_segment_ms
+                >= active_timeout_ms
+            )
+
+        initial_canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
+        if initial_canonical is None:
+            raise RuntimeError("authoritative turn disappeared")
+        if active_deadline_exhausted(initial_canonical):
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="active_deadline_exhausted",
+                message="The active execution deadline was exhausted.",
+            )
+        try:
+            await self._require_structured_capabilities(
+                stage="tool",
+                exact_choice=bool(prepared_turn.obligations),
+            )
+        except RuntimeError as exc:
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="provider_capability_unavailable",
+                message=str(exc),
+            )
+        self.tool_executor.current_obligations = prepared_turn.obligations
+        max_rounds = get_policy().get_int("agent_limits.max_semantic_tool_rounds")
+
+        finish_requested = False
+        allowed_external_names = {
+            str(item.get("function", {}).get("name", ""))
+            for item in prepared_turn.openai_tools or []
+            if isinstance(item, dict)
+            and isinstance(item.get("function"), dict)
+            and str(item.get("function", {}).get("name", ""))
+            != "bimemo_ask_user"
+        }
+        for _round in range(max_rounds):
+            canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
+            if canonical is None:
+                raise RuntimeError("authoritative turn disappeared")
+            if active_deadline_exhausted(canonical):
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared_turn,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code="active_deadline_exhausted",
+                    message="The active execution deadline was exhausted.",
+                )
+            binds = {
+                str(item.get("obligation_id", ""))
+                for item in canonical.get("binds", [])
+                if isinstance(item, dict)
+            }
+            open_obligations = [
+                obligation
+                for obligation in prepared_turn.obligations
+                if obligation.obligation_id not in binds
+            ]
+            if int(canonical.get("tool_rounds", 0)) >= max_rounds:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared_turn,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code="evidence_budget_exhausted",
+                    message="Required tool evidence exceeded the durable call budget.",
+                )
+            target = open_obligations[0] if open_obligations else None
+            forced_choice = _semantic_tool_choice(
+                target=target,
+                canonical=canonical,
+                max_rounds=max_rounds,
+            )
+            await self.turn_store.append_agent_turn_event(
+                turn_id=prepared_turn.run_id,
+                event_type="tool_round_started",
+                phase="tool_loop",
+                attempt=int(canonical.get("tool_rounds", 0)) + 1,
+                payload={
+                    "obligation_id": target.obligation_id if target else None,
+                    "required_tool": target.required_tool if target else None,
+                },
+            )
+            llm_response = await self.llm_caller.call_once(
+                llm_call=llm_call,
+                messages=prepared_turn.messages,
+                openai_tools=prepared_turn.openai_tools,
+                call_usages=prepared_turn.call_usages,
+                tool_choice=forced_choice,
+                stream_mode=LLMStreamMode.DISABLED,
+            )
+            await self._flush_provider_attempts()
+            canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
+            if canonical is None:
+                raise RuntimeError("authoritative turn disappeared after provider call")
+            if active_deadline_exhausted(canonical):
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared_turn,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code="active_deadline_exhausted",
+                    message="The active execution deadline was exhausted.",
+                )
+            try:
+                semantic_decision = parse_semantic_decision(
+                    llm_response,
+                    allowed_external_names=allowed_external_names,
+                )
+            except SemanticProtocolError as exc:
+                used_reask = int(canonical.get("enforcement_reasks", 0))
+                if used_reask >= 1:
+                    return await self._commit_structured_failure(
+                        prepared_turn=prepared_turn,
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        loop=loop,
+                        code="native_decision_invalid",
+                        message=(
+                            "The model provider returned an invalid decision: "
+                            f"{exc}"
+                        ),
+                    )
+                await self.turn_store.append_agent_turn_event(
+                    turn_id=prepared_turn.run_id,
+                    event_type="native_decision_invalid",
+                    phase="tool_loop",
+                    attempt=used_reask + 1,
+                    payload={
+                        "obligation_id": target.obligation_id if target else None,
+                        "required_tool": target.required_tool if target else None,
+                        "error": str(exc),
+                    },
+                )
+                loop.advance()
+                continue
+
+            if semantic_decision.kind is SemanticDecisionKind.FINISH:
+                if open_obligations:
+                    used_reask = int(canonical.get("enforcement_reasks", 0))
+                    if used_reask >= 1:
+                        return await self._commit_structured_failure(
+                            prepared_turn=prepared_turn,
+                            session_id=session_id,
+                            conversation_id=conversation_id,
+                            loop=loop,
+                            code="finish_with_open_obligation",
+                            message=(
+                                "The model tried to finish before required evidence "
+                                "succeeded."
+                            ),
+                        )
+                    await self.turn_store.append_agent_turn_event(
+                        turn_id=prepared_turn.run_id,
+                        event_type="finish_rejected",
+                        phase="tool_loop",
+                        attempt=used_reask + 1,
+                        payload={
+                            "open_obligations": [
+                                item.obligation_id for item in open_obligations
+                            ]
+                        },
+                    )
+                    loop.advance()
+                    continue
+                successful_evidence = any(
+                    isinstance(item, dict) and item.get("status") == "succeeded"
+                    for item in canonical.get("invocations", [])
+                )
+                if not successful_evidence:
+                    await self.turn_store.append_agent_turn_event(
+                        turn_id=prepared_turn.run_id,
+                        event_type="semantic_finish_without_tool",
+                        phase="tool_loop",
+                        attempt=int(canonical.get("tool_rounds", 0)),
+                        payload={"model_owned_judgment": True},
+                    )
+                prepared_turn.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": semantic_decision.answer,
+                    }
+                )
+                finish_requested = True
+                break
+
+            if semantic_decision.kind is SemanticDecisionKind.ASK_USER:
+                return await self._pause_for_missing_input(
+                    prepared_turn=prepared_turn,
+                    loop=loop,
+                    llm_call=llm_call,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    question=semantic_decision.question,
+                    expected_input_schema=semantic_decision.expected_input_schema or {},
+                    assistant_message=(
+                        dict(llm_response.raw_message)
+                        if isinstance(llm_response.raw_message, dict)
+                        else {}
+                    ),
+                )
+
+            matching_forced_call = bool(
+                target is None
+                or any(
+                    call.name == target.required_tool
+                    for call in semantic_decision.external_calls
+                )
+            )
+            if not matching_forced_call:
+                used_reask = int(canonical.get("enforcement_reasks", 0))
+                if used_reask >= 1:
+                    return await self._commit_structured_failure(
+                        prepared_turn=prepared_turn,
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        loop=loop,
+                        code="exact_tool_choice_ignored",
+                        message=(
+                            "The model provider did not honor the required tool call."
+                        ),
+                    )
+                await self.turn_store.append_agent_turn_event(
+                    turn_id=prepared_turn.run_id,
+                    event_type="exact_force_ignored",
+                    phase="tool_loop",
+                    attempt=used_reask + 1,
+                    payload={
+                        "obligation_id": target.obligation_id if target else None,
+                        "required_tool": target.required_tool if target else None,
+                    },
+                )
+                loop.advance()
+                continue
+            try:
+                await self.tool_executor.run_one_tool_round(
+                    llm_response=llm_response,
+                    messages=prepared_turn.messages,
+                    channel=channel,
+                    user_intent=extract_user_intent(prepared_turn.filtered_message)
+                    or None,
+                    required_tools=prepared_turn.requirements.required_tools,
+                )
+            except Exception as exc:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared_turn,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code="tool_execution_failed",
+                    message=f"A required tool could not be executed: {exc}",
+                )
+            if self.tool_executor.pending_red_calls:
+                return self._build_paused_structured_response(
+                    prepared_turn=prepared_turn,
+                    loop=loop,
+                )
+            loop.advance()
+        else:
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="evidence_budget_exhausted",
+                message=(
+                    "Required tool evidence was not completed within the call budget."
+                ),
+            )
+
+        if not finish_requested:
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="semantic_round_budget_exhausted",
+                message="The semantic planning round budget was exhausted.",
+            )
+
+        canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
+        if canonical is None:
+            raise RuntimeError("authoritative turn disappeared before synthesis")
+        if active_deadline_exhausted(canonical):
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="active_deadline_exhausted",
+                message="The active execution deadline was exhausted.",
+            )
+        bound_ids = {
+            str(item.get("obligation_id", ""))
+            for item in canonical.get("binds", [])
+            if isinstance(item, dict)
+        }
+        missing = [
+            item
+            for item in prepared_turn.obligations
+            if item.obligation_id not in bound_ids
+        ]
+        if missing:
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code="missing_evidence",
+                message="Required tool evidence is incomplete.",
+            )
+        try:
+            capabilities = await self._require_structured_capabilities(
+                stage="synthesis"
+            )
+            prior_synthesis_attempts = int(canonical.get("synthesis_attempts", 0))
+            remaining_synthesis_attempts = 2 - prior_synthesis_attempts
+            if remaining_synthesis_attempts <= 0:
+                raise StructuredFinalizationError(
+                    "synthesis_budget_exhausted",
+                    "Structured synthesis exceeded the durable retry budget.",
+                )
+            finalizer = StructuredFinalizer(
+                llm_call=llm_call,
+                suggestions_enabled=self.prompt_builder.suggestions_enabled,
+                on_attempt=self._record_provider_attempt,
+                flush_attempts=self._flush_provider_attempts,
+                max_context_tokens=int(capabilities.max_context_tokens),
+                max_attempts=remaining_synthesis_attempts,
+            )
+            evidence_ledger = {
+                "obligations": [
+                    {
+                        "obligation_id": item.get("obligation_id"),
+                        "required_tool": item.get("required_tool"),
+                        "source": item.get("source"),
+                        "evidence_key": item.get("evidence_key"),
+                        "status": item.get("status"),
+                    }
+                    for item in canonical.get("obligations", [])
+                    if isinstance(item, dict)
+                ],
+                "binds": [
+                    {
+                        "obligation_id": item.get("obligation_id"),
+                        "invocation_id": item.get("invocation_id"),
+                        "evidence_key": item.get("evidence_key"),
+                    }
+                    for item in canonical.get("binds", [])
+                    if isinstance(item, dict)
+                ],
+            }
+            synthesis = await finalizer.finalize(
+                [
+                    *prepared_turn.messages,
+                    {
+                        "role": "system",
+                        "content": (
+                            "Backend-verified evidence ledger (JSON): "
+                            + json.dumps(
+                                evidence_ledger,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                        ),
+                    },
+                ],
+                call_usages=prepared_turn.call_usages,
+            )
+        except (StructuredFinalizationError, RuntimeError) as exc:
+            return await self._commit_structured_failure(
+                prepared_turn=prepared_turn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                loop=loop,
+                code=getattr(exc, "code", "provider_capability_unavailable"),
+                message=str(exc),
+            )
+        return await self._commit_structured_final(
+            prepared_turn=prepared_turn,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            loop=loop,
+            structured_content=synthesis.content,
+            output_filtered=synthesis.output_filtered,
+        )
+
+    async def _require_structured_capabilities(
+        self,
+        *,
+        stage: str,
+        exact_choice: bool = False,
+    ) -> object:
+        """Fail closed unless the active provider declares the required phase."""
+        resolver = getattr(self, "_capabilities_resolver", None)
+        if resolver is None:
+            raise RuntimeError("Provider capability information is unavailable.")
+        capabilities = resolver()
+        if inspect.isawaitable(capabilities):
+            capabilities = await capabilities
+        required = ["non_streaming_custom_schema"]
+        if stage == "tool":
+            required = ["native_tools"]
+            if exact_choice:
+                required.extend(
+                    ["required_native_decision", "exact_named_choice"]
+                )
+        missing = [
+            name
+            for name in required
+            if getattr(capabilities, name, CapabilitySupport.UNKNOWN)
+            is not CapabilitySupport.SUPPORTED
+        ]
+        if missing:
+            states = ", ".join(
+                f"{name}={getattr(capabilities, name, CapabilitySupport.UNKNOWN).value}"
+                for name in missing
+            )
+            raise RuntimeError(
+                f"Provider capabilities do not permit structured {stage}: {states}."
+            )
+        return capabilities
+
+    async def _pause_for_missing_input(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        loop: AgenticLoop,
+        llm_call: object,
+        session_id: str,
+        conversation_id: str,
+        question: str,
+        expected_input_schema: dict[str, object],
+        assistant_message: dict[str, object],
+    ) -> AgentResponse:
+        """Persist one typed missing-input pause and return no final answer."""
+        if self.turn_store is None or prepared_turn.run_id is None:
+            raise RuntimeError("missing-input pause requires core turn authority")
+        canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
+        round_number = int((canonical or {}).get("tool_rounds", 0))
+        pending_input_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"{prepared_turn.run_id}:pending-input:{round_number}:{question}",
+            )
+        )
+        existing = next(
+            (
+                item
+                for item in (canonical or {}).get("pending_inputs", [])
+                if isinstance(item, dict)
+                and item.get("pending_input_id") == pending_input_id
+            ),
+            None,
+        )
+        if existing is None:
+            try:
+                capabilities = await self._require_structured_capabilities(
+                    stage="synthesis"
+                )
+                formatter = StructuredFinalizer(
+                    llm_call=llm_call,
+                    suggestions_enabled=self.prompt_builder.suggestions_enabled,
+                    on_attempt=self._record_provider_attempt,
+                    flush_attempts=self._flush_provider_attempts,
+                    max_context_tokens=int(capabilities.max_context_tokens),
+                    max_attempts=2,
+                    phase="Pending input",
+                )
+                formatted = await formatter.finalize(
+                    [
+                        *prepared_turn.messages,
+                        {
+                            "role": "system",
+                            "content": (
+                                "The assistant must pause for one missing value. "
+                                "Format the following question as the complete "
+                                "user-facing answer without answering the original "
+                                "task. Preserve what value is requested."
+                            ),
+                        },
+                        {"role": "assistant", "content": question},
+                    ],
+                    call_usages=prepared_turn.call_usages,
+                )
+            except (StructuredFinalizationError, RuntimeError) as exc:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared_turn,
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    loop=loop,
+                    code=getattr(exc, "code", "provider_capability_unavailable"),
+                    message=str(exc),
+                )
+            visible_question = formatted.content.answer
+            suggestions = list(formatted.content.suggestions)
+            expires_at = (datetime.now(UTC) + timedelta(hours=24)).isoformat()
+        else:
+            visible_question = str(existing.get("question", question))
+            suggestions = [
+                str(item)
+                for item in existing.get("suggestions", [])
+                if isinstance(item, str)
+            ]
+            expires_at = str(existing.get("expires_at", ""))
+        stored = await self.turn_store.create_agent_pending_input(
+            turn_id=prepared_turn.run_id,
+            pending_input_id=pending_input_id,
+            question=visible_question,
+            suggestions=suggestions,
+            expected_input_schema=expected_input_schema,
+            transcript_snapshot=[*prepared_turn.messages, assistant_message],
+            expires_at=expires_at,
+        )
+        pending_input = PendingInput(
+            run_id=prepared_turn.run_id,
+            pending_input_id=str(stored["pending_input_id"]),
+            question=str(stored["question"]),
+            expected_input_schema=dict(stored["expected_input_schema"]),
+            status=PendingInputStatus(str(stored["status"])),
+            expires_at=str(stored["expires_at"]),
+            cas_version=int(stored["cas_version"]),
+            suggestions=tuple(
+                str(item)
+                for item in stored.get("suggestions", [])
+                if isinstance(item, str)
+            ),
+        )
+        outcome = TurnOutcome(
+            kind=TurnOutcomeKind.PAUSED,
+            run_id=prepared_turn.run_id,
+            pending_input=pending_input,
+        )
+        return AgentResponse(
+            structured_content=None,
+            loop_result=loop.complete(""),
+            input_filtered=prepared_turn.input_filtered,
+            retrieved_memories=prepared_turn.prepared_context.retrieved_memories,
+            retrieved_messages=prepared_turn.prepared_context.retrieved_messages,
+            used_tools=self.used_tools,
+            outcome=outcome,
+            run_id=prepared_turn.run_id,
+        )
+
+    def _build_paused_structured_response(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        loop: AgenticLoop,
+    ) -> AgentResponse:
+        """Return PAUSED without an assistant or dialog record."""
+        confirmations = tuple(
+            TurnPendingConfirmation(
+                run_id=prepared_turn.run_id or "",
+                confirmation_id=action.action_id,
+                invocation_id=next(
+                    (
+                        str(item.get("invocation_id", ""))
+                        for item in self.tool_executor.executed_tools
+                        if item.get("confirmation_id") == action.action_id
+                    ),
+                    "",
+                ),
+                status=ConfirmationStatus.PENDING,
+                expires_at=(
+                    datetime.now(UTC) + timedelta(seconds=self.confirmation_mgr.timeout)
+                ).isoformat(),
+                title=action.tool_name,
+                description=f"Allow {action.tool_name} with the proposed parameters",
+                tool_name=action.tool_name,
+                parameters=action.parameters,
+            )
+            for action in self.tool_executor.pending_red_calls
+        )
+        outcome = TurnOutcome(
+            kind=TurnOutcomeKind.PAUSED,
+            run_id=prepared_turn.run_id or "",
+            confirmations=confirmations,
+        )
+        return AgentResponse(
+            structured_content=None,
+            loop_result=loop.complete(""),
+            input_filtered=prepared_turn.input_filtered,
+            retrieved_memories=prepared_turn.prepared_context.retrieved_memories,
+            retrieved_messages=prepared_turn.prepared_context.retrieved_messages,
+            used_tools=self.used_tools,
+            outcome=outcome,
+            run_id=prepared_turn.run_id,
+        )
+
+    async def _commit_structured_failure(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        session_id: str,
+        conversation_id: str,
+        loop: AgenticLoop,
+        code: str,
+        message: str,
+    ) -> AgentResponse:
+        """Filter and atomically commit one interactive typed failure."""
+        filtered = filter_output(message)
+        safe_message = (
+            filtered.text.strip() or "The request could not be completed safely."
+        )
+        content = StructuredAssistantContent(answer=safe_message)
+        return await self._commit_core_interactive_outcome(
+            prepared_turn=prepared_turn,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            loop=loop,
+            kind=TurnOutcomeKind.FAILED,
+            structured_content=content,
+            output_filtered=bool(filtered.blocked or filtered.credentials_found),
+            error=TerminalError(code=code, message=safe_message),
+        )
+
+    async def _commit_structured_final(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        session_id: str,
+        conversation_id: str,
+        loop: AgenticLoop,
+        structured_content: StructuredAssistantContent,
+        output_filtered: bool,
+    ) -> AgentResponse:
+        """Atomically commit one accepted structured final."""
+        return await self._commit_core_interactive_outcome(
+            prepared_turn=prepared_turn,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            loop=loop,
+            kind=TurnOutcomeKind.FINAL,
+            structured_content=structured_content,
+            output_filtered=output_filtered,
+            error=None,
+        )
+
+    async def _commit_core_interactive_outcome(
+        self,
+        *,
+        prepared_turn: TurnPreparation,
+        session_id: str,
+        conversation_id: str,
+        loop: AgenticLoop,
+        kind: TurnOutcomeKind,
+        structured_content: StructuredAssistantContent,
+        output_filtered: bool,
+        error: TerminalError | None,
+    ) -> AgentResponse:
+        """Commit message, dialog queue, turn, and canonical outcome together."""
+        if (
+            self.turn_store is None
+            or prepared_turn.run_id is None
+            or prepared_turn.finalization_id is None
+        ):
+            raise RuntimeError("structured final commit lacks durable identities")
+        stats = aggregate_call_usages(
+            prepared_turn.call_usages,
+            fallback_model=self.model_name,
+            total_wall_time_ms=(perf_counter() - prepared_turn.request_started_at)
+            * 1000,
+            zone_usage=prepared_turn.prepared_context.zone_usage,
+            stage_phases=self._stage_timings.phases,
+        )
+        structured_payload = {
+            "answer": structured_content.answer,
+            "thinking": None,
+            "suggestions": structured_content.suggestions,
+        }
+        outcome_payload: dict[str, object] = {
+            "structured_content": structured_payload,
+            "input_filtered": prepared_turn.input_filtered,
+            "output_filtered": output_filtered,
+            "stats": stats.model_dump(mode="json") if stats is not None else None,
+        }
+        if error is not None:
+            outcome_payload["error"] = {
+                "code": error.code,
+                "message": error.message,
+                "retryable": error.retryable,
+            }
+        source_ids = [
+            value for value in (prepared_turn.user_message_id,) if value is not None
+        ]
+        task_result = None
+        if self.prompt_builder.scheduled_task_mode and self.scheduled_task_run:
+            started_at = str(self.scheduled_task_run["started_at"])
+            finished_at = datetime.now(tz=UTC)
+            started = datetime.fromisoformat(started_at)
+            duration_ms = max(0, int((finished_at - started).total_seconds() * 1000))
+            task_result = {
+                "task_id": str(self.scheduled_task_run["task_id"]),
+                "started_at": started_at,
+                "finished_at": finished_at.isoformat(),
+                "status": "ok" if kind is TurnOutcomeKind.FINAL else "error",
+                "result_text": (
+                    structured_content.answer if kind is TurnOutcomeKind.FINAL else ""
+                ),
+                "error_message": (error.message[:1000] if error is not None else ""),
+                "duration_ms": duration_ms,
+            }
+        committed = await self.turn_store.commit_agent_turn_finalization(
+            turn_id=prepared_turn.run_id,
+            finalization_id=prepared_turn.finalization_id,
+            outcome_kind=kind.value,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            assistant_content=structured_content.answer,
+            assistant_meta=build_assistant_message_meta(stats, structured_content),
+            dialog_content=build_dialog_step_record_input(
+                prepared_turn.filtered_message,
+                structured_content.answer,
+            ),
+            source_message_ids=source_ids,
+            outcome_payload=outcome_payload,
+            persist_chat=(
+                kind is TurnOutcomeKind.FINAL
+                or not self.prompt_builder.scheduled_task_mode
+            ),
+            task_result=task_result,
+        )
+        raw_message_id = committed.get("assistant_message_id")
+        assistant_message_id = str(raw_message_id) if raw_message_id else None
+        outcome = TurnOutcome(
+            kind=kind,
+            run_id=prepared_turn.run_id,
+            finalization_id=prepared_turn.finalization_id,
+            structured_content=structured_content,
+            error=error,
+            assistant_message_id=assistant_message_id,
+        )
+        return AgentResponse(
+            structured_content=structured_content,
+            loop_result=loop.complete(structured_content.answer),
+            input_filtered=prepared_turn.input_filtered,
+            output_filtered=output_filtered,
+            retrieved_memories=prepared_turn.prepared_context.retrieved_memories,
+            retrieved_messages=prepared_turn.prepared_context.retrieved_messages,
+            stats=stats,
+            assistant_message_id=assistant_message_id,
+            used_tools=self.used_tools,
+            outcome=outcome,
+            run_id=prepared_turn.run_id,
+            finalization_id=prepared_turn.finalization_id,
         )
 
     @property
@@ -1325,3 +3007,7 @@ class AgentOrchestrator:
     def clear_pending(self) -> None:
         """Clear pending RED zone calls."""
         self.tool_executor.clear_pending()
+
+    def consume_pending_action(self, action_id: str) -> None:
+        """Remove one decided RED action from the active pending ledger."""
+        self.tool_executor.consume_pending(action_id)

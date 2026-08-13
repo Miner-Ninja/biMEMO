@@ -51,10 +51,13 @@ import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
 import { shouldKeepStreamedAssistantResponseAfterRequestError } from "@/lib/chat-request-errors";
 import {
   chatInputIsDisabled,
+  bindPendingInputReply,
   markStreamTerminalError,
   resolveStreamErrorMessage,
   runtimeBootstrapHasTerminalEvent,
+  runtimeBootstrapPausedEvent,
   shouldApplyHttpChatResponse,
+  shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
@@ -63,6 +66,7 @@ import type {
   Chat,
   Message,
   PendingConfirmation,
+  PendingInput,
   ProcessingStage,
   UsedTool,
 } from "@/types/chat";
@@ -88,8 +92,13 @@ type ChatResponsePayload = {
     tool_name: string;
     parameters: Record<string, unknown>;
   }[];
+  pause_reason?: "confirmation" | "missing_input" | null;
+  pending_input?: Omit<PendingInput, "run_id"> | null;
   used_tools?: UsedTool[];
   stream_enabled?: boolean;
+  outcome_kind?: "final" | "paused" | "failed" | "cancelled";
+  finalization_id?: string | null;
+  error?: { code: string; message: string; retryable?: boolean } | null;
 };
 
 type TokenEventPayload = {
@@ -441,6 +450,8 @@ export function ChatPage() {
   // Confirmations that arrived as realtime `confirmation` events for the
   // current assistant turn; accumulated so multiple RED tools each get a card.
   const pendingConfirmationsRef = useRef<PendingConfirmation[]>([]);
+  const pendingInputRef = useRef<PendingInput | null>(null);
+  const processedFinalizationIdsRef = useRef<Set<string>>(new Set());
   const pseudoStreamRunIdRef = useRef(0);
   const stoppedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
   const activeAssistantStreamRef = useRef<ActiveAssistantStreamState>({
@@ -539,7 +550,7 @@ export function ChatPage() {
 
   const finalizeAssistantStreamIfReady = useCallback(() => {
     const activeStream = activeAssistantStreamRef.current;
-    if (!activeStream.httpCompleted || !activeStream.realtimeCompleted) {
+    if (!shouldFinalizeAssistantStream(activeStream)) {
       return;
     }
     clearAssistantStream();
@@ -659,6 +670,15 @@ export function ChatPage() {
         ),
       ];
       const usedTools = response.used_tools;
+      const pendingInput = response.pending_input
+        ? {
+            ...response.pending_input,
+            run_id: response.run_id || "",
+          }
+        : undefined;
+      if (pendingInput?.run_id) {
+        pendingInputRef.current = pendingInput;
+      }
       const structuredContentForPseudoStream = should_use_structured_pseudo_stream(
         structuredContent,
         streamedContentRef.current,
@@ -703,6 +723,7 @@ export function ChatPage() {
                   ? pendingConfirmations
                   : undefined,
               usedTools,
+              pendingInput,
               error: undefined,
             },
             streamedThinkingRef.current || structuredContent?.thinking || ""
@@ -870,6 +891,9 @@ export function ChatPage() {
         event.type === "tool_status" ||
         event.type === "confirmation" ||
         event.type === "final" ||
+        event.type === "paused" ||
+        event.type === "failed" ||
+        event.type === "cancelled" ||
         event.type === "error" ||
         event.type === "done";
       if (isAssistantRunEvent && !isCurrentAssistantStreamEvent(event)) {
@@ -884,6 +908,72 @@ export function ChatPage() {
       if (event.type === "runtime_bootstrap") {
         const bootstrap = eventPayload as RuntimeBootstrapPayload | null;
         const conversationId = bootstrap?.conversation_id || "";
+        const pausedEvent = runtimeBootstrapPausedEvent(bootstrap);
+        if (pausedEvent && conversationId) {
+          const rawConfirmations = pausedEvent.payload?.pending_confirmations;
+          const confirmations = Array.isArray(rawConfirmations)
+            ? rawConfirmations
+                .filter((item): item is Record<string, unknown> =>
+                  Boolean(item && typeof item === "object")
+                )
+                .map((item) => ({
+                  action_id: String(item.action_id || ""),
+                  tool_name: String(item.tool_name || ""),
+                  parameters:
+                    item.parameters && typeof item.parameters === "object"
+                      ? (item.parameters as Record<string, unknown>)
+                      : {},
+                  status: "pending" as const,
+                }))
+                .filter((item) => item.action_id)
+            : [];
+          if (confirmations.length > 0) {
+            addMessageToConversation(conversationId, {
+              id: `paused-${pausedEvent.run_id || "turn"}`,
+              role: "assistant",
+              content: "",
+              pendingConfirmations: confirmations,
+              timestamp: new Date(),
+            });
+          } else {
+            const rawInput = pausedEvent.payload?.pending_input;
+            if (rawInput && typeof rawInput === "object") {
+              const item = rawInput as Record<string, unknown>;
+              const pendingInput: PendingInput = {
+                run_id: String(pausedEvent.run_id || ""),
+                pending_input_id: String(item.pending_input_id || ""),
+                question: String(item.question || ""),
+                suggestions: Array.isArray(item.suggestions)
+                  ? item.suggestions.map(String)
+                  : [],
+                expected_input_schema:
+                  item.expected_input_schema &&
+                  typeof item.expected_input_schema === "object"
+                    ? (item.expected_input_schema as Record<string, unknown>)
+                    : {},
+                expires_at: String(item.expires_at || ""),
+                cas_version: Number(item.cas_version || 0),
+              };
+              pendingInputRef.current = pendingInput;
+              addMessageToConversation(conversationId, {
+                id: `paused-${pausedEvent.run_id || "turn"}`,
+                role: "assistant",
+                content: pendingInput.question,
+                suggestions: pendingInput.suggestions,
+                pendingInput,
+                timestamp: new Date(),
+              });
+            }
+          }
+          updateConversation(conversationId, {
+            processingStatus: "idle",
+            processingStage: "",
+            processingStartedAt: undefined,
+          });
+          setIsLoading(false);
+          clearStages();
+          return;
+        }
         if (!runtimeBootstrapHasTerminalEvent(bootstrap)) {
           return;
         }
@@ -959,17 +1049,64 @@ export function ChatPage() {
             pendingConfirmations: pendingConfirmationsRef.current,
           });
         }
+      } else if (event.type === "paused" && assistantMessageIdRef.current) {
+        const pausedPayload = eventPayload as ChatFinalEventPayload | null;
+        const confirmations = (pausedPayload?.pending_confirmations ?? []).map((c) => ({
+          ...c,
+          status: "pending" as const,
+        }));
+        pendingConfirmationsRef.current = confirmations;
+        const pendingInput = pausedPayload?.pending_input
+          ? {
+              ...pausedPayload.pending_input,
+              run_id: pausedPayload.run_id || "",
+            }
+          : undefined;
+        if (pendingInput?.run_id) {
+          pendingInputRef.current = pendingInput;
+        }
+        updateMessage(assistantMessageIdRef.current, {
+          pendingConfirmations: confirmations,
+          pendingInput,
+          content: pendingInput?.question || "",
+          suggestions: pendingInput?.suggestions,
+        });
+        activeAssistantStreamRef.current.finalReceived = true;
+        activeAssistantStreamRef.current.realtimeCompleted = true;
+        setIsLoading(false);
+        clearStages();
+      } else if (event.type === "cancelled") {
+        pendingInputRef.current = null;
+        const activeStream = activeAssistantStreamRef.current;
+        if (activeStream.assistantMessageId) {
+          updateMessage(activeStream.assistantMessageId, {
+            error: "Request cancelled.",
+          });
+        }
+        activeAssistantStreamRef.current = markStreamTerminalError(
+          activeAssistantStreamRef.current
+        );
+        setIsLoading(false);
+        clearStages();
       } else if (event.type === "done") {
         setIsLoading(false);
         setTimeout(() => clearStages(), 1000);
         activeAssistantStreamRef.current.realtimeCompleted = true;
         finalizeAssistantStreamIfReady();
-      } else if (event.type === "final") {
+      } else if (event.type === "final" || event.type === "failed") {
+        pendingInputRef.current = null;
         const finalPayload = eventPayload as ChatFinalEventPayload | null;
         const activeStream = activeAssistantStreamRef.current;
         const assistantMessageId = activeStream.assistantMessageId;
         if (!assistantMessageId || !finalPayload) {
           return;
+        }
+        const finalizationId = finalPayload.finalization_id || null;
+        if (finalizationId && processedFinalizationIdsRef.current.has(finalizationId)) {
+          return;
+        }
+        if (finalizationId) {
+          processedFinalizationIdsRef.current.add(finalizationId);
         }
         void (async () => {
           if (
@@ -992,6 +1129,12 @@ export function ChatPage() {
             assistantMessageId,
             response: finalPayload,
           });
+          if (event.type === "failed" && finalPayload.error) {
+            updateMessage(assistantMessageId, {
+              error: finalPayload.error.message,
+              errorCategory: finalPayload.error.code,
+            });
+          }
           activeAssistantStreamRef.current.finalReceived = true;
           activeAssistantStreamRef.current.realtimeCompleted = true;
           setIsLoading(false);
@@ -1001,6 +1144,9 @@ export function ChatPage() {
             playTtsAndAutoRecord(finalText);
           }
         })().catch((error) => {
+          if (finalizationId) {
+            processedFinalizationIdsRef.current.delete(finalizationId);
+          }
           addToast({
             type: "error",
             message:
@@ -1091,22 +1237,6 @@ export function ChatPage() {
             ? new Date(conversationEvent.updated_at)
             : undefined,
         });
-        if (conversationEvent?.processing_status === "idle") {
-          const activeStream = activeAssistantStreamRef.current;
-          if (
-            activeStream.assistantMessageId &&
-            activeStream.conversationId === conversationId &&
-            !activeStream.finalReceived
-          ) {
-            activeAssistantStreamRef.current.realtimeCompleted = true;
-            activeAssistantStreamRef.current.finalReceived = true;
-            setIsLoading(false);
-            setTimeout(() => clearStages(), 1000);
-            void refreshConversationMessages(conversationId).finally(() => {
-              clearAssistantStream();
-            });
-          }
-        }
       } else if (event.type === "conversation_deleted") {
         const conversationEvent =
           eventPayload as ConversationDeletedEventPayload | null;
@@ -1325,7 +1455,8 @@ export function ChatPage() {
     messageContent: string,
     conversationId: string,
     images?: string[],
-    forcedTools?: string[]
+    forcedTools?: string[],
+    pendingInput?: PendingInput | null
   ) => {
     const assistantMessageId = generateId();
     const assistantMessage: Message = {
@@ -1343,7 +1474,7 @@ export function ChatPage() {
     let streamStarted = false;
 
     try {
-      const body: Record<string, unknown> = {
+      let body: Record<string, unknown> = {
         message: messageContent,
         conversation_id: conversationId,
       };
@@ -1354,10 +1485,16 @@ export function ChatPage() {
         body.file_ids = activeFiles;
       }
       if (forcedTools && forcedTools.length > 0) body.forced_tools = forcedTools;
+      if (pendingInput) {
+        body = bindPendingInputReply(body, pendingInput, messageContent);
+      }
       const response = await apiRequest<ChatResponsePayload>("/chat", {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (response.outcome_kind !== "paused") {
+        pendingInputRef.current = null;
+      }
 
       if (isAssistantStreamStopped(assistantMessageId)) {
         stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
@@ -1497,30 +1634,15 @@ export function ChatPage() {
     requestAutoScrollToBottom();
     addMessage(userMessage);
 
+    const pendingInput = pendingInputRef.current;
     await sendAndStream(
       messageContent,
       currentChat.id,
       imageDataUrls.length > 0 ? imageDataUrls : undefined,
-      forcedTools
+      forcedTools,
+      pendingInput
     );
   };
-
-  const handleConfirmationStatusChange = useCallback(
-    (actionId: string, status: PendingConfirmation["status"]) => {
-      const chat = activeChat;
-      if (!chat) return;
-      const targetMessage = chat.messages.find((m) =>
-        m.pendingConfirmations?.some((c) => c.action_id === actionId)
-      );
-      if (!targetMessage) return;
-      updateMessage(targetMessage.id, {
-        pendingConfirmations: targetMessage.pendingConfirmations?.map((c) =>
-          c.action_id === actionId ? { ...c, status } : c
-        ),
-      });
-    },
-    [activeChat, updateMessage]
-  );
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
     updateMessage(messageId, { content: newContent });
@@ -2102,7 +2224,6 @@ export function ChatPage() {
         onEditMessage={handleEditMessage}
         showThinking={showThinking}
         ttsAvailable={ttsAvailable}
-        onConfirmationStatusChange={handleConfirmationStatusChange}
       />
       <ChatInput
         ref={chatInputRef}

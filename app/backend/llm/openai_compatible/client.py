@@ -11,28 +11,36 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 
 from backend.config import get_settings
 from backend.llm.call_factory import (
+    AttemptRecord,
     LLMResponse,
     LLMToolCall,
     current_thinking_enabled,
 )
-from backend.llm.call_options import LLMCallOptions
+from backend.llm.call_options import (
+    EmptyRetry,
+    EventSink,
+    LLMCallOptions,
+)
 from backend.llm.capabilities import (
+    CapabilitySupport,
     LlmResponseFormat,
     ModelCapabilities,
 )
 from backend.llm.reasoning import strip_reasoning_output
 from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.structured_response import (
+    OPENAI_FINAL_ONLY_RESPONSE_FORMAT,
     OPENAI_STRUCTURED_RESPONSE_FORMAT,
     STRUCTURED_RESPONSE_INSTRUCTION,
     StructuredAssistantContent,
+    parse_final_only_response_json,
     parse_structured_response_json,
 )
 from backend.llm.structured_stream import AnswerFieldStreamExtractor
@@ -41,6 +49,7 @@ from backend.llm.usage import LLMCallUsage
 
 if TYPE_CHECKING:
     import asyncio
+    from collections.abc import Callable
 
 
 logger = logging.getLogger(__name__)
@@ -203,7 +212,9 @@ def _chat_payload(
     ``OPENAI_STRUCTURED_RESPONSE_FORMAT`` for this call only. The
     ``stream`` flag is set on the request verbatim — the caller decides
     whether the JSON_SCHEMA path should stream incremental chunks or
-    block for the full body.
+    block for the full body. When tools are present (native-tool round),
+    the ``response_format`` field is omitted so the LLM can use its native
+    tool-calling response format instead of guided JSON schema.
     """
     payload: dict = {
         "model": model,
@@ -212,13 +223,13 @@ def _chat_payload(
     }
     if stream:
         payload["stream_options"] = {"include_usage": True}
-    if llm_response_format is LlmResponseFormat.JSON_SCHEMA:
-        payload["response_format"] = _response_format_for(schema_override)
     if tools:
         payload["tools"] = tools
         # Default "auto". Per-turn forcing (chat-input chips) is applied by the
         # caller via options.tool_choice, not here.
         payload["tool_choice"] = TOOL_CHOICE_AUTO
+    if llm_response_format is LlmResponseFormat.JSON_SCHEMA and not tools:
+        payload["response_format"] = _response_format_for(schema_override)
     # Reasoning switch: only self-hosted OpenAI-compatible servers (vLLM)
     # understand chat_template_kwargs; hosted providers get no extra key.
     if thinking_enabled is False and api_prefix == CUSTOM_API_PREFIX:
@@ -226,12 +237,26 @@ def _chat_payload(
     return payload
 
 
-def _should_stream(llm_response_format: LlmResponseFormat) -> bool:
+def _should_stream(
+    llm_response_format: LlmResponseFormat,
+    response_stream: object | None = None,
+) -> bool:
     """Return whether one OpenAI-compatible chat request should stream.
 
-    TEXT mode always streams. JSON_SCHEMA mode streams only when the
-    operator opted in via ``BIMEMO_LLM_RESPONSE_STREAM=true``.
+    When ``response_stream`` is explicitly set (from ``LLMCallOptions``),
+    it overrides the default per-format behaviour. TEXT mode streams by
+    default; JSON_SCHEMA streams only when the operator opted in via
+    ``BIMEMO_LLM_RESPONSE_STREAM=true``.
     """
+    if response_stream is not None:
+        if isinstance(response_stream, str):
+            if response_stream in ("enabled", "true", "True", "1"):
+                return True
+            if response_stream in ("disabled", "false", "False", "0"):
+                return False
+            # "inherit" or unrecognized: fall through to default logic
+        else:
+            return bool(response_stream)
     if llm_response_format is not LlmResponseFormat.JSON_SCHEMA:
         return True
     return get_settings().llm_response_stream
@@ -295,6 +320,8 @@ def _usage_from_chunk(
     *,
     default_model: str,
     num_ctx: int | None,
+    phase: str = "",
+    attempt: int = 0,
 ) -> LLMCallUsage | None:
     """Build usage data from one streamed chunk when usage is present."""
     chunk_usage = chunk.get("usage")
@@ -311,6 +338,8 @@ def _usage_from_chunk(
         context_used=(
             prompt_tokens + completion_tokens if num_ctx is not None else None
         ),
+        phase=phase,
+        attempt=attempt,
     )
 
 
@@ -319,6 +348,8 @@ def _usage_from_response_body(
     *,
     default_model: str,
     num_ctx: int | None,
+    phase: str = "",
+    attempt: int = 0,
 ) -> LLMCallUsage | None:
     """Build usage data from one non-streaming OpenAI-style response body."""
     raw_usage = response_body.get("usage")
@@ -335,6 +366,8 @@ def _usage_from_response_body(
         context_used=(
             prompt_tokens + completion_tokens if num_ctx is not None else None
         ),
+        phase=phase,
+        attempt=attempt,
     )
 
 
@@ -386,6 +419,7 @@ class OpenAICompatibleClient:
         timeout: Request timeout in seconds.
     """
 
+    structured_capability_declarations: ClassVar[dict[str, CapabilitySupport]] = {}
     name: ClassVar[str] = "openai_compatible"
     env_override_names: ClassVar[tuple[str, ...]] = ()
     models_source: ClassVar[str] = SOURCE_CUSTOM_MODELS
@@ -539,6 +573,14 @@ class OpenAICompatibleClient:
         the ``tools`` parameter. Tool call deltas are accumulated
         across SSE chunks and returned as ``LLMToolCall`` objects.
 
+        When ``structured_finalization_enabled`` is active and tools are
+        present, a two-stage flow is used: Stage 1 sends TEXT+tools
+        (streaming by default); Stage 2 sends JSON_SCHEMA with no tools
+        (non-streaming) to obtain structured output from the Stage 1
+        response. Explicit call controls from ``LLMCallOptions`` —
+        ``response_stream``, ``empty_retry``, and ``event_sink`` — override
+        the default per-format behaviour.
+
         Args:
             messages: List of message dicts with role/content.
             sse_queue: Optional queue for real-time token forwarding to
@@ -565,48 +607,99 @@ class OpenAICompatibleClient:
         effective_tool_choice = (
             effective.tool_choice if effective.tool_choice is not None else tool_choice
         )
+
+        # Resolve explicit call controls from LLMCallOptions.
+        response_stream = effective.response_stream
+        empty_retry = effective.empty_retry
+        event_sink = effective.event_sink
+
+        # Apply event_sink tri-state to SSE queue.
+        if event_sink is EventSink.DISABLED:
+            effective_sse_queue = None
+        elif event_sink is EventSink.ENABLED:
+            pass  # keep effective_sse_queue as resolved above
+        # INHERIT or None: use the already-resolved effective_sse_queue
+
+        # Determine whether to retry on empty response.
+        do_empty_retry = True
+        if empty_retry is EmptyRetry.DISABLED:
+            do_empty_retry = False
+        elif empty_retry is EmptyRetry.ENABLED:
+            do_empty_retry = True
+
         llm_response_format = effective.response_format or _chat_response_format(
             provider_name=self.name,
             model_name=self.model,
         )
+
+        # --- Single-call flow ---
+        if effective_tools:
+            llm_response_format = LlmResponseFormat.TEXT
         request_messages = _request_messages(
             messages=messages,
             api_prefix=self.api_prefix,
             llm_response_format=llm_response_format,
         )
+        stream = _should_stream(llm_response_format, response_stream)
 
         payload = _chat_payload(
             model=self.model,
             messages=request_messages,
             tools=effective_tools,
             llm_response_format=llm_response_format,
-            stream=_should_stream(llm_response_format),
+            stream=stream,
             schema_override=effective.response_schema,
-            thinking_enabled=current_thinking_enabled(),
+            thinking_enabled=(
+                effective.thinking_enabled
+                if effective.thinking_enabled is not None
+                else current_thinking_enabled()
+            ),
             api_prefix=self.api_prefix,
         )
         if effective_tool_choice is not None and effective_tools:
             payload["tool_choice"] = effective_tool_choice
 
         skip_structured_parsing = effective.response_schema is not None
+        single_phase = effective.phase or "single-call"
 
-        response = await self._execute_chat_once(
-            payload,
-            llm_response_format,
-            effective_sse_queue,
-            skip_structured_parsing=skip_structured_parsing,
-        )
-        if _is_empty_response(response):
+        async def _execute_single_attempt(attempt_num: int) -> LLMResponse:
+            try:
+                result = await self._execute_chat_once(
+                    payload,
+                    llm_response_format,
+                    effective_sse_queue,
+                    skip_structured_parsing=skip_structured_parsing,
+                    phase=single_phase,
+                    attempt=attempt_num,
+                )
+            except Exception as exc:
+                if effective.on_attempt is not None:
+                    effective.on_attempt(
+                        AttemptRecord(
+                            phase=single_phase,
+                            attempt=attempt_num,
+                            error=str(exc),
+                        )
+                    )
+                raise
+            if effective.on_attempt is not None:
+                effective.on_attempt(
+                    AttemptRecord(
+                        phase=single_phase,
+                        attempt=attempt_num,
+                        response=result,
+                        usage=result.usage,
+                    )
+                )
+            return result
+
+        response = await _execute_single_attempt(1)
+        if _is_empty_response(response) and do_empty_retry:
             logger.warning(
                 "OpenAI-compatible provider returned empty response with no "
                 "tool calls; retrying once",
             )
-            response = await self._execute_chat_once(
-                payload,
-                llm_response_format,
-                effective_sse_queue,
-                skip_structured_parsing=skip_structured_parsing,
-            )
+            response = await _execute_single_attempt(2)
             if _is_empty_response(response):
                 logger.warning(
                     "OpenAI-compatible provider returned empty response on retry; "
@@ -615,6 +708,294 @@ class OpenAICompatibleClient:
                 return _empty_warning_response(response, llm_response_format)
         return response
 
+    async def _chat_with_structured_finalization(
+        self,
+        messages: list[dict],
+        sse_queue: asyncio.Queue | None,
+        tools: list[dict],
+        tool_choice: object | None,
+        response_format: LlmResponseFormat,
+        response_stream: object | None,
+        do_empty_retry: bool,
+        schema_override: dict | None,
+        on_attempt: Callable[[AttemptRecord], None] | None,
+        phase: str,
+    ) -> LLMResponse:
+        """Run Stage 1 (TEXT+tools) then Stage 2 (JSON_SCHEMA, non-streaming).
+
+        Stage 1 uses TEXT response format with tools so the model can
+        freely choose between answering and calling tools. If the model
+        returns tool calls those are returned directly. If the model
+        returns text (no tool calls), Stage 2 resubmits the conversation
+        with JSON_SCHEMA format and no tools to force structured output.
+
+        Tool choice from the original call is preserved exactly in Stage 1.
+        Stage 2 always omits tools (no tool_choice needed).
+
+        ``on_attempt`` and ``phase`` are threaded through so each HTTP
+        attempt (Stage 1, Stage 1 retry, Stage 2, Stage 2 retry) produces
+        an AttemptRecord via the callback.
+        """
+        # Resolve capabilities once and validate before any phase.
+        capabilities = await self.resolve_capabilities(self.model)
+
+        # R11: native_tools UNKNOWN/UNSUPPORTED must fail before Stage 1.
+        if capabilities.native_tools is not CapabilitySupport.SUPPORTED:
+            raise OpenAICompatibleClientError(
+                f"Stage 1 requires native tool calling support, "
+                f"but {capabilities.native_tools.value} for "
+                f"{self.name}/{self.model}"
+            )
+
+        # R11: non-streaming custom schema must be SUPPORTED for Stage 2.
+        if capabilities.non_streaming_custom_schema is not CapabilitySupport.SUPPORTED:
+            raise OpenAICompatibleClientError(
+                f"Stage 2 requires non-streaming custom schema support, "
+                f"but {capabilities.non_streaming_custom_schema.value} for "
+                f"{self.name}/{self.model}"
+            )
+
+        def _fire_attempt(attempt_record: AttemptRecord) -> None:
+            if on_attempt is not None:
+                on_attempt(attempt_record)
+
+        # Stage 1: TEXT + tools + stream
+        stage1_format = LlmResponseFormat.TEXT
+        stage1_messages = _request_messages(
+            messages=messages,
+            api_prefix=self.api_prefix,
+            llm_response_format=stage1_format,
+        )
+        stage1_stream = _should_stream(stage1_format, response_stream)
+
+        stage1_payload = _chat_payload(
+            model=self.model,
+            messages=stage1_messages,
+            tools=tools,
+            llm_response_format=stage1_format,
+            stream=stage1_stream,
+            schema_override=None,
+            thinking_enabled=current_thinking_enabled(),
+            api_prefix=self.api_prefix,
+        )
+        if tool_choice is not None:
+            stage1_payload["tool_choice"] = tool_choice
+
+        stage1_phase = "Stage 1"
+        stage1_attempt = 1
+
+        try:
+            stage1_response = await self._execute_chat_once(
+                stage1_payload,
+                stage1_format,
+                sse_queue,
+                skip_structured_parsing=False,
+                phase=stage1_phase,
+                attempt=stage1_attempt,
+            )
+        except Exception as exc:
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                    error=str(exc),
+                )
+            )
+            raise
+        _fire_attempt(
+            AttemptRecord(
+                phase=stage1_phase,
+                attempt=stage1_attempt,
+                response=stage1_response,
+                usage=stage1_response.usage,
+            )
+        )
+
+        # Empty-retry for Stage 1
+        if _is_empty_response(stage1_response) and do_empty_retry:
+            logger.warning(
+                "Stage 1 returned empty response; retrying once",
+            )
+            stage1_attempt += 1
+            try:
+                stage1_response = await self._execute_chat_once(
+                    stage1_payload,
+                    stage1_format,
+                    sse_queue,
+                    skip_structured_parsing=False,
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                )
+            except Exception as exc:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage1_phase,
+                        attempt=stage1_attempt,
+                        error=str(exc),
+                    )
+                )
+                raise
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage1_phase,
+                    attempt=stage1_attempt,
+                    response=stage1_response,
+                    usage=stage1_response.usage,
+                )
+            )
+            if _is_empty_response(stage1_response):
+                logger.warning(
+                    "Stage 1 returned empty response on retry; "
+                    "surfacing warning to user",
+                )
+                return _empty_warning_response(stage1_response, stage1_format)
+
+        # If Stage 1 returned tool calls, return directly (no Stage 2).
+        if stage1_response.tool_calls:
+            return replace(
+                stage1_response,
+                usage=(
+                    replace(
+                        stage1_response.usage,
+                        tool_capable=True,
+                        tool_used=True,
+                    )
+                    if stage1_response.usage is not None
+                    else None
+                ),
+            )
+
+        # --- Stage 2: JSON_SCHEMA, non-streaming, no tools ---
+        stage2_format = LlmResponseFormat.JSON_SCHEMA
+
+        # Append Stage 1 text as an assistant message for Stage 2 context.
+        assistant_msg: dict = {
+            "role": "assistant",
+            "content": stage1_response.text or None,
+        }
+        stage2_messages = _request_messages(
+            messages=[*messages, assistant_msg],
+            api_prefix=self.api_prefix,
+            llm_response_format=stage2_format,
+        )
+
+        use_final_only_parser = schema_override is None
+        stage2_schema = schema_override
+
+        # Stage 2 is always non-streaming with no SSE events.
+        stage2_payload = _chat_payload(
+            model=self.model,
+            messages=stage2_messages,
+            tools=None,
+            llm_response_format=stage2_format,
+            stream=False,
+            schema_override=stage2_schema,
+            thinking_enabled=current_thinking_enabled(),
+            api_prefix=self.api_prefix,
+        )
+        if use_final_only_parser:
+            stage2_payload["response_format"] = OPENAI_FINAL_ONLY_RESPONSE_FORMAT
+
+        # Bounded retry: at most two synthesis HTTP attempts.
+        max_attempts = 2
+        stage2_phase = "Stage 2"
+        for attempt_num in range(1, max_attempts + 1):
+            try:
+                stage2_response = await self._execute_chat_once(
+                    stage2_payload,
+                    stage2_format,
+                    sse_queue=None,
+                    skip_structured_parsing=not use_final_only_parser,
+                    use_final_only_parser=use_final_only_parser,
+                    phase=stage2_phase,
+                    attempt=attempt_num,
+                )
+            except Exception as exc:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        error=str(exc),
+                    )
+                )
+                raise
+            stage2_response = replace(
+                stage2_response,
+                usage=(
+                    replace(
+                        stage2_response.usage,
+                        tool_capable=True,
+                        tool_used=False,
+                    )
+                    if stage2_response.usage is not None
+                    else None
+                ),
+            )
+            # Non-retryable: tool calls with no tools offered — fail closed.
+            if stage2_response.tool_calls:
+                error = "Stage 2 returned tool calls with no tools offered"
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        response=stage2_response,
+                        error=error,
+                        usage=stage2_response.usage,
+                    )
+                )
+                raise OpenAICompatibleClientError(f"{error}; synthesis failed")
+
+            # Custom schema: caller owns parsing; return directly.
+            if not use_final_only_parser:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        response=stage2_response,
+                        usage=stage2_response.usage,
+                    )
+                )
+                return stage2_response
+
+            # Final-only: check whether structured content was parsed.
+            if stage2_response.structured_content is not None:
+                _fire_attempt(
+                    AttemptRecord(
+                        phase=stage2_phase,
+                        attempt=attempt_num,
+                        response=stage2_response,
+                        usage=stage2_response.usage,
+                    )
+                )
+                return stage2_response
+
+            error = "Stage 2 returned empty or malformed structured output"
+            _fire_attempt(
+                AttemptRecord(
+                    phase=stage2_phase,
+                    attempt=attempt_num,
+                    response=stage2_response,
+                    error=error,
+                    usage=stage2_response.usage,
+                )
+            )
+
+            # Empty or malformed: retry if attempts remain.
+            if attempt_num < max_attempts:
+                logger.warning(
+                    "Stage 2 attempt %d returned empty/malformed; "
+                    "retrying (attempt %d of %d)",
+                    attempt_num,
+                    attempt_num + 1,
+                    max_attempts,
+                )
+                continue
+
+        # All attempts exhausted — fail closed (R7: no fallback to Stage 1).
+        raise OpenAICompatibleClientError(
+            "Stage 2 synthesis exhausted all attempts without valid structured output"
+        )
+
     async def _execute_chat_once(
         self,
         payload: dict[str, object],
@@ -622,26 +1003,37 @@ class OpenAICompatibleClient:
         sse_queue: asyncio.Queue | None,
         *,
         skip_structured_parsing: bool,
+        use_final_only_parser: bool = False,
+        phase: str = "",
+        attempt: int = 0,
     ) -> LLMResponse:
         """Run one OpenAI-compatible chat round and return the raw response."""
+        stream = payload.get("stream", False)
         if _uses_structured_response(llm_response_format):
-            if _should_stream(llm_response_format):
+            if stream:
                 return await self._streaming_chat(
                     payload,
                     sse_queue,
                     llm_response_format,
                     structured=True,
                     skip_structured_parsing=skip_structured_parsing,
+                    phase=phase,
+                    attempt=attempt,
                 )
             return await self._structured_chat(
                 payload,
                 llm_response_format,
                 skip_parsing=skip_structured_parsing,
+                use_final_only_parser=use_final_only_parser,
+                phase=phase,
+                attempt=attempt,
             )
         return await self._streaming_chat(
             payload,
             sse_queue,
             llm_response_format,
+            phase=phase,
+            attempt=attempt,
         )
 
     async def _streaming_chat(
@@ -652,6 +1044,8 @@ class OpenAICompatibleClient:
         *,
         structured: bool = False,
         skip_structured_parsing: bool = False,
+        phase: str = "",
+        attempt: int = 0,
     ) -> LLMResponse:
         """Run one streaming chat round and return LLMResponse.
 
@@ -697,6 +1091,8 @@ class OpenAICompatibleClient:
                         chunk,
                         default_model=self.model,
                         num_ctx=self._usage_context_tokens(),
+                        phase=phase,
+                        attempt=attempt,
                     )
                     if chunk_usage is not None:
                         final_usage = chunk_usage
@@ -786,14 +1182,17 @@ class OpenAICompatibleClient:
             tool_call_parts = tool_call_acc[tool_call_index]
             raw_arguments = "".join(tool_call_parts["arguments_parts"])
             try:
-                arguments = json.loads(raw_arguments) if raw_arguments else {}
-            except json.JSONDecodeError:
-                logger.warning(
-                    "Failed to parse tool call arguments for %s: %s",
-                    tool_call_parts["name"],
-                    raw_arguments,
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError as exc:
+                raise OpenAICompatibleClientError(
+                    "Provider returned malformed tool call arguments for "
+                    f"{tool_call_parts['name']}"
+                ) from exc
+            if not isinstance(arguments, dict):
+                raise OpenAICompatibleClientError(
+                    "Provider returned non-object tool call arguments for "
+                    f"{tool_call_parts['name']}"
                 )
-                arguments = {}
             tool_calls.append(
                 LLMToolCall(
                     id=tool_call_parts["id"],
@@ -807,10 +1206,17 @@ class OpenAICompatibleClient:
             text = extractor.full_text
             if not skip_structured_parsing and not tool_calls:
                 joined_thinking = "".join(thinking_parts) or None
-                structured_content = parse_structured_response_json(
-                    text,
-                    thinking=joined_thinking,
-                )
+                try:
+                    structured_content = parse_structured_response_json(
+                        text=text,
+                        thinking=joined_thinking,
+                    )
+                except ValueError as parse_err:
+                    logger.warning(
+                        "Structured response parsing failed: %s",
+                        parse_err,
+                    )
+                    structured_content = None
         else:
             text = "".join(full_text)
             if self.api_prefix == CUSTOM_API_PREFIX:
@@ -841,6 +1247,15 @@ class OpenAICompatibleClient:
             ]
 
         if structured_content is not None:
+            final_usage = (
+                replace(
+                    final_usage,
+                    tool_capable=bool(payload.get("tools")),
+                    tool_used=bool(tool_calls),
+                )
+                if final_usage is not None
+                else None
+            )
             return LLMResponse(
                 text=structured_content.answer,
                 tool_calls=tool_calls,
@@ -849,6 +1264,15 @@ class OpenAICompatibleClient:
                 llm_response_format=llm_response_format,
                 structured_content=structured_content,
             )
+        final_usage = (
+            replace(
+                final_usage,
+                tool_capable=bool(payload.get("tools")),
+                tool_used=bool(tool_calls),
+            )
+            if final_usage is not None
+            else None
+        )
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,
@@ -860,13 +1284,20 @@ class OpenAICompatibleClient:
     def _structured_content_from_message(
         self,
         message: dict[str, object],
+        *,
+        use_final_only_parser: bool = False,
     ) -> StructuredAssistantContent | None:
         """Build one structured assistant response from a non-streaming reply."""
         tool_calls = self._tool_calls_from_message(message)
         if tool_calls:
             return None
         thinking = self._thinking_from_message(message)
-        return parse_structured_response_json(
+        parser = (
+            parse_final_only_response_json
+            if use_final_only_parser
+            else parse_structured_response_json
+        )
+        return parser(
             str(message.get("content", EMPTY_ASSISTANT_CONTENT)),
             thinking=thinking,
         )
@@ -921,18 +1352,20 @@ class OpenAICompatibleClient:
         if isinstance(raw_arguments, dict):
             return raw_arguments
         if not isinstance(raw_arguments, str) or not raw_arguments.strip():
-            return {}
+            raise OpenAICompatibleClientError(
+                "Provider returned missing tool call arguments"
+            )
         try:
             parsed_arguments = json.loads(raw_arguments)
-        except json.JSONDecodeError:
-            logger.warning(
-                "Failed to parse OpenAI-compatible tool call arguments: %s",
-                raw_arguments,
-            )
-            return {}
+        except json.JSONDecodeError as exc:
+            raise OpenAICompatibleClientError(
+                "Provider returned malformed tool call arguments"
+            ) from exc
         if isinstance(parsed_arguments, dict):
             return parsed_arguments
-        return {}
+        raise OpenAICompatibleClientError(
+            "Provider returned non-object tool call arguments"
+        )
 
     def _raw_message_from_response(
         self,
@@ -965,6 +1398,9 @@ class OpenAICompatibleClient:
         llm_response_format: LlmResponseFormat,
         *,
         skip_parsing: bool = False,
+        use_final_only_parser: bool = False,
+        phase: str = "",
+        attempt: int = 0,
     ) -> LLMResponse:
         """Request one non-streaming structured response.
 
@@ -1019,8 +1455,31 @@ class OpenAICompatibleClient:
             structured_content = None
             text = str(message.get("content", EMPTY_ASSISTANT_CONTENT))
         else:
-            structured_content = self._structured_content_from_message(message)
+            try:
+                structured_content = self._structured_content_from_message(
+                    message,
+                    use_final_only_parser=use_final_only_parser,
+                )
+            except ValueError as parse_err:
+                logger.warning(
+                    "Structured response parsing failed: %s",
+                    parse_err,
+                )
+                structured_content = None
             text = structured_content.answer if structured_content is not None else ""
+        response_usage = _usage_from_response_body(
+            response_body,
+            default_model=self.model,
+            num_ctx=self._usage_context_tokens(),
+            phase=phase,
+            attempt=attempt,
+        )
+        if response_usage is not None:
+            response_usage = replace(
+                response_usage,
+                tool_capable=bool(payload.get("tools")),
+                tool_used=bool(tool_calls),
+            )
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,
@@ -1028,11 +1487,7 @@ class OpenAICompatibleClient:
                 text=text,
                 tool_calls=tool_calls,
             ),
-            usage=_usage_from_response_body(
-                response_body,
-                default_model=self.model,
-                num_ctx=self._usage_context_tokens(),
-            ),
+            usage=response_usage,
             llm_response_format=llm_response_format,
             structured_content=structured_content,
         )

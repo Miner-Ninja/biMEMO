@@ -50,6 +50,8 @@ class RunEventContext:
     run_id: str = ""
     request_id: str = ""
     conversation_id: str = ""
+    authority_store: str = "runtime"
+    architecture_version: str = "legacy"
 
 
 class RunEventRecorder:
@@ -78,6 +80,12 @@ class RunEventRecorder:
         """Persist one runtime event when the run context is ready."""
         if not self._context.run_id or not self._context.conversation_id:
             return None
+        if self._context.authority_store == "core":
+            return await self._db_client.append_agent_turn_event(
+                turn_id=self._context.run_id,
+                event_type=event_type.value,
+                payload=payload or {},
+            )
         try:
             return await self._db_client.create_agent_run_event(
                 run_id=self._context.run_id,
@@ -93,6 +101,29 @@ class RunEventRecorder:
                 exc_info=True,
             )
             return None
+
+    async def record_provider_attempt(
+        self,
+        *,
+        phase: str,
+        attempt: int,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Persist one actual HTTP provider attempt with stable phase metadata."""
+        if not self._context.run_id:
+            return None
+        if self._context.authority_store == "core":
+            return await self._db_client.append_agent_turn_event(
+                turn_id=self._context.run_id,
+                event_type="provider_attempt",
+                phase=phase,
+                attempt=attempt,
+                payload=payload,
+            )
+        return await self.record(
+            AgentRunEventType.LLM_STARTED,
+            {"phase": phase, "attempt": attempt, **payload},
+        )
 
     async def record_stream_event(
         self,

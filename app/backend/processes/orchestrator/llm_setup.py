@@ -75,6 +75,7 @@ def _build_gateway_orchestrator(
         log_skill_usage_fn=db_client.log_skill_usage,
         action_grants=action_grants,
         pending_action_recorder=db_client.create_pending_action,
+        turn_store=db_client,
     )
 
 
@@ -278,17 +279,19 @@ def _build_llm_client(
     capabilities_registry: CapabilitiesRegistry | None = None,
 ) -> object:
     """Build the concrete LLM client for the selected provider."""
+    from backend.llm.capabilities import CapabilitySupport
+
     from .process_helpers import parse_optional_int
 
     if active_service_type == "openrouter":
-        return openrouter_client_cls(
+        client = openrouter_client_cls(
             api_key=llm_config.get("api_key", ""),
             model=llm_config.get("model", ""),
             base_url=llm_config.get("base_url", "https://openrouter.ai"),
             num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         )
-    if active_service_type == "custom":
-        return custom_client_cls(
+    elif active_service_type == "custom":
+        client = custom_client_cls(
             api_key=llm_config.get("api_key", ""),
             model=llm_config.get("model", ""),
             base_url=llm_config.get("base_url", ""),
@@ -296,18 +299,34 @@ def _build_llm_client(
             num_ctx=parse_optional_int(llm_config.get("num_ctx")),
         )
 
-    from backend.llm.compute_config import default_compute_config
-    from backend.llm.hardware import detect_hardware, select_profile
+    else:
+        from backend.llm.compute_config import default_compute_config
+        from backend.llm.hardware import detect_hardware, select_profile
 
-    hardware = detect_hardware()
-    profile = select_profile(hardware)
-    return ollama_client_cls(
-        base_url=llm_config.get("base_url", "http://ollama:11434"),
-        dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
-        model=llm_config.get("model", profile.primary_model),
-        token_path="/run/ollama-token/token",  # noqa: S106
-        num_ctx=parse_optional_int(llm_config.get("num_ctx")),
-        profile_config=profile,
-        compute_config=default_compute_config(),
-        capabilities_registry=capabilities_registry,
-    )
+        hardware = detect_hardware()
+        profile = select_profile(hardware)
+        client = ollama_client_cls(
+            base_url=llm_config.get("base_url", "http://ollama:11434"),
+            dialog_recorder_base_url=llm_config.get("dialog_recorder_base_url") or None,
+            model=llm_config.get("model", profile.primary_model),
+            token_path="/run/ollama-token/token",  # noqa: S106
+            num_ctx=parse_optional_int(llm_config.get("num_ctx")),
+            profile_config=profile,
+            compute_config=default_compute_config(),
+            capabilities_registry=capabilities_registry,
+        )
+    client.structured_capability_declarations = {
+        "native_tools": CapabilitySupport(
+            getattr(settings, "llm_native_tools_support", "unknown")
+        ),
+        "exact_named_choice": CapabilitySupport(
+            getattr(settings, "llm_exact_named_choice_support", "unknown")
+        ),
+        "required_native_decision": CapabilitySupport(
+            getattr(settings, "llm_required_native_decision_support", "unknown")
+        ),
+        "non_streaming_custom_schema": CapabilitySupport(
+            getattr(settings, "llm_custom_schema_support", "unknown")
+        ),
+    }
+    return client

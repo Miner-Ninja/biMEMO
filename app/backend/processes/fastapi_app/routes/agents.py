@@ -119,8 +119,7 @@ async def issue_agent_token(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Invalid capability '{capability}'. "
-                "Must be 'read' or 'read-write'."
+                f"Invalid capability '{capability}'. Must be 'read' or 'read-write'."
             ),
         )
 

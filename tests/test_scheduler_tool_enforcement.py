@@ -34,7 +34,7 @@ class _FakeOrchestrator:
             allowed_tool_names=None,
             scheduled_task_mode=False,
         )
-        self.tool_executor = SimpleNamespace(tool_names_used=[])
+        self.tool_executor = SimpleNamespace(tool_names_used=[], executed_tools=[])
 
     async def process_message(self, *, message, channel, **_kwargs):
         idx = len(self.calls)
@@ -45,6 +45,9 @@ class _FakeOrchestrator:
         )
         used = self._plan[idx] if idx < len(self._plan) else self._plan[-1]
         self.tool_executor.tool_names_used = list(used)
+        self.tool_executor.executed_tools = [
+            {"name": name, "status": "succeeded", "success": True} for name in used
+        ]
         return SimpleNamespace(
             structured_content=SimpleNamespace(answer=self._answer),
             assistant_message_id=f"msg-{idx}",
@@ -106,7 +109,7 @@ class TestScheduledTaskToolEnforcement:
         orch = _FakeOrchestrator([[]])
         result, success = await _execute_agent_task(_services(orch), _task())
 
-        assert success is True
+        assert success is False
         assert len(orch.calls) == MAX_TOOL_ENFORCE_ATTEMPTS
         assert "not applied" in result
         assert "http_fetch" in result

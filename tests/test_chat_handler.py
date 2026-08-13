@@ -34,8 +34,112 @@ from backend.processes.orchestrator.chat_handler import (
     _pending_confirmations_from_orchestrator,
     _push_conversation_updated_event,
     _run_chat_request,
+    _run_chat_request_with_prepared_message,
 )
 from backend.trust.confirmation import PendingAction
+
+
+def _paused_input_turn(*, conversation_id: str = "conversation-1") -> dict:
+    return {
+        "turn_id": "turn-1",
+        "conversation_id": conversation_id,
+        "session_id": "session-1",
+        "channel": "web",
+        "terminal_outcome": "paused",
+        "finalization_id": "final-1",
+        "outcome_payload": None,
+        "confirmations": [],
+        "pending_inputs": [
+            {
+                "pending_input_id": "input-1",
+                "question": "How many?",
+                "expected_input_schema": {"type": "integer"},
+                "status": "pending",
+                "cas_version": 1,
+                "expires_at": "2999-01-01T00:00:00+00:00",
+            }
+        ],
+    }
+
+
+async def test_invalid_pending_input_returns_typed_paused_error(monkeypatch) -> None:
+    """Validation failures keep the canonical prompt and identify the bad reply."""
+    monkeypatch.setattr(
+        "backend.processes.orchestrator.chat_handler.get_settings",
+        lambda: SimpleNamespace(structured_finalization_enabled=True),
+    )
+    turn = _paused_input_turn()
+    db_client = SimpleNamespace(
+        get_agent_turn=AsyncMock(return_value=turn),
+        create_agent_turn=AsyncMock(),
+        reply_agent_pending_input=AsyncMock(
+            return_value={
+                "status": "pending",
+                "validation_error": "pending input requires an integer",
+            }
+        ),
+    )
+    response = await _run_chat_request_with_prepared_message(
+        request=ChatRequest(
+            request_id="request-1",
+            run_id="turn-1",
+            message="not a number",
+            channel="web",
+            session_id="session-1",
+            conversation_id="conversation-1",
+            pending_input_id="input-1",
+            pending_input_version=1,
+            pending_input_value="not a number",
+        ),
+        orch=SimpleNamespace(),
+        db_client=db_client,
+        broker=SimpleNamespace(),
+        llm_call=AsyncMock(),
+        stt_client=None,
+    )
+    assert response.outcome_kind.value == "paused"
+    assert response.pending_input.pending_input_id == "input-1"
+    assert response.error.code == "invalid_pending_input"
+    db_client.reply_agent_pending_input.assert_awaited_once_with(
+        turn_id="turn-1",
+        pending_input_id="input-1",
+        conversation_id="conversation-1",
+        cas_version=1,
+        value="not a number",
+    )
+
+
+async def test_pending_input_cannot_cross_conversations(monkeypatch) -> None:
+    """A caller cannot resume a known run that belongs to another conversation."""
+    monkeypatch.setattr(
+        "backend.processes.orchestrator.chat_handler.get_settings",
+        lambda: SimpleNamespace(structured_finalization_enabled=True),
+    )
+    db_client = SimpleNamespace(
+        get_agent_turn=AsyncMock(return_value=_paused_input_turn()),
+        create_agent_turn=AsyncMock(),
+        reply_agent_pending_input=AsyncMock(),
+    )
+    response = await _run_chat_request_with_prepared_message(
+        request=ChatRequest(
+            request_id="request-2",
+            run_id="turn-1",
+            message="7",
+            channel="web",
+            session_id="session-2",
+            conversation_id="conversation-2",
+            pending_input_id="input-1",
+            pending_input_version=1,
+            pending_input_value=7,
+        ),
+        orch=SimpleNamespace(),
+        db_client=db_client,
+        broker=SimpleNamespace(),
+        llm_call=AsyncMock(),
+        stt_client=None,
+    )
+    assert response.error.code == "pending_input_conversation_mismatch"
+    db_client.reply_agent_pending_input.assert_not_awaited()
 
 
 def test_build_structured_content_extracts_sql_and_suggestions() -> None:
@@ -296,6 +400,8 @@ def test_chat_response_final_event_data_mirrors_chat_payload() -> None:
                 "parameters": {"url": "https://example.com"},
             }
         ],
+        "pause_reason": None,
+        "pending_input": None,
         "retrieved_memories": [{"summary": "Memory", "date": "2026-05-10"}],
         "retrieved_messages": [{"role": "user", "content": "Earlier"}],
         "transcription": "voice text",

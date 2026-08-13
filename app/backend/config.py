@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings
 
 SUPPORTED_KEY_SOURCES = ("file", "password")
 SUPPORTED_LLM_RESPONSE_FORMATS = ("text", "json_schema")
+SUPPORTED_CAPABILITY_STATES = ("supported", "unsupported", "unknown")
 
 
 def _supported_key_sources_text() -> str:
@@ -52,6 +53,8 @@ class Settings(BaseSettings):
             token-by-token (true) or block until the full JSON body
             arrives (false). Ignored when llm_response_format=text,
             which always streams.
+        structured_finalization_enabled: Enable structured finalization of
+            agent task outputs (required, no default).
     """
 
     model_config = {"env_prefix": "BIMEMO_"}
@@ -95,6 +98,11 @@ class Settings(BaseSettings):
 
     # --- MCP (Model Context Protocol) ---
     mcp_enabled: bool = False
+    structured_finalization_enabled: bool
+    llm_native_tools_support: str
+    llm_exact_named_choice_support: str
+    llm_required_native_decision_support: str
+    llm_custom_schema_support: str
 
     @model_validator(mode="after")
     def _check_key_source_fields(self) -> Settings:
@@ -121,6 +129,24 @@ class Settings(BaseSettings):
         if self.diagnostics_retention_days < 1:
             msg = "diagnostics_retention_days must be at least 1"
             raise ValueError(msg)
+        capability_fields = {
+            "llm_native_tools_support": self.llm_native_tools_support,
+            "llm_exact_named_choice_support": self.llm_exact_named_choice_support,
+            "llm_required_native_decision_support": (
+                self.llm_required_native_decision_support
+            ),
+            "llm_custom_schema_support": self.llm_custom_schema_support,
+        }
+        invalid_capabilities = {
+            name: value
+            for name, value in capability_fields.items()
+            if value not in SUPPORTED_CAPABILITY_STATES
+        }
+        if invalid_capabilities:
+            raise ValueError(
+                "LLM capability declarations must be supported, unsupported, "
+                f"or unknown: {invalid_capabilities}"
+            )
         if self.llm_response_format not in SUPPORTED_LLM_RESPONSE_FORMATS:
             msg = (
                 f"Invalid llm_response_format: '{self.llm_response_format}'. "

@@ -6,6 +6,8 @@ from .action_decisions import (
     ActionDecisionService,
     ActionGrantReader,
     DecisionKind,
+    PermissionManifest,
+    PermissionMode,
 )
 from .grant_cache import ActionGrantCache, CachedActionGrant
 
@@ -18,4 +20,6 @@ __all__ = [
     "ActionGrantReader",
     "CachedActionGrant",
     "DecisionKind",
+    "PermissionManifest",
+    "PermissionMode",
 ]

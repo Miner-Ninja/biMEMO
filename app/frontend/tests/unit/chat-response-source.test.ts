@@ -6,6 +6,7 @@ import {
   resolveStreamErrorMessage,
   runtimeBootstrapHasTerminalEvent,
   shouldApplyHttpChatResponse,
+  shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
 } from "@/lib/chat-response-source";
 
@@ -16,6 +17,29 @@ describe("shouldApplyHttpChatResponse", () => {
 
   it("skips HTTP chat response after stream final arrived", () => {
     expect(shouldApplyHttpChatResponse(true)).toBe(false);
+  });
+});
+
+describe("shouldFinalizeAssistantStream", () => {
+  const completed: ActiveAssistantStreamState = {
+    assistantMessageId: "assistant-1",
+    conversationId: "conversation-1",
+    requestId: "request-1",
+    runId: "run-1",
+    voiceUserMessageId: null,
+    httpCompleted: true,
+    finalReceived: true,
+    realtimeCompleted: true,
+  };
+
+  it("waits for final payload playback even when done arrived", () => {
+    expect(shouldFinalizeAssistantStream({ ...completed, finalReceived: false })).toBe(
+      false
+    );
+  });
+
+  it("clears only after HTTP, final playback, and realtime done", () => {
+    expect(shouldFinalizeAssistantStream(completed)).toBe(true);
   });
 });
 

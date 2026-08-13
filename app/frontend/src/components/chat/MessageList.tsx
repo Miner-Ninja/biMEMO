@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatMessage } from "./ChatMessage";
-import type { Message, PendingConfirmation } from "@/types/chat";
+import type { Message } from "@/types/chat";
 import { cn } from "@/lib/utils";
 
 const AUTO_SCROLL_THRESHOLD_PX = 80;
@@ -44,10 +44,6 @@ interface MessageListProps {
   showThinking?: boolean;
   onEditMessage?: (messageId: string, newContent: string) => void;
   ttsAvailable?: boolean;
-  onConfirmationStatusChange?: (
-    actionId: string,
-    status: PendingConfirmation["status"]
-  ) => void;
 }
 
 /**
@@ -65,7 +61,6 @@ export const MessageList = memo(function MessageList({
   showThinking = true,
   onEditMessage,
   ttsAvailable = false,
-  onConfirmationStatusChange,
 }: MessageListProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -213,7 +208,6 @@ export const MessageList = memo(function MessageList({
               isEditable={message.id === lastUserMessageId && !isLoading}
               onEdit={onEditMessage}
               ttsAvailable={ttsAvailable}
-              onConfirmationStatusChange={onConfirmationStatusChange}
             />
           ))}
         </div>

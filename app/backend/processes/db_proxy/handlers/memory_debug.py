@@ -136,15 +136,13 @@ def make_get_memory_quality_report_handler(db: DatabaseManager) -> OperationHand
         for assertion in valid:
             try:
                 cited = json.loads(assertion["source_record_ids"])
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 cited = []
             if not cited:
                 without_evidence += 1
             elif any(str(rid) not in known_record_ids for rid in cited):
                 missing_evidence += 1
-        text_keys = [
-            _normalized_text_key(a["assertion_text"]) for a in valid
-        ]
+        text_keys = [_normalized_text_key(a["assertion_text"]) for a in valid]
         duplicate_texts = len(text_keys) - len(set(text_keys))
         orphan_entities = db.execute(
             "SELECT COUNT(*) FROM entities e WHERE NOT EXISTS ("
@@ -154,9 +152,7 @@ def make_get_memory_quality_report_handler(db: DatabaseManager) -> OperationHand
         total_valid = max(len(valid), 1)
         quality_score = max(
             0.0,
-            1.0
-            - (missing_evidence + without_evidence + duplicate_texts)
-            / total_valid,
+            1.0 - (missing_evidence + without_evidence + duplicate_texts) / total_valid,
         )
         return {
             "counts": counts,

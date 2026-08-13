@@ -34,7 +34,33 @@ from .handlers.admin import (
     make_store_ui_settings_handler,
     make_store_user_profile_handler,
 )
+from .handlers.agent_turn import (
+    make_append_agent_turn_event_handler,
+    make_cancel_agent_turn_handler,
+    make_claim_agent_invocation_handler,
+    make_commit_agent_turn_finalization_handler,
+    make_complete_agent_invocation_handler,
+    make_create_agent_clarification_handler,
+    make_create_agent_pending_input_handler,
+    make_create_agent_turn_handler,
+    make_decide_agent_clarification_handler,
+    make_decide_agent_confirmation_handler,
+    make_get_agent_confirmation_handler,
+    make_get_agent_pending_input_handler,
+    make_get_agent_turn_handler,
+    make_get_pending_agent_clarification_handler,
+    make_list_agent_turn_events_handler,
+    make_list_pending_agent_confirmations_handler,
+    make_list_unprojected_agent_turn_events_handler,
+    make_mark_agent_turn_event_projected_handler,
+    make_recover_agent_turns_handler,
+    make_reply_agent_pending_input_handler,
+    make_upsert_agent_tool_batch_handler,
+    make_upsert_agent_turn_obligations_handler,
+)
 from .handlers.chat_bridge import (
+    make_claim_chat_bridge_finalization_handler,
+    make_complete_chat_bridge_finalization_handler,
     make_create_chat_bridge_link_handler,
     make_create_chat_bridge_message_link_handler,
     make_disable_chat_bridge_link_handler,
@@ -43,6 +69,7 @@ from .handlers.chat_bridge import (
     make_get_chat_bridge_for_conversation_handler,
     make_get_chat_bridge_link_handler,
     make_get_chat_bridge_message_link_by_external_message_handler,
+    make_get_chat_bridge_message_link_by_finalization_handler,
     make_get_chat_bridge_message_link_by_message_id_handler,
     make_list_chat_bridge_links_handler,
     make_list_chat_bridge_message_links_handler,
@@ -137,6 +164,7 @@ from .handlers.memory_debug import (
 )
 from .handlers.permissions import (
     make_add_project_root_handler,
+    make_authorize_agent_invocation_handler,
     make_complete_pending_action_handler,
     make_create_agent_run_event_handler,
     make_create_agent_run_handler,
@@ -154,6 +182,7 @@ from .handlers.permissions import (
     make_list_pending_actions_handler,
     make_list_project_roots_handler,
     make_lookup_capability_grant_handler,
+    make_project_agent_turn_event_handler,
     make_prune_runtime_state_handler,
     make_remove_project_root_handler,
     make_rename_project_root_handler,
@@ -264,8 +293,11 @@ SOCKET_A_OPERATIONS = {
     "enable_chat_bridge_link",
     "update_chat_bridge_link_settings",
     "create_chat_bridge_message_link",
+    "claim_chat_bridge_finalization",
+    "complete_chat_bridge_finalization",
     "list_chat_bridge_message_links",
     "get_chat_bridge_message_link_by_external_message",
+    "get_chat_bridge_message_link_by_finalization",
     "get_chat_bridge_message_link_by_message_id",
     "write_memory_route_diagnostic",
     "write_record_processing_diagnostic",
@@ -289,11 +321,13 @@ SOCKET_A_OPERATIONS = {
     "list_capability_grants",
     "create_capability_grant",
     "lookup_capability_grant",
+    "authorize_agent_invocation",
     "revoke_capability_grant",
     "expire_capability_grants",
     "create_agent_run",
     "get_agent_run",
     "create_agent_run_event",
+    "project_agent_turn_event",
     "list_agent_run_events",
     "list_agent_runs",
     "update_agent_run_status",
@@ -305,6 +339,28 @@ SOCKET_A_OPERATIONS = {
     "complete_pending_action",
     "expire_pending_actions",
     "prune_runtime_state",
+    "create_agent_turn",
+    "get_agent_turn",
+    "upsert_agent_turn_obligations",
+    "upsert_agent_tool_batch",
+    "claim_agent_invocation",
+    "complete_agent_invocation",
+    "decide_agent_confirmation",
+    "get_agent_confirmation",
+    "list_pending_agent_confirmations",
+    "append_agent_turn_event",
+    "cancel_agent_turn",
+    "commit_agent_turn_finalization",
+    "list_unprojected_agent_turn_events",
+    "list_agent_turn_events",
+    "mark_agent_turn_event_projected",
+    "recover_agent_turns",
+    "create_agent_clarification",
+    "get_pending_agent_clarification",
+    "decide_agent_clarification",
+    "create_agent_pending_input",
+    "get_agent_pending_input",
+    "reply_agent_pending_input",
 }
 
 # Socket B adds admin, auth, schema (no credentials — those go via Socket C)
@@ -386,10 +442,10 @@ SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
     "find_entities",
     "list_assertions_for_entity",
     "find_graph_entry_points",
-    "fulltext_search",   # MCP search_memory tool (read-only; writes go via Socket A)
+    "fulltext_search",  # MCP search_memory tool (read-only; writes go via Socket A)
     "mcp_memory_recent",  # MCP recent_memory (read-only)
-    "mcp_memory_get",   # MCP get_memory (read-only)
-    "mcp_memory_stats",   # MCP memory_stats (read-only)
+    "mcp_memory_get",  # MCP get_memory (read-only)
+    "mcp_memory_stats",  # MCP memory_stats (read-only)
     "get_loop_heartbeats",  # background-loop liveness (read-only)
     "write_audit",
     "create_scheduled_task",
@@ -412,8 +468,11 @@ SOCKET_B_OPERATIONS = SOCKET_B_ONLY_OPERATIONS | {
     "enable_chat_bridge_link",
     "update_chat_bridge_link_settings",
     "create_chat_bridge_message_link",
+    "claim_chat_bridge_finalization",
+    "complete_chat_bridge_finalization",
     "list_chat_bridge_message_links",
     "get_chat_bridge_message_link_by_external_message",
+    "get_chat_bridge_message_link_by_finalization",
     "get_chat_bridge_message_link_by_message_id",
 }
 
@@ -652,6 +711,14 @@ def _register_conversation_and_bridge_operations(
         make_create_chat_bridge_message_link_handler(db),
     )
     registry.register(
+        "claim_chat_bridge_finalization",
+        make_claim_chat_bridge_finalization_handler(db),
+    )
+    registry.register(
+        "complete_chat_bridge_finalization",
+        make_complete_chat_bridge_finalization_handler(db),
+    )
+    registry.register(
         "list_chat_bridge_message_links",
         make_list_chat_bridge_message_links_handler(db),
     )
@@ -662,6 +729,10 @@ def _register_conversation_and_bridge_operations(
     registry.register(
         "get_chat_bridge_message_link_by_message_id",
         make_get_chat_bridge_message_link_by_message_id_handler(db),
+    )
+    registry.register(
+        "get_chat_bridge_message_link_by_finalization",
+        make_get_chat_bridge_message_link_by_finalization_handler(db),
     )
     registry.register(
         "list_chat_settings",
@@ -700,6 +771,10 @@ def _register_permission_operations(
         make_lookup_capability_grant_handler(core_db),
     )
     registry.register(
+        "authorize_agent_invocation",
+        make_authorize_agent_invocation_handler(core_db),
+    )
+    registry.register(
         "revoke_capability_grant",
         make_revoke_capability_grant_handler(core_db),
     )
@@ -712,6 +787,10 @@ def _register_permission_operations(
     registry.register(
         "create_agent_run_event",
         make_create_agent_run_event_handler(runtime_db),
+    )
+    registry.register(
+        "project_agent_turn_event",
+        make_project_agent_turn_event_handler(runtime_db),
     )
     registry.register(
         "list_agent_run_events",
@@ -756,6 +835,82 @@ def _register_permission_operations(
     registry.register(
         "prune_runtime_state",
         make_prune_runtime_state_handler(runtime_db),
+    )
+    registry.register("create_agent_turn", make_create_agent_turn_handler(core_db))
+    registry.register("get_agent_turn", make_get_agent_turn_handler(core_db))
+    registry.register(
+        "upsert_agent_turn_obligations",
+        make_upsert_agent_turn_obligations_handler(core_db),
+    )
+    registry.register(
+        "upsert_agent_tool_batch",
+        make_upsert_agent_tool_batch_handler(core_db),
+    )
+    registry.register(
+        "claim_agent_invocation",
+        make_claim_agent_invocation_handler(core_db),
+    )
+    registry.register(
+        "complete_agent_invocation",
+        make_complete_agent_invocation_handler(core_db),
+    )
+    registry.register(
+        "decide_agent_confirmation",
+        make_decide_agent_confirmation_handler(core_db),
+    )
+    registry.register(
+        "get_agent_confirmation",
+        make_get_agent_confirmation_handler(core_db),
+    )
+    registry.register(
+        "list_pending_agent_confirmations",
+        make_list_pending_agent_confirmations_handler(core_db),
+    )
+    registry.register(
+        "append_agent_turn_event",
+        make_append_agent_turn_event_handler(core_db),
+    )
+    registry.register("cancel_agent_turn", make_cancel_agent_turn_handler(core_db))
+    registry.register(
+        "commit_agent_turn_finalization",
+        make_commit_agent_turn_finalization_handler(core_db),
+    )
+    registry.register(
+        "list_unprojected_agent_turn_events",
+        make_list_unprojected_agent_turn_events_handler(core_db),
+    )
+    registry.register(
+        "list_agent_turn_events",
+        make_list_agent_turn_events_handler(core_db),
+    )
+    registry.register(
+        "mark_agent_turn_event_projected",
+        make_mark_agent_turn_event_projected_handler(core_db),
+    )
+    registry.register("recover_agent_turns", make_recover_agent_turns_handler(core_db))
+    registry.register(
+        "create_agent_clarification",
+        make_create_agent_clarification_handler(core_db),
+    )
+    registry.register(
+        "get_pending_agent_clarification",
+        make_get_pending_agent_clarification_handler(core_db),
+    )
+    registry.register(
+        "decide_agent_clarification",
+        make_decide_agent_clarification_handler(core_db),
+    )
+    registry.register(
+        "create_agent_pending_input",
+        make_create_agent_pending_input_handler(core_db),
+    )
+    registry.register(
+        "get_agent_pending_input",
+        make_get_agent_pending_input_handler(core_db),
+    )
+    registry.register(
+        "reply_agent_pending_input",
+        make_reply_agent_pending_input_handler(core_db),
     )
 
 
@@ -904,7 +1059,10 @@ def build_registry(
         Configured OperationRegistry with all operations registered.
     """
     runtime_db = runtime_db or core_db
-    registry = OperationRegistry()
+    transaction_resources = [core_db, runtime_db]
+    if diagnostics_db is not None:
+        transaction_resources.append(diagnostics_db)
+    registry = OperationRegistry(transaction_resources)
     backup_databases = {"core": core_db, "runtime": runtime_db}
     if diagnostics_db is not None:
         backup_databases["diagnostics"] = diagnostics_db

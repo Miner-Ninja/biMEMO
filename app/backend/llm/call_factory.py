@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Protocol
 
 from backend.llm.call_options import LLMCallOptions
@@ -51,6 +51,17 @@ def set_thinking_enabled(value: bool | None) -> None:
 def current_thinking_enabled() -> bool | None:
     """Return the per-turn reasoning switch (None = provider default)."""
     return _thinking_enabled
+
+
+@dataclass(frozen=True)
+class AttemptRecord:
+    """Record of one LLM provider attempt, including failures without usage."""
+
+    phase: str
+    attempt: int
+    response: LLMResponse | None = None
+    error: str | None = None
+    usage: LLMCallUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +147,13 @@ def _resolve_options(
                 "LLM call received both options=... and legacy kwargs; "
                 "options wins and legacy kwargs are ignored",
             )
-        return options
+        # Merge factory-scoped defaults for fields that are None on options.
+        resolved = options
+        if options.sse_queue is None and default_sse_queue is not None:
+            resolved = replace(resolved, sse_queue=default_sse_queue)
+        if options.tools is None and default_tools is not None:
+            resolved = replace(resolved, tools=default_tools)
+        return resolved
     return LLMCallOptions(
         tools=_selected_value(tools_override, default_tools),
         tool_choice=tool_choice,
@@ -149,29 +166,61 @@ async def _call_with_timeout(
     *,
     messages: list[dict],
     options: LLMCallOptions,
-    default_sse_queue: asyncio.Queue | None,
-    default_tools: list[dict] | None,
+    attempt: int = 1,
+    phase: str = "default",
+    on_attempt: Callable[[AttemptRecord], None] | None = None,
+    default_sse_queue: asyncio.Queue | None = None,
+    default_tools: list[dict] | None = None,
 ) -> LLMResponse:
-    """Call the client once with the shared LLM timeout."""
-    effective_sse_queue = _selected_value(options.sse_queue, default_sse_queue)
-    effective_tools = _selected_value(options.tools, default_tools)
-    chat_options = LLMCallOptions(
-        response_format=options.response_format,
-        response_schema=options.response_schema,
-        tools=effective_tools,
-        tool_choice=options.tool_choice,
-        sse_queue=effective_sse_queue,
-    )
-    return await asyncio.wait_for(
-        client.chat(messages, options=chat_options),
-        timeout=LLM_CALL_TIMEOUT,
-    )
+    """Call the client once with the shared LLM timeout.
+
+    Passes options directly to the client without re-applying caller defaults,
+    preserving tri-state semantics (None means provider default). Records
+    every attempt via on_attempt, including failures without usage data.
+
+    When options.on_attempt is set, the client's two-stage flow handles
+    per-attempt recording internally; the outer callback is suppressed to
+    avoid duplicate records.
+    """
+    if options.sse_queue is None and default_sse_queue is not None:
+        options = replace(options, sse_queue=default_sse_queue)
+    if options.tools is None and default_tools is not None:
+        options = replace(options, tools=default_tools)
+
+    inner_handles_callback = options.on_attempt is not None
+    try:
+        response = await asyncio.wait_for(
+            client.chat(messages, options=options),
+            timeout=LLM_CALL_TIMEOUT,
+        )
+    except Exception as exc:
+        if on_attempt is not None and not inner_handles_callback:
+            on_attempt(
+                AttemptRecord(
+                    phase=phase,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+            )
+        raise
+    if on_attempt is not None and not inner_handles_callback:
+        on_attempt(
+            AttemptRecord(
+                phase=phase,
+                attempt=attempt,
+                response=response,
+                usage=response.usage,
+            )
+        )
+    return response
 
 
 def make_llm_call(
     client: LLMClient,
     sse_queue: asyncio.Queue | None = None,
     tools: list[dict] | None = None,
+    on_attempt: Callable[[AttemptRecord], None] | None = None,
+    phase: str = "default",
 ) -> Callable[[list[dict], asyncio.Queue | None], Awaitable[LLMResponse]]:
     """Create an async LLM call function for the orchestrator.
 
@@ -179,10 +228,14 @@ def make_llm_call(
         client: LLM client with a .chat(messages, options=) method.
         sse_queue: Optional caller-scoped default SSE queue.
         tools: Optional caller-scoped default OpenAI-format tool schemas.
+        on_attempt: Optional callback invoked after every provider attempt,
+            including failures without usage data.
+        phase: Phase label for attempt records (e.g. "Stage 1", "Stage 2").
 
     Returns:
         Async callable accepting messages and optional LLMCallOptions.
     """
+    attempt_counter: int = 0
 
     async def llm_call(
         messages: list[dict],
@@ -191,6 +244,7 @@ def make_llm_call(
         options: LLMCallOptions | None = None,
         tools_override: list[dict] | None = None,
         tool_choice: object | None = None,
+        phase_override: str | None = None,
     ) -> LLMResponse:
         """Call the LLM client with timeout protection.
 
@@ -201,10 +255,14 @@ def make_llm_call(
                 over any legacy kwargs (with a warning log).
             tools_override: Legacy per-call tool schema override.
             tool_choice: Legacy forced tool selection override.
+            phase_override: Override the phase label for attempt records.
 
         Returns:
             LLMResponse with text and/or tool calls.
         """
+        nonlocal attempt_counter
+        attempt_counter += 1
+        effective_phase = phase_override if phase_override is not None else phase
         effective = _resolve_options(
             options=options,
             sse_queue_override=sse_queue_override,
@@ -213,12 +271,22 @@ def make_llm_call(
             default_sse_queue=sse_queue,
             default_tools=tools,
         )
+        # Add the factory callback only after resolving legacy kwargs. Creating
+        # an options object first would make options win and silently discard
+        # legacy per-call tools_override/tool_choice values.
+        if effective.on_attempt is None:
+            effective = replace(
+                effective,
+                on_attempt=on_attempt,
+                phase=effective_phase,
+            )
         return await _call_with_timeout(
             client,
             messages=messages,
             options=effective,
-            default_sse_queue=sse_queue,
-            default_tools=tools,
+            attempt=attempt_counter,
+            phase=effective_phase,
+            on_attempt=on_attempt,
         )
 
     return llm_call

@@ -35,7 +35,7 @@ GRAPH_EXTRACTOR_SYSTEM_PROMPT = (
     "You are a knowledge extraction agent. From the conversation records, "
     "extract durable entities and assertions.\n"
     "Output ONLY lines in these two formats:\n"
-    'ENTITY: <type> | <name>\n'
+    "ENTITY: <type> | <name>\n"
     'ASSERTION: <subject name> | <relation> | object_entity="<name>" OR '
     'value="<literal>" | <one-sentence statement> | <long_term or '
     "short_term> | <high, medium or low>\n"

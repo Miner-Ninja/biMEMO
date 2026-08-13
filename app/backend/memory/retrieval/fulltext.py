@@ -474,7 +474,6 @@ def index_observation(
     )
 
 
-
 def search_messages(db: DatabaseManager, query: str, limit: int) -> list[tuple]:
     """Search messages by keyword.
 
@@ -515,7 +514,6 @@ def search_observations(db: DatabaseManager, query: str, limit: int) -> list[tup
     )
 
 
-
 def delete_message_index(db: DatabaseManager, rowid: int) -> None:
     """Remove a message from the full-text index.
 
@@ -534,7 +532,6 @@ def delete_record_index(db: DatabaseManager, rowid: int) -> None:
         rowid: Row ID of the record to remove.
     """
     _delete_index_row(db, table="records_fts", rowid=rowid)
-
 
 
 def index_entity(

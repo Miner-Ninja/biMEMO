@@ -28,7 +28,6 @@ class AdminDBClient(_BaseIPCClient):
         """Retrieve HKDF-derived key material from DB Proxy."""
         return await self.send_operation("get_signing_material")
 
-
     async def create_conversation(self, title: str = "") -> str:
         """Create one persisted conversation."""
         result = await self.send_operation(
@@ -364,7 +363,6 @@ class AdminDBClient(_BaseIPCClient):
                 "offset": offset,
             },
         )
-
 
     async def list_messages(
         self,

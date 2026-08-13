@@ -9,6 +9,7 @@ import json
 
 import httpx
 import pytest
+
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.custom_provider.client import SOURCE_CUSTOM_MODELS, CustomLLMClient
@@ -1003,30 +1004,18 @@ class TestOpenRouterClientEmptyRetry:
         async def handler(request):
             nonlocal call_count
             call_count += 1
+            body = json.loads(request.content)
+            assert body["stream"] is True
+            assert "response_format" not in body
             return httpx.Response(
                 200,
-                json={
-                    "model": STRUCTURED_OPENROUTER_MODEL,
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [
-                                    {
-                                        "id": "call_1",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "web_search",
-                                            "arguments": '{"query":"hi"}',
-                                        },
-                                    }
-                                ],
-                            }
-                        }
-                    ],
-                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
-                },
+                text=(
+                    'data: {"model":"structured/test","choices":[{"delta":'
+                    '{"tool_calls":[{"index":0,"id":"call_1","type":'
+                    '"function","function":{"name":"web_search",'
+                    '"arguments":"{\\"query\\":\\"hi\\"}"}}]}}]}\n\n'
+                    "data: [DONE]\n\n"
+                ),
             )
 
         EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY] = (
@@ -1053,6 +1042,40 @@ class TestOpenRouterClientEmptyRetry:
             await client.close()
         assert call_count == 1
         assert result.tool_calls[0].name == "web_search"
+
+    @pytest.mark.asyncio
+    async def test_malformed_streamed_tool_arguments_fail_closed(self):
+        """Malformed native arguments cannot become an empty tool invocation."""
+
+        async def handler(_request):
+            return httpx.Response(
+                200,
+                text=(
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+                    '"id":"call_1","type":"function","function":{'
+                    '"name":"web_search","arguments":"{bad"}}]}}]}\n\n'
+                    "data: [DONE]\n\n"
+                ),
+            )
+
+        client = make_client(httpx.MockTransport(handler))
+        try:
+            with pytest.raises(OpenRouterClientError, match="malformed tool call"):
+                await client.chat(
+                    [{"role": "user", "content": "search"}],
+                    tools=[
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "description": "Search",
+                                "parameters": {"type": "object"},
+                            },
+                        }
+                    ],
+                )
+        finally:
+            await client.close()
 
 
 class TestOpenRouterStructuredStreaming:

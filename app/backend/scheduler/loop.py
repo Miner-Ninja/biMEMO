@@ -180,17 +180,18 @@ async def _process_due_task(
     else:
         run_status = "error"
     try:
-        await services.db_client.record_task_run(
-            {
-                "task_id": task_id,
-                "started_at": started_at.isoformat(),
-                "finished_at": finished_at.isoformat(),
-                "status": run_status,
-                "result_text": result_text if success else "",
-                "error_message": "" if success else result_text[:1000],
-                "duration_ms": duration_ms,
-            }
-        )
+        if not services.atomic_task_result_committed:
+            await services.db_client.record_task_run(
+                {
+                    "task_id": task_id,
+                    "started_at": started_at.isoformat(),
+                    "finished_at": finished_at.isoformat(),
+                    "status": run_status,
+                    "result_text": result_text if success else "",
+                    "error_message": "" if success else result_text[:1000],
+                    "duration_ms": duration_ms,
+                }
+            )
     except Exception:
         logger.exception("Failed to record run history for task %s", task_id)
 

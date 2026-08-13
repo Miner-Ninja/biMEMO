@@ -125,6 +125,40 @@ async def _start_runtime_event_forwarder(
     )
 
 
+async def _repair_agent_turn_event_projections(db_client: DBProxyClient) -> None:
+    """Continuously replay the authoritative core outbox into runtime views."""
+    while True:
+        try:
+            events = await db_client.list_unprojected_agent_turn_events(limit=200)
+            for event in events:
+                event_id = str(event.get("event_id", ""))
+                await db_client.project_agent_turn_event(
+                    {
+                        "event_id": event_id,
+                        "turn_id": str(event.get("turn_id", "")),
+                        "conversation_id": str(event.get("conversation_id", "")),
+                        "session_id": str(event.get("session_id", "")),
+                        "channel": str(event.get("channel", "")),
+                        "sequence": int(event.get("sequence", 0)),
+                        "event_type": str(event.get("event_type", "")),
+                        "payload": {
+                            **dict(event.get("payload", {})),
+                            "phase": str(event.get("phase", "")),
+                            "attempt": int(event.get("attempt", 0)),
+                            "authority_store": "core",
+                        },
+                        "created_at": str(event.get("created_at", "")),
+                    }
+                )
+                await db_client.mark_agent_turn_event_projected(event_id)
+            await asyncio.sleep(0 if len(events) == 200 else 2)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Agent event projection repair failed; retrying")
+            await asyncio.sleep(2)
+
+
 async def _connect_db(
     socket_path: str,
     secret: bytes,
@@ -197,14 +231,16 @@ def _build_runtime_ipc_server(
     save_record_fn = getattr(orch, "save_record_fn", None)
 
     mcp_ask_fn = make_mcp_ask_fn(db_client)
-    mcp_ask_fn.set_orchestrator_fn(_build_orchestrator_request_handler(
-        orch=orch,
-        ipc_server_ref=ipc_server_ref,
-        db_client=db_client,
-        broker=broker,
-        get_llm_call=get_llm_call,
-        stt_client=stt_client,
-    ))
+    mcp_ask_fn.set_orchestrator_fn(
+        _build_orchestrator_request_handler(
+            orch=orch,
+            ipc_server_ref=ipc_server_ref,
+            db_client=db_client,
+            broker=broker,
+            get_llm_call=get_llm_call,
+            stt_client=stt_client,
+        )
+    )
 
     return OrchestratorIPCServer(
         socket_path=frontend_socket,
@@ -247,6 +283,36 @@ def _build_list_run_events_handler(
         request: ListAgentRunEventsRequest,
     ) -> list[dict[str, object]]:
         """Return runtime events for one reconnect request."""
+        if request.run_id:
+            core_turn = await db_client.get_agent_turn(request.run_id)
+            if core_turn is not None:
+                events = core_turn.get("events", [])
+                return [
+                    item
+                    for item in events
+                    if isinstance(item, dict)
+                    and int(item.get("sequence", 0)) > request.after_sequence
+                ][: request.limit]
+        if request.conversation_id:
+            core_events = await db_client.list_agent_turn_events(
+                conversation_id=request.conversation_id,
+                after_sequence=request.after_sequence,
+                limit=request.limit,
+            )
+            runtime_events = await db_client.list_agent_run_events(
+                conversation_id=request.conversation_id,
+                after_sequence=request.after_sequence,
+                limit=request.limit,
+            )
+            combined = [*core_events, *runtime_events]
+            combined.sort(
+                key=lambda item: (
+                    str(item.get("created_at", "")),
+                    str(item.get("run_id", "")),
+                    int(item.get("sequence", 0)),
+                )
+            )
+            return combined[-request.limit :]
         return await db_client.list_agent_run_events(
             run_id=request.run_id or None,
             conversation_id=request.conversation_id or None,
@@ -268,6 +334,48 @@ def _build_confirm_handler(
     """Build the confirmation handler used by FastAPI IPC."""
 
     async def confirm(request: ConfirmRequest) -> ConfirmResponse:
+        core_response = None
+        try:
+            core_response = await orch.resume_structured_confirmation(
+                confirmation_id=request.action_id,
+                decision="approved" if request.decision == "approve" else "denied",
+                llm_call=get_llm_call(),
+            )
+        except DBProxyError as exc:
+            if "unknown confirmation" not in str(exc).lower():
+                raise
+        if core_response is not None:
+            outcome = core_response.outcome
+            if outcome is None:
+                raise RuntimeError("core confirmation resume returned no typed outcome")
+            status = outcome.kind.value
+            message_id = outcome.assistant_message_id or ""
+            summary = (
+                core_response.structured_content.answer
+                if core_response.structured_content is not None
+                else ""
+            )
+            await _push_confirmation_event(
+                ipc_server=ipc_server_ref(),
+                request_id=request.request_id,
+                action_id=request.action_id,
+                status=status,
+                message_id=message_id,
+            )
+            await _push_core_confirmation_outcome(
+                ipc_server=ipc_server_ref(),
+                request_id=request.request_id,
+                response=core_response,
+            )
+            return ConfirmResponse(
+                request_id=request.request_id,
+                action_id=request.action_id,
+                accepted=True,
+                status=status,
+                message_id=message_id,
+                result_summary=summary[:500],
+            )
+
         stored_action = await db_client.get_pending_action(request.action_id)
         channel = str((stored_action or {}).get("channel", ""))
         accepted = False
@@ -278,6 +386,7 @@ def _build_confirm_handler(
             accepted = orch.confirmation_mgr.deny(request.action_id)
 
         if stored_action is not None and accepted:
+            orch.consume_pending_action(request.action_id)
             if request.decision == "approve":
                 await _push_confirmation_event(
                     ipc_server=ipc_server_ref(),
@@ -348,6 +457,55 @@ def _build_confirm_handler(
         )
 
     return confirm
+
+
+async def _push_core_confirmation_outcome(
+    *,
+    ipc_server: OrchestratorIPCServer,
+    request_id: str,
+    response: object,
+) -> None:
+    """Publish the typed canonical outcome produced by a resumed core turn."""
+    outcome = getattr(response, "outcome", None)
+    if outcome is None:
+        return
+    event_type = {
+        "final": StreamEventType.FINAL,
+        "paused": StreamEventType.PAUSED,
+        "failed": StreamEventType.FAILED,
+        "cancelled": StreamEventType.CANCELLED,
+    }[outcome.kind.value]
+    structured = getattr(response, "structured_content", None)
+    data: dict[str, object] = {
+        "outcome_kind": outcome.kind.value,
+        "run_id": outcome.run_id,
+        "finalization_id": outcome.finalization_id or "",
+        "message_id": outcome.assistant_message_id or "",
+    }
+    if structured is not None:
+        data["structured_content"] = {
+            "answer": structured.answer,
+            "thinking": structured.thinking,
+            "suggestions": structured.suggestions,
+        }
+    if outcome.confirmations:
+        data["pending_confirmations"] = [
+            {
+                "action_id": item.confirmation_id,
+                "tool_name": item.tool_name,
+                "parameters": item.parameters,
+            }
+            for item in outcome.confirmations
+        ]
+    if outcome.error is not None:
+        data["error"] = {
+            "code": outcome.error.code,
+            "message": outcome.error.message,
+            "retryable": outcome.error.retryable,
+        }
+    await ipc_server.push_event(
+        StreamEvent(request_id=request_id, event_type=event_type, data=data)
+    )
 
 
 async def _push_confirmation_event(
@@ -465,6 +623,7 @@ async def _execute_confirmed_action(
             llm_call=llm_call,
             resume_context=resume_context if isinstance(resume_context, dict) else None,
             tool_result_text=result_summary,
+            completed_tool_name=str(getattr(tool_result, "tool_name", "")),
         )
         message_id = await _save_confirmed_action_message(
             db_client=db_client,
@@ -488,6 +647,7 @@ async def _resume_llm_after_confirmed_action(
     llm_call: Callable | None,
     resume_context: dict[str, object] | None,
     tool_result_text: str,
+    completed_tool_name: str,
 ) -> str:
     """Ask the LLM for a final answer after an approved tool result."""
     if llm_call is None:
@@ -501,6 +661,16 @@ async def _resume_llm_after_confirmed_action(
         return ""
     if not tool_call_id:
         return ""
+    required_tools = {
+        str(name) for name in resume_context.get("required_tools", []) if name
+    }
+    remaining_tools = required_tools - {completed_tool_name}
+    if remaining_tools:
+        return (
+            "The approved tool completed, but the final answer remains blocked "
+            "because these required tools are incomplete: "
+            f"{', '.join(sorted(remaining_tools))}."
+        )
     resume_messages = [
         *messages,
         assistant_message,
@@ -1015,6 +1185,12 @@ async def _start_runtime_process(
         db_proxy_socket_a,
         db_proxy_secret_a,
     )
+    recovered_turn_count = await db_client.recover_agent_turns()
+    if recovered_turn_count:
+        logger.warning(
+            "Fenced %d in-flight tool invocations after restart",
+            recovered_turn_count,
+        )
     stuck_reset_count = await db_client.reset_stuck_processing_states()
     if stuck_reset_count > 0:
         logger.info(
@@ -1026,6 +1202,11 @@ async def _start_runtime_process(
     services = await _prepare_runtime_services(
         db_client=db_client,
         settings=settings,
+    )
+    _start_runtime_background_task(
+        tasks=services.bg_tasks,
+        coro=_repair_agent_turn_event_projections(db_client),
+        log_message="Started core-to-runtime agent event projection repair",
     )
     ipc_server: OrchestratorIPCServer | None = None
 

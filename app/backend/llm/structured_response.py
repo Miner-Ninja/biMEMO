@@ -35,6 +35,7 @@ SUGGESTIONS_BLOCK_PATTERN = re.compile(
     r"```suggestions\s*\n([\s\S]*?)```",
     re.IGNORECASE,
 )
+SQL_BLOCK_PATTERN = re.compile(r"```sql\s*\n[\s\S]*?```", re.IGNORECASE)
 
 # --- Structured response contract ---
 STRUCTURED_RESPONSE_SCHEMA_NAME = "assistant_response"
@@ -79,6 +80,29 @@ OPENAI_STRUCTURED_RESPONSE_FORMAT: dict[str, object] = {
         "name": STRUCTURED_RESPONSE_SCHEMA_NAME,
         "strict": True,
         "schema": STRUCTURED_RESPONSE_SCHEMA,
+    },
+}
+
+# --- Final-only response contract (no tool_plan) ---
+FINAL_ONLY_RESPONSE_SCHEMA_NAME = "final_only_response"
+FINAL_ONLY_RESPONSE_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "suggestions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["answer", "suggestions"],
+    "additionalProperties": False,
+}
+OPENAI_FINAL_ONLY_RESPONSE_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": FINAL_ONLY_RESPONSE_SCHEMA_NAME,
+        "strict": True,
+        "schema": FINAL_ONLY_RESPONSE_SCHEMA,
     },
 }
 
@@ -179,7 +203,7 @@ class StructuredAssistantContent:
     answer: str
     thinking: str | None = None
     suggestions: list[str] = field(default_factory=list)
-    # Model-declared tool intent: {"needs_tool": bool, "tool": str|None}.
+    # Legacy single-stage tool intent. The final-only parser never populates it.
     tool_plan: dict | None = None
 
 
@@ -242,6 +266,7 @@ def _split_suggestions_block(text: str) -> tuple[str, list[str]]:
 def normalize_legacy_response_text(text: str) -> StructuredAssistantContent:
     """Normalize one markdown-style assistant answer into typed sections."""
     answer, suggestions = _split_suggestions_block(text)
+    answer = SQL_BLOCK_PATTERN.sub("", answer).strip()
     return StructuredAssistantContent(
         answer=answer,
         suggestions=suggestions,
@@ -293,16 +318,15 @@ def parse_structured_response_json(
 ) -> StructuredAssistantContent:
     """Parse one JSON response body into typed structured assistant content.
 
-    Empty or whitespace-only input yields an empty
-    ``StructuredAssistantContent`` rather than raising, so providers that
-    return a blank body cannot crash the client. The client-level retry
-    logic is the primary defence; this guard is the safety net.
+    This parser preserves the legacy single-stage response contract. The
+    two-stage final path uses ``parse_final_only_response_json`` below.
     """
     if not text or not text.strip():
         return StructuredAssistantContent(
             answer="",
             thinking=thinking.strip() if thinking else None,
         )
+
     raw_data = _loads_lenient(text)
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
@@ -331,4 +355,118 @@ def parse_structured_response_json(
         thinking=thinking.strip() if thinking else None,
         suggestions=trimmed_suggestions,
         tool_plan=tool_plan,
+    )
+
+
+# --- Strict final-only parser ---
+MAX_STRUCTURED_RESPONSE_BYTES = 262144
+MAX_STRUCTURED_ANSWER_BYTES = 131072
+MAX_STRUCTURED_SUGGESTION_ITEM_BYTES = 512
+_FINAL_ONLY_ALLOWED_KEYS = frozenset({"answer", "suggestions"})
+
+
+def _strict_parse_json_object(text: str) -> dict[str, object]:
+    """Parse JSON with strict pre-normalization checks.
+
+    Validates UTF-8 byte size, duplicate keys, and trailing content
+    before returning the decoded object.
+    """
+    raw_bytes = text.encode("utf-8")
+    if len(raw_bytes) > MAX_STRUCTURED_RESPONSE_BYTES:
+        raise ValueError(
+            f"Response exceeds maximum size "
+            f"({len(raw_bytes)} > {MAX_STRUCTURED_RESPONSE_BYTES} bytes)"
+        )
+
+    def _dup_check(pairs: list[tuple]) -> dict:
+        seen: set[str] = set()
+        for key, _value in pairs:
+            if key in seen:
+                raise ValueError(f"Duplicate JSON key: {key!r}")
+            seen.add(key)
+        return dict(pairs)
+
+    def _reject_constant(value: str) -> object:
+        raise ValueError(f"Non-standard JSON constant: {value}")
+
+    result = json.loads(
+        text,
+        object_pairs_hook=_dup_check,
+        parse_constant=_reject_constant,
+    )
+
+    decoder = json.JSONDecoder()
+    _, end_index = decoder.raw_decode(text)
+    remaining = text[end_index:].strip()
+    if remaining:
+        raise ValueError(f"Trailing content after JSON object: {remaining!r}")
+
+    if not isinstance(result, dict):
+        raise ValueError("Expected a JSON object at the top level")
+
+    return result
+
+
+def parse_final_only_response_json(
+    text: str,
+    *,
+    thinking: str | None = None,
+) -> StructuredAssistantContent:
+    """Parse a final-only JSON response with strict validation.
+
+    All structural checks (duplicate keys, trailing content, extra fields,
+    type constraints, cardinality, UTF-8 size) run before any normalization.
+    No ``tool_plan`` is accepted or returned.
+    """
+    if not text or not text.strip():
+        raise ValueError("final answer is empty")
+
+    raw_data = _strict_parse_json_object(text)
+
+    # Extra fields — any key not in the final-only contract is rejected.
+    extra = set(raw_data.keys()) - _FINAL_ONLY_ALLOWED_KEYS
+    if extra:
+        raise ValueError(f"Unexpected fields in final response: {extra}")
+
+    # Type checks — before any normalization.
+    raw_answer = raw_data.get("answer")
+    if not isinstance(raw_answer, str):
+        raise ValueError("'answer' must be a string")
+    if not raw_answer.strip():
+        raise ValueError("final answer is empty")
+
+    if len(raw_answer.encode("utf-8")) > MAX_STRUCTURED_ANSWER_BYTES:
+        raise ValueError(
+            f"answer exceeds {MAX_STRUCTURED_ANSWER_BYTES} bytes "
+            f"({len(raw_answer.encode('utf-8'))} bytes)"
+        )
+
+    raw_suggestions = raw_data.get("suggestions")
+    if not isinstance(raw_suggestions, list):
+        raise ValueError("'suggestions' must be an array")
+
+    for idx, item in enumerate(raw_suggestions):
+        if not isinstance(item, str):
+            raise ValueError(f"'suggestions[{idx}]' must be a string")
+        if len(item.encode("utf-8")) > MAX_STRUCTURED_SUGGESTION_ITEM_BYTES:
+            raise ValueError(
+                f"'suggestions[{idx}]' exceeds "
+                f"{MAX_STRUCTURED_SUGGESTION_ITEM_BYTES} bytes"
+            )
+
+    # Cardinality check.
+    if len(raw_suggestions) > MAX_STRUCTURED_SUGGESTIONS:
+        raise ValueError(
+            f"'suggestions' has {len(raw_suggestions)} items, "
+            f"maximum is {MAX_STRUCTURED_SUGGESTIONS}"
+        )
+
+    # Normalization — only after all validation passes.
+    suggestions = [item.strip() for item in raw_suggestions if item.strip()]
+    trimmed = _trim_suggestions(suggestions)
+
+    return StructuredAssistantContent(
+        answer=raw_answer.strip(),
+        thinking=thinking.strip() if thinking else None,
+        suggestions=trimmed,
     )

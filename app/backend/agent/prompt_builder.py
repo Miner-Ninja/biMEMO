@@ -25,6 +25,7 @@ from backend.memory.evidence_recall import (
 )
 from backend.processes.orchestrator.client import DBProxyError
 from backend.security.policy import get_policy
+from backend.security.provenance import PROVENANCE_SYSTEM_PROMPT
 
 
 _KEY_SYSTEM_PROMPT_ADDONS = "llm.system_prompt_addons"
@@ -142,6 +143,7 @@ class PromptBuilder:
             " or anything discussed earlier. Do not guess — recall"
             " the actual memory first, then answer based on it."
         )
+        prompt += "\n\n" + PROVENANCE_SYSTEM_PROMPT
 
         # Inject current datetime
         prompt += "\n\n" + self.build_datetime_line()
@@ -466,19 +468,42 @@ class PromptBuilder:
         message: str,
         *,
         attached_files: list[str] | None = None,
+        required_names: set[str] | None = None,
+        required_only: bool = False,
+        semantic_selection: bool = False,
     ) -> list[dict] | None:
-        """Return the tool schemas that should be exposed for this message."""
+        """Return the tool schemas that should be exposed for this message.
+
+        Args:
+            message: The user message to evaluate.
+            attached_files: Files attached to the message.
+            required_names: Tool names that must always be included,
+                regardless of heuristic filtering. Still subject to
+                the scheduler hard allowlist.
+            required_only: Expose only ``required_names``. Used by the
+                authoritative structured path so ordinary turns do not become
+                tool-capable merely because tools exist in the registry.
+            semantic_selection: Let Stage 1 select semantically from the eligible
+                registry catalog without language-specific message filtering.
+        """
         tool_names = getattr(self.broker.registry, "tool_names", None)
         if tool_names is None:
+            if required_only:
+                return self.broker.list_openai_schemas(
+                    allowed_names=set(required_names or ())
+                )
             return self.broker.list_openai_schemas()
 
-        allowed_names = set(tool_names)
-        if not message_allows_file_read_tools(message):
-            allowed_names -= FILE_READ_TOOL_NAMES
-        if not message_allows_file_write_tool(message):
-            allowed_names.discard(FILE_WRITE_TOOL_NAME)
-        if attached_files:
-            allowed_names -= FILE_READ_TOOL_NAMES
+        allowed_names = set(required_names or ()) if required_only else set(tool_names)
+        if not required_only and not semantic_selection:
+            if not message_allows_file_read_tools(message):
+                allowed_names -= FILE_READ_TOOL_NAMES
+            if not message_allows_file_write_tool(message):
+                allowed_names.discard(FILE_WRITE_TOOL_NAME)
+            if attached_files:
+                allowed_names -= FILE_READ_TOOL_NAMES
+        if required_names is not None:
+            allowed_names |= required_names & set(tool_names)
         # Per-call allowlist restriction (used by scheduler for cron tasks)
         if self.allowed_tool_names is not None:
             allowed_names &= self.allowed_tool_names

@@ -30,8 +30,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { TokenStats } from "./TokenStats";
 import { VoicePlayer } from "./VoicePlayer";
 import { buildMarkdownComponents } from "@/lib/markdownComponents";
-import type { Message, PendingConfirmation } from "@/types/chat";
-import ConfirmationCard from "./ConfirmationCard";
+import type { Message } from "@/types/chat";
 import { ToolBadges } from "./ToolBadges";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -43,10 +42,6 @@ interface ChatMessageProps {
   isEditable?: boolean;
   onEdit?: (messageId: string, newContent: string) => void;
   ttsAvailable?: boolean;
-  onConfirmationStatusChange?: (
-    actionId: string,
-    status: PendingConfirmation["status"]
-  ) => void;
 }
 
 /**
@@ -61,7 +56,6 @@ export const ChatMessage = memo(function ChatMessage({
   isEditable = false,
   onEdit,
   ttsAvailable = false,
-  onConfirmationStatusChange,
 }: ChatMessageProps) {
   const { t } = useTranslation();
   const [errorDetailOpen, setErrorDetailOpen] = useState(false);
@@ -76,7 +70,18 @@ export const ChatMessage = memo(function ChatMessage({
   const hasThinking = Boolean(message.thinking);
   const hasImages = Boolean(message.images && message.images.length > 0);
 
-  const cleanContent = message.content;
+  const pendingToolNames = Array.from(
+    new Set(
+      (message.pendingConfirmations ?? [])
+        .filter((item) => item.status === "pending")
+        .map((item) => item.tool_name)
+    )
+  );
+  const cleanContent =
+    message.content ||
+    (pendingToolNames.length > 0
+      ? t("chat.toolPermissionPrompt", { tools: pendingToolNames.join(", ") })
+      : "");
   const suggestions = message.suggestions ?? [];
 
   const markdownComponents = useMemo(
@@ -278,23 +283,6 @@ export const ChatMessage = memo(function ChatMessage({
             )}
           </div>
         )}
-
-        {/* Pending confirmations — right after stats, centered */}
-        {message.role === "assistant" &&
-          message.pendingConfirmations &&
-          message.pendingConfirmations.length > 0 && (
-            <div className="flex justify-center">
-              <div className="w-full max-w-xl space-y-2">
-                {message.pendingConfirmations.map((c) => (
-                  <ConfirmationCard
-                    key={c.action_id}
-                    confirmation={c}
-                    onStatusChange={onConfirmationStatusChange || (() => {})}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
 
         {/* Thinking block (collapsible) */}
         {hasThinking && showThinking && <ThinkingBlock thinking={message.thinking!} />}

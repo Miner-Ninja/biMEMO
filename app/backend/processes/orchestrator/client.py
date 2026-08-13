@@ -623,7 +623,6 @@ class DBProxyClient:
             invalidated_by_assertion_id,
         )
 
-
     async def get_entity(self, entity_id: str) -> dict[str, object] | None:
         """Load one entity by id."""
         return await mem_ops.get_entity(self, entity_id)
@@ -703,12 +702,7 @@ class DBProxyClient:
         """Return records nearest to the query embedding."""
         return await mem_ops.vector_search(self, query_embedding, limit)
 
-
-
     # --- Summary operations (delegated to client_memory_ops) ---
-
-
-
 
     async def list_records(
         self,
@@ -717,7 +711,6 @@ class DBProxyClient:
     ) -> list[dict[str, Any]]:
         """List records with full metadata."""
         return await mem_ops.list_records(self, limit, offset)
-
 
     async def count_memory_entries(self) -> dict[str, int]:
         """Return counts for messages, records, and summaries."""
@@ -1043,6 +1036,10 @@ class DBProxyClient:
         capability: str,
         decision: str,
         channel: str = "",
+        scope_json: dict[str, Any] | None = None,
+        scope_hash: str = "",
+        policy_revision: str = "legacy",
+        origin_confirmation_id: str | None = None,
         expires_at: str | None = None,
     ) -> dict[str, Any] | None:
         """Persist one assistant action grant."""
@@ -1054,6 +1051,10 @@ class DBProxyClient:
                 "capability": capability,
                 "decision": decision,
                 "channel": channel,
+                "scope_json": scope_json or {},
+                "scope_hash": scope_hash,
+                "policy_revision": policy_revision,
+                "origin_confirmation_id": origin_confirmation_id,
                 "expires_at": expires_at,
             },
         )
@@ -1066,6 +1067,8 @@ class DBProxyClient:
         scope_value: str,
         capability: str,
         channel: str = "",
+        scope_hash: str = "",
+        policy_revision: str = "legacy",
     ) -> dict[str, Any] | None:
         """Return the best persisted grant for one action scope."""
         result = await self.send_operation(
@@ -1075,9 +1078,49 @@ class DBProxyClient:
                 "scope_value": scope_value,
                 "capability": capability,
                 "channel": channel,
+                "scope_hash": scope_hash,
+                "policy_revision": policy_revision,
             },
         )
         return result.get("grant")
+
+    async def authorize_agent_invocation(
+        self,
+        *,
+        turn_id: str,
+        invocation_id: str,
+        idempotency_key: str,
+        capability: str,
+        channel: str,
+        scope_type: str,
+        scope_value: str,
+        scope_json: dict[str, Any],
+        scope_hash: str,
+        policy_revision: str,
+        confirmation_id: str | None = None,
+        create_reusable_grant: bool = False,
+        grant_expires_at: str | None = None,
+        expected_statuses: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Atomically authorize and claim one structured invocation."""
+        parameters: dict[str, Any] = {
+            "turn_id": turn_id,
+            "invocation_id": invocation_id,
+            "idempotency_key": idempotency_key,
+            "capability": capability,
+            "channel": channel,
+            "scope_type": scope_type,
+            "scope_value": scope_value,
+            "scope_json": scope_json,
+            "scope_hash": scope_hash,
+            "policy_revision": policy_revision,
+            "confirmation_id": confirmation_id,
+            "create_reusable_grant": create_reusable_grant,
+            "grant_expires_at": grant_expires_at,
+        }
+        if expected_statuses is not None:
+            parameters["expected_statuses"] = expected_statuses
+        return await self.send_operation("authorize_agent_invocation", parameters)
 
     async def revoke_capability_grant(self, grant_id: str) -> bool:
         """Remove one persisted assistant action grant."""
@@ -1317,6 +1360,390 @@ class DBProxyClient:
             "deleted_agent_runs": int(result.get("deleted_agent_runs", 0)),
         }
 
+    # --- Core-authority agent turn operations ---
+
+    async def create_agent_turn(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        channel: str,
+        turn_id: str | None = None,
+        finalization_id: str | None = None,
+        architecture_version: str = "structured_v1",
+        authority_store: str = "core",
+    ) -> dict[str, Any]:
+        """Create or replay one architecture-pinned authoritative turn."""
+        return await self.send_operation(
+            "create_agent_turn",
+            {
+                "turn_id": turn_id,
+                "finalization_id": finalization_id,
+                "conversation_id": conversation_id,
+                "session_id": session_id,
+                "channel": channel,
+                "architecture_version": architecture_version,
+                "authority_store": authority_store,
+            },
+        )
+
+    async def get_agent_turn(self, turn_id: str) -> dict[str, Any] | None:
+        """Read canonical core turn state and its complete ledger."""
+        return await self._send_optional_dict_operation(
+            "get_agent_turn",
+            result_key="turn",
+            parameters={"turn_id": turn_id},
+        )
+
+    async def upsert_agent_turn_obligations(
+        self,
+        turn_id: str,
+        obligations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Idempotently persist mandatory evidence records."""
+        return await self.send_operation(
+            "upsert_agent_turn_obligations",
+            {"turn_id": turn_id, "obligations": obligations},
+        )
+
+    async def upsert_agent_tool_batch(
+        self,
+        *,
+        turn_id: str,
+        batch_id: str,
+        assistant_message: dict[str, Any],
+        transcript_snapshot: list[dict[str, Any]],
+        invocations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Persist one complete native tool-call batch."""
+        return await self.send_operation(
+            "upsert_agent_tool_batch",
+            {
+                "turn_id": turn_id,
+                "batch_id": batch_id,
+                "assistant_message": assistant_message,
+                "transcript_snapshot": transcript_snapshot,
+                "invocations": invocations,
+            },
+        )
+
+    async def claim_agent_invocation(
+        self,
+        *,
+        turn_id: str,
+        invocation_id: str,
+        idempotency_key: str,
+        expected_statuses: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Commit the durable execution claim before broker dispatch."""
+        parameters: dict[str, Any] = {
+            "turn_id": turn_id,
+            "invocation_id": invocation_id,
+            "idempotency_key": idempotency_key,
+        }
+        if expected_statuses is not None:
+            parameters["expected_statuses"] = expected_statuses
+        return await self.send_operation("claim_agent_invocation", parameters)
+
+    async def complete_agent_invocation(
+        self,
+        *,
+        turn_id: str,
+        invocation_id: str,
+        claim_generation: int,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        """Record a generation-fenced result and compatible success binds."""
+        return await self.send_operation(
+            "complete_agent_invocation",
+            {
+                "turn_id": turn_id,
+                "invocation_id": invocation_id,
+                "claim_generation": claim_generation,
+                "status": status,
+                "result": result,
+                "error": error,
+            },
+        )
+
+    async def decide_agent_confirmation(
+        self,
+        confirmation_id: str,
+        decision: str,
+    ) -> dict[str, Any]:
+        """CAS a canonical confirmation decision in core authority."""
+        return await self.send_operation(
+            "decide_agent_confirmation",
+            {"confirmation_id": confirmation_id, "decision": decision},
+        )
+
+    async def get_agent_confirmation(
+        self,
+        confirmation_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one canonical confirmation without mutating it."""
+        return await self._send_optional_dict_operation(
+            "get_agent_confirmation",
+            result_key="confirmation",
+            parameters={"confirmation_id": confirmation_id},
+        )
+
+    async def list_pending_agent_confirmations(
+        self,
+        conversation_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return pending canonical confirmations for one conversation."""
+        result = await self.send_operation(
+            "list_pending_agent_confirmations",
+            {"conversation_id": conversation_id},
+        )
+        return list(result.get("confirmations", []))
+
+    async def append_agent_turn_event(
+        self,
+        *,
+        turn_id: str,
+        event_type: str,
+        phase: str = "",
+        attempt: int = 0,
+        payload: dict[str, Any] | None = None,
+        event_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append an authoritative transition/provider-attempt outbox event."""
+        return await self.send_operation(
+            "append_agent_turn_event",
+            {
+                "turn_id": turn_id,
+                "event_id": event_id,
+                "event_type": event_type,
+                "phase": phase,
+                "attempt": attempt,
+                "payload": payload or {},
+            },
+        )
+
+    async def cancel_agent_turn(
+        self,
+        turn_id: str,
+        *,
+        reason: str = "cancelled",
+        timeout: bool = False,
+        failure: bool = False,
+        task_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve cancellation against the canonical run-state CAS domain."""
+        return await self.send_operation(
+            "cancel_agent_turn",
+            {
+                "turn_id": turn_id,
+                "reason": reason,
+                "timeout": timeout,
+                "failure": failure,
+                "task_result": task_result,
+            },
+        )
+
+    async def commit_agent_turn_finalization(
+        self,
+        *,
+        turn_id: str,
+        finalization_id: str,
+        outcome_kind: str,
+        conversation_id: str,
+        session_id: str,
+        assistant_content: str,
+        assistant_meta: dict[str, Any] | None,
+        dialog_content: str,
+        source_message_ids: list[str],
+        outcome_payload: dict[str, Any],
+        persist_chat: bool = True,
+        task_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Atomically commit interactive FINAL or FAILED persistence."""
+        return await self.send_operation(
+            "commit_agent_turn_finalization",
+            {
+                "turn_id": turn_id,
+                "finalization_id": finalization_id,
+                "outcome_kind": outcome_kind,
+                "conversation_id": conversation_id,
+                "session_id": session_id,
+                "assistant_content": assistant_content,
+                "assistant_meta": assistant_meta,
+                "dialog_content": dialog_content,
+                "source_message_ids": source_message_ids,
+                "outcome_payload": outcome_payload,
+                "persist_chat": persist_chat,
+                "task_result": task_result,
+            },
+        )
+
+    async def list_unprojected_agent_turn_events(
+        self,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Read stable events awaiting optional runtime projection."""
+        return await self._send_list_operation(
+            "list_unprojected_agent_turn_events",
+            result_key="events",
+            parameters={"limit": limit},
+        )
+
+    async def list_agent_turn_events(
+        self,
+        *,
+        turn_id: str | None = None,
+        conversation_id: str | None = None,
+        after_sequence: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Read canonical core events for reconnect recovery."""
+        return await self._send_list_operation(
+            "list_agent_turn_events",
+            result_key="events",
+            parameters={
+                "turn_id": turn_id,
+                "conversation_id": conversation_id,
+                "after_sequence": after_sequence,
+                "limit": limit,
+            },
+        )
+
+    async def project_agent_turn_event(self, event: dict[str, Any]) -> bool:
+        """Idempotently write one core event into the runtime projection."""
+        result = await self.send_operation("project_agent_turn_event", event)
+        return bool(result.get("projected"))
+
+    async def mark_agent_turn_event_projected(
+        self,
+        event_id: str,
+        projection_version: int = 1,
+    ) -> bool:
+        """Acknowledge one idempotent runtime projection."""
+        return await self._send_bool_operation(
+            "mark_agent_turn_event_projected",
+            result_key="updated",
+            parameters={
+                "event_id": event_id,
+                "projection_version": projection_version,
+            },
+        )
+
+    async def recover_agent_turns(self) -> int:
+        """Fence invocation claims abandoned by a previous orchestrator."""
+        result = await self.send_operation("recover_agent_turns", {})
+        return int(result.get("recovered", 0))
+
+    async def create_agent_clarification(
+        self,
+        *,
+        turn_id: str,
+        clarification_id: str,
+        proposed_tool: str,
+        reason: str,
+        expires_at: str,
+    ) -> dict[str, Any]:
+        """Persist one backend-owned low-confidence proposal."""
+        return await self.send_operation(
+            "create_agent_clarification",
+            {
+                "turn_id": turn_id,
+                "clarification_id": clarification_id,
+                "proposed_tool": proposed_tool,
+                "reason": reason,
+                "expires_at": expires_at,
+            },
+        )
+
+    async def get_pending_agent_clarification(
+        self, conversation_id: str
+    ) -> dict[str, Any] | None:
+        """Read the latest live proposal for one conversation."""
+        return await self._send_optional_dict_operation(
+            "get_pending_agent_clarification",
+            result_key="clarification",
+            parameters={"conversation_id": conversation_id},
+        )
+
+    async def decide_agent_clarification(
+        self, clarification_id: str, decision: str
+    ) -> dict[str, Any]:
+        """Close a proposal with a classified decision."""
+        return await self.send_operation(
+            "decide_agent_clarification",
+            {"clarification_id": clarification_id, "decision": decision},
+        )
+
+    async def create_agent_pending_input(
+        self,
+        *,
+        turn_id: str,
+        pending_input_id: str,
+        question: str,
+        suggestions: list[str],
+        expected_input_schema: dict[str, object],
+        transcript_snapshot: list[dict[str, object]],
+        expires_at: str,
+    ) -> dict[str, object]:
+        """Persist one typed missing-input pause in core authority."""
+        result = await self.send_operation(
+            "create_agent_pending_input",
+            {
+                "turn_id": turn_id,
+                "pending_input_id": pending_input_id,
+                "question": question,
+                "suggestions": suggestions,
+                "expected_input_schema": expected_input_schema,
+                "transcript_snapshot": transcript_snapshot,
+                "expires_at": expires_at,
+            },
+        )
+        return dict(result.get("pending_input") or {})
+
+    async def get_agent_pending_input(
+        self,
+        *,
+        pending_input_id: str | None = None,
+        conversation_id: str | None = None,
+    ) -> dict[str, object] | None:
+        """Read one typed missing-input state from core authority."""
+        result = await self.send_operation(
+            "get_agent_pending_input",
+            {
+                "pending_input_id": pending_input_id,
+                "conversation_id": conversation_id,
+            },
+        )
+        value = result.get("pending_input")
+        return dict(value) if isinstance(value, dict) else None
+
+    async def reply_agent_pending_input(
+        self,
+        *,
+        turn_id: str,
+        pending_input_id: str,
+        conversation_id: str,
+        cas_version: int,
+        value: object,
+    ) -> dict[str, object]:
+        """Validate and CAS one reply into the same structured run."""
+        result = await self.send_operation(
+            "reply_agent_pending_input",
+            {
+                "turn_id": turn_id,
+                "pending_input_id": pending_input_id,
+                "conversation_id": conversation_id,
+                "cas_version": cas_version,
+                "value": value,
+            },
+        )
+        pending = dict(result.get("pending_input") or {})
+        if result.get("validation_error") is not None:
+            pending["validation_error"] = str(result["validation_error"])
+        return pending
+
     # --- Admin operations ---
 
     async def get_stats(self) -> dict[str, int]:
@@ -1412,5 +1839,3 @@ class DBProxyClient:
     ) -> list[dict[str, Any]]:
         """Fetch records that have no embedding yet."""
         return await mem_ops.fetch_unembedded_records(self, limit)
-
-

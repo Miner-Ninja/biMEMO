@@ -21,6 +21,7 @@ from .handlers.admin import (
 
 
 if TYPE_CHECKING:
+    from backend.ipc.db_proxy import OperationRegistry
     from backend.security.database import DatabaseManager
 
 
@@ -37,6 +38,7 @@ async def run_backup_loop(
     databases: dict[str, DatabaseManager],
     database_path: str,
     core_db: DatabaseManager,
+    registry: OperationRegistry,
     interval_seconds: float = BACKUP_INTERVAL_SECONDS,
     initial_delay_seconds: float = BACKUP_INITIAL_DELAY_SECONDS,
     keep_copies: int = BACKUP_KEEP_COPIES,
@@ -47,6 +49,7 @@ async def run_backup_loop(
         databases: Open databases keyed by short name.
         database_path: Path of the core database file (locates backups/).
         core_db: Core database, used to stamp the loop heartbeat.
+        registry: Registry that owns serialization for the live connections.
         interval_seconds: Delay between backup passes.
         initial_delay_seconds: Delay before the first pass.
         keep_copies: Newest copies retained per database name.
@@ -58,21 +61,24 @@ async def run_backup_loop(
             await asyncio.sleep(delay)
             delay = interval_seconds
             try:
-                paths = perform_backup(databases, database_path)
-                deleted = prune_old_backups(
-                    databases,
-                    database_path,
-                    keep_copies,
-                )
-                core_db.execute(
-                    "INSERT OR REPLACE INTO metadata (key, value) "
-                    "VALUES (?, ?)",
-                    (
-                        LOOP_HEARTBEAT_KEY_PREFIX + "backup",
-                        datetime.now(tz=UTC).isoformat().encode(),
-                    ),
-                )
-                core_db.commit()
+                def backup_pass() -> tuple[dict[str, str], int]:
+                    paths = perform_backup(databases, database_path)
+                    deleted = prune_old_backups(
+                        databases,
+                        database_path,
+                        keep_copies,
+                    )
+                    core_db.execute(
+                        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                        (
+                            LOOP_HEARTBEAT_KEY_PREFIX + "backup",
+                            datetime.now(tz=UTC).isoformat().encode(),
+                        ),
+                    )
+                    core_db.commit()
+                    return paths, deleted
+
+                paths, deleted = await registry.run_serialized(backup_pass)
                 logger.info(
                     "Scheduled backup written (%d databases, %d old "
                     "copies rotated out)",

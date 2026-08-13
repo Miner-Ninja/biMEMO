@@ -8,6 +8,7 @@ message metadata, and capture-save wrappers for tracking persisted message IDs.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from backend.chat_bridge import (
@@ -19,6 +20,7 @@ from backend.chat_bridge import (
 from backend.chat_bridge.providers import (
     build_configured_providers,
 )
+from backend.config import get_settings
 
 from .chat_handler import (
     DEFAULT_CONVERSATION_PROCESSING_STAGE,
@@ -127,9 +129,24 @@ async def _run_bridge_message_through_orchestrator(
     session_id: str,
     conversation_id: str,
     message_meta: dict[str, str],
-) -> str:
+    db_client: DBProxyClient,
+) -> object:
     """Run one inbound bridge message through the normal chat path."""
-    response = await _run_orchestrator_message(
+    turn_id = ""
+    if get_settings().structured_finalization_enabled:
+        turn_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"bimemo:bridge:{message.provider.value}:{message.external_message_id}",
+            )
+        )
+        await db_client.create_agent_turn(
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            session_id=session_id,
+            channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
+        )
+    return await _run_orchestrator_message(
         orch=orch,
         message=message.content,
         channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
@@ -138,8 +155,8 @@ async def _run_bridge_message_through_orchestrator(
         conversation_id=conversation_id,
         images=message.images or None,
         meta=message_meta,
+        agent_run_id=turn_id,
     )
-    return response.structured_content.answer
 
 
 async def _process_bridge_inbound_message(
@@ -172,7 +189,7 @@ async def _process_bridge_inbound_message(
             message_source=BRIDGE_MESSAGE_META_SOURCE,
             captured_ids=captured_ids,
         )
-        response_text = await _run_with_processing_state(
+        response = await _run_with_processing_state(
             db_client=db_client,
             orch=orch,
             conversation_id=conversation_id,
@@ -184,6 +201,7 @@ async def _process_bridge_inbound_message(
                 session_id=session_id,
                 conversation_id=conversation_id,
                 message_meta=message_meta,
+                db_client=db_client,
             ),
         )
     finally:
@@ -191,10 +209,16 @@ async def _process_bridge_inbound_message(
 
     if not captured_ids["user"]:
         raise RuntimeError("Bridge inbound sync did not persist the user message")
+    structured = getattr(response, "structured_content", None)
+    outcome = getattr(response, "outcome", None)
+    if outcome is not None and outcome.kind.value == "paused":
+        raise RuntimeError("Bridge turn is waiting for an interactive confirmation")
+    response_text = structured.answer if structured is not None else ""
+    response_message_id = getattr(response, "assistant_message_id", None)
     return (
         captured_ids["user"],
         response_text or "",
-        captured_ids["assistant"] or "",
+        response_message_id or captured_ids["assistant"] or "",
     )
 
 
