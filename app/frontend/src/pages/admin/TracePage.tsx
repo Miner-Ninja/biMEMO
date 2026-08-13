@@ -47,14 +47,14 @@ function TraceDetail({ trace }: { trace: TurnTrace }) {
     <div className="space-y-3">
       {messages.user && (
         <Section title="User request">
-          <p className="whitespace-pre-wrap text-sm text-foreground">
+          <p className="whitespace-pre-wrap break-words text-sm text-foreground">
             {messages.user.content || "(empty)"}
           </p>
         </Section>
       )}
       {messages.assistant && (
         <Section title="Assistant answer">
-          <p className="whitespace-pre-wrap text-sm text-foreground">
+          <p className="whitespace-pre-wrap break-words text-sm text-foreground">
             {messages.assistant.content || "(empty)"}
           </p>
         </Section>
@@ -136,8 +136,8 @@ export function TracePage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(20rem,26rem)_1fr]">
-        <div className="max-h-[75vh] space-y-1 overflow-auto rounded-lg border border-border p-1">
+      <div className="grid gap-4 lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
+        <div className="max-h-[75vh] min-w-0 space-y-1 overflow-auto rounded-lg border border-border p-1">
           {loadingList && <p className="p-3 text-sm text-muted-foreground">Loading…</p>}
           {!loadingList && runs.length === 0 && (
             <p className="p-3 text-sm text-muted-foreground">No runs yet.</p>
@@ -174,7 +174,7 @@ export function TracePage() {
           ))}
         </div>
 
-        <div>
+        <div className="min-w-0">
           {loadingTrace && (
             <p className="p-3 text-sm text-muted-foreground">Loading trace…</p>
           )}
