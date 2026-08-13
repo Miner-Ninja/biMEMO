@@ -174,7 +174,7 @@ export function TracePage() {
           ))}
         </div>
 
-        <div className="min-w-0">
+        <div className="max-h-[75vh] min-w-0 overflow-auto pr-1">
           {loadingTrace && (
             <p className="p-3 text-sm text-muted-foreground">Loading trace…</p>
           )}
