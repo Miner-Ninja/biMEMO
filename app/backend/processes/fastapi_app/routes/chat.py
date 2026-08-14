@@ -370,6 +370,7 @@ async def confirm(
         request_id=request_id,
         action_id=body.action_id,
         decision=body.decision,
+        scope=body.scope,
     )
     ipc_response = await send_ipc_control_request(
         send_fn=orchestrator_client.send_confirm,

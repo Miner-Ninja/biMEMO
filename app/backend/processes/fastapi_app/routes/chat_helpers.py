@@ -251,6 +251,8 @@ def build_confirmation_items(
             action_id=confirmation_data.get("action_id", ""),
             tool_name=confirmation_data.get("tool_name", ""),
             parameters=confirmation_data.get("parameters", {}),
+            grant_capable=bool(confirmation_data.get("grant_capable", False)),
+            url_host=confirmation_data.get("url_host") or None,
         )
         for confirmation_data in pending_confirmations
     ]
@@ -702,6 +704,8 @@ async def waiting_confirmations_for_conversation(
                 "action_id": action.get("id", ""),
                 "tool_name": action.get("tool_name", ""),
                 "parameters": action.get("parameters", {}),
+                "grant_capable": bool(action.get("grant_capable", False)),
+                "url_host": action.get("url_host") or None,
             }
         )
     return matched

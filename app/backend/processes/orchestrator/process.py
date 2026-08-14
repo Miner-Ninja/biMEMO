@@ -25,6 +25,7 @@ from backend.ipc.models import (
     StreamEventType,
 )
 from backend.llm.capabilities_registry import CapabilitiesRegistry
+from backend.tools.handlers.registration import confirmation_button_extras
 
 from .client import DBProxyClient, DBProxyError
 from .ipc_server import OrchestratorIPCServer
@@ -334,6 +335,7 @@ def _build_confirm_handler(
             core_response = await orch.resume_structured_confirmation(
                 confirmation_id=request.action_id,
                 decision="approved" if request.decision == "approve" else "denied",
+                scope=request.scope,
                 llm_call=get_llm_call(),
             )
         except (DBProxyError, RuntimeError) as exc:
@@ -414,6 +416,7 @@ async def _push_core_confirmation_outcome(
                 "action_id": item.confirmation_id,
                 "tool_name": item.tool_name,
                 "parameters": item.parameters,
+                **confirmation_button_extras(item.tool_name, item.parameters),
             }
             for item in outcome.confirmations
         ]

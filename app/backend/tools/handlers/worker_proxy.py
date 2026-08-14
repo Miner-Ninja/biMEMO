@@ -13,6 +13,8 @@ from backend.ipc.protocol import ToolRequest, ToolResponse
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
     from backend.bus.worker_manager import WorkerManager
 
 
@@ -94,12 +96,17 @@ def _email_parameters(params: object, smtp_config: dict) -> dict:
 def make_worker_proxy(
     worker_manager: WorkerManager,
     tool_name: str,
+    context_fn: Callable[[], Mapping[str, str]] | None = None,
 ) -> callable:
     """Create an async proxy handler for a worker-routed tool.
 
     Args:
         worker_manager: Worker manager for sending requests.
         tool_name: Name of the tool being proxied.
+        context_fn: Optional broker execution-context reader; when the
+            context carries ``domain_grant_host`` (the invocation runs
+            under a domain-scoped grant), the host constraint is forwarded
+            to the worker as the ``allowed_host`` parameter.
 
     Returns:
         Async handler that sends IPC request and returns result.
@@ -117,10 +124,15 @@ def make_worker_proxy(
         Raises:
             WorkerProxyError: On worker error or timeout.
         """
+        parameters = params.model_dump()
+        if context_fn is not None:
+            granted_host = str(context_fn().get("domain_grant_host", "") or "")
+            if granted_host:
+                parameters["allowed_host"] = granted_host
         response = await _run_worker_request(
             worker_manager,
             tool_name,
-            params.model_dump(),
+            parameters,
         )
         return _successful_worker_result(tool_name, response)
 

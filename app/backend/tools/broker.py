@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -24,6 +25,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+# Task-local execution context — see ToolBroker.current_context.
+_EXECUTION_CONTEXT: ContextVar[dict[str, str] | None] = ContextVar(
+    "tool_execution_context", default=None
+)
 
 
 def _freeze_json(value: object) -> object:
@@ -144,21 +150,27 @@ class ToolBroker:
     _handlers: Mapping[str, Callable] = field(default_factory=dict)
     _finalized: bool = False
     _audit_tasks: set[asyncio.Task[object]] = field(default_factory=set)
-    # Per-call execution context (e.g. conversation_id, session_id).
-    # Set by ToolExecutor before execute_prepared(), cleared after.
-    # Handlers that need it read self.broker.current_context inside their
-    # closure.
-    current_context: dict[str, str] = field(default_factory=dict)
     # Workspace action buffer — auto-collects workspace-relevant tool calls.
     _workspace_actions: list[dict] = field(default_factory=list)
 
+    # Per-call execution context (e.g. conversation_id, session_id,
+    # domain_grant_host). Task-local by design: sibling tool calls run
+    # concurrently under asyncio.gather, and a security constraint such as
+    # the granted host must never leak between calls or be clobbered by a
+    # sibling's set_context. Handlers read self.broker.current_context
+    # inside their closure, within the same task that set it.
+    @property
+    def current_context(self) -> dict[str, str]:
+        """Return the execution context of the current task."""
+        return _EXECUTION_CONTEXT.get() or {}
+
     def set_context(self, context: dict[str, str]) -> None:
-        """Set the per-call execution context."""
-        self.current_context = dict(context)
+        """Set the per-call execution context for the current task."""
+        _EXECUTION_CONTEXT.set(dict(context))
 
     def clear_context(self) -> None:
-        """Clear the per-call execution context."""
-        self.current_context = {}
+        """Clear the per-call execution context of the current task."""
+        _EXECUTION_CONTEXT.set({})
 
     def get_workspace_actions(self) -> list[dict]:
         """Return a copy of collected workspace actions."""

@@ -9,6 +9,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from backend.memory.evidence_recall import is_evidence_recall_question
 from backend.tools.builtin import (
@@ -953,7 +954,18 @@ def _register_worker_proxy_group(
     for tool_name in tool_names:
         broker.bind_handler(
             tool_name,
-            make_worker_proxy(worker, tool_name),
+            make_worker_proxy(
+                worker,
+                tool_name,
+                # http_fetch must honour a domain-scoped grant: the granted
+                # host travels from the broker execution context to the net
+                # worker as the allowed_host constraint.
+                context_fn=(
+                    (lambda: broker.current_context)
+                    if tool_name == "http_fetch"
+                    else None
+                ),
+            ),
         )
 
 
@@ -1064,6 +1076,57 @@ def register_all_handlers(
 
     # Code search
     broker.bind_handler("code_search", _make_code_search_handler())
+
+_GRANT_CAPABLE_MODES = frozenset(
+    {PermissionMode.CONVERSATION_CAPABILITY, PermissionMode.SCOPED}
+)
+
+
+def confirmation_button_extras(
+    tool_name: str,
+    parameters: dict[str, object] | None,
+) -> dict[str, object]:
+    """Return the payload fields the confirmation panel derives buttons from.
+
+    ``grant_capable`` — the tool's static permission mode can carry a
+    reusable grant; ``url_host`` — lowercased host of the ``url`` argument.
+    Pure lookup over the static TOOL_DEFINITIONS: safe from any process that
+    imports this module, requires no broker instance. The frontend must
+    never compute these (contract S2.4).
+    """
+    definition = next(
+        (item for item in TOOL_DEFINITIONS if item.name == tool_name),
+        None,
+    )
+    grant_capable = bool(
+        definition is not None
+        and definition.permission.mode in _GRANT_CAPABLE_MODES
+    )
+    return {
+        "grant_capable": grant_capable,
+        "url_host": safe_url_host(str((parameters or {}).get("url", "") or "")),
+    }
+
+
+def safe_url_host(raw_url: str) -> str | None:
+    """Lowercased host of a URL, or None when it cannot be trusted.
+
+    Model-controlled URLs reach this before any validation, so every
+    failure mode is fail-closed to None (no domain button, no grant):
+    parse errors (`urlsplit("https://[::1")` raises ValueError), missing
+    host, and hosts longer than the DNS limit of 253 characters (the
+    db-proxy payload field enforces the same cap).
+    """
+    if not raw_url:
+        return None
+    try:
+        host = urlsplit(raw_url).hostname
+    except ValueError:
+        return None
+    if not host or len(host) > 253:
+        return None
+    return host.lower()
+
 
 def validate_all_registered(
     broker: ToolBroker,

@@ -258,6 +258,8 @@ export interface StoredConversationMessage {
     action_id: string;
     tool_name: string;
     parameters: Record<string, unknown>;
+    grant_capable?: boolean;
+    url_host?: string | null;
   }[];
   used_tools?: {
     name: string;
@@ -761,15 +763,23 @@ export function getErrorSuggestion(category: string): string {
 export interface ConfirmResponse {
   accepted: boolean;
   action_id: string;
+  /** Turn outcome after the decision: final | paused | failed | cancelled. */
+  status?: string;
+  message_id?: string;
+  result_summary?: string;
 }
 
 /** Approve a pending RED zone tool action. */
-export async function confirmAction(actionId: string): Promise<ConfirmResponse> {
+export async function confirmAction(
+  actionId: string,
+  scope: "once" | "domain" | "conversation"
+): Promise<ConfirmResponse> {
   return apiRequest<ConfirmResponse>("/confirm", {
     method: "POST",
     body: JSON.stringify({
       action_id: actionId,
       decision: "approve",
+      scope: scope,
     }),
   });
 }

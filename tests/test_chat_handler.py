@@ -353,6 +353,8 @@ def test_pending_confirmations_from_orchestrator_serializes_red_calls() -> None:
             "action_id": "action-1",
             "tool_name": "http_fetch",
             "parameters": {"url": "https://example.com"},
+            "grant_capable": True,
+            "url_host": "example.com",
         }
     ]
 

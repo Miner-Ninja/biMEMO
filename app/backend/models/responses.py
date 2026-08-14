@@ -39,11 +39,16 @@ class ConfirmationItem(StrictResponseModel):
         action_id: Cryptographic action identifier.
         tool_name: Name of the tool awaiting confirmation.
         parameters: Tool call parameters.
+        grant_capable: True when the permission mode allows a reusable
+            grant (conversation_capability or scoped).
+        url_host: Canonical server host derived for domain-scoped permissions.
     """
 
     action_id: str
     tool_name: str
     parameters: dict[str, object]
+    grant_capable: bool = False
+    url_host: str | None = None
 
 
 class UsedToolItem(StrictResponseModel):

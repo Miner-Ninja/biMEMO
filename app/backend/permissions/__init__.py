@@ -8,6 +8,8 @@ from .action_decisions import (
     PermissionMode,
     PermissionReply,
     PermissionScope,
+    domain_scope,
+    scope_hash,
 )
 
 
@@ -19,4 +21,6 @@ __all__ = [
     "PermissionMode",
     "PermissionReply",
     "PermissionScope",
+    "domain_scope",
+    "scope_hash",
 ]

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router-dom";
 import i18n from "@/i18n";
@@ -27,9 +27,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { DEFAULT_CHAT_SETTINGS } from "@/types/chat";
 import { updateChatSettings } from "@/lib/bimemo-api";
 import { useConfirm } from "@/hooks/useConfirm";
+import { PendingConfirmationPanel } from "@/components/chat/PendingConfirmationPanel";
 import {
   apiRequest,
   ApiError,
+  confirmAction,
+  denyAction,
   createChatBridgeLink,
   disableChatBridgeLink,
   enableChatBridgeLink,
@@ -64,6 +67,7 @@ import {
 import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
 import type {
   Chat,
+  ConfirmationScope,
   Message,
   PendingConfirmation,
   PendingInput,
@@ -91,6 +95,8 @@ type ChatResponsePayload = {
     action_id: string;
     tool_name: string;
     parameters: Record<string, unknown>;
+    grant_capable?: boolean;
+    url_host?: string | null;
   }[];
   pause_reason?: "confirmation" | "missing_input" | null;
   pending_input?: Omit<PendingInput, "run_id"> | null;
@@ -399,6 +405,7 @@ export function ChatPage() {
     addMessage,
     addMessageToConversation,
     updateMessage,
+    updateMessageInConversation,
     deleteChat,
     removeConversation,
     renameChat,
@@ -451,6 +458,7 @@ export function ChatPage() {
   // current assistant turn; accumulated so multiple RED tools each get a card.
   const pendingConfirmationsRef = useRef<PendingConfirmation[]>([]);
   const pendingInputRef = useRef<PendingInput | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const processedFinalizationIdsRef = useRef<Set<string>>(new Set());
   const pseudoStreamRunIdRef = useRef(0);
   const stoppedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
@@ -924,6 +932,8 @@ export function ChatPage() {
                       ? (item.parameters as Record<string, unknown>)
                       : {},
                   status: "pending" as const,
+                  grant_capable: item.grant_capable === true,
+                  url_host: typeof item.url_host === "string" ? item.url_host : null,
                 }))
                 .filter((item) => item.action_id)
             : [];
@@ -1034,15 +1044,19 @@ export function ChatPage() {
           action_id?: string;
           tool_name?: string;
           parameters?: Record<string, unknown>;
+          grant_capable?: boolean;
+          url_host?: string | null;
         } | null;
-        if (conf?.action_id) {
+        if (conf?.action_id && conf.tool_name) {
           pendingConfirmationsRef.current = [
             ...pendingConfirmationsRef.current,
             {
               action_id: conf.action_id,
-              tool_name: conf.tool_name ?? "",
+              tool_name: conf.tool_name,
               parameters: conf.parameters ?? {},
               status: "pending",
+              grant_capable: conf.grant_capable === true,
+              url_host: typeof conf.url_host === "string" ? conf.url_host : null,
             },
           ];
           updateMessage(assistantMessageIdRef.current, {
@@ -1816,6 +1830,92 @@ export function ChatPage() {
     }
   };
 
+  // Oldest still-pending confirmation of the active conversation drives the
+  // pinned panel; message order is chronological, so first hit = oldest.
+  const activePendingConfirmation = useMemo(() => {
+    for (const message of activeChat?.messages ?? []) {
+      for (const item of message.pendingConfirmations ?? []) {
+        if (item.status === "pending") {
+          return { messageId: message.id, confirmation: item };
+        }
+      }
+    }
+    return null;
+  }, [activeChat]);
+
+  const handleConfirmationDecision = useCallback(
+    async (decision: "approve" | "deny", scope: ConfirmationScope) => {
+      if (!activePendingConfirmation || confirmBusy) return;
+      const { messageId, confirmation } = activePendingConfirmation;
+      // Captured at decision time so a chat switch mid-request cannot
+      // redirect the status patch or the trace line into another chat.
+      const conversationId = activeChatId;
+      const hostMessage = activeChat?.messages.find((m) => m.id === messageId);
+      if (!conversationId || !hostMessage) return;
+      const patchStatus = (status: PendingConfirmation["status"]) => {
+        updateMessageInConversation(conversationId, messageId, {
+          pendingConfirmations: (hostMessage.pendingConfirmations ?? []).map((item) =>
+            item.action_id === confirmation.action_id ? { ...item, status } : item
+          ),
+        });
+        pendingConfirmationsRef.current = pendingConfirmationsRef.current.map((item) =>
+          item.action_id === confirmation.action_id ? { ...item, status } : item
+        );
+      };
+      setConfirmBusy(true);
+      try {
+        const response =
+          decision === "approve"
+            ? await confirmAction(confirmation.action_id, scope)
+            : await denyAction(confirmation.action_id);
+        const failedOutcome =
+          !response.accepted ||
+          response.status === "failed" ||
+          response.status === "cancelled";
+        if (failedOutcome) {
+          // Expired/refused server-side: the confirmation is dead either way.
+          patchStatus("expired");
+          addToast({ type: "error", message: t("common.confirmStale") });
+          return;
+        }
+        patchStatus(decision === "approve" ? "approved" : "denied");
+        const traceKey =
+          decision === "deny"
+            ? "common.confirmTraceDenied"
+            : scope === "domain"
+              ? "common.confirmTraceAllowedDomain"
+              : scope === "conversation"
+                ? "common.confirmTraceAllowedConversation"
+                : "common.confirmTraceAllowedOnce";
+        addMessageToConversation(conversationId, {
+          id: generateId(),
+          role: "assistant",
+          content: t(traceKey, {
+            tool: confirmation.tool_name,
+            host: confirmation.url_host ?? "",
+          }),
+          timestamp: new Date(),
+        });
+      } catch {
+        // Transient transport failure: the server-side confirmation is
+        // still valid — keep it pending so the user can simply retry.
+        addToast({ type: "error", message: t("common.error") });
+      } finally {
+        setConfirmBusy(false);
+      }
+    },
+    [
+      activePendingConfirmation,
+      activeChat,
+      activeChatId,
+      addMessageToConversation,
+      addToast,
+      confirmBusy,
+      t,
+      updateMessageInConversation,
+    ]
+  );
+
   const handleStop = async () => {
     const activeStream = activeAssistantStreamRef.current;
     const requestId = activeStream.requestId;
@@ -2226,6 +2326,13 @@ export function ChatPage() {
         showThinking={showThinking}
         ttsAvailable={ttsAvailable}
       />
+      {activePendingConfirmation && (
+        <PendingConfirmationPanel
+          confirmation={activePendingConfirmation.confirmation}
+          onDecide={handleConfirmationDecision}
+          busy={confirmBusy}
+        />
+      )}
       <ChatInput
         ref={chatInputRef}
         onSend={handleSend}

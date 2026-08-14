@@ -508,6 +508,8 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                         "invocation_id": item.invocation_id,
                         "tool_name": item.tool_name,
                         "parameters": item.arguments,
+                        "grant_capable": item.confirmation_grant_capable,
+                        "url_host": item.confirmation_url_host,
                     }
                     for item in p.invocations
                     if item.confirmation_id is not None

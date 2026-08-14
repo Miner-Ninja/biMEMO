@@ -42,6 +42,31 @@ class DecisionKind(StrEnum):
     BLOCK = "block"
 
 
+def scope_hash(scope: dict[str, object]) -> str:
+    """Canonical hash of one permission scope.
+
+    The single hashing authority: grant creation, grant lookup, and the
+    db-proxy recomputation must all agree byte-for-byte, so every caller
+    hashes through this function.
+    """
+    canonical_scope = json.dumps(
+        scope,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical_scope.encode()).hexdigest()
+
+
+def domain_scope(
+    base_scope: dict[str, object],
+    url_host: str,
+) -> dict[str, object]:
+    """Return the domain-bound variant of one permission scope."""
+    return {**base_scope, "url_host": url_host}
+
+
 @dataclass(frozen=True)
 class ActionContext:
     """Authenticated context surrounding one prepared invocation."""
@@ -166,18 +191,11 @@ class ActionDecisionService:
             mode=mode,
             workspace_root=workspace_root,
         )
-        canonical_scope = json.dumps(
-            scope,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
         details: dict[str, object] = {
             "permission_mode": mode.value,
             "reply_mode": policy.reply.value,
             "scope": scope,
-            "scope_hash": hashlib.sha256(canonical_scope.encode()).hexdigest(),
+            "scope_hash": scope_hash(scope),
             "policy_revision": policy.revision,
             "source": "registry_policy",
             "read_only": policy.reply is PermissionReply.LLM_CLASSIFIED,

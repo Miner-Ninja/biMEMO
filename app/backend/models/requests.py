@@ -83,10 +83,13 @@ class ConfirmRequest(StrictRequestModel):
     Attributes:
         action_id: Cryptographic action identifier.
         decision: Either "approve" or "deny".
+        scope: Whether the approval applies once, to a domain, or to the
+            whole conversation.
     """
 
     action_id: str = Field(min_length=1)
     decision: str = Field(pattern=r"^(approve|deny)$")
+    scope: str = Field(default="once", pattern=r"^(once|domain|conversation)$")
 
 
 class StopRequest(StrictRequestModel):

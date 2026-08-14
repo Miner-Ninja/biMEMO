@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -29,6 +30,8 @@ from backend.permissions import (
     ActionDecisionService,
     DecisionKind,
     PermissionMode,
+    domain_scope,
+    scope_hash,
 )
 from backend.security.provenance import serialize_tool_result
 from backend.tools.broker import (
@@ -36,6 +39,10 @@ from backend.tools.broker import (
     PreparedInvocation,
     ToolBroker,
     ToolResult,
+)
+from backend.tools.handlers.registration import (
+    confirmation_button_extras,
+    safe_url_host,
 )
 
 
@@ -266,6 +273,15 @@ class ToolExecutor:
             **self.current_context,
             "invocation_id": invocation_id or str(tool_call.id),
         }
+        context_grant = self._authorized_grants.get(tool_call.id)
+        if context_grant is not None and context_grant.get("scope_type") == "domain":
+            # Handlers running under a domain grant must stay on the granted
+            # host (redirect containment) — expose it via the broker context.
+            grant_scope = context_grant.get("scope")
+            if isinstance(grant_scope, Mapping):
+                granted_host = str(grant_scope.get("url_host", "") or "")
+                if granted_host:
+                    execution_context["domain_grant_host"] = granted_host
         self.broker.set_context(execution_context)
         grant = self._authorized_grants.get(tool_call.id)
         preauthorized = self._scheduled_task_preauthorized(tool_call)
@@ -425,6 +441,17 @@ class ToolExecutor:
                     "confirmation_expires_at": (
                         expires_at if action is not None else None
                     ),
+                    **(
+                        {
+                            f"confirmation_{key}": value
+                            for key, value in confirmation_button_extras(
+                                call.name,
+                                dict(prepared.canonical_parameters),
+                            ).items()
+                        }
+                        if action is not None
+                        else {}
+                    ),
                 }
             )
         await self.turn_store.upsert_agent_tool_batch(
@@ -481,24 +508,48 @@ class ToolExecutor:
     def _grant_coordinates(
         self,
         decision: ActionDecision,
+        *,
+        domain_host: str | None = None,
     ) -> dict[str, object]:
         """Return stable storage coordinates for one reusable permission."""
         details = decision.details
         mode = str(details.get("permission_mode", ""))
         conversation_id = self.current_context.get("conversation_id", "")
-        scope_hash = str(details.get("scope_hash", ""))
+        if domain_host:
+            scope = domain_scope(dict(details.get("scope", {})), domain_host)
+            return {
+                "scope_type": "domain",
+                "scope_value": f"{conversation_id}:{domain_host}",
+                "scope": scope,
+                "scope_hash": scope_hash(scope),
+                "policy_revision": str(details.get("policy_revision", "")),
+            }
+        decision_scope_hash = str(details.get("scope_hash", ""))
         scope_value = (
             conversation_id
             if mode == "conversation_capability"
-            else f"{conversation_id}:{scope_hash}"
+            else f"{conversation_id}:{decision_scope_hash}"
         )
         return {
             "scope_type": mode,
             "scope_value": scope_value,
             "scope": dict(details.get("scope", {})),
-            "scope_hash": scope_hash,
+            "scope_hash": decision_scope_hash,
             "policy_revision": str(details.get("policy_revision", "")),
         }
+
+    @staticmethod
+    def canonical_url_host(prepared: object) -> str | None:
+        """Return the lowercased host of a prepared invocation's URL argument.
+
+        Server-side only: the host is read from the CANONICAL parameters of
+        the prepared invocation, never from client input. Returns None when
+        the tool has no ``url`` argument or the value has no parsable host.
+        """
+        parameters = getattr(prepared, "canonical_parameters", None)
+        if not isinstance(parameters, Mapping):
+            return None
+        return safe_url_host(str(parameters.get("url", "") or ""))
 
     async def _partition_structured_calls(
         self,
@@ -553,6 +604,32 @@ class ToolExecutor:
                     scope_hash=str(coordinates["scope_hash"]),
                     policy_revision=str(coordinates["policy_revision"]),
                 )
+            if (grant is None or grant.get("decision") != "allow") and (
+                self.turn_store is not None
+            ):
+                # A domain-scoped approval is narrower than the policy scope:
+                # try it keyed by the host of THIS call's canonical URL, so a
+                # grant for example.com never covers other.org.
+                host = self.canonical_url_host(self._prepared_calls.get(call.id))
+                if host:
+                    domain_coordinates = self._grant_coordinates(
+                        decision,
+                        domain_host=host,
+                    )
+                    domain_grant = await self.turn_store.lookup_capability_grant(
+                        scope_type="domain",
+                        scope_value=str(domain_coordinates["scope_value"]),
+                        capability=call.name,
+                        channel=self.current_context.get("channel", ""),
+                        scope_hash=str(domain_coordinates["scope_hash"]),
+                        policy_revision=str(domain_coordinates["policy_revision"]),
+                    )
+                    if (
+                        domain_grant is not None
+                        and domain_grant.get("decision") == "allow"
+                    ):
+                        grant = domain_grant
+                        coordinates = domain_coordinates
             if grant is None or grant.get("decision") != "allow":
                 confirmation.append(call)
                 continue
@@ -671,6 +748,7 @@ class ToolExecutor:
                 "action_id": action_id,
                 "tool_name": call.name,
                 "parameters": call.parameters,
+                **confirmation_button_extras(call.name, dict(call.parameters)),
             }
         )
 

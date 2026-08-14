@@ -15,7 +15,7 @@ import re
 import smtplib
 from email.message import EmailMessage
 from typing import TYPE_CHECKING
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import trafilatura
@@ -184,7 +184,7 @@ def _build_fetch_result(
     }
 
 
-async def execute_http_fetch(url: str) -> dict:
+async def execute_http_fetch(url: str, allowed_host: str | None = None) -> dict:
     """Fetch a URL with SSRF validation on every redirect.
 
     Manually follows redirects so each hop is re-validated
@@ -193,6 +193,8 @@ async def execute_http_fetch(url: str) -> dict:
 
     Args:
         url: HTTPS URL to fetch.
+        allowed_host: When set, the initial URL and every redirect hop
+            must stay on this host (domain-scoped grant containment).
 
     Returns:
         Dict with response body text.
@@ -202,6 +204,8 @@ async def execute_http_fetch(url: str) -> dict:
             fails SSRF checks.
     """
     current_url = url
+    if allowed_host and urlsplit(current_url).hostname != allowed_host:
+        raise ValidationError("url is outside the granted domain")
     validate_url(current_url)
 
     async with httpx.AsyncClient(
@@ -220,6 +224,8 @@ async def execute_http_fetch(url: str) -> dict:
                 break
 
             current_url = urljoin(current_url, location)
+            if allowed_host and urlsplit(current_url).hostname != allowed_host:
+                raise ValidationError("redirect left the granted domain")
             validate_url(current_url)
         else:
             raise ValidationError(f"Too many redirects (max {MAX_REDIRECTS})")
@@ -329,7 +335,10 @@ def make_net_dispatch(searxng_url: str) -> callable:
                     )
                 result = await execute_web_search(p["query"], searxng_url)
             elif request.tool_name == "http_fetch":
-                result = await execute_http_fetch(p["url"])
+                result = await execute_http_fetch(
+                    p["url"],
+                    allowed_host=str(p.get("allowed_host", "") or "") or None,
+                )
             elif request.tool_name == "email_send":
                 result = _email_send_result(p)
             else:

@@ -97,7 +97,13 @@ export interface PendingConfirmation {
   tool_name: string;
   parameters: Record<string, unknown>;
   status: "pending" | "approved" | "denied" | "expired";
+  /** Server-derived: the tool's policy mode can carry a reusable grant. */
+  grant_capable?: boolean;
+  /** Server-derived host of the tool's url argument; null for non-URL tools. */
+  url_host?: string | null;
 }
+
+export type ConfirmationScope = "once" | "domain" | "conversation";
 
 export interface PendingInput {
   run_id: string;

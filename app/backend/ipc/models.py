@@ -90,11 +90,13 @@ class ConfirmRequest(IPCModel):
         request_id: Identifier of the originating chat request.
         action_id: Identifier of the pending action.
         decision: User decision ("approve" or "deny").
+        scope: Approval scope — once, domain, or conversation.
     """
 
     request_id: str
     action_id: str
     decision: str
+    scope: str = Field(default="once", pattern=r"^(once|domain|conversation)$")
 
 
 class ToolCatalogRequest(IPCModel):

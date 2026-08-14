@@ -150,6 +150,8 @@ function mapMessage(message: StoredConversationMessage): Message {
           tool_name: confirmation.tool_name,
           parameters: confirmation.parameters,
           status: "pending" as const,
+          grant_capable: confirmation.grant_capable === true,
+          url_host: confirmation.url_host ?? null,
         }))
       : undefined;
   return {
@@ -427,6 +429,26 @@ export function useChat() {
     );
   }, []);
 
+  // Update a message inside a SPECIFIC conversation — unlike updateMessage,
+  // this stays correct when the user switches chats while a request is in
+  // flight (e.g. deciding a tool confirmation).
+  const updateMessageInConversation = useCallback(
+    (conversationId: string, messageId: string, updates: Partial<Message>) => {
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id !== conversationId) return chat;
+          return {
+            ...chat,
+            messages: chat.messages.map((msg) =>
+              msg.id === messageId ? { ...msg, ...updates } : msg
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   // Delete a chat
   const deleteChat = useCallback(async (chatId: string) => {
     await deleteConversation(chatId);
@@ -548,6 +570,7 @@ export function useChat() {
     switchChat,
     addMessage,
     addMessageToConversation,
+    updateMessageInConversation,
     updateMessage,
     deleteChat,
     removeConversation,

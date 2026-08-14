@@ -1177,6 +1177,11 @@ class ToolInvocationInput(ForbidExtraParams):
     confirmation_title: str = Field(default="", max_length=256)
     confirmation_description: str = Field(default="", max_length=4096)
     confirmation_expires_at: str | None = None
+    # Button-derivation facts computed by the ORCHESTRATOR (the sole owner
+    # of the tool registry) and stored verbatim in the run_paused payload so
+    # the reconnect bootstrap can render the panel without recomputing.
+    confirmation_grant_capable: bool = False
+    confirmation_url_host: str | None = Field(default=None, max_length=253)
 
 
 class UpsertAgentToolBatchParams(AgentTurnIdParams):

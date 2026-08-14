@@ -1309,9 +1309,20 @@ class AgentOrchestrator:
         confirmation_id: str,
         decision: str,
         llm_call: object,
+        scope: str = "once",
         preliminary_call_usages: list[LLMCallUsage] | None = None,
     ) -> AgentResponse:
-        """Decide and resume one core-authority confirmation continuation."""
+        """Decide and resume one core-authority confirmation continuation.
+
+        ``scope`` applies to approvals only: "once" executes without any
+        reusable grant; "conversation" keeps the policy-scoped reusable
+        grant; "domain" binds the grant to the host of the invocation's
+        canonical URL argument. Policy remains the ceiling — a scope wider
+        than the tool's permission mode is REFUSED with a typed failure
+        (scope_exceeds_policy), never silently degraded.
+        """
+        if scope not in {"once", "domain", "conversation"}:
+            raise ValueError(f"Unknown confirmation scope: {scope!r}")
         active_started_at = perf_counter()
         if self.turn_store is None:
             raise RuntimeError("structured confirmation has no core authority store")
@@ -1530,11 +1541,48 @@ class AgentOrchestrator:
                     code="tool_authorization_blocked",
                     message="The approved action is blocked by the current policy.",
                 )
-            coordinates = self.tool_executor._grant_coordinates(permission)
-            reusable = str(permission.details.get("permission_mode", "")) in {
+            grant_capable = str(permission.details.get("permission_mode", "")) in {
                 "conversation_capability",
                 "scoped",
             }
+            # Policy is the ceiling (contract S5.3/S6.4): a scope wider than
+            # the tool's permission mode is REFUSED with a typed failure —
+            # never silently degraded — so a raw HTTP client bypassing the
+            # panel gains nothing.
+            if scope in {"domain", "conversation"} and not grant_capable:
+                return await self._commit_structured_failure(
+                    prepared_turn=prepared,
+                    session_id=str(canonical.get("session_id", "")),
+                    conversation_id=str(canonical.get("conversation_id", "")),
+                    loop=loop,
+                    code="scope_exceeds_policy",
+                    message=(
+                        "This tool requires a separate confirmation for "
+                        "every call; a reusable approval is not available."
+                    ),
+                )
+            domain_host: str | None = None
+            if scope == "domain":
+                domain_host = self.tool_executor.canonical_url_host(
+                    prepared_invocation
+                )
+                if domain_host is None:
+                    return await self._commit_structured_failure(
+                        prepared_turn=prepared,
+                        session_id=str(canonical.get("session_id", "")),
+                        conversation_id=str(canonical.get("conversation_id", "")),
+                        loop=loop,
+                        code="domain_scope_unavailable",
+                        message=(
+                            "Domain scope is only available for tools with a "
+                            "URL argument."
+                        ),
+                    )
+            coordinates = self.tool_executor._grant_coordinates(
+                permission,
+                domain_host=domain_host,
+            )
+            reusable = scope in {"domain", "conversation"}
             claim = await self.turn_store.authorize_agent_invocation(
                 turn_id=turn_id,
                 invocation_id=invocation_id,
@@ -1567,6 +1615,13 @@ class AgentOrchestrator:
                 {
                     **self.tool_executor.current_context,
                     "invocation_id": invocation_id,
+                    # The fetch that MINTS a domain grant must obey the same
+                    # host containment as later reuses of that grant.
+                    **(
+                        {"domain_grant_host": domain_host}
+                        if domain_host
+                        else {}
+                    ),
                 }
             )
             authorization = AuthorizationContext(

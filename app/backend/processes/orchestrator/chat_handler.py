@@ -8,7 +8,6 @@ the IPC layer with the gateway orchestrator for individual chat exchanges.
 import asyncio
 import json
 import logging
-from time import perf_counter
 from typing import TYPE_CHECKING
 
 import httpx
@@ -31,14 +30,13 @@ from backend.ipc.models import (
     TurnOutcomeKind,
 )
 from backend.llm.call_factory import set_thinking_enabled
-from backend.llm.usage import aggregate_call_usages
-from backend.permissions import ActionContext, DecisionKind
 from backend.processes.orchestrator.run_event_recorder import (
     AgentRunEventType,
     RunEventContext,
     RunEventRecorder,
 )
 from backend.security.policy import get_policy
+from backend.tools.handlers.registration import confirmation_button_extras
 
 
 if TYPE_CHECKING:
@@ -225,6 +223,7 @@ def _build_chat_response(
                 "action_id": item.confirmation_id,
                 "tool_name": item.tool_name,
                 "parameters": item.parameters,
+                **confirmation_button_extras(item.tool_name, item.parameters),
             }
             for item in response.outcome.confirmations
         ]
@@ -363,6 +362,10 @@ def _build_replayed_core_response(
                     "action_id": str(item.get("confirmation_id", "")),
                     "tool_name": str(item.get("tool_name", "")),
                     "parameters": item.get("parameters", {}),
+                    **confirmation_button_extras(
+                        str(item.get("tool_name", "")),
+                        item.get("parameters") or {},
+                    ),
                 }
                 for item in raw_confirmations
                 if isinstance(item, dict) and item.get("status") == "pending"
@@ -700,6 +703,7 @@ def _pending_confirmations_from_orchestrator(
             "action_id": action.action_id,
             "tool_name": action.tool_name,
             "parameters": action.parameters,
+            **confirmation_button_extras(action.tool_name, action.parameters),
         }
         for action in pending
     ]
@@ -1014,131 +1018,49 @@ async def _maybe_handle_permission_reply(
     llm_call: Callable,
     run_event_context: RunEventContext | None,
 ) -> ChatResponse | None:
-    """Classify a reply bound to one compatible read-only permission group."""
+    """Return a replayed response while any confirmation is pending.
+
+    The delivery invariant: while ANY confirmation of this conversation is
+    pending, EVERY incoming message — typed, voice, or empty — returns the
+    paused card and never starts a new turn. Decisions arrive exclusively
+    over the /confirm transport.
+    """
     list_pending = getattr(db_client, "list_pending_agent_confirmations", None)
-    if not callable(list_pending) or not request.message.strip():
+    if not callable(list_pending):
         return None
     pending = await list_pending(request.conversation_id)
     if not pending:
         return None
-    if len(pending) != 1:
-        latest_turn = await db_client.get_agent_turn(
-            str(pending[-1].get("turn_id", ""))
-        )
-        if latest_turn is None:
-            return None
-        return _build_replayed_core_response(
-            request_id=request.request_id,
-            turn=latest_turn,
-        )
     latest_turn_id = str(pending[-1].get("turn_id", ""))
-    pending = [
-        item for item in pending if str(item.get("turn_id", "")) == latest_turn_id
-    ]
     canonical_turn = await db_client.get_agent_turn(latest_turn_id)
-    if canonical_turn is None:
-        raise RuntimeError("pending confirmation turn disappeared")
-    confirmation = pending[0]
-    tool_policy_version = str(canonical_turn.get("tool_policy_version", ""))
-    logger.info(
-        "Classifying permission reply for turn=%s tool=%s calls=%d",
-        latest_turn_id,
-        confirmation.get("tool_name", ""),
-        len(pending),
-    )
-    if run_event_context is not None:
-        run_event_context.run_id = str(confirmation.get("turn_id", ""))
-        run_event_context.architecture_version = "structured_v1"
-    tool_executor = getattr(orch, "tool_executor", None)
-    llm_caller = getattr(orch, "llm_caller", None)
-    if tool_executor is None or llm_caller is None:
-        return None
-    policy_broker = getattr(tool_executor, "broker", None)
-    if policy_broker is None:
-        return None
-    policy_decisions = [
-        tool_executor.action_decisions.decide(
-            ActionContext(
-                conversation_id=request.conversation_id,
-                channel=str(item.get("channel", request.channel)),
-                session_id=request.session_id,
-                tool_name=str(item.get("tool_name", "")),
-                parameters=dict(item.get("arguments", {})),
-                tool_policy_version=tool_policy_version,
-                prepared=policy_broker.prepare(
-                    str(item.get("tool_name", "")),
-                    dict(item.get("arguments", {})),
-                ),
-            )
-        )
-        for item in pending
-    ]
-    policy_decision = policy_decisions[0]
-    permission_modes = {
-        str(item.details.get("permission_mode", "")) for item in policy_decisions
-    }
-    tool_names = {str(item.get("tool_name", "")) for item in pending}
-    if (
-        any(item.kind == DecisionKind.BLOCK for item in policy_decisions)
-        or any(not bool(item.details.get("read_only")) for item in policy_decisions)
-        or permission_modes.isdisjoint({"conversation_capability", "scoped"})
-        or len(permission_modes) != 1
-        or len(tool_names) != 1
-    ):
-        return None
-    classifier_started_at = perf_counter()
-    classifier_usages = []
-    classified = await llm_caller.classify_permission_reply(
-        reply=request.message,
-        tool_name=str(confirmation.get("tool_name", "")),
-        scope=dict(policy_decision.details.get("scope", {})),
-        llm_call=llm_call,
-        call_usages=classifier_usages,
-    )
-    logger.info(
-        "Permission reply classified for turn=%s decision=%s",
-        latest_turn_id,
-        classified,
-    )
-    flush_attempts = getattr(orch, "_flush_provider_attempts", None)
-    if callable(flush_attempts):
-        await flush_attempts()
-    if classified == "unclear":
-        canonical = await db_client.get_agent_turn(str(confirmation["turn_id"]))
-        if canonical is None:
-            raise RuntimeError("pending confirmation turn disappeared")
+    if canonical_turn is not None:
         replay = _build_replayed_core_response(
             request_id=request.request_id,
-            turn=canonical,
+            turn=canonical_turn,
         )
-        if replay is None:
-            raise RuntimeError("pending confirmation has no paused response")
-        return replay.model_copy(
-            update={
-                "stats": aggregate_call_usages(
-                    classifier_usages,
-                    fallback_model=str(getattr(llm_caller, "model_name", "")),
-                    total_wall_time_ms=(perf_counter() - classifier_started_at) * 1000,
-                )
-            }
-        )
-    response = None
-    resume_decision = "approved" if classified == "approved" else "denied"
-    for index, item in enumerate(pending):
-        response = await orch.resume_structured_confirmation(
-            confirmation_id=str(item["confirmation_id"]),
-            decision=resume_decision,
-            llm_call=llm_call,
-            preliminary_call_usages=classifier_usages if index == 0 else [],
-        )
-    if response is None:
-        raise RuntimeError("permission group disappeared before resume")
-    return _build_chat_response(
+        if replay is not None:
+            return replay
+    # The turn is mid-execution (a sibling approval reset its terminal
+    # outcome) or its row is unavailable — the confirmations are still the
+    # authority, so re-present them instead of silently starting a second
+    # concurrent turn in the same conversation.
+    return ChatResponse(
         request_id=request.request_id,
-        response=response,
-        transcription=None,
-        pending_confirmations=_pending_confirmations_from_orchestrator(orch),
-        used_tools=_used_tools_from_response(response),
+        run_id=latest_turn_id,
+        outcome_kind=TurnOutcomeKind.PAUSED,
+        pause_reason=PauseReason.CONFIRMATION,
+        pending_confirmations=[
+            {
+                "action_id": str(item.get("confirmation_id", "")),
+                "tool_name": str(item.get("tool_name", "")),
+                "parameters": dict(item.get("arguments", {}) or {}),
+                **confirmation_button_extras(
+                    str(item.get("tool_name", "")),
+                    dict(item.get("arguments", {}) or {}),
+                ),
+            }
+            for item in pending
+        ],
     )
 
 

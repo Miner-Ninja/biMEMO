@@ -1,0 +1,99 @@
+import { useTranslation } from "react-i18next";
+
+import { Button } from "@/components/ui/button";
+import { getToolMeta } from "@/lib/tool-metadata";
+import { cn } from "@/lib/utils";
+import type { ConfirmationScope, PendingConfirmation } from "@/types/chat";
+
+interface PendingConfirmationPanelProps {
+  confirmation: PendingConfirmation;
+  onDecide: (decision: "approve" | "deny", scope: ConfirmationScope) => void;
+  busy: boolean;
+  className?: string;
+}
+
+/** Compact one-line preview of the tool's key argument. */
+function parameterPreview(parameters: Record<string, unknown>): string {
+  const entries = Object.entries(parameters).filter(
+    ([, value]) => typeof value === "string" && value !== ""
+  );
+  if (!entries.length) return "";
+  const [, value] = entries[0];
+  const text = String(value);
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+}
+
+/**
+ * Pinned panel above the chat input for one pending tool confirmation.
+ * Every button IS a complete decision; the set follows the server-supplied
+ * payload fields only (grant_capable, url_host) — the client never inspects
+ * tool names or arguments to decide which buttons exist.
+ */
+export function PendingConfirmationPanel({
+  confirmation,
+  onDecide,
+  busy,
+  className,
+}: PendingConfirmationPanelProps) {
+  const { t } = useTranslation();
+  const meta = getToolMeta(confirmation.tool_name);
+  const Icon = meta.icon;
+  const toolLabel = meta.labelKey ? t(meta.labelKey) : confirmation.tool_name;
+  const preview = parameterPreview(confirmation.parameters);
+  const grantCapable = confirmation.grant_capable === true;
+  const urlHost = confirmation.url_host ?? null;
+
+  return (
+    <div
+      className={cn(
+        "mx-4 mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3",
+        className
+      )}
+      data-testid="pending-confirmation-panel"
+    >
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <Icon className="h-4 w-4 shrink-0" />
+        <span>{t("common.confirmPanelTitle")}</span>
+        <span className="text-muted-foreground">{toolLabel}</span>
+      </div>
+      {preview && (
+        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+          {preview}
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        <Button size="sm" disabled={busy} onClick={() => onDecide("approve", "once")}>
+          {t("common.confirmBtnOnce")}
+        </Button>
+        {grantCapable && urlHost && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onDecide("approve", "domain")}
+          >
+            {t("common.confirmBtnDomain", { host: urlHost })}
+          </Button>
+        )}
+        {grantCapable && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onDecide("approve", "conversation")}
+          >
+            {t("common.confirmBtnConversation")}
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => onDecide("deny", "once")}
+        >
+          {t("common.confirmBtnDeny")}
+        </Button>
+      </div>
+    </div>
+  );
+}
