@@ -397,6 +397,18 @@ class AdminDBClient(_BaseIPCClient):
             parameters=params or None,
         )
 
+    async def list_agent_confirmations(
+        self,
+        turn_id: str,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return every confirmation of one turn (any status), oldest first."""
+        return await self._send_list_operation(
+            "list_agent_confirmations",
+            result_key="confirmations",
+            parameters={"turn_id": turn_id, "limit": limit},
+        )
+
     async def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
         """Return one agent run row (which carries its conversation_id)."""
         return await self._send_optional_dict_operation(
@@ -421,12 +433,16 @@ class AdminDBClient(_BaseIPCClient):
         self,
         limit: int = 50,
         offset: int = 0,
+        conversation_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent agent runs, newest first."""
+        parameters: dict[str, Any] = {"limit": limit, "offset": offset}
+        if conversation_id:
+            parameters["conversation_id"] = conversation_id
         return await self._send_list_operation(
             "list_agent_runs",
             result_key="runs",
-            parameters={"limit": limit, "offset": offset},
+            parameters=parameters,
         )
 
     async def count_memory_entries(self) -> dict[str, int]:

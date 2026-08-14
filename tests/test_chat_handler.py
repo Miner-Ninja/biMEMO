@@ -926,30 +926,46 @@ def test_forwarder_skips_unknown_event_types() -> None:
 
 
 class _FakePendingAdminClient:
-    """Admin client double that serves one waiting confirmation."""
+    """Admin client double serving the core-turn confirmation sources."""
 
-    def __init__(self, messages: list[dict], pending: list[dict], run_conv: dict):
+    def __init__(
+        self,
+        messages: list[dict],
+        runs_by_conversation: dict[str, list[dict]] | None = None,
+        confirmations_by_run: dict[str, list[dict]] | None = None,
+        events_by_run: dict[str, list[dict]] | None = None,
+    ):
         self._messages = messages
-        self._pending = pending
-        self._run_conv = run_conv
+        self._runs = runs_by_conversation or {}
+        self._confirmations = confirmations_by_run or {}
+        self._events = events_by_run or {}
 
     async def list_messages(
         self, limit: int = 50, offset: int = 0, conversation_id: str | None = None
     ) -> list[dict]:
         return self._messages
 
-    async def list_pending_actions(
-        self, status: str | None = None, run_id: str | None = None
+    async def list_agent_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        conversation_id: str | None = None,
     ) -> list[dict]:
-        return [p for p in self._pending if status is None or p["status"] == status]
+        return list(self._runs.get(conversation_id or "", []))[:limit]
 
-    async def get_agent_run(self, run_id: str) -> dict | None:
-        conversation_id = self._run_conv.get(run_id)
-        return {"conversation_id": conversation_id} if conversation_id else None
+    async def list_agent_confirmations(
+        self, turn_id: str, limit: int = 100
+    ) -> list[dict]:
+        return list(self._confirmations.get(turn_id, []))[:limit]
+
+    async def list_agent_run_events(
+        self, run_id: str, limit: int = 500
+    ) -> list[dict]:
+        return list(self._events.get(run_id, []))[:limit]
 
 
 def test_waiting_confirmation_attaches_to_last_assistant_message() -> None:
-    """A persisted un-decided RED action comes back on its assistant message."""
+    """A persisted un-decided RED card comes back on its assistant message."""
     messages = [
         {
             "id": "user-1",
@@ -968,19 +984,30 @@ def test_waiting_confirmation_attaches_to_last_assistant_message() -> None:
             "meta": None,
         },
     ]
-    pending = [
-        {
-            "id": "action-1",
-            "run_id": "run-1",
-            "tool_name": "git_status",
-            "parameters": {"cwd": "/workspace"},
-            "status": "waiting",
-        }
-    ]
     admin_client = _FakePendingAdminClient(
         messages=messages,
-        pending=pending,
-        run_conv={"run-1": "conv-1"},
+        runs_by_conversation={"conv-1": [{"id": "run-1"}]},
+        confirmations_by_run={
+            "run-1": [{"confirmation_id": "action-1", "status": "pending"}]
+        },
+        events_by_run={
+            "run-1": [
+                {
+                    "event_type": "run_paused",
+                    "payload": {
+                        "pending_confirmations": [
+                            {
+                                "action_id": "action-1",
+                                "tool_name": "http_fetch",
+                                "parameters": {"url": "https://example.com"},
+                                "grant_capable": True,
+                                "url_host": "example.com",
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
     )
 
     items = asyncio.run(
@@ -992,39 +1019,51 @@ def test_waiting_confirmation_attaches_to_last_assistant_message() -> None:
         )
     )
 
-    by_id = {item.id: item for item in items}
-    assert by_id["user-1"].pending_confirmations == []
-    assistant_confirmations = by_id["assistant-1"].pending_confirmations
-    assert len(assistant_confirmations) == 1
-    assert assistant_confirmations[0].action_id == "action-1"
-    assert assistant_confirmations[0].tool_name == "git_status"
+    assistant = next(item for item in items if item.id == "assistant-1")
+    assert assistant.pending_confirmations
+    card = assistant.pending_confirmations[0]
+    assert card.action_id == "action-1"
+    assert card.tool_name == "http_fetch"
+    assert card.grant_capable is True
+    assert card.url_host == "example.com"
+    user = next(item for item in items if item.id == "user-1")
+    assert not user.pending_confirmations
 
 
 def test_waiting_confirmation_from_other_conversation_is_not_attached() -> None:
-    """A waiting action whose run belongs elsewhere never leaks into this list."""
+    """A decided confirmation never resurfaces on history reload."""
     messages = [
         {
             "id": "assistant-1",
             "role": "assistant",
-            "content": "Working on it.",
+            "content": "Done.",
             "conversation_id": "conv-1",
             "created_at": "2026-08-12T10:00:01",
             "meta": None,
         },
     ]
-    pending = [
-        {
-            "id": "action-9",
-            "run_id": "run-9",
-            "tool_name": "git_status",
-            "parameters": {},
-            "status": "waiting",
-        }
-    ]
     admin_client = _FakePendingAdminClient(
         messages=messages,
-        pending=pending,
-        run_conv={"run-9": "conv-OTHER"},
+        runs_by_conversation={"conv-1": [{"id": "run-1"}]},
+        confirmations_by_run={
+            "run-1": [{"confirmation_id": "action-1", "status": "approved"}]
+        },
+        events_by_run={
+            "run-1": [
+                {
+                    "event_type": "run_paused",
+                    "payload": {
+                        "pending_confirmations": [
+                            {
+                                "action_id": "action-1",
+                                "tool_name": "http_fetch",
+                                "parameters": {},
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
     )
 
     items = asyncio.run(
@@ -1036,4 +1075,7 @@ def test_waiting_confirmation_from_other_conversation_is_not_attached() -> None:
         )
     )
 
-    assert items[0].pending_confirmations == []
+    assistant = next(item for item in items if item.id == "assistant-1")
+    assert not assistant.pending_confirmations
+
+

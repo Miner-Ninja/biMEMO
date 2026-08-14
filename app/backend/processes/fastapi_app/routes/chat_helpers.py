@@ -676,39 +676,52 @@ async def waiting_confirmations_for_conversation(
     admin_client: AdminDBClient,
     conversation_id: str,
 ) -> list[dict[str, object]]:
-    """Return un-decided (waiting) confirmations belonging to one conversation.
+    """Return still-pending confirmations of the conversation's newest turn.
 
-    A pending action is tied to an agent run, and the run carries the
-    conversation id — so each waiting action is matched to its conversation
-    through its run. The waiting set is tiny (only the live turn), so the
-    per-run lookup is cheap.
+    Source of truth is the core turn model: the newest ``run_paused`` event
+    carries the full card payload (including the server-derived
+    ``grant_capable``/``url_host`` button facts), and
+    ``list_agent_confirmations`` supplies the live status so decided or
+    expired cards do not resurface on a history reload.
     """
-    waiting = await admin_client.list_pending_actions(status="waiting")
-    if not waiting:
+    runs = await admin_client.list_agent_runs(limit=1, conversation_id=conversation_id)
+    if not runs:
         return []
-    run_conversation: dict[str, str] = {}
-    matched: list[dict[str, object]] = []
-    for action in waiting:
-        run_id = str(action.get("run_id", ""))
-        if not run_id:
+    run_id = str(runs[0].get("id", ""))
+    if not run_id:
+        return []
+    statuses = {
+        str(item.get("confirmation_id", "")): str(item.get("status", ""))
+        for item in await admin_client.list_agent_confirmations(run_id)
+    }
+    if not any(status == "pending" for status in statuses.values()):
+        return []
+    events = await admin_client.list_agent_run_events(run_id)
+    for event in reversed(events):
+        if str(event.get("event_type", "")) != "run_paused":
             continue
-        conversation = run_conversation.get(run_id)
-        if conversation is None:
-            run = await admin_client.get_agent_run(run_id)
-            conversation = str(run.get("conversation_id", "")) if run else ""
-            run_conversation[run_id] = conversation
-        if conversation != conversation_id:
-            continue
-        matched.append(
-            {
-                "action_id": action.get("id", ""),
-                "tool_name": action.get("tool_name", ""),
-                "parameters": action.get("parameters", {}),
-                "grant_capable": bool(action.get("grant_capable", False)),
-                "url_host": action.get("url_host") or None,
-            }
+        payload = event.get("payload")
+        raw = (
+            payload.get("pending_confirmations")
+            if isinstance(payload, dict)
+            else None
         )
-    return matched
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "action_id": str(item.get("action_id", "")),
+                "tool_name": str(item.get("tool_name", "")),
+                "parameters": item.get("parameters", {}),
+                "grant_capable": bool(item.get("grant_capable", False)),
+                "url_host": item.get("url_host") or None,
+            }
+            for item in raw
+            if isinstance(item, dict)
+            and statuses.get(str(item.get("action_id", ""))) == "pending"
+        ]
+    return []
+
 
 
 async def update_conversation_item(

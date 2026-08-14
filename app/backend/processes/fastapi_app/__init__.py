@@ -16,10 +16,10 @@ from .deps import (
     _get_credential_client,
     _get_csrf_token_for_jti,
     _get_orchestrator_client,
+    _get_realtime_manager,
     _get_reauth_manager,
     _get_session_manager,
     _get_signing_client,
-    _get_realtime_manager,
     _require_auth,
 )
 from .main import (
@@ -61,10 +61,10 @@ __all__ = [
     "_get_credential_client",
     "_get_csrf_token_for_jti",
     "_get_orchestrator_client",
+    "_get_realtime_manager",
     "_get_reauth_manager",
     "_get_session_manager",
     "_get_signing_client",
-    "_get_realtime_manager",
     "_require_auth",
     "_set_auth_cookies",
     "admin_router",

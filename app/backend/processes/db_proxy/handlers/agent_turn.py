@@ -25,6 +25,7 @@ from ..params import (
     GetAgentPendingInputParams,
     GetAgentTurnParams,
     GetPendingAgentClarificationParams,
+    ListAgentConfirmationsParams,
     ListAgentTurnEventsParams,
     ListPendingAgentConfirmationsParams,
     ListUnprojectedAgentTurnEventsParams,
@@ -830,6 +831,44 @@ def make_list_pending_agent_confirmations_handler(
     return handle
 
 
+def make_list_agent_confirmations_handler(
+    db: DatabaseManager,
+) -> OperationHandler:
+    """Read-only trace view: every confirmation of one turn, any status."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, ListAgentConfirmationsParams)
+        rows = db.execute(
+            "SELECT c.id, c.turn_id, c.invocation_id, c.status, c.title, "
+            "c.description, c.expires_at, c.decided_at, c.created_at, "
+            "i.tool_name, i.canonical_arguments "
+            "FROM agent_confirmations c "
+            "JOIN agent_tool_invocations i ON i.id = c.invocation_id "
+            "WHERE c.turn_id = ? ORDER BY c.created_at, c.id LIMIT ?",
+            (p.turn_id, p.limit),
+        ).fetchall()
+        return {
+            "confirmations": [
+                {
+                    "confirmation_id": row[0],
+                    "turn_id": row[1],
+                    "invocation_id": row[2],
+                    "status": row[3],
+                    "title": row[4],
+                    "description": row[5],
+                    "expires_at": row[6],
+                    "decided_at": row[7],
+                    "created_at": row[8],
+                    "tool_name": row[9],
+                    "arguments": _load_json(row[10], {}),
+                }
+                for row in rows
+            ]
+        }
+
+    return handle
+
+
 def make_append_agent_turn_event_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, AppendAgentTurnEventParams)
@@ -1228,9 +1267,22 @@ def make_list_agent_turn_events_handler(db: DatabaseManager) -> OperationHandler
                     (p.conversation_id, p.limit),
                 ).fetchall()[::-1]
             else:
+                # ``sequence`` restarts per turn, so a conversation-level
+                # cursor is only meaningful within ONE turn — scope the
+                # resume to the newest turn of the conversation, otherwise
+                # earlier turns' high sequences leak in as duplicates.
                 rows = db.execute(
-                    select + "e.sequence > ? AND t.conversation_id = ?" + order,
-                    (p.after_sequence, p.conversation_id, p.limit),
+                    select  # noqa: S608 — static fragments, values bound below
+                    + "e.sequence > ? AND t.conversation_id = ? "
+                    "AND e.turn_id = (SELECT id FROM agent_turns "
+                    "WHERE conversation_id = ? "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1)" + order,
+                    (
+                        p.after_sequence,
+                        p.conversation_id,
+                        p.conversation_id,
+                        p.limit,
+                    ),
                 ).fetchall()
         return {
             "events": [

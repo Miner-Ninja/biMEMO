@@ -1,7 +1,7 @@
 """Admin turn-trace: full per-turn observability assembled from persisted data.
 
 Stitches one agent run together from the tables that already record it
-(`agent_runs`, `agent_run_events`, `pending_actions`, `messages`) plus the new
+(`agent_runs`, `agent_run_events`, `agent_confirmations`, `messages`) plus the new
 signal events (forced tools, requirements, tool_plan, reask decisions). The list
 endpoint shows recent runs with their request text so nothing has to be typed.
 Read-only; reuses the Socket B admin client. Gated behind admin auth.
@@ -153,7 +153,7 @@ async def build_turn_trace(
         return None
     conversation_id = str(run.get("conversation_id", ""))
     events = await admin_client.list_agent_run_events(run_id)
-    confirmations = await admin_client.list_pending_actions(run_id=run_id)
+    confirmations = await admin_client.list_agent_confirmations(run_id)
     messages = await _turn_messages(
         admin_client=admin_client,
         conversation_id=conversation_id,

@@ -1229,6 +1229,13 @@ class ListPendingAgentConfirmationsParams(ForbidExtraParams):
     conversation_id: str = Field(min_length=1, max_length=128)
 
 
+class ListAgentConfirmationsParams(ForbidExtraParams):
+    """Trace read: all confirmations of one turn, any status."""
+
+    turn_id: str = Field(min_length=1, max_length=128)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
 class AppendAgentTurnEventParams(AgentTurnIdParams):
     """Append one authoritative provider or transition event."""
 

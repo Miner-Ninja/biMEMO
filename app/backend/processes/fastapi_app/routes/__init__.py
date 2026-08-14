@@ -27,9 +27,9 @@ __all__ = [
     "health_router",
     "llm_router",
     "memory_router",
-    "trace_router",
     "scheduled_tasks_router",
     "tools_catalog_router",
+    "trace_router",
     "tts_router",
     "workspace_router",
 ]

@@ -585,6 +585,20 @@ def make_project_agent_turn_event_handler(db: DatabaseManager) -> OperationHandl
             "'core_projection', '', '{}')",
             (p.turn_id, p.conversation_id, p.session_id, p.channel),
         )
+        # Mirror the turn's lifecycle onto the projected run row so the
+        # trace list shows real states instead of a constant 'projection'.
+        projected_status = {
+            "run_started": "running",
+            "run_paused": "paused",
+            "final_accepted": "final",
+            "run_failed": "failed",
+            "run_cancelled": "cancelled",
+        }.get(p.event_type)
+        if projected_status is not None:
+            db.execute(
+                "UPDATE agent_runs SET status = ? WHERE id = ?",
+                (projected_status, p.turn_id),
+            )
         cursor = db.execute(
             "INSERT OR IGNORE INTO agent_run_events "
             "(id, run_id, request_id, conversation_id, sequence, event_type, "

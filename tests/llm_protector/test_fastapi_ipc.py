@@ -540,6 +540,45 @@ class TestAdminDBClient:
         assert fake_ipc.sent_operations[0].operation == "get_signing_material"
 
     @pytest.mark.asyncio
+    async def test_list_agent_confirmations(
+        self,
+        admin_client: AdminDBClient,
+        fake_ipc: FakeDBProxyIPC,
+    ) -> None:
+        """Reads a turn's confirmations (any status) through socket B."""
+        fake_ipc.queue_response(
+            DBResult(
+                request_id="r1",
+                status="success",
+                data={
+                    "confirmations": [
+                        {"confirmation_id": "c1", "status": "approved"}
+                    ]
+                },
+            )
+        )
+        result = await admin_client.list_agent_confirmations("turn-1")
+        assert result[0]["confirmation_id"] == "c1"
+        operation = fake_ipc.sent_operations[0]
+        assert operation.operation == "list_agent_confirmations"
+        assert operation.parameters["turn_id"] == "turn-1"
+
+    @pytest.mark.asyncio
+    async def test_list_agent_runs_filters_by_conversation(
+        self,
+        admin_client: AdminDBClient,
+        fake_ipc: FakeDBProxyIPC,
+    ) -> None:
+        """Passes the conversation filter through socket B."""
+        fake_ipc.queue_response(
+            DBResult(request_id="r1", status="success", data={"runs": []})
+        )
+        await admin_client.list_agent_runs(limit=1, conversation_id="conv-9")
+        operation = fake_ipc.sent_operations[0]
+        assert operation.operation == "list_agent_runs"
+        assert operation.parameters["conversation_id"] == "conv-9"
+
+    @pytest.mark.asyncio
     async def test_delete_conversation(
         self,
         admin_client: AdminDBClient,

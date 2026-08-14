@@ -51,6 +51,7 @@ from .handlers.agent_turn import (
     make_get_agent_pending_input_handler,
     make_get_agent_turn_handler,
     make_get_pending_agent_clarification_handler,
+    make_list_agent_confirmations_handler,
     make_list_agent_turn_events_handler,
     make_list_pending_agent_confirmations_handler,
     make_list_unprojected_agent_turn_events_handler,
@@ -333,6 +334,7 @@ SOCKET_A_OPERATIONS = {
     "decide_agent_confirmation",
     "get_agent_confirmation",
     "list_pending_agent_confirmations",
+    "list_agent_confirmations",
     "append_agent_turn_event",
     "cancel_agent_turn",
     "commit_agent_turn_finalization",
@@ -407,6 +409,7 @@ SOCKET_B_ONLY_OPERATIONS = {
     "expire_capability_grants",
     "list_agent_run_events",
     "list_agent_runs",
+    "list_agent_confirmations",
     "list_pending_actions",
     "prune_runtime_state",
 }
@@ -806,6 +809,10 @@ def _register_permission_operations(
     registry.register(
         "list_pending_agent_confirmations",
         make_list_pending_agent_confirmations_handler(core_db),
+    )
+    registry.register(
+        "list_agent_confirmations",
+        make_list_agent_confirmations_handler(core_db),
     )
     registry.register(
         "append_agent_turn_event",

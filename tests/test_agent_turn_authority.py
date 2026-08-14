@@ -836,3 +836,29 @@ async def test_replayed_event_does_not_double_count_metrics(tmp_path):
     turn = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))["turn"]
     assert turn["provider_calls"] == 1
     db.close()
+
+
+async def test_list_agent_confirmations_returns_all_statuses(tmp_path):
+    """The trace read exposes decided cards too, not only pending ones."""
+    db = _open_db(tmp_path)
+    turn_id, _finalization_id, _obligation_id = await _prepared_turn(db)
+    await make_upsert_agent_tool_batch_handler(db)(
+        _confirmation_batch_params(turn_id)
+    )
+    from backend.processes.db_proxy.handlers.agent_turn import (
+        make_decide_agent_confirmation_handler,
+        make_list_agent_confirmations_handler,
+    )
+
+    await make_decide_agent_confirmation_handler(db)(
+        {"confirmation_id": "confirm-replay", "decision": "denied"}
+    )
+    listed = await make_list_agent_confirmations_handler(db)(
+        {"turn_id": turn_id}
+    )
+    assert len(listed["confirmations"]) == 1
+    row = listed["confirmations"][0]
+    assert row["confirmation_id"] == "confirm-replay"
+    assert row["status"] == "denied"
+    assert row["tool_name"] == "execute_command"
+    assert row["arguments"] == {"command": "ls", "cwd": "/tmp"}
