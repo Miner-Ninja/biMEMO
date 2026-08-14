@@ -261,7 +261,8 @@ export interface StoredConversationMessage {
   }[];
   used_tools?: {
     name: string;
-    zone: string;
+    permission_mode: string;
+    authorization_source: string;
     success: boolean;
   }[];
 }

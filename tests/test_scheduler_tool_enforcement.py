@@ -1,28 +1,13 @@
-"""Tests for scheduled agent-task tool enforcement.
-
-A scheduled agent task must actually CALL the tools in its allowlist. If the
-model answers without calling them, the executor reinforces the prompt and
-retries up to MAX_TOOL_ENFORCE_ATTEMPTS, and — if the tools still never run —
-reports transparently which ones were skipped instead of silently succeeding.
-"""
+"""Tests for one-run durable scheduled tool enforcement."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.scheduler.executor import (
-    MAX_TOOL_ENFORCE_ATTEMPTS,
-    SchedulerServices,
-    _execute_agent_task,
-)
+from backend.scheduler.executor import SchedulerServices, _execute_agent_task
 
 
 class _FakeOrchestrator:
-    """Minimal AgentOrchestrator stand-in for the enforcement loop.
-
-    ``tools_per_attempt`` lists which tools are reported as used on each
-    successive process_message call (the last entry repeats if there are more
-    attempts than entries), letting a test drive "not called -> retry -> called".
-    """
+    """Minimal AgentOrchestrator stand-in for one structured scheduler turn."""
 
     def __init__(self, tools_per_attempt, answer="Done."):
         self._plan = list(tools_per_attempt)
@@ -57,17 +42,41 @@ class _FakeOrchestrator:
 def _services(orch):
     """Build SchedulerServices around a fake orchestrator."""
     db_client = AsyncMock()
+    used = set(orch._plan[0])
+    db_client.get_agent_turn.return_value = {
+        "obligations": [
+            {"obligation_id": "required-http-fetch", "required_tool": "http_fetch"}
+        ],
+        "binds": (
+            [{"obligation_id": "required-http-fetch"}]
+            if "http_fetch" in used
+            else []
+        ),
+    }
+    definition = SimpleNamespace(
+        permission=SimpleNamespace(revision="registry-v1")
+    )
+    broker = SimpleNamespace(
+        registry=SimpleNamespace(
+            get=lambda name: definition if name == "http_fetch" else None
+        )
+    )
     return SchedulerServices(
         db_client=db_client,
         orchestrator=orch,
         llm_call=MagicMock(),
-        broker=MagicMock(),
+        broker=broker,
         sse_publish_fn=None,
         bridge_service=None,
     )
 
 
-def _task(allowed='["http_fetch"]'):
+def _task(
+    allowed=(
+        '[{"tool_name":"http_fetch",'
+        '"approved_policy_revision":"registry-v1"}]'
+    ),
+):
     """Build an agent_task dict targeting the given allowlist."""
     return {
         "id": "t1",
@@ -92,25 +101,23 @@ class TestScheduledTaskToolEnforcement:
         assert result == "Done."
         assert "not applied" not in result
 
-    async def test_reinforces_and_retries_until_tool_called(self):
-        """Not called on attempt 1, called on attempt 2 -> retry, no note."""
+    async def test_missing_bind_does_not_start_an_outer_retry(self):
+        """The state machine owns retries; scheduler starts exactly one turn."""
         orch = _FakeOrchestrator([[], ["http_fetch"]])
         result, success = await _execute_agent_task(_services(orch), _task())
 
-        assert success is True
-        assert len(orch.calls) == 2
-        # The retry prompt is reinforced and names the missing tool.
-        assert "http_fetch" in orch.calls[1]
-        assert orch.calls[1] != orch.calls[0]
-        assert "not applied" not in result
+        assert success is False
+        assert len(orch.calls) == 1
+        assert "not applied" in result
+        assert "http_fetch" in result
 
     async def test_reports_missing_tool_after_all_attempts(self):
-        """Tool never called -> exhaust attempts, append transparent note."""
+        """Tool never bound -> fail the single durable scheduler turn."""
         orch = _FakeOrchestrator([[]])
         result, success = await _execute_agent_task(_services(orch), _task())
 
         assert success is False
-        assert len(orch.calls) == MAX_TOOL_ENFORCE_ATTEMPTS
+        assert len(orch.calls) == 1
         assert "not applied" in result
         assert "http_fetch" in result
 

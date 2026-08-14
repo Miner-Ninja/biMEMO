@@ -138,7 +138,6 @@ class ToolInvocation:
     canonical_args_hash: str
     status: InvocationStatus = InvocationStatus.REQUIRED
     source: str = "model"
-    trust_zone: str | None = None
     evidence_key: str | None = None
     idempotency_key: str | None = None
     claim_generation: int = 0

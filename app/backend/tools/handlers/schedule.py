@@ -59,7 +59,7 @@ def make_schedule_task_handler(
                 p = p.model_copy(update={"conversation_id": ctx_conv})
 
         if action == "create":
-            return await _create_task(db_client, p)
+            return await _create_task(db_client, p, broker=broker)
         if action == "list":
             return await _list_tasks(db_client)
         if action == "pause":
@@ -83,7 +83,12 @@ def _normalize_schedule_task_input(
     return ScheduleTaskInput(**params)
 
 
-async def _create_task(db_client: object, p: ScheduleTaskInput) -> str:
+async def _create_task(
+    db_client: object,
+    p: ScheduleTaskInput,
+    *,
+    broker: object | None,
+) -> str:
     """Create a new scheduled task."""
     if not p.name:
         return "Error: name is required for create"
@@ -118,6 +123,18 @@ async def _create_task(db_client: object, p: ScheduleTaskInput) -> str:
     except json.JSONDecodeError:
         return "Error: allowed_tools must be valid JSON"
 
+    if not all(isinstance(name, str) for name in tools_list):
+        return "Error: allowed_tools must contain tool names"
+    if p.task_type == "agent_task":
+        if broker is None:
+            return "Error: runtime tool registry is unavailable"
+        try:
+            authorizations = broker.scheduler_authorizations(tools_list)
+        except Exception as exc:
+            return f"Error: invalid allowed_tools: {exc}"
+    else:
+        authorizations = []
+
     result = await db_client.create_scheduled_task(
         {
             "name": p.name,
@@ -126,7 +143,7 @@ async def _create_task(db_client: object, p: ScheduleTaskInput) -> str:
             "schedule_kind": schedule["kind"],
             "schedule_expr": p.schedule.strip(),
             "next_run_at": next_run,
-            "allowed_tools": p.allowed_tools,
+            "allowed_tools": json.dumps(authorizations),
             "timezone": user_timezone,
             "conversation_id": p.conversation_id,
         }

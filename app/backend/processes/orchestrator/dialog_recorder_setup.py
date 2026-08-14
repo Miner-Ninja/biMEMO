@@ -134,30 +134,6 @@ async def _setup_dialog_recorder_pipeline(
     if dialog_recorder_provider is None:
         return tasks, None
 
-    from backend.agent.memory_recall_classifier import (
-        classify_requires_memory_recall,
-    )
-    from backend.agent.web_search_classifier import (
-        classify_requires_web_search,
-    )
-
-    async def _web_search_classifier(message: str) -> bool:
-        """Classify if a message needs forced web search."""
-        return await classify_requires_web_search(
-            message,
-            dialog_recorder_provider,
-        )
-
-    async def _memory_recall_classifier(message: str) -> bool:
-        """Classify if a message needs forced memory recall."""
-        return await classify_requires_memory_recall(
-            message,
-            dialog_recorder_provider,
-        )
-
-    orchestrator.web_search_classifier_fn = _web_search_classifier
-    orchestrator.memory_recall_classifier_fn = _memory_recall_classifier
-
     dialog_recorder_queue = DialogRecorderQueue()
     dialog_recorder_rate_limiter = RecordRateLimiter()
     dialog_recorder_scheduler = _build_dialog_recorder_scheduler(

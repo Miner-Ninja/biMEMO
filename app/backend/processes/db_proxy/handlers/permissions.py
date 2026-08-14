@@ -21,17 +21,8 @@ from ..common import OperationHandler, validate_params
 from ..params import (
     AddProjectRootParams,
     AuthorizeAgentInvocationParams,
-    CompletePendingActionParams,
-    CreateAgentRunEventParams,
-    CreateAgentRunParams,
     CreateCapabilityGrantParams,
-    CreatePendingActionParams,
-    DecidePendingActionParams,
     ExpireCapabilityGrantsParams,
-    ExpirePendingActionsParams,
-    GetAgentRunParams,
-    GetPendingActionParams,
-    GetResumeSnapshotParams,
     ListAgentRunEventsParams,
     ListAgentRunsParams,
     ListCapabilityGrantsParams,
@@ -44,11 +35,7 @@ from ..params import (
     RenameProjectRootParams,
     ResolveProjectRootParams,
     RevokeCapabilityGrantParams,
-    UpdateAgentRunStatusParams,
 )
-
-
-_RUN_TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed", "stopped"})
 
 
 def _new_id() -> str:
@@ -127,9 +114,10 @@ def _run_record(row: tuple[Any, ...]) -> dict[str, Any]:
         "current_step": row[5],
         "request_id": row[6],
         "resume_payload": _json_load(row[7]),
-        "created_at": row[8],
-        "updated_at": row[9],
-        "completed_at": row[10],
+        "tool_policy_version": row[8],
+        "created_at": row[9],
+        "updated_at": row[10],
+        "completed_at": row[11],
     }
 
 
@@ -166,20 +154,6 @@ def _pending_action_record(row: tuple[Any, ...]) -> dict[str, Any]:
         "expires_at": row[12],
         "decided_at": row[13],
         "executed_at": row[14],
-    }
-
-
-def _resume_snapshot_record(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert one resume_snapshots row into API shape."""
-    return {
-        "id": row[0],
-        "run_id": row[1],
-        "action_id": row[2],
-        "snapshot": _json_load(row[3]),
-        "created_at": row[4],
-        "updated_at": row[5],
-        "expires_at": row[6],
-        "consumed_at": row[7],
     }
 
 
@@ -391,7 +365,8 @@ def make_authorize_agent_invocation_handler(
             _begin(db)
             invocation = db.execute(
                 "SELECT i.status, i.claim_generation, i.idempotency_key, "
-                "i.tool_name, t.conversation_id, t.terminal_outcome, t.channel "
+                "i.tool_name, t.conversation_id, t.terminal_outcome, t.channel, "
+                "i.canonical_args_hash, i.policy_revision "
                 "FROM agent_tool_invocations i JOIN agent_turns t "
                 "ON t.id = i.turn_id WHERE i.id = ? AND i.turn_id = ?",
                 (p.invocation_id, p.turn_id),
@@ -400,6 +375,10 @@ def make_authorize_agent_invocation_handler(
                 raise ValueError("unknown invocation")
             if invocation[3] != p.capability:
                 raise PermissionError("grant capability does not match invocation")
+            if invocation[7] != p.canonical_args_hash:
+                raise PermissionError("authorization arguments do not match invocation")
+            if invocation[8] != p.policy_revision:
+                raise PermissionError("authorization policy revision mismatch")
             if invocation[5] not in (None, "paused"):
                 raise RuntimeError("terminal turn cannot dispatch another invocation")
             canonical_scope = json.dumps(
@@ -409,9 +388,7 @@ def make_authorize_agent_invocation_handler(
                 separators=(",", ":"),
                 allow_nan=False,
             )
-            canonical_hash = hashlib.sha256(
-                canonical_scope.encode("utf-8")
-            ).hexdigest()
+            canonical_hash = hashlib.sha256(canonical_scope.encode("utf-8")).hexdigest()
             if canonical_hash != p.scope_hash:
                 raise PermissionError("grant scope hash does not match scope payload")
             if p.scope_json.get("conversation_id") != invocation[4]:
@@ -430,10 +407,11 @@ def make_authorize_agent_invocation_handler(
                     "status": "executing",
                     "claim_generation": invocation[1],
                 }
-            if invocation[0] not in p.expected_statuses:
-                raise RuntimeError(
-                    f"invocation cannot be claimed from {invocation[0]}"
-                )
+            expected_status = (
+                "pending_confirmation" if p.confirmation_id is not None else "required"
+            )
+            if invocation[0] != expected_status:
+                raise RuntimeError(f"invocation cannot be claimed from {invocation[0]}")
 
             grant_id: str | None = None
             if p.confirmation_id is not None:
@@ -445,15 +423,19 @@ def make_authorize_agent_invocation_handler(
                 ).fetchone()
                 if confirmation is None or confirmation[1] != p.invocation_id:
                     raise PermissionError("confirmation does not match invocation")
-                if confirmation[0] != "pending":
-                    raise RuntimeError("confirmation is no longer pending")
-                if str(confirmation[2]) <= str(confirmation[3]):
+                if confirmation[0] not in {"pending", "approved"}:
+                    raise RuntimeError("confirmation is no longer authorizable")
+                if confirmation[0] == "pending" and str(confirmation[2]) <= str(
+                    confirmation[3]
+                ):
                     raise RuntimeError("confirmation expired before authorization")
-                db.execute(
-                    "UPDATE agent_confirmations SET status = 'approved', decided_at = "
-                    "strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
-                    (p.confirmation_id,),
-                )
+                if confirmation[0] == "pending":
+                    db.execute(
+                        "UPDATE agent_confirmations SET status = 'approved', "
+                        "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+                        "WHERE id = ?",
+                        (p.confirmation_id,),
+                    )
                 if p.create_reusable_grant:
                     if p.grant_expires_at is None:
                         raise ValueError("reusable grant requires an expiration")
@@ -591,93 +573,6 @@ def make_expire_capability_grants_handler(db: DatabaseManager) -> OperationHandl
     return handle
 
 
-def make_create_agent_run_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for create_agent_run operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, CreateAgentRunParams)
-        run_id = p.run_id or _new_id()
-        completed_expr = (
-            "strftime('%Y-%m-%dT%H:%M:%f', 'now')"
-            if p.status in _RUN_TERMINAL_STATUSES
-            else "NULL"
-        )
-        db.execute(
-            "INSERT INTO agent_runs "
-            "(id, conversation_id, session_id, channel, status, current_step, "
-            "request_id, resume_payload, completed_at) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, {completed_expr})",
-            (
-                run_id,
-                p.conversation_id,
-                p.session_id,
-                p.channel,
-                p.status,
-                p.current_step,
-                p.request_id,
-                _json_dump(p.resume_payload),
-            ),
-        )
-        db.commit()
-        row = _fetch_agent_run(db, run_id)
-        return {"agent_run": _run_record(row)}
-
-    return handle
-
-
-def make_get_agent_run_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for get_agent_run operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, GetAgentRunParams)
-        row = _fetch_agent_run(db, p.run_id)
-        return {"agent_run": _run_record(row) if row else None}
-
-    return handle
-
-
-def _next_run_event_sequence(db: DatabaseManager, run_id: str) -> int:
-    """Return the next sequence number for one run event."""
-    row = db.execute(
-        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM agent_run_events WHERE run_id = ?",
-        (run_id,),
-    ).fetchone()
-    return int(row[0]) if row else 1
-
-
-def make_create_agent_run_event_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for create_agent_run_event operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, CreateAgentRunEventParams)
-        event_id = _new_id()
-        sequence = _next_run_event_sequence(db, p.run_id)
-        db.execute(
-            "INSERT INTO agent_run_events "
-            "(id, run_id, request_id, conversation_id, sequence, event_type, "
-            "payload_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                event_id,
-                p.run_id,
-                p.request_id,
-                p.conversation_id,
-                sequence,
-                p.event_type,
-                _json_dump(p.payload),
-            ),
-        )
-        db.commit()
-        row = db.execute(
-            "SELECT id, run_id, request_id, conversation_id, sequence, event_type, "
-            "payload_json, created_at, delivered_at FROM agent_run_events "
-            "WHERE id = ?",
-            (event_id,),
-        ).fetchone()
-        return {"event": _run_event_record(row)}
-
-    return handle
-
-
 def make_project_agent_turn_event_handler(db: DatabaseManager) -> OperationHandler:
     """Create the idempotent runtime projection write handler."""
 
@@ -762,112 +657,6 @@ def make_list_agent_runs_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-def make_update_agent_run_status_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for update_agent_run_status operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, UpdateAgentRunStatusParams)
-        completed_expr = (
-            "strftime('%Y-%m-%dT%H:%M:%f', 'now')"
-            if p.status in _RUN_TERMINAL_STATUSES
-            else "NULL"
-        )
-        values: list[Any] = [p.status, p.current_step]
-        resume_sql = ""
-        if p.resume_payload is not None:
-            resume_sql = ", resume_payload = ?"
-            values.append(_json_dump(p.resume_payload))
-        values.append(p.run_id)
-        db.execute(
-            "UPDATE agent_runs SET status = ?, current_step = ?, "
-            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-            f"completed_at = {completed_expr}{resume_sql} WHERE id = ?",
-            tuple(values),
-        )
-        db.commit()
-        row = _fetch_agent_run(db, p.run_id)
-        return {"agent_run": _run_record(row) if row else None}
-
-    return handle
-
-
-def make_create_pending_action_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for create_pending_action operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, CreatePendingActionParams)
-        action_id = p.action_id or _new_id()
-        snapshot_id = _new_id() if p.resume_snapshot else ""
-        preview = dict(p.preview)
-        if snapshot_id:
-            preview["resume_snapshot_id"] = snapshot_id
-        db.execute(
-            "INSERT INTO pending_actions "
-            "(id, run_id, tool_name, parameters_json, channel, status, preview_json, "
-            "expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                action_id,
-                p.run_id,
-                p.tool_name,
-                _json_dump(p.parameters),
-                p.channel,
-                p.status,
-                _json_dump(preview),
-                p.expires_at,
-            ),
-        )
-        if snapshot_id:
-            db.execute(
-                "INSERT INTO resume_snapshots "
-                "(id, run_id, action_id, snapshot_json, expires_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    snapshot_id,
-                    p.run_id,
-                    action_id,
-                    _json_dump(p.resume_snapshot),
-                    p.expires_at,
-                ),
-            )
-        db.execute(
-            "UPDATE agent_runs SET status = 'waiting', "
-            "current_step = 'pending_action', "
-            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
-            (p.run_id,),
-        )
-        db.commit()
-        row = _fetch_pending_action(db, action_id)
-        return {"pending_action": _pending_action_record(row)}
-
-    return handle
-
-
-def make_get_pending_action_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for get_pending_action operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, GetPendingActionParams)
-        row = _fetch_pending_action(db, p.action_id)
-        return {"pending_action": _pending_action_record(row) if row else None}
-
-    return handle
-
-
-def make_get_resume_snapshot_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for get_resume_snapshot operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, GetResumeSnapshotParams)
-        row = _fetch_resume_snapshot(
-            db,
-            action_id=p.action_id,
-            snapshot_id=p.snapshot_id,
-        )
-        return {"resume_snapshot": _resume_snapshot_record(row) if row else None}
-
-    return handle
-
-
 def make_list_pending_actions_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for list_pending_actions operation."""
 
@@ -894,128 +683,6 @@ def make_list_pending_actions_handler(db: DatabaseManager) -> OperationHandler:
     return handle
 
 
-def make_decide_pending_action_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for decide_pending_action operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, DecidePendingActionParams)
-        status = "approved" if p.decision == "approve" else "denied"
-        cursor = db.execute(
-            "UPDATE pending_actions SET status = ?, decision = ?, "
-            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-            "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-            "WHERE id = ? AND status = 'waiting' "
-            "AND (? = '' OR channel = ?)",
-            (status, p.decision, p.action_id, p.channel, p.channel),
-        )
-        row = _fetch_pending_action(db, p.action_id)
-        accepted = cursor.rowcount > 0
-        if row is not None and accepted:
-            run_status = "approved" if status == "approved" else "denied"
-            completed_sql = (
-                ", completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')"
-                if run_status == "denied"
-                else ""
-            )
-            db.execute(
-                "UPDATE agent_runs SET status = ?, current_step = ?, "
-                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')"
-                f"{completed_sql} WHERE id = ?",
-                (run_status, "pending_action_decided", row[1]),
-            )
-            if run_status == "denied":
-                db.execute(
-                    "UPDATE resume_snapshots SET "
-                    "consumed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-                    "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-                    "WHERE action_id = ? AND consumed_at IS NULL",
-                    (p.action_id,),
-                )
-        db.commit()
-        row = _fetch_pending_action(db, p.action_id)
-        return {
-            "accepted": accepted,
-            "pending_action": _pending_action_record(row) if row else None,
-        }
-
-    return handle
-
-
-def make_complete_pending_action_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for complete_pending_action operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, CompletePendingActionParams)
-        cursor = db.execute(
-            "UPDATE pending_actions SET status = ?, result_json = ?, "
-            "error_message = ?, "
-            "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-            "executed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-            "WHERE id = ? AND status = 'approved'",
-            (p.status, _json_dump(p.result), p.error_message, p.action_id),
-        )
-        row = _fetch_pending_action(db, p.action_id)
-        accepted = cursor.rowcount > 0
-        if row is not None and accepted:
-            run_status = "completed" if p.status == "completed" else "failed"
-            db.execute(
-                "UPDATE resume_snapshots SET "
-                "consumed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-                "WHERE action_id = ? AND consumed_at IS NULL",
-                (p.action_id,),
-            )
-            db.execute(
-                "UPDATE agent_runs SET status = ?, current_step = ?, "
-                "resume_payload = ?, "
-                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-                "completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
-                (
-                    run_status,
-                    "approved_action_executed",
-                    _json_dump({"pending_action_id": p.action_id}),
-                    row[1],
-                ),
-            )
-        db.commit()
-        row = _fetch_pending_action(db, p.action_id)
-        return {
-            "accepted": accepted,
-            "pending_action": _pending_action_record(row) if row else None,
-        }
-
-    return handle
-
-
-def make_expire_pending_actions_handler(db: DatabaseManager) -> OperationHandler:
-    """Create handler for expire_pending_actions operation."""
-
-    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
-        p = validate_params(params, ExpirePendingActionsParams)
-        if p.now:
-            cursor = db.execute(
-                "UPDATE pending_actions SET status = 'expired', "
-                "decision = 'expired', "
-                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-                "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-                "WHERE status = 'waiting' AND expires_at IS NOT NULL "
-                "AND expires_at <= ?",
-                (p.now,),
-            )
-        else:
-            cursor = db.execute(
-                "UPDATE pending_actions SET status = 'expired', decision = 'expired', "
-                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
-                "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
-                "WHERE status = 'waiting' AND expires_at IS NOT NULL "
-                "AND expires_at <= strftime('%Y-%m-%dT%H:%M:%f', 'now')"
-            )
-        db.commit()
-        return {"expired": cursor.rowcount}
-
-    return handle
-
-
 def make_prune_runtime_state_handler(db: DatabaseManager) -> OperationHandler:
     """Create handler for prune_runtime_state operation."""
 
@@ -1029,50 +696,3 @@ def make_prune_runtime_state_handler(db: DatabaseManager) -> OperationHandler:
         )
 
     return handle
-
-
-def _fetch_agent_run(db: DatabaseManager, run_id: str) -> tuple[Any, ...] | None:
-    """Fetch one agent run row by id."""
-    return db.execute(
-        "SELECT id, conversation_id, session_id, channel, status, current_step, "
-        "request_id, resume_payload, created_at, updated_at, completed_at "
-        "FROM agent_runs WHERE id = ?",
-        (run_id,),
-    ).fetchone()
-
-
-def _fetch_pending_action(
-    db: DatabaseManager,
-    action_id: str,
-) -> tuple[Any, ...] | None:
-    """Fetch one pending action row by id."""
-    return db.execute(
-        "SELECT id, run_id, tool_name, parameters_json, channel, status, decision, "
-        "preview_json, result_json, error_message, created_at, updated_at, "
-        "expires_at, decided_at, executed_at "
-        "FROM pending_actions WHERE id = ?",
-        (action_id,),
-    ).fetchone()
-
-
-def _fetch_resume_snapshot(
-    db: DatabaseManager,
-    *,
-    action_id: str = "",
-    snapshot_id: str = "",
-) -> tuple[Any, ...] | None:
-    """Fetch one resume snapshot by id or by its pending action."""
-    if snapshot_id:
-        return db.execute(
-            "SELECT id, run_id, action_id, snapshot_json, created_at, updated_at, "
-            "expires_at, consumed_at FROM resume_snapshots WHERE id = ?",
-            (snapshot_id,),
-        ).fetchone()
-    if action_id:
-        return db.execute(
-            "SELECT id, run_id, action_id, snapshot_json, created_at, updated_at, "
-            "expires_at, consumed_at FROM resume_snapshots WHERE action_id = ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (action_id,),
-        ).fetchone()
-    return None

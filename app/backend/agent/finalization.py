@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from backend.agent.agent_loop_helpers import (
-    message_allows_file_read_tools,
-    message_may_need_memory_recall,
-)
 from backend.agent.turn_state import (
     ObligationStatus,
     SatisfactionBind,
@@ -23,27 +18,6 @@ if TYPE_CHECKING:
     from backend.llm.structured_response import StructuredAssistantContent
 
 
-URL_PATTERN = re.compile(r"https?://[^\s<>()\"']+")
-CURRENT_DATA_MARKERS = (
-    "актуальн",
-    "данный момент",
-    "сейчас",
-    "сегодня",
-    "текущ",
-    "курс",
-    "курсы",
-    "цена",
-    "цены",
-    "новост",
-    "current",
-    "latest",
-    "now",
-    "today",
-    "price",
-    "prices",
-    "news",
-)
-URL_MARKERS = ("http://", "https://")
 STATUS_INTENT_MARKERS = (
     "search",
     "look up",
@@ -306,44 +280,6 @@ def build_required_tool_failure_answer(
     return f"I could not complete the required tool evidence ({details})."
 
 
-def detect_turn_requirements(message: str) -> ResponseRequirements:
-    """Detect mandatory evidence requirements for one user message."""
-    normalized = " ".join(message.casefold().split())
-    urls = tuple(_extract_urls(message))
-    needs_current_data = any(marker in normalized for marker in CURRENT_DATA_MARKERS)
-    needs_url_fetch = bool(urls) or any(marker in normalized for marker in URL_MARKERS)
-    needs_file_context = message_allows_file_read_tools(message)
-    needs_memory_recall = message_may_need_memory_recall(message)
-    required_tools: list[str] = []
-    reasons: list[str] = []
-    if needs_current_data:
-        required_tools.append("web_search")
-        reasons.append("current-data")
-    if needs_url_fetch:
-        required_tools.append("http_fetch")
-        reasons.append("url-fetch")
-    if needs_file_context:
-        reasons.append("file-context")
-    if needs_memory_recall:
-        reasons.append("memory-recall")
-    invocations: list[InvocationRequirement] = [
-        InvocationRequirement(key=f"url:{i + 1}", description=url)
-        for i, url in enumerate(urls)
-    ]
-    if invocations:
-        reasons.append("url-evidence")
-    return ResponseRequirements(
-        needs_current_data=needs_current_data,
-        needs_url_fetch=needs_url_fetch,
-        needs_file_context=needs_file_context,
-        needs_memory_recall=needs_memory_recall,
-        required_tools=tuple(dict.fromkeys(required_tools)),
-        urls=urls,
-        invocations=tuple(invocations),
-        reason=",".join(reasons),
-    )
-
-
 def requirements_with_expected_tools(
     base: ResponseRequirements,
     forced_tools: tuple[str, ...] | list[str] = (),
@@ -351,11 +287,8 @@ def requirements_with_expected_tools(
 ) -> ResponseRequirements:
     """Fold user-forced and model-declared tools into a requirements copy.
 
-    The added tools go into both ``required_tools`` (so the missing-tool
-    detection sees them) and ``must_use_tools`` (so the reask forces them in
-    any trust zone). Context-only keyword tools from ``detect_turn_requirements``
-    are left as required_tools only — they route to the prose ask / RED-force
-    path, not an unconditional force.
+    The added tools go into both ``required_tools`` and ``must_use_tools`` so
+    the durable evidence gate and exact reask use the same explicit authority.
     """
     extra = [tool for tool in forced_tools if tool]
     if declared_tool:
@@ -431,16 +364,6 @@ def build_tool_obligations(
                 evidence_key=evidence_key,
             )
     return tuple(obligations)
-
-
-def _extract_urls(message: str) -> list[str]:
-    """Return normalized explicit URLs from one user message."""
-    urls: list[str] = []
-    for match in URL_PATTERN.finditer(message):
-        url = match.group(0).rstrip(".,;:!?)]}")
-        if url:
-            urls.append(url)
-    return urls
 
 
 def _answer_text(

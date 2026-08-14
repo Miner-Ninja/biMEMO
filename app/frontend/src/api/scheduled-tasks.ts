@@ -3,7 +3,6 @@ import { apiRequest } from "@/lib/bimemo-api";
 export type ScheduledTaskType = "reminder" | "agent_task";
 export type ScheduledTaskStatus = "active" | "paused" | "completed";
 export type ScheduleKind = "once" | "interval" | "cron";
-export type TrustZone = "green" | "yellow" | "red";
 
 export interface ScheduledTask {
   id: string;
@@ -28,7 +27,6 @@ export interface ScheduledTask {
 export interface ToolCatalogEntry {
   name: string;
   description: string;
-  zone: TrustZone;
 }
 
 export interface CreateScheduledTaskPayload {

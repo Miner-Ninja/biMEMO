@@ -21,9 +21,13 @@ from backend.ipc.models import (
     DBResult,
     ReloadLLMRequest,
     ReloadLLMResponse,
+    ScheduledToolAuthorizationRequest,
+    ScheduledToolAuthorizationResponse,
     StopRequest,
     StopResponse,
     StructuredAssistantContent,
+    ToolCatalogRequest,
+    ToolCatalogResponse,
 )
 from backend.processes.orchestrator import (
     DBProxyClient,
@@ -575,6 +579,49 @@ class TestOrchestratorIPCServer:
         return pushed_response
 
     @pytest.mark.asyncio
+    async def test_runtime_tool_catalog_projection(self) -> None:
+        """Catalog IPC returns only the orchestrator registry projection."""
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=AsyncMock(),
+            tool_catalog_fn=lambda: [{"name": "web_search", "description": "Web"}],
+        )
+
+        response = await server._handle_message(
+            "ToolCatalogRequest", ToolCatalogRequest(request_id="catalog-1")
+        )
+
+        assert response == ToolCatalogResponse(
+            request_id="catalog-1",
+            tools=[{"name": "web_search", "description": "Web"}],
+        )
+
+    @pytest.mark.asyncio
+    async def test_scheduler_authorization_ipc_pins_revision(self) -> None:
+        """Scheduler write validation stays inside the orchestrator."""
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=AsyncMock(),
+            scheduled_tool_authorization_fn=lambda names: [
+                {"name": names[0], "policy_revision": "registry-v1"}
+            ],
+        )
+
+        response = await server._handle_message(
+            "ScheduledToolAuthorizationRequest",
+            ScheduledToolAuthorizationRequest(
+                request_id="scheduler-1", tool_names=["web_search"]
+            ),
+        )
+
+        assert response == ScheduledToolAuthorizationResponse(
+            request_id="scheduler-1",
+            authorizations=[{"name": "web_search", "policy_revision": "registry-v1"}],
+        )
+
+    @pytest.mark.asyncio
     async def test_handle_chat_request(self) -> None:
         """Processes ``ChatRequest`` and pushes ``ChatResponse`` asynchronously."""
 
@@ -593,6 +640,7 @@ class TestOrchestratorIPCServer:
 
         request = ChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -620,6 +668,7 @@ class TestOrchestratorIPCServer:
 
         request = ChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -657,6 +706,7 @@ class TestOrchestratorIPCServer:
 
         request = ChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -697,6 +747,7 @@ class TestOrchestratorIPCServer:
 
         request = ChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="session-123",
@@ -727,7 +778,12 @@ class TestOrchestratorIPCServer:
             orchestrator_fn=noop,
         )
 
-        request = StopRequest(request_id="r1")
+        request = StopRequest(
+            request_id="stop-1",
+            target_request_id="r1",
+            run_id="run-1",
+            session_id="s1",
+        )
         response = await server._handle_message("StopRequest", request)
 
         assert isinstance(response, StopResponse)
@@ -741,11 +797,15 @@ class TestOrchestratorIPCServer:
         async def slow_fn(request: ChatRequest) -> ChatResponse:
             """Block until cancelled by the stop request."""
             started.set()
-            await asyncio.sleep(60)
-            return ChatResponse(
-                request_id=request.request_id,
-                structured_content=StructuredAssistantContent(answer="late"),
-            )
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    request_id=request.request_id,
+                    outcome_kind="cancelled",
+                    run_id=request.run_id,
+                )
+            raise AssertionError("request was not cancelled")
 
         server = OrchestratorIPCServer(
             socket_path="/tmp/test.sock",
@@ -756,6 +816,7 @@ class TestOrchestratorIPCServer:
 
         chat_request = ChatRequest(
             request_id="r-stop",
+            run_id="run-stop",
             message="hi",
             channel="web",
             session_id="s1",
@@ -769,7 +830,12 @@ class TestOrchestratorIPCServer:
 
         stop_response = await server._handle_message(
             "StopRequest",
-            StopRequest(request_id="r-stop"),
+            StopRequest(
+                request_id="stop-r-stop",
+                target_request_id="r-stop",
+                run_id="run-stop",
+                session_id="s1",
+            ),
         )
         assert isinstance(stop_response, StopResponse)
         assert stop_response.stopped is True
@@ -779,7 +845,187 @@ class TestOrchestratorIPCServer:
         pushed_response = server._server.push.await_args_list[-1].args[0]
         assert isinstance(pushed_response, ChatResponse)
         assert pushed_response.request_id == "r-stop"
-        assert pushed_response.structured_content.answer == "Stopped."
+        assert pushed_response.outcome_kind.value == "cancelled"
+        assert pushed_response.run_id == "run-stop"
+
+    @pytest.mark.asyncio
+    async def test_handle_stop_rejects_mismatched_session(self) -> None:
+        """A caller cannot cancel another session's active run."""
+        started = asyncio.Event()
+
+        async def slow_fn(request: ChatRequest) -> ChatResponse:
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    request_id=request.request_id,
+                    outcome_kind="cancelled",
+                    run_id=request.run_id,
+                )
+            raise AssertionError("request was not cancelled")
+
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=slow_fn,
+        )
+        server._server.push = AsyncMock()
+        chat_request = ChatRequest(
+            request_id="chat-1",
+            run_id="run-1",
+            message="hi",
+            channel="web",
+            session_id="owner",
+            conversation_id="c1",
+        )
+        await server._handle_message("ChatRequest", chat_request)
+        await started.wait()
+
+        response = await server._handle_message(
+            "StopRequest",
+            StopRequest(
+                request_id="stop-1",
+                target_request_id="chat-1",
+                run_id="run-1",
+                session_id="other",
+            ),
+        )
+
+        assert response.stopped is False
+        assert server._active_task is not None
+        server._active_task.cancel()
+        await server._active_task
+
+    @pytest.mark.asyncio
+    async def test_handle_stop_preserves_final_that_wins_cancellation(self) -> None:
+        """Stop transport forwards a canonical final instead of replacing it."""
+        started = asyncio.Event()
+
+        async def final_wins(request: ChatRequest) -> ChatResponse:
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    request_id=request.request_id,
+                    run_id=request.run_id,
+                    outcome_kind="final",
+                    finalization_id="finalization-1",
+                    structured_content=StructuredAssistantContent(answer="committed"),
+                )
+            raise AssertionError("request was not cancelled")
+
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=final_wins,
+        )
+        server._server.push = AsyncMock()
+        await server._handle_message(
+            "ChatRequest",
+            ChatRequest(
+                request_id="chat-final",
+                run_id="run-final",
+                message="hi",
+                channel="web",
+                session_id="owner",
+                conversation_id="c1",
+            ),
+        )
+        await started.wait()
+
+        stopped = await server._handle_message(
+            "StopRequest",
+            StopRequest(
+                request_id="stop-final",
+                target_request_id="chat-final",
+                run_id="run-final",
+                session_id="owner",
+            ),
+        )
+
+        assert stopped.stopped is True
+        pushed = server._server.push.await_args_list[-1].args[0]
+        assert pushed.outcome_kind.value == "final"
+        assert pushed.structured_content.answer == "committed"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_stops_cancel_active_task_once(self) -> None:
+        """Duplicate exact stops await one canonical cancellation transaction."""
+        started = asyncio.Event()
+        cancellation_started = asyncio.Event()
+        release_cancellation = asyncio.Event()
+        cancellation_count = 0
+
+        async def final_after_cas(request: ChatRequest) -> ChatResponse:
+            nonlocal cancellation_count
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancellation_count += 1
+                cancellation_started.set()
+                await release_cancellation.wait()
+                return ChatResponse(
+                    request_id=request.request_id,
+                    run_id=request.run_id,
+                    outcome_kind="final",
+                    finalization_id="finalization-concurrent",
+                    structured_content=StructuredAssistantContent(answer="committed"),
+                )
+            raise AssertionError("request was not cancelled")
+
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=final_after_cas,
+        )
+        server._server.push = AsyncMock()
+        await server._handle_message(
+            "ChatRequest",
+            ChatRequest(
+                request_id="chat-concurrent",
+                run_id="run-concurrent",
+                message="hi",
+                channel="web",
+                session_id="owner",
+                conversation_id="c1",
+            ),
+        )
+        await started.wait()
+        stop_one = asyncio.create_task(
+            server._handle_message(
+                "StopRequest",
+                StopRequest(
+                    request_id="stop-one",
+                    target_request_id="chat-concurrent",
+                    run_id="run-concurrent",
+                    session_id="owner",
+                ),
+            )
+        )
+        await cancellation_started.wait()
+        stop_two = asyncio.create_task(
+            server._handle_message(
+                "StopRequest",
+                StopRequest(
+                    request_id="stop-two",
+                    target_request_id="chat-concurrent",
+                    run_id="run-concurrent",
+                    session_id="owner",
+                ),
+            )
+        )
+        await asyncio.sleep(0)
+        release_cancellation.set()
+
+        responses = await asyncio.gather(stop_one, stop_two)
+
+        assert cancellation_count == 1
+        assert all(response.stopped for response in responses)
+        pushed = server._server.push.await_args_list[-1].args[0]
+        assert pushed.outcome_kind.value == "final"
 
 
 class TestDialogRecorderSchedulingSelection:

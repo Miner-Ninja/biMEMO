@@ -43,7 +43,6 @@ def _build_gateway_orchestrator(
     db_client: DBProxyClient,
     user_profile: dict[str, str],
     user_tz: ZoneInfo | None,
-    action_grants: object | None = None,
 ) -> object:
     """Build the gateway orchestrator with its DB-backed helpers.
 
@@ -73,8 +72,6 @@ def _build_gateway_orchestrator(
         search_skills_fn=db_client.search_skills,
         create_skill_fn=db_client.create_skill,
         log_skill_usage_fn=db_client.log_skill_usage,
-        action_grants=action_grants,
-        pending_action_recorder=db_client.create_pending_action,
         turn_store=db_client,
     )
 
@@ -86,7 +83,6 @@ def _build_runtime_orchestrator(
     user_profile: dict[str, str],
     user_tz: ZoneInfo | None,
     gateway_concurrency_cls: object,
-    action_grants: object | None = None,
 ) -> object:
     """Build the gateway orchestrator used by this process runtime."""
     return _build_gateway_orchestrator(
@@ -95,7 +91,6 @@ def _build_runtime_orchestrator(
         db_client=db_client,
         user_profile=user_profile,
         user_tz=user_tz,
-        action_grants=action_grants,
     )
 
 

@@ -8,7 +8,10 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel, ValidationError
+
 from backend.tools.broker import (
+    AuthorizationContext,
     ToolBroker,
     ToolBrokerError,
 )
@@ -16,18 +19,33 @@ from backend.tools.rate_limits import (
     ToolRateLimiter,
 )
 from backend.tools.registry import (
+    PermissionMode,
+    PermissionPolicy,
     ToolDefinition,
     ToolRegistry,
-    WorkerTarget,
 )
-from backend.trust.zones import TrustZone
-from pydantic import BaseModel
 
 
-class _EchoInput(BaseModel, extra="forbid"):
+class _EchoInput(BaseModel, extra="forbid", frozen=True):
     """Simple input model for testing."""
 
     message: str
+
+
+async def _execute_implicit(
+    broker: ToolBroker,
+    tool_name: str,
+    parameters: dict,
+):
+    """Exercise the sole prepare/authorize/execute broker interface."""
+    prepared = broker.prepare(tool_name, parameters)
+    mode = prepared.definition.permission.resolve(prepared.typed_input)
+    if mode is not PermissionMode.IMPLICIT:
+        raise ToolBrokerError(f"Tool {tool_name} requires authorization")
+    return await broker.execute_prepared(
+        prepared,
+        AuthorizationContext(mode.value, "registry-v1", "test"),
+    )
 
 
 def _setup_broker(audit_fn=None):
@@ -37,8 +55,7 @@ def _setup_broker(audit_fn=None):
         name="echo",
         description="Echoes input",
         input_model=_EchoInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
     )
     registry.register(tool)
     broker = ToolBroker(registry=registry, audit_fn=audit_fn)
@@ -46,7 +63,8 @@ def _setup_broker(audit_fn=None):
     async def echo_handler(validated):
         return {"echo": validated.message}
 
-    broker.set_handler("echo", echo_handler)
+    broker.bind_handler("echo", echo_handler)
+    broker.finalize()
     return broker
 
 
@@ -56,23 +74,81 @@ class TestExecute:
     async def test_successful_execution(self):
         """Verify tool executes and returns result."""
         broker = _setup_broker()
-        result = await broker.execute("echo", {"message": "hello"})
+        result = await _execute_implicit(broker, "echo", {"message": "hello"})
         assert result.success
         assert result.result == {"echo": "hello"}
-        assert result.zone == TrustZone.GREEN
+        assert result.authorization.permission_mode == "implicit"
         assert result.duration_ms >= 0
 
     async def test_unknown_tool(self):
         """Verify unknown tool raises error."""
         broker = _setup_broker()
         with pytest.raises(ToolBrokerError, match="Unknown"):
-            await broker.execute("nonexistent", {})
+            await _execute_implicit(broker, "nonexistent", {})
+
+    async def test_direct_execution_cannot_bypass_required_authorization(self):
+        """Non-implicit tools require an explicit AuthorizationContext."""
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="protected",
+                description="Protected tool",
+                input_model=_EchoInput,
+                permission=PermissionPolicy(
+                    mode=PermissionMode.CONVERSATION_CAPABILITY
+                ),
+            )
+        )
+        broker = ToolBroker(registry=registry)
+        broker.bind_handler("protected", AsyncMock(return_value={"ok": True}))
+        broker.finalize()
+
+        with pytest.raises(ToolBrokerError, match="requires authorization"):
+            await _execute_implicit(broker, "protected", {"message": "hello"})
+
+    def test_prepared_input_is_immutable(self):
+        """Policy and execution share a frozen typed input snapshot."""
+        broker = _setup_broker()
+        prepared = broker.prepare("echo", {"message": "hello"})
+
+        with pytest.raises(ValidationError, match="frozen_instance"):
+            prepared.typed_input.message = "changed"
+        with pytest.raises(TypeError):
+            prepared.canonical_parameters["message"] = "changed"
+
+    def test_persisted_prepared_snapshot_requires_exact_hash_and_revision(self):
+        """A paused invocation resumes only from its exact canonical identity."""
+        broker = _setup_broker()
+        original = broker.prepare("echo", {"message": "hello"})
+
+        restored = broker.restore_prepared(
+            "echo",
+            dict(original.canonical_parameters),
+            expected_hash=original.canonical_hash,
+            expected_policy_revision="registry-v1",
+        )
+
+        assert restored.canonical_json == original.canonical_json
+        with pytest.raises(ToolBrokerError, match="hash mismatch"):
+            broker.restore_prepared(
+                "echo",
+                {"message": "changed"},
+                expected_hash=original.canonical_hash,
+                expected_policy_revision="registry-v1",
+            )
+        with pytest.raises(ToolBrokerError, match="revision mismatch"):
+            broker.restore_prepared(
+                "echo",
+                dict(original.canonical_parameters),
+                expected_hash=original.canonical_hash,
+                expected_policy_revision="obsolete",
+            )
 
     async def test_validation_failure(self):
         """Verify invalid params raise error."""
         broker = _setup_broker()
         with pytest.raises(ToolBrokerError, match="Validation"):
-            await broker.execute("echo", {"bad": "param"})
+            await _execute_implicit(broker, "echo", {"bad": "param"})
 
     async def test_no_handler(self):
         """Verify missing handler raises error."""
@@ -81,14 +157,38 @@ class TestExecute:
             name="no_handler",
             description="No handler",
             input_model=_EchoInput,
-            zone=TrustZone.GREEN,
-            worker=WorkerTarget.CORE,
+            permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
         )
         registry.register(tool)
         broker = ToolBroker(registry=registry)
 
-        with pytest.raises(ToolBrokerError, match="No handler"):
-            await broker.execute("no_handler", {"message": "test"})
+        with pytest.raises(RuntimeError, match="missing handlers"):
+            broker.finalize()
+
+    def test_scheduler_authorization_pins_policy_revision(self):
+        """Scheduler selection is validated and versioned by the broker."""
+        broker = _setup_broker()
+
+        assert broker.scheduler_authorizations(["echo"]) == [
+            {
+                "tool_name": "echo",
+                "approved_policy_revision": "registry-v1",
+            }
+        ]
+
+    def test_scheduler_authorization_rejects_duplicate_tool(self):
+        """Duplicate scheduler selections fail closed instead of being normalized."""
+        broker = _setup_broker()
+
+        with pytest.raises(ToolBrokerError, match="Duplicate scheduled tool"):
+            broker.scheduler_authorizations(["echo", "echo"])
+
+    def test_scheduler_authorization_rejects_unknown_tool(self):
+        """Unknown scheduler capabilities fail closed."""
+        broker = _setup_broker()
+
+        with pytest.raises(ToolBrokerError, match="Unknown scheduled tool"):
+            broker.scheduler_authorizations(["missing"])
 
 
 class TestRateLimiting:
@@ -101,8 +201,7 @@ class TestRateLimiting:
             name="limited",
             description="Limited tool",
             input_model=_EchoInput,
-            zone=TrustZone.GREEN,
-            worker=WorkerTarget.CORE,
+            permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
         )
         registry.register(tool)
 
@@ -110,9 +209,11 @@ class TestRateLimiting:
         # Exhaust the unknown tool limit (1)
         limiter.record("limited")
         broker = ToolBroker(registry=registry, rate_limiter=limiter)
+        broker.bind_handler("limited", AsyncMock())
+        broker.finalize()
 
         with pytest.raises(ToolBrokerError, match="Rate limit"):
-            await broker.execute("limited", {"message": "test"})
+            await _execute_implicit(broker, "limited", {"message": "test"})
 
 
 _FILTER_MOD = "backend.security.content_filter"
@@ -133,13 +234,13 @@ class TestAuditLogging:
         audit_fn = AsyncMock()
         broker = _setup_broker(audit_fn=audit_fn)
 
-        await broker.execute("echo", {"message": "hello"})
+        await _execute_implicit(broker, "echo", {"message": "hello"})
         await asyncio.sleep(0)
 
         audit_fn.assert_awaited_once()
         call_args = audit_fn.await_args
         assert call_args.args == ("tool_success", "echo")
-        assert call_args.kwargs["zone"] == "green"
+        assert call_args.kwargs["zone"] is None
 
     @patch(
         f"{_FILTER_MOD}.filter_output",
@@ -154,7 +255,7 @@ class TestAuditLogging:
         broker = _setup_broker(audit_fn=audit_fn)
 
         with pytest.raises(ToolBrokerError):
-            await broker.execute("nonexistent", {})
+            await _execute_implicit(broker, "nonexistent", {})
         await asyncio.sleep(0)
 
         audit_fn.assert_awaited_once()
@@ -165,7 +266,7 @@ class TestAuditLogging:
         """Verify missing audit callback skips audit without error."""
         broker = _setup_broker(audit_fn=None)
 
-        result = await broker.execute("echo", {"message": "hello"})
+        result = await _execute_implicit(broker, "echo", {"message": "hello"})
         assert result.success
 
     async def test_credential_in_result_is_redacted(self):
@@ -178,8 +279,7 @@ class TestAuditLogging:
             name="leaky",
             description="Returns a credential",
             input_model=_EchoInput,
-            zone=TrustZone.GREEN,
-            worker=WorkerTarget.CORE,
+            permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
         )
         registry.register(tool)
         broker = ToolBroker(registry=registry, audit_fn=audit_fn)
@@ -187,8 +287,9 @@ class TestAuditLogging:
         async def leaky_handler(validated):
             return {"secret": fake_key}
 
-        broker.set_handler("leaky", leaky_handler)
-        await broker.execute("leaky", {"message": "go"})
+        broker.bind_handler("leaky", leaky_handler)
+        broker.finalize()
+        await _execute_implicit(broker, "leaky", {"message": "go"})
         await asyncio.sleep(0)
 
         audit_fn.assert_awaited_once()
@@ -208,8 +309,7 @@ class TestRateLimitReset:
             name="limited",
             description="Limited tool",
             input_model=_EchoInput,
-            zone=TrustZone.GREEN,
-            worker=WorkerTarget.CORE,
+            permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
         )
         registry.register(tool)
 
@@ -223,14 +323,15 @@ class TestRateLimitReset:
         async def handler(v):
             return {"echo": v.message}
 
-        broker.set_handler("limited", handler)
+        broker.bind_handler("limited", handler)
+        broker.finalize()
 
         with pytest.raises(ToolBrokerError, match="Rate limit"):
-            await broker.execute("limited", {"message": "blocked"})
+            await _execute_implicit(broker, "limited", {"message": "blocked"})
 
         broker.reset_rate_limit("limited")
 
-        result = await broker.execute("limited", {"message": "unblocked"})
+        result = await _execute_implicit(broker, "limited", {"message": "unblocked"})
         assert result.success
         assert result.result == {
             "echo": "unblocked",

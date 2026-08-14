@@ -4,16 +4,16 @@ Covers allowlist validation, command execution, timeout handling,
 and error cases.
 """
 
-import asyncio
 import pytest
+
 from backend.workers.cmd_worker import (
     ALLOWED_COMMANDS,
     BLOCKED_COMMANDS,
     CommandResult,
     CommandStream,
+    _resolve_command,
     execute_command,
     validate_command,
-    _resolve_command,
 )
 
 
@@ -130,6 +130,20 @@ async def test_execute_invalid_cwd():
     result = await execute_command("echo test", cwd="/nonexistent_dir_xyz")
     assert result.exit_code == 1
     assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_rejects_symlink_cwd(tmp_path):
+    """The command must run only in the exact authorized directory."""
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    result = await execute_command("pwd", cwd=str(link))
+
+    assert result.exit_code == 1
+    assert "symlink" in str(result.error).lower()
 
 
 @pytest.mark.asyncio

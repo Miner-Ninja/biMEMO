@@ -1,11 +1,4 @@
-"""biMEMO-native action decision service for assistant tool calls.
-
-This module is the first policy checkpoint before ToolBroker execution.
-It intentionally starts small: only non-negotiable safety blocks are
-enforced here, while the existing trust-zone confirmation flow remains in
-place. Later grant persistence and resumable confirmations can extend this
-service without changing ToolBroker.
-"""
+"""Deterministic safety and registry-owned permission decisions."""
 
 from __future__ import annotations
 
@@ -15,9 +8,14 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from backend.tools.registry import (
+    PermissionMode,
+    PermissionReply,
+    PermissionScope,
+)
 from backend.tools.validation import (
     ValidationError,
     check_path_traversal,
@@ -25,6 +23,13 @@ from backend.tools.validation import (
     check_sensitive_read_path,
     validate_url,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from backend.tools.broker import PreparedInvocation
+    from backend.tools.registry import ToolRegistry
 
 
 class DecisionKind(StrEnum):
@@ -37,70 +42,22 @@ class DecisionKind(StrEnum):
     BLOCK = "block"
 
 
-class PermissionMode(StrEnum):
-    """Backend-owned reusable permission behavior for one capability."""
-
-    IMPLICIT = "implicit"
-    CONVERSATION_CAPABILITY = "conversation_capability"
-    SCOPED = "scoped"
-    PER_INVOCATION = "per_invocation"
-    BLOCKED = "blocked"
-
-
-@dataclass(frozen=True)
-class PermissionManifest:
-    """Static permission declaration owned by backend code."""
-
-    mode: PermissionMode
-    read_only: bool = False
-    scope_argument: str = ""
-
-
-PERMISSION_POLICY_REVISION = "1"
-PERMISSION_MANIFESTS: dict[str, PermissionManifest] = {
-    "memory_recall": PermissionManifest(PermissionMode.IMPLICIT, read_only=True),
-    "web_search": PermissionManifest(
-        PermissionMode.CONVERSATION_CAPABILITY,
-        read_only=True,
-    ),
-    "http_fetch": PermissionManifest(
-        PermissionMode.CONVERSATION_CAPABILITY,
-        read_only=True,
-    ),
-    "file_read": PermissionManifest(
-        PermissionMode.SCOPED,
-        read_only=True,
-        scope_argument="path",
-    ),
-    "file_search": PermissionManifest(
-        PermissionMode.SCOPED,
-        read_only=True,
-        scope_argument="directory",
-    ),
-    "file_write": PermissionManifest(PermissionMode.PER_INVOCATION),
-    "email_send": PermissionManifest(PermissionMode.PER_INVOCATION),
-    "schedule_task": PermissionManifest(PermissionMode.PER_INVOCATION),
-    "run_command": PermissionManifest(PermissionMode.PER_INVOCATION),
-    "project_command": PermissionManifest(PermissionMode.PER_INVOCATION),
-}
-
-
 @dataclass(frozen=True)
 class ActionContext:
-    """Context used to decide whether one tool call may proceed."""
+    """Authenticated context surrounding one prepared invocation."""
 
     conversation_id: str
     channel: str
     session_id: str
     tool_name: str
     parameters: dict
-    trust_zone: str = ""
-    structured_authority: bool = False
+    tool_policy_version: str = "registry-v1"
+    prepared: PreparedInvocation | None = None
 
 
 @dataclass(frozen=True)
 class ActionDecision:
-    """Result of evaluating one action request."""
+    """Result of deterministic safety and permission evaluation."""
 
     kind: DecisionKind
     reason: str = ""
@@ -108,21 +65,8 @@ class ActionDecision:
 
     @property
     def allowed(self) -> bool:
-        """Return whether the tool may execute immediately."""
-        return self.kind == DecisionKind.ALLOW
-
-
-class ActionGrantReader(Protocol):
-    """Read persisted user grants for action decisions."""
-
-    def find_decision(
-        self,
-        *,
-        conversation_id: str,
-        channel: str,
-        tool_name: str,
-    ) -> str | None:
-        """Return a stored decision such as ``allow`` or ``block``."""
+        """Whether execution may proceed immediately."""
+        return self.kind is DecisionKind.ALLOW
 
 
 _DESTRUCTIVE_COMMAND_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -134,29 +78,183 @@ _DESTRUCTIVE_COMMAND_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 class ActionDecisionService:
-    """Decide whether assistant tool calls can execute.
+    """Resolve policy from the finalized registry after one typed validation."""
 
-    The service is deliberately deterministic and narrow at this stage. It
-    blocks safety boundaries that should not be bypassed by policy changes:
-    traversal, sensitive key paths, cloud metadata/blocked network fetches,
-    and catastrophic shell commands.
-    """
-
-    def __init__(self, grants: ActionGrantReader | None = None) -> None:
-        """Initialize the service with an optional grant reader."""
-        self.grants = grants
+    def __init__(
+        self,
+        *,
+        registry: ToolRegistry,
+        workspace_roots: Callable[[], list[str]] | None = None,
+    ) -> None:
+        """Initialize with the sole registry and live workspace roots."""
+        self.registry = registry
+        self.workspace_roots = workspace_roots or (lambda: [])
 
     def decide(self, context: ActionContext) -> ActionDecision:
-        """Return the policy decision for one tool call."""
+        """Return a fail-closed decision for one action context."""
         try:
             return self._decide_or_raise(context)
-        except ValidationError as exc:
-            return ActionDecision(DecisionKind.BLOCK, str(exc))
+        except (ValidationError, ValueError) as exc:
+            message = str(exc)
+            source = (
+                "policy_version"
+                if "policy version" in message.lower()
+                else "registry_policy"
+                if "tool policy" in message.lower()
+                or "prepared invocation" in message.lower()
+                else "hard_safety"
+            )
+            definition = self.registry.get(context.tool_name)
+            return ActionDecision(
+                DecisionKind.BLOCK,
+                message,
+                {
+                    "permission_mode": "blocked",
+                    "policy_revision": (
+                        definition.permission.revision if definition else ""
+                    ),
+                    "source": source,
+                },
+            )
+
+    def _prepared(self, context: ActionContext) -> PreparedInvocation:
+        if context.prepared is not None:
+            if context.prepared.tool_name != context.tool_name:
+                raise ValidationError("Prepared invocation tool mismatch")
+            return context.prepared
+        definition = self.registry.get(context.tool_name)
+        if definition is None:
+            raise ValidationError(f"Unknown tool policy: {context.tool_name}")
+
+        raise ValidationError("Permission decision requires a prepared invocation")
 
     def _decide_or_raise(self, context: ActionContext) -> ActionDecision:
-        tool_name = context.tool_name
-        params = context.parameters
+        if context.tool_policy_version != "registry-v1":
+            raise ValidationError("Unsupported tool policy version")
+        prepared = self._prepared(context)
+        params = dict(prepared.canonical_parameters)
+        try:
+            self._run_hard_checks(prepared.tool_name, params)
+        except ValidationError as exc:
+            return ActionDecision(
+                DecisionKind.BLOCK,
+                str(exc),
+                {
+                    "permission_mode": "blocked",
+                    "policy_revision": prepared.definition.permission.revision,
+                    "source": "hard_safety",
+                },
+            )
 
+        policy = prepared.definition.permission
+        mode = policy.resolve(prepared.typed_input)
+        if mode is PermissionMode.BLOCKED:
+            return ActionDecision(
+                DecisionKind.BLOCK,
+                "Capability is blocked by policy",
+                {
+                    "permission_mode": "blocked",
+                    "policy_revision": policy.revision,
+                    "source": "registry_policy",
+                },
+            )
+
+        workspace_root = self._workspace_root(policy.workspace_argument, params)
+        scope = self._scope(
+            context=context,
+            prepared=prepared,
+            mode=mode,
+            workspace_root=workspace_root,
+        )
+        canonical_scope = json.dumps(
+            scope,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        details: dict[str, object] = {
+            "permission_mode": mode.value,
+            "reply_mode": policy.reply.value,
+            "scope": scope,
+            "scope_hash": hashlib.sha256(canonical_scope.encode()).hexdigest(),
+            "policy_revision": policy.revision,
+            "source": "registry_policy",
+            "read_only": policy.reply is PermissionReply.LLM_CLASSIFIED,
+            "scheduler_preauthorizable": policy.scheduler_preauthorizable,
+        }
+        if mode is PermissionMode.IMPLICIT:
+            return ActionDecision(
+                DecisionKind.ALLOW,
+                "Allowed by registry policy",
+                details,
+            )
+        if mode is PermissionMode.CONVERSATION_CAPABILITY:
+            return ActionDecision(
+                DecisionKind.ASK_ONCE,
+                "Capability needs conversation approval",
+                details,
+            )
+        if mode is PermissionMode.SCOPED:
+            return ActionDecision(
+                DecisionKind.ASK_SCOPED,
+                "Capability scope needs approval",
+                details,
+            )
+        return ActionDecision(
+            DecisionKind.ASK_ONCE,
+            "Invocation needs explicit approval",
+            details,
+        )
+
+    def _workspace_root(self, argument: str, params: dict) -> str:
+        if not argument:
+            return ""
+        raw_target = str(params.get(argument, "")).strip()
+        if not raw_target:
+            raise ValidationError(f"{argument} must be a non-empty workspace path")
+        target = Path(raw_target).expanduser().resolve(strict=False)
+        candidates: list[Path] = []
+        for raw_root in self.workspace_roots():
+            root = Path(raw_root).expanduser().resolve(strict=False)
+            try:
+                target.relative_to(root)
+            except ValueError:
+                continue
+            candidates.append(root)
+        if not candidates:
+            raise ValidationError("Target is outside every allowed workspace")
+        return str(max(candidates, key=lambda path: len(path.parts)))
+
+    @staticmethod
+    def _scope(
+        *,
+        context: ActionContext,
+        prepared: PreparedInvocation,
+        mode: PermissionMode,
+        workspace_root: str,
+    ) -> dict[str, object]:
+        base: dict[str, object] = {
+            "conversation_id": context.conversation_id,
+            "channel": context.channel,
+            "tool_name": prepared.tool_name,
+        }
+        if mode is PermissionMode.CONVERSATION_CAPABILITY:
+            return base
+        if mode is PermissionMode.SCOPED:
+            if not workspace_root:
+                raise ValidationError("Scoped action has no canonical workspace")
+            return {**base, "workspace_root": workspace_root}
+        if mode is PermissionMode.PER_INVOCATION:
+            return {
+                **base,
+                "arguments_hash": prepared.canonical_hash,
+                **({"workspace_root": workspace_root} if workspace_root else {}),
+            }
+        workspace_scope = {"workspace_root": workspace_root} if workspace_root else {}
+        return {**base, **workspace_scope}
+
+    def _run_hard_checks(self, tool_name: str, params: dict) -> None:
         if tool_name == "file_read":
             self._check_read_path(str(params.get("path", "")))
         elif tool_name == "file_write":
@@ -166,146 +264,45 @@ class ActionDecisionService:
             check_path_traversal(str(params.get("pattern", "")))
         elif tool_name in {"http_fetch", "web_search"}:
             self._check_url_params(tool_name, params)
-        elif tool_name in {"run_command", "project_command"}:
+        elif tool_name in {"execute_command", "execute_command_stream"}:
             self._check_command(str(params.get("command", "")))
 
-        if not context.structured_authority:
-            grant_decision = self._lookup_grant(context)
-            if grant_decision == DecisionKind.ALLOW.value:
-                return ActionDecision(
-                    DecisionKind.ALLOW,
-                    "Allowed by saved action grant",
-                    {"source": "grant"},
-                )
-            if grant_decision == DecisionKind.BLOCK.value:
-                return ActionDecision(
-                    DecisionKind.BLOCK,
-                    "Blocked by saved action grant",
-                    {"source": "grant"},
-                )
-            if context.trust_zone == "red":
-                return ActionDecision(
-                    DecisionKind.ASK_ONCE,
-                    "Sensitive action needs user approval",
-                )
-            return ActionDecision(
-                DecisionKind.ALLOW,
-                "Legacy trust-zone policy remains authoritative",
-                {"source": "legacy_trust_zone"},
-            )
-
-        manifest = PERMISSION_MANIFESTS.get(
-            tool_name,
-            PermissionManifest(PermissionMode.PER_INVOCATION),
-        )
-        if manifest.mode is PermissionMode.BLOCKED:
-            return ActionDecision(DecisionKind.BLOCK, "Capability is blocked by policy")
-        details = self._permission_details(context, manifest)
-        if manifest.mode is PermissionMode.IMPLICIT:
-            return ActionDecision(
-                DecisionKind.ALLOW,
-                "Allowed by backend permission manifest",
-                details,
-            )
-
-        grant_decision = self._lookup_grant(context)
-        if grant_decision == DecisionKind.ALLOW.value:
-            return ActionDecision(
-                DecisionKind.ALLOW,
-                "Allowed by saved action grant",
-                {**details, "source": "legacy_grant"},
-            )
-        if grant_decision == DecisionKind.BLOCK.value:
-            return ActionDecision(
-                DecisionKind.BLOCK,
-                "Blocked by saved action grant",
-                {**details, "source": "legacy_grant"},
-            )
-        if manifest.mode is PermissionMode.CONVERSATION_CAPABILITY:
-            return ActionDecision(
-                DecisionKind.ASK_ONCE,
-                "Capability needs conversation approval",
-                details,
-            )
-        if manifest.mode is PermissionMode.SCOPED:
-            return ActionDecision(
-                DecisionKind.ASK_SCOPED,
-                "Capability target needs scoped approval",
-                details,
-            )
-        return ActionDecision(
-            DecisionKind.ASK_ONCE,
-            "Action needs per-invocation approval",
-            details,
-        )
-
-    def _lookup_grant(self, context: ActionContext) -> str | None:
-        if context.structured_authority or self.grants is None:
-            return None
-        return self.grants.find_decision(
-            conversation_id=context.conversation_id,
-            channel=context.channel,
-            tool_name=context.tool_name,
-        )
-
-    def _permission_details(
-        self,
-        context: ActionContext,
-        manifest: PermissionManifest,
-    ) -> dict[str, object]:
-        scope: dict[str, object]
-        if manifest.mode is PermissionMode.CONVERSATION_CAPABILITY:
-            scope = {"conversation_id": context.conversation_id}
-        elif manifest.mode is PermissionMode.SCOPED:
-            raw_target = str(context.parameters.get(manifest.scope_argument, ""))
-            if not raw_target:
-                raise ValidationError("Scoped action has no canonical target")
-            scope = {
-                "conversation_id": context.conversation_id,
-                "target": str(Path(raw_target).expanduser().resolve(strict=False)),
-            }
-        else:
-            scope = {
-                "conversation_id": context.conversation_id,
-                "arguments": context.parameters,
-            }
-        canonical = json.dumps(
-            scope,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        return {
-            "permission_mode": manifest.mode.value,
-            "read_only": manifest.read_only,
-            "scope": scope,
-            "scope_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
-            "policy_revision": PERMISSION_POLICY_REVISION,
-        }
-
-    def _check_read_path(self, path: str) -> None:
+    @staticmethod
+    def _check_read_path(path: str) -> None:
         check_path_traversal(path)
         check_sensitive_read_path(path)
 
-    def _check_write_path(self, path: str) -> None:
+    @staticmethod
+    def _check_write_path(path: str) -> None:
         check_path_traversal(path)
         check_sensitive_path(path)
 
-    def _check_url_params(self, tool_name: str, params: dict) -> None:
+    @staticmethod
+    def _check_url_params(tool_name: str, params: dict) -> None:
         if tool_name == "http_fetch":
             url = str(params.get("url", ""))
             if url:
                 validate_url(url)
             return
-
         query = str(params.get("query", ""))
         parsed = urlparse(query)
         if parsed.scheme and parsed.netloc:
             validate_url(query)
 
-    def _check_command(self, command: str) -> None:
+    @staticmethod
+    def _check_command(command: str) -> None:
         normalized = command.strip().lower()
         for pattern in _DESTRUCTIVE_COMMAND_PATTERNS:
             if pattern.search(normalized):
                 raise ValidationError("Destructive command blocked")
+
+
+__all__ = [
+    "ActionContext",
+    "ActionDecision",
+    "ActionDecisionService",
+    "DecisionKind",
+    "PermissionMode",
+    "PermissionReply",
+    "PermissionScope",
+]

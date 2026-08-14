@@ -51,12 +51,13 @@ class UsedToolItem(StrictResponseModel):
 
     Attributes:
         name: Tool name that was executed.
-        zone: Trust zone of the tool.
+        permission_mode: Registry permission mode used for execution.
         success: Whether the tool executed successfully.
     """
 
     name: str
-    zone: str
+    permission_mode: str = ""
+    authorization_source: str = ""
     success: bool
 
 

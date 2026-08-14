@@ -38,6 +38,8 @@ _TOOL_LIMIT_KEYS: dict[str, str] = {
     "email_send": "agent_limits.tools.email_send_per_loop",
     "schedule_task": "agent_limits.tools.schedule_task_per_loop",
     "memory_recall": "agent_limits.tools.memory_recall_per_loop",
+    "skill_create": "agent_limits.tools.skill_create_per_loop",
+    "workspace_note": "agent_limits.tools.workspace_note_per_loop",
 }
 
 # --- Aggregate budget catalog keys ---
@@ -63,6 +65,14 @@ def _tool_window_limits() -> dict[str, tuple[int, float]]:
             resolver.get_int(max_calls_key),
             float(resolver.get_int(window_key)),
         ),
+        "skill_create": (
+            resolver.get_int("agent_limits.skill_create_window.max_calls"),
+            float(resolver.get_int("agent_limits.skill_create_window.seconds")),
+        ),
+        "workspace_note": (
+            resolver.get_int("agent_limits.workspace_note_window.max_calls"),
+            float(resolver.get_int("agent_limits.workspace_note_window.seconds")),
+        ),
     }
 
 
@@ -80,8 +90,8 @@ class SlidingWindowLimiter:
     _timestamps: list[float] = field(default_factory=list)
 
     def _now(self) -> float:
-        """Return the current monotonic timestamp."""
-        return time.monotonic()
+        """Return epoch time, matching the durable database clock domain."""
+        return time.time()
 
     def _active_timestamps(self) -> list[float]:
         """Return timestamps still inside the current sliding window."""
@@ -179,6 +189,11 @@ class PersistentRateLimiter:
                 record_task = asyncio.ensure_future(self.record_fn(tool_name, ts))
                 self._record_tasks.add(record_task)
                 record_task.add_done_callback(self._record_tasks.discard)
+
+    async def flush(self) -> None:
+        """Wait until every scheduled durable rate record has completed."""
+        if self._record_tasks:
+            await asyncio.gather(*tuple(self._record_tasks))
 
 
 @dataclass

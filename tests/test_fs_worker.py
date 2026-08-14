@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from backend.ipc.protocol import ToolRequest
 from backend.tools.validation import ValidationError
 from backend.workers.fs_worker import (
@@ -53,6 +54,16 @@ class TestFileRead:
         result = execute_file_read(str(f), [str(tmp_path)])
         assert "error" in result
         assert "too large" in result["error"].lower()
+
+    def test_read_through_symlink_blocked(self, tmp_path):
+        """Reject a symlink before opening a readable target."""
+        real = tmp_path / "real.txt"
+        real.write_text("secret")
+        link = tmp_path / "link.txt"
+        link.symlink_to(real)
+
+        with pytest.raises(ValidationError, match="symlink"):
+            execute_file_read(str(link), [str(tmp_path)])
 
 
 class TestFileWrite:
@@ -121,6 +132,18 @@ class TestFileSearch:
         result = execute_file_search(str(tmp_path), "**/*.txt", [str(tmp_path)])
         assert len(result["matches"]) == 2
 
+    def test_recursive_search_excludes_sensitive_paths(self, tmp_path):
+        """Recursive discovery cannot reveal private-key or environment paths."""
+        (tmp_path / ".env").write_text("TOKEN=secret")
+        ssh = tmp_path / ".ssh"
+        ssh.mkdir()
+        (ssh / "id_rsa").write_text("private")
+        (tmp_path / "public.txt").write_text("public")
+
+        result = execute_file_search(str(tmp_path), "**/*", [str(tmp_path)])
+
+        assert result["matches"] == [str(tmp_path / "public.txt")]
+
     def test_max_results_limited(self, tmp_path):
         """Verify results capped at 100."""
         for i in range(150):
@@ -137,6 +160,16 @@ class TestFileSearch:
         """Verify empty results for no matches."""
         result = execute_file_search(str(tmp_path), "*.xyz", [str(tmp_path)])
         assert result["matches"] == []
+
+    def test_search_through_symlink_blocked(self, tmp_path):
+        """Reject a symlinked search root."""
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real)
+
+        with pytest.raises(ValidationError, match="symlink"):
+            execute_file_search(str(link), "*.txt", [str(tmp_path)])
 
 
 class TestResolveAndCheck:

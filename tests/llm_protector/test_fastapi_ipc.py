@@ -134,6 +134,7 @@ class TestOrchestratorClient:
 
         request = IPCChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -152,22 +153,32 @@ class TestOrchestratorClient:
         fake_ipc = FakeOrchestratorIPC()
         client = OrchestratorClient(fake_ipc)
         await client.start()
+        client.register_chat_request("chat-1", "s1", run_id="run-1")
+        client._chat_send_events["chat-1"].set()
 
         fake_ipc.queue_receive(IPCStopResponse(request_id="r1", stopped=True))
 
-        result = await client.send_stop(IPCStopRequest(request_id="r1"))
+        result = await client.send_stop(
+            IPCStopRequest(
+                request_id="r1",
+                target_request_id="chat-1",
+                run_id="run-1",
+                session_id="s1",
+            )
+        )
         assert result.stopped is True
         await client.stop()
 
     @pytest.mark.asyncio
-    async def test_send_stop_releases_pending_chat_response(self) -> None:
-        """Successful stop unblocks the active chat request future."""
+    async def test_send_stop_waits_for_authoritative_chat_response(self) -> None:
+        """Stop acknowledgement does not synthesize a chat outcome locally."""
         fake_ipc = FakeOrchestratorIPC()
         client = OrchestratorClient(fake_ipc)
         await client.start()
 
         chat_request = IPCChatRequest(
             request_id="chat-1",
+            run_id="run-chat-1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -178,41 +189,51 @@ class TestOrchestratorClient:
         assert client.is_processing
 
         fake_ipc.queue_receive(IPCStopResponse(request_id="stop-1", stopped=True))
-        stop_response = await client.send_stop(IPCStopRequest(request_id="stop-1"))
-        assert not client.is_processing
+        stop_response = await client.send_stop(
+            IPCStopRequest(
+                request_id="stop-1",
+                target_request_id="chat-1",
+                run_id="run-chat-1",
+                session_id="s1",
+            )
+        )
+        assert client.is_processing
+        assert not chat_task.done()
+        fake_ipc.queue_receive(
+            IPCChatResponse(
+                request_id="chat-1",
+                outcome_kind="cancelled",
+                run_id="run-chat-1",
+            )
+        )
         chat_response = await asyncio.wait_for(chat_task, timeout=1.0)
 
         assert stop_response.stopped is True
         assert chat_response.request_id == "chat-1"
-        assert chat_response.structured_content.answer == "Stopped."
+        assert chat_response.outcome_kind.value == "cancelled"
+        assert chat_response.run_id == "run-chat-1"
         assert not client.is_processing
         await client.stop()
 
     @pytest.mark.asyncio
-    async def test_stop_before_background_send_prevents_late_chat_start(self) -> None:
-        """Stop can win the race before the background chat task sends IPC."""
+    async def test_stop_command_uses_distinct_correlation_id(self) -> None:
+        """Stop response cannot overwrite the target chat response future."""
         fake_ipc = FakeOrchestratorIPC()
         client = OrchestratorClient(fake_ipc)
         await client.start()
 
-        client.register_chat_request("chat-1", "s1")
-        fake_ipc.queue_receive(IPCStopResponse(request_id="chat-1", stopped=True))
-        stop_response = await client.send_stop(IPCStopRequest(request_id="chat-1"))
-        assert not client.is_processing
-
-        chat_request = IPCChatRequest(
-            request_id="chat-1",
-            message="hi",
-            channel="web",
+        stop_request = IPCStopRequest(
+            request_id="stop-1",
+            target_request_id="chat-1",
+            run_id="run-chat-1",
             session_id="s1",
-            conversation_id="c1",
         )
-        chat_response = await client.send_chat(chat_request, session_id="s1")
-
+        client.register_chat_request("chat-1", "s1", run_id="run-chat-1")
+        client._chat_send_events["chat-1"].set()
+        fake_ipc.queue_receive(IPCStopResponse(request_id="stop-1", stopped=True))
+        stop_response = await client.send_stop(stop_request)
         assert stop_response.stopped is True
-        assert chat_response.structured_content.answer == "Stopped."
-        assert fake_ipc.sent_messages == [IPCStopRequest(request_id="chat-1")]
-        assert not client.is_processing
+        assert fake_ipc.sent_messages == [stop_request]
         await client.stop()
 
     @pytest.mark.asyncio
@@ -227,7 +248,7 @@ class TestOrchestratorClient:
         old_queue: asyncio.Queue = asyncio.Queue()
         new_queue: asyncio.Queue = asyncio.Queue()
         client.register_session_queue("old-session", old_queue, conversation_id="c1")
-        client.register_chat_request("chat-1", "old-session", "c1")
+        client.register_chat_request("chat-1", "old-session", "c1", run_id="run-chat-1")
         client.unregister_session_queue("old-session")
         client.register_session_queue("new-session", new_queue, conversation_id="c1")
 
@@ -286,7 +307,7 @@ class TestOrchestratorClient:
         second_queue: asyncio.Queue = asyncio.Queue()
         client.register_session_queue("session-1", first_queue, conversation_id="c1")
         client.register_session_queue("session-1", second_queue, conversation_id="c1")
-        client.register_chat_request("chat-1", "session-1", "c1")
+        client.register_chat_request("chat-1", "session-1", "c1", run_id="run-chat-1")
 
         event = StreamEvent(
             request_id="chat-1",
@@ -316,7 +337,7 @@ class TestOrchestratorClient:
             wrong_chat_queue,
             conversation_id="c2",
         )
-        client.register_chat_request("chat-1", "session-1", "c1")
+        client.register_chat_request("chat-1", "session-1", "c1", run_id="run-chat-1")
 
         event = StreamEvent(
             request_id="chat-1",
@@ -384,6 +405,7 @@ class TestOrchestratorClient:
 
         request = IPCChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -437,6 +459,7 @@ class TestOrchestratorClient:
         response_task = asyncio.create_task(delayed_response())
         request = IPCChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -456,6 +479,7 @@ class TestOrchestratorClient:
 
         request = IPCChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -473,6 +497,7 @@ class TestOrchestratorClient:
 
         request = IPCChatRequest(
             request_id="r1",
+            run_id="run-r1",
             message="hi",
             channel="web",
             session_id="s1",
@@ -515,7 +540,6 @@ class TestAdminDBClient:
         assert fake_ipc.sent_operations[0].operation == "get_signing_material"
 
     @pytest.mark.asyncio
-
     async def test_delete_conversation(
         self,
         admin_client: AdminDBClient,

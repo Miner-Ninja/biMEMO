@@ -23,13 +23,13 @@ from backend.scheduler.parsing import (
     parse_schedule,
 )
 
-from ..deps import _get_admin_client, _require_auth
+from ..deps import _get_admin_client, _get_orchestrator_client, _require_auth
 
 
 if TYPE_CHECKING:
     from backend.channels.jwt_auth import TokenClaims
 
-    from ..clients import AdminDBClient
+    from ..clients import AdminDBClient, OrchestratorClient
 
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ async def create_scheduled_task(
     body: ScheduledTaskCreateRequest,
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict:
     """Create a new scheduled task.
 
@@ -77,6 +78,7 @@ async def create_scheduled_task(
         body: Task creation payload.
         claims: Authenticated token claims.
         admin: DB Proxy Socket B client.
+        orchestrator: Runtime registry IPC client.
 
     Returns:
         Dict with the created task_id and computed next_run_at.
@@ -102,6 +104,12 @@ async def create_scheduled_task(
 
     next_run = compute_next_run(schedule, timezone=user_timezone)
 
+    try:
+        approved_tools = await orchestrator.authorize_scheduled_tools(
+            body.allowed_tools
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     result = await admin.create_scheduled_task(
         {
             "name": body.name,
@@ -110,7 +118,7 @@ async def create_scheduled_task(
             "schedule_kind": schedule["kind"],
             "schedule_expr": body.schedule.strip(),
             "next_run_at": next_run,
-            "allowed_tools": json.dumps(body.allowed_tools),
+            "allowed_tools": json.dumps(approved_tools),
             "timezone": user_timezone,
             "conversation_id": body.conversation_id,
             "repeat_limit": body.repeat_limit,
@@ -128,6 +136,7 @@ async def update_scheduled_task(
     body: ScheduledTaskUpdateRequest,
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict:
     """Update a scheduled task.
 
@@ -140,6 +149,7 @@ async def update_scheduled_task(
         body: Update payload.
         claims: Authenticated token claims.
         admin: DB Proxy Socket B client.
+        orchestrator: Runtime registry IPC client.
 
     Returns:
         Dict with success indicator.
@@ -153,7 +163,13 @@ async def update_scheduled_task(
     if body.prompt is not None:
         update_params["prompt"] = body.prompt
     if body.allowed_tools is not None:
-        update_params["allowed_tools"] = json.dumps(body.allowed_tools)
+        try:
+            approved_tools = await orchestrator.authorize_scheduled_tools(
+                body.allowed_tools
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        update_params["allowed_tools"] = json.dumps(approved_tools)
     if body.repeat_limit is not None:
         update_params["repeat_limit"] = body.repeat_limit
 
@@ -247,21 +263,13 @@ tools_catalog_router = APIRouter(prefix="/admin/tools")
 @tools_catalog_router.get("")
 async def list_available_tools(
     claims: TokenClaims = Depends(_require_auth),
+    orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> dict:
     """Return the catalog of registered tool definitions.
 
     Used by the scheduler UI to populate the allowlist multi-select.
-    Returns name, description, and trust zone for each tool.
+    Returns presentation-only names and descriptions. Permission policy remains
+    private to the orchestrator registry.
     """
     del claims
-    from backend.tools.handlers.registration import TOOL_DEFINITIONS
-
-    tools = [
-        {
-            "name": tool_def.name,
-            "description": tool_def.description,
-            "zone": tool_def.zone.value,
-        }
-        for tool_def in TOOL_DEFINITIONS
-    ]
-    return {"tools": tools}
+    return {"tools": await orchestrator.list_tool_catalog()}

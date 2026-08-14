@@ -79,12 +79,15 @@ async def test_non_sse_invoke_preserves_exact_choice_and_text_mode() -> None:
         captured = options
         return SimpleNamespace(usage=None)
 
-    caller = LLMCaller("test", None, None, MagicMock())
+    caller = LLMCaller("test", MagicMock())
     choice = {"type": "function", "function": {"name": "file_read"}}
     await caller.invoke(
         llm_call=llm_call,
         messages=[],
-        openai_tools=[{"type": "function"}],
+        openai_tools=[
+            {"type": "function", "function": {"name": "file_read"}},
+            {"type": "function", "function": {"name": "git_diff"}},
+        ],
         stream_mode=LLMStreamMode.DISABLED,
         tool_choice=choice,
     )
@@ -140,12 +143,15 @@ async def test_run_model_loop_forces_two_required_tools_exactly() -> None:
         ResponseRequirements(),
         ("file_read", "git_diff"),
     )
-    caller = LLMCaller("test", None, None, MagicMock())
+    caller = LLMCaller("test", MagicMock())
     result = await caller.run_model_loop(
         loop=loop,
         llm_call=llm_call,
         messages=[],
-        openai_tools=[{"type": "function"}],
+        openai_tools=[
+            {"type": "function", "function": {"name": "file_read"}},
+            {"type": "function", "function": {"name": "git_diff"}},
+        ],
         call_usages=[],
         channel="chat",
         tool_executor=_SequenceToolExecutor(),
@@ -178,12 +184,14 @@ async def test_run_model_loop_fails_when_provider_ignores_force() -> None:
         ResponseRequirements(),
         ("file_read",),
     )
-    caller = LLMCaller("test", None, None, MagicMock())
+    caller = LLMCaller("test", MagicMock())
     result = await caller.run_model_loop(
         loop=loop,
         llm_call=llm_call,
         messages=[],
-        openai_tools=[{"type": "function"}],
+        openai_tools=[
+            {"type": "function", "function": {"name": "file_read"}},
+        ],
         call_usages=[],
         channel="chat",
         tool_executor=_SequenceToolExecutor(),
@@ -235,15 +243,15 @@ def test_loop_limit_fail_closed() -> None:
     assert 1 <= max_retries <= 5
 
 
-def test_low_confidence_context_asks_no_force() -> None:
-    """R4 / S4.1 - a GREEN/YELLOW context tool is NOT forced (prose ask path)."""
+def test_required_context_tool_reasks_without_zone_authority() -> None:
+    """A durable requirement is retried independently of legacy trust zones."""
     picked = _tool_to_reask(
         decision=_decision("missing-required-tools:web_search"),  # YELLOW context
         requirements=ResponseRequirements(required_tools=("web_search",)),
         structured_content=None,
         executed_tools=[],
     )
-    assert picked is None
+    assert picked == "web_search"
 
 
 def test_followup_approval_forces_tool_ambiguous_does_not() -> None:

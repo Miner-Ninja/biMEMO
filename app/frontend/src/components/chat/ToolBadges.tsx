@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { getToolMeta, ZONE_BADGE_VARIANT, type Zone } from "@/lib/tool-metadata";
+import { getToolMeta } from "@/lib/tool-metadata";
 import type { UsedTool } from "@/types/chat";
 
 interface CollapsedTool {
@@ -8,17 +8,12 @@ interface CollapsedTool {
   count: number;
 }
 
-/** Collapse consecutive identical executions (same name, zone, success) into ×N. */
+/** Collapse consecutive identical executions into a compact count. */
 function collapse(tools: UsedTool[]): CollapsedTool[] {
   const out: CollapsedTool[] = [];
   for (const tool of tools) {
     const last = out[out.length - 1];
-    if (
-      last &&
-      last.tool.name === tool.name &&
-      last.tool.zone === tool.zone &&
-      last.tool.success === tool.success
-    ) {
+    if (last && last.tool.name === tool.name && last.tool.success === tool.success) {
       last.count += 1;
     } else {
       out.push({ tool, count: 1 });
@@ -34,8 +29,8 @@ interface ToolBadgesProps {
 
 /**
  * A row of small badges for the tools a message actually executed, in order.
- * Zone drives the colour; a failed execution is shown struck-through; identical
- * consecutive executions collapse to ×N. Renders nothing when empty.
+ * Failed execution is shown struck-through; identical consecutive executions
+ * collapse to ×N. Renders nothing when empty.
  */
 export function ToolBadges({ usedTools, className }: ToolBadgesProps) {
   if (!usedTools?.length) return null;
@@ -44,9 +39,7 @@ export function ToolBadges({ usedTools, className }: ToolBadgesProps) {
     <div className={cn("flex flex-wrap justify-end gap-1", className)}>
       {collapse(usedTools).map(({ tool, count }, index) => {
         const Icon = getToolMeta(tool.name).icon;
-        const variant = tool.success
-          ? (ZONE_BADGE_VARIANT[tool.zone as Zone] ?? "secondary")
-          : "danger";
+        const variant = tool.success ? "secondary" : "danger";
         const title = tool.success ? tool.name : `${tool.name} (failed)`;
 
         return (

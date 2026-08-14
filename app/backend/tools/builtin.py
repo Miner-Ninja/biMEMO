@@ -4,13 +4,15 @@ Defines input schemas for all built-in tools. Each model
 is used for parameter validation before execution.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictToolInput(BaseModel):
     """Base model for strict tool inputs."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class FileReadInput(StrictToolInput):
@@ -155,22 +157,47 @@ class SkillCreateInput(StrictToolInput):
     """
 
     name: str = Field(
-        description="Kebab-case skill identifier (e.g. crypto-price-report)"
+        max_length=128,
+        description="Kebab-case skill identifier (e.g. crypto-price-report)",
     )
-    title: str = Field(description="Human-readable skill name")
-    description: str = Field(description="One-line summary of the skill")
-    trigger: str = Field(default="", description="When to use this skill")
+    title: str = Field(max_length=256, description="Human-readable skill name")
+    description: str = Field(
+        max_length=2048,
+        description="One-line summary of the skill",
+    )
+    trigger: str = Field(
+        default="",
+        max_length=4096,
+        description="When to use this skill",
+    )
     procedure: str = Field(
-        default="[]", description="JSON array of {tool, query, note} steps"
+        default="[]",
+        max_length=32768,
+        description="JSON array of {tool, query, note} steps",
     )
-    errors: str = Field(default="[]", description="JSON array of {name, fix} pairs")
+    errors: str = Field(
+        default="[]",
+        max_length=16384,
+        description="JSON array of {name, fix} pairs",
+    )
     verification: str = Field(
-        default="", description="How to verify the result is correct"
+        default="", max_length=8192, description="How to verify the result is correct"
     )
     tool_sequence: str = Field(
         default="",
+        max_length=2048,
         description="Comma-separated tools used (e.g. web_search,email_send)",
     )
+
+    @model_validator(mode="after")
+    def validate_total_size(self) -> Self:
+        """Bound the complete persisted skill payload in UTF-8 bytes."""
+        total = sum(
+            len(str(value).encode("utf-8")) for value in self.model_dump().values()
+        )
+        if total > 65_536:
+            raise ValueError("skill payload exceeds 65536 UTF-8 bytes")
+        return self
 
 
 class SkillSearchInput(StrictToolInput):
@@ -229,10 +256,32 @@ class WorkspaceNoteInput(StrictToolInput):
         blockers: JSON array of blocker strings.
     """
 
-    user_intent: str = Field(default="", description="User intent summary")
-    progress: str = Field(default="", description="Progress status")
-    decisions: str = Field(default="[]", description="JSON array of decisions")
-    blockers: str = Field(default="[]", description="JSON array of blockers")
+    user_intent: str = Field(
+        default="",
+        max_length=8192,
+        description="User intent summary",
+    )
+    progress: str = Field(default="", max_length=8192, description="Progress status")
+    decisions: str = Field(
+        default="[]",
+        max_length=16384,
+        description="JSON array of decisions",
+    )
+    blockers: str = Field(
+        default="[]",
+        max_length=16384,
+        description="JSON array of blockers",
+    )
+
+    @model_validator(mode="after")
+    def validate_total_size(self) -> Self:
+        """Bound the complete persisted workspace note in UTF-8 bytes."""
+        total = sum(
+            len(str(value).encode("utf-8")) for value in self.model_dump().values()
+        )
+        if total > 32_768:
+            raise ValueError("workspace note exceeds 32768 UTF-8 bytes")
+        return self
 
 
 class ExecuteCommandInput(StrictToolInput):
@@ -302,9 +351,21 @@ class GitPushInput(StrictToolInput):
 class CodeSearchInput(StrictToolInput):
     """Input for code_search tool."""
 
-    pattern: str = Field(description="Text or regex pattern to search")
-    cwd: str = Field(default="", description="Working directory (optional)")
-    file_pattern: str = Field(default="**/*", description="File glob pattern")
-    max_results: int = Field(default=50, description="Max matches")
-    context_lines: int = Field(default=2, description="Context lines")
+    pattern: str = Field(
+        min_length=1,
+        max_length=4096,
+        description="Text or regex pattern to search",
+    )
+    cwd: str = Field(
+        default="",
+        max_length=4096,
+        description="Working directory (optional)",
+    )
+    file_pattern: str = Field(
+        default="**/*",
+        max_length=1024,
+        description="File glob pattern",
+    )
+    max_results: int = Field(default=50, ge=1, le=200, description="Max matches")
+    context_lines: int = Field(default=2, ge=0, le=10, description="Context lines")
     use_regex: bool = Field(default=False, description="Use regex")

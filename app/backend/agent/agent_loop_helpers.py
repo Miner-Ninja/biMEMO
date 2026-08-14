@@ -6,8 +6,6 @@ detection. None of these functions hold state or perform I/O;
 they only inspect and transform their inputs.
 """
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import inspect
@@ -15,13 +13,13 @@ import json
 import re
 from typing import TYPE_CHECKING
 
+from backend.llm.call_options import LLMCallOptions
 from backend.llm.structured_response import (
     MAX_STRUCTURED_SUGGESTIONS,
     StructuredAssistantContent,
     normalize_legacy_response_text,
 )
 from backend.security.provenance import serialize_tool_result
-from backend.trust.zones import TrustZone, get_zone, user_intent_authorizes
 
 
 if TYPE_CHECKING:
@@ -127,52 +125,6 @@ PATH_LIKE_PATTERN = re.compile(
     r")(?=\s|$|[.,;:!?])"
 )
 
-# --- Forced web search detection ---
-FORCED_WEB_SEARCH_PHRASES = (
-    "узнай в интернете",
-    "узнай в сети",
-    "поищи в интернете",
-    "поищи в сети",
-    "найди в интернете",
-    "найди в сети",
-    "проверь в интернете",
-    "проверь в сети",
-    "посмотри в интернете",
-    "посмотри в сети",
-    "search the web",
-    "search online",
-    "look it up online",
-    "look it up on the web",
-    "check online",
-    "find online",
-)
-FORCED_WEB_SEARCH_HINT_MARKERS = (
-    "internet",
-    "internete",
-    "internetu",
-    "interneto",
-    "internets",
-    "interneten",
-    "internetul",
-    "online",
-    "web",
-    "www",
-    "browser",
-    "google",
-    "bing",
-    "searx",
-    "search",
-    "lookup",
-    "look up",
-    "поищи",
-    "найди",
-    "узнай",
-    "проверь",
-    "посмотри",
-    "интернет",
-    "сети",
-)
-
 # --- Memory negation ---
 MEMORY_NEGATION_MARKERS = (
     "no durable preference",
@@ -236,7 +188,12 @@ async def request_non_empty_final_answer(
         *messages,
         {"role": "system", "content": EMPTY_FINAL_ANSWER_RECOVERY_PROMPT},
     ]
-    if llm_accepts_sse_queue(llm_call):
+    if llm_accepts_call_options(llm_call):
+        recovery_response = await llm_call(
+            recovery_messages,
+            options=LLMCallOptions(tools=[]),
+        )
+    elif llm_accepts_sse_queue(llm_call):
         recovery_response = await llm_call(
             recovery_messages,
             sse_queue_override=None,
@@ -365,39 +322,6 @@ def context_contains_active_long_term_preference(
     return False
 
 
-def split_by_zone(
-    calls: list[ToolCall],
-    user_intent: dict[str, set[str]] | None = None,
-) -> tuple[list[ToolCall], list[ToolCall]]:
-    """Split tool calls by trust zone.
-
-    GREEN and YELLOW tools execute immediately.
-    RED tools require individual confirmation unless the user explicitly
-    requested THIS call — the bypass is bound to the call parameters, so a RED
-    tool skips confirmation only when its target matches a value the user typed
-    (see zones.user_intent_authorizes), not merely when the tool was mentioned.
-
-    Args:
-        calls: Tool calls to classify.
-        user_intent: Per-tool set of target strings the user typed.
-
-    Returns:
-        Tuple of (immediate calls, red calls).
-    """
-    immediate: list[ToolCall] = []
-    red: list[ToolCall] = []
-    intent = user_intent or {}
-    for call in calls:
-        zone = get_zone(call.name)
-        if zone == TrustZone.RED and not user_intent_authorizes(
-            call.name, call.parameters, intent
-        ):
-            red.append(call)
-        else:
-            immediate.append(call)
-    return immediate, red
-
-
 def build_tool_result_messages(
     calls: list[ToolCall],
     results: list[ToolResult],
@@ -430,9 +354,15 @@ def build_tool_result_messages(
 def llm_accepts_sse_queue(llm_call: object) -> bool:
     """Check whether the LLM callable accepts an SSE queue argument."""
     try:
-        return len(inspect.signature(llm_call).parameters) >= 2
+        parameters = inspect.signature(llm_call).parameters
     except TypeError, ValueError:
+        return False
+    if "sse_queue_override" in parameters:
         return True
+    return any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
 
 
 def llm_accepts_tools_override(llm_call: object) -> bool:
@@ -482,48 +412,3 @@ def message_allows_file_read_tools(message: str) -> bool:
     )
     has_path_like_target = PATH_LIKE_PATTERN.search(message) is not None
     return has_action_marker and (has_target_marker or has_path_like_target)
-
-
-def message_requires_forced_web_search(message: str) -> bool:
-    """Return True when the user explicitly asks to search online."""
-    normalized_message = " ".join(message.casefold().split())
-    return any(phrase in normalized_message for phrase in FORCED_WEB_SEARCH_PHRASES)
-
-
-def message_may_need_forced_web_search_classifier(message: str) -> bool:
-    """Return True when one message looks like an online-search request."""
-    normalized_message = " ".join(message.casefold().split())
-    return any(
-        marker in normalized_message for marker in FORCED_WEB_SEARCH_HINT_MARKERS
-    )
-
-
-MEMORY_RECALL_HINT_MARKERS = (
-    "помнишь",
-    "вспомни",
-    "remember",
-    "recall",
-    "previously",
-    "прошлый раз",
-    "прошлом разговоре",
-    "раньше говорили",
-    "обсуждали раньше",
-    "last time",
-    "earlier",
-    "past conversation",
-    "we discussed",
-    "мы обсуждали",
-    "о чём говорили",
-)
-
-
-def message_may_need_memory_recall(message: str) -> bool:
-    """Return True when one message looks like a past-conversation question."""
-    normalized_message = " ".join(message.casefold().split())
-    return any(marker in normalized_message for marker in MEMORY_RECALL_HINT_MARKERS)
-
-
-def llm_requires_forced_web_search(response_text: str) -> bool:
-    """Interpret one YES/NO classifier answer for forced web search."""
-    normalized_response = response_text.strip().casefold()
-    return normalized_response.startswith("yes")

@@ -1837,10 +1837,11 @@ export function ChatPage() {
     clearStages();
     clearAssistantStream();
     requestAnimationFrame(() => chatInputRef.current?.focus());
+    if (!requestId || !runId) return;
     try {
       await apiRequest("/stop", {
         method: "POST",
-        body: JSON.stringify({ request_id: requestId || "", run_id: runId || "" }),
+        body: JSON.stringify({ request_id: requestId, run_id: runId }),
       });
     } catch {
       /* stop is best-effort */

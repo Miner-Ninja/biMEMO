@@ -265,7 +265,8 @@ def build_used_tool_items(
     return [
         UsedToolItem(
             name=tool_data.get("name", ""),
-            zone=tool_data.get("zone", ""),
+            permission_mode=str(tool_data.get("permission_mode", "")),
+            authorization_source=str(tool_data.get("authorization_source", "")),
             success=bool(tool_data.get("success", True)),
         )
         for tool_data in used_tools
@@ -569,7 +570,8 @@ async def start_web_chat_request(
     orchestrator_client.register_chat_request(
         prepared_request.ipc_request.request_id,
         claims.jti,
-        prepared_request.conversation_id,
+        conversation_id=prepared_request.conversation_id,
+        run_id=prepared_request.ipc_request.run_id,
     )
     background_tasks.add_task(
         _finish_started_web_chat_request,

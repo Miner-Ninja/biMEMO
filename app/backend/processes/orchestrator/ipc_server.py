@@ -8,7 +8,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
-from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCSocketServer
 from backend.ipc.models import (
     BridgeInboundSyncRequest,
@@ -27,12 +26,14 @@ from backend.ipc.models import (
     MemoryInvalidateResponse,
     ReloadLLMRequest,
     ReloadLLMResponse,
+    ScheduledToolAuthorizationRequest,
+    ScheduledToolAuthorizationResponse,
     StopRequest,
     StopResponse,
     StreamEvent,
-    StreamEventType,
     StructuredAssistantContent,
-    TurnOutcomeKind,
+    ToolCatalogRequest,
+    ToolCatalogResponse,
 )
 
 
@@ -53,6 +54,8 @@ FRONTEND_TYPE_MAP = {
     "ReloadLLMRequest": ReloadLLMRequest,
     "StopRequest": StopRequest,
     "ConfirmRequest": ConfirmRequest,
+    "ToolCatalogRequest": ToolCatalogRequest,
+    "ScheduledToolAuthorizationRequest": ScheduledToolAuthorizationRequest,
 }
 
 
@@ -81,6 +84,8 @@ class OrchestratorIPCServer:
         mcp_memory_remember_fn: Callable | None = None,
         mcp_ask_fn: Callable | None = None,
         memory_invalidate_fn: Callable | None = None,
+        tool_catalog_fn: Callable | None = None,
+        scheduled_tool_authorization_fn: Callable | None = None,
     ) -> None:
         """Initialize the orchestrator IPC server.
 
@@ -103,6 +108,8 @@ class OrchestratorIPCServer:
                 runs the LLM agentic loop, and returns the answer.
             memory_invalidate_fn: Optional async callable that invalidates one
                 graph assertion on user request (Socket-A write).
+            tool_catalog_fn: Callable returning the finalized catalog projection.
+            scheduled_tool_authorization_fn: Callable validating scheduler tools.
         """
         self._orchestrator_fn = orchestrator_fn
         self._confirm_fn = confirm_fn
@@ -113,7 +120,13 @@ class OrchestratorIPCServer:
         self._mcp_memory_remember_fn = mcp_memory_remember_fn
         self._mcp_ask_fn = mcp_ask_fn
         self._memory_invalidate_fn = memory_invalidate_fn
+        self._tool_catalog_fn = tool_catalog_fn
+        self._scheduled_tool_authorization_fn = scheduled_tool_authorization_fn
         self._active_task: asyncio.Task | None = None
+        self._active_request_id = ""
+        self._active_run_id = ""
+        self._active_session_id = ""
+        self._stopping_task: asyncio.Task | None = None
 
         self._server = IPCSocketServer(
             socket_path=socket_path,
@@ -185,7 +198,42 @@ class OrchestratorIPCServer:
             "McpMemoryRememberRequest": self._handle_mcp_memory_remember,
             "McpAskRequest": self._handle_mcp_ask,
             "MemoryInvalidateRequest": self._handle_memory_invalidate,
+            "ToolCatalogRequest": self._handle_tool_catalog,
+            "ScheduledToolAuthorizationRequest": (
+                self._handle_scheduled_tool_authorization
+            ),
         }
+
+    async def _handle_scheduled_tool_authorization(
+        self,
+        request: ScheduledToolAuthorizationRequest,
+    ) -> ScheduledToolAuthorizationResponse:
+        """Validate scheduler tools against the finalized registry snapshot."""
+        try:
+            if self._scheduled_tool_authorization_fn is None:
+                raise RuntimeError("Scheduled tool authorization is unavailable")
+            authorizations = self._scheduled_tool_authorization_fn(request.tool_names)
+            if inspect.isawaitable(authorizations):
+                authorizations = await authorizations
+        except (RuntimeError, ValueError) as exc:
+            return ScheduledToolAuthorizationResponse(
+                request_id=request.request_id,
+                error=str(exc),
+            )
+        return ScheduledToolAuthorizationResponse(
+            request_id=request.request_id,
+            authorizations=authorizations,
+        )
+
+    async def _handle_tool_catalog(
+        self,
+        request: ToolCatalogRequest,
+    ) -> ToolCatalogResponse:
+        """Return the catalog from the finalized runtime registry."""
+        tools = [] if self._tool_catalog_fn is None else self._tool_catalog_fn()
+        if inspect.isawaitable(tools):
+            tools = await tools
+        return ToolCatalogResponse(request_id=request.request_id, tools=tools)
 
     async def _handle_memory_invalidate(
         self,
@@ -344,6 +392,9 @@ class OrchestratorIPCServer:
         self._active_task = asyncio.create_task(
             self._run_chat_task(request),
         )
+        self._active_request_id = request.request_id
+        self._active_run_id = request.run_id
+        self._active_session_id = request.session_id
         self._active_task.add_done_callback(self._clear_finished_chat_task)
         return None
 
@@ -351,18 +402,6 @@ class OrchestratorIPCServer:
         """Run one chat request and push its response when it finishes."""
         try:
             response = await self._orchestrator_fn(request)
-        except asyncio.CancelledError:
-            if get_settings().structured_finalization_enabled:
-                response = ChatResponse(
-                    request_id=request.request_id,
-                    outcome_kind=TurnOutcomeKind.CANCELLED,
-                    run_id=request.run_id,
-                )
-            else:
-                response = ChatResponse(
-                    request_id=request.request_id,
-                    structured_content=StructuredAssistantContent(answer="Stopped."),
-                )
         except Exception as error:
             logger.error("Orchestrator error: %s", error, exc_info=True)
             error_text = self._build_internal_error_text(error)
@@ -377,6 +416,11 @@ class OrchestratorIPCServer:
         """Forget the active chat task once it is no longer running."""
         if self._active_task is task:
             self._active_task = None
+            self._active_request_id = ""
+            self._active_run_id = ""
+            self._active_session_id = ""
+        if self._stopping_task is task:
+            self._stopping_task = None
 
     async def _save_error_response(
         self,
@@ -438,17 +482,18 @@ class OrchestratorIPCServer:
         Returns:
             StopResponse confirming cancellation.
         """
-        if self._active_task is not None and not self._active_task.done():
+        if (
+            self._active_task is not None
+            and not self._active_task.done()
+            and request.target_request_id == self._active_request_id
+            and request.run_id == self._active_run_id
+            and request.session_id == self._active_session_id
+        ):
             active_task = self._active_task
-            self._active_task = None
-            active_task.cancel()
-            await self.push_event(
-                StreamEvent(
-                    request_id=request.request_id,
-                    event_type=StreamEventType.CONFIRMATION,
-                    data={"status": "stopped"},
-                )
-            )
+            if self._stopping_task is not active_task:
+                self._stopping_task = active_task
+                active_task.cancel()
+            await active_task
             return self._stop_response(
                 request.request_id,
                 stopped=True,

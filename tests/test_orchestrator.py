@@ -12,19 +12,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from backend.agent.agent_loop import (
-    FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
-    AgentOrchestrator,
-)
+
+from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
     build_tool_result_messages,
     message_allows_file_read_tools,
     message_allows_file_write_tool,
-    message_may_need_forced_web_search_classifier,
-    message_requires_forced_web_search,
     request_non_empty_final_answer,
-    split_by_zone,
 )
 from backend.agent.agent_loop_models import (
     AgentResponse,
@@ -37,7 +32,6 @@ from backend.agent.finalization import (
     RequirementSatisfaction,
     ResponseRequirements,
     build_required_tool_failure_answer,
-    detect_turn_requirements,
     looks_like_status_only_answer,
     validate_final_answer,
 )
@@ -49,10 +43,10 @@ from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import LLMCallUsage
 from backend.memory.context_builder import ContextEntry, ContextResult
 from backend.memory.evidence_chain_models import EvidenceBundle
+from backend.permissions import ActionDecision, DecisionKind
 from backend.security.content_scanning_models import FilterResult
 from backend.tools.broker import ToolResult
 from backend.trust.confirmation import PendingAction
-from backend.trust.zones import TrustZone
 
 
 def _text_response(text: str) -> LLMResponse:
@@ -100,142 +94,6 @@ def _tool_response(
     )
 
 
-class TestSplitByZone:
-    """Tests for zone-based tool call splitting."""
-
-    def test_green_is_immediate(self):
-        """Verify GREEN tools are immediate."""
-        calls = [ToolCall(id="c1", name="file_read", parameters={})]
-        immediate, red = split_by_zone(calls)
-        assert len(immediate) == 1
-        assert len(red) == 0
-
-    def test_red_is_deferred(self):
-        """Verify RED tools are deferred."""
-        calls = [ToolCall(id="c1", name="email_send", parameters={})]
-        immediate, red = split_by_zone(calls)
-        assert len(immediate) == 0
-        assert len(red) == 1
-
-    def test_mixed_zones(self):
-        """Verify mixed zones are split correctly."""
-        calls = [
-            ToolCall(id="c1", name="file_read", parameters={}),
-            ToolCall(id="c2", name="email_send", parameters={}),
-            ToolCall(id="c3", name="file_write", parameters={}),
-        ]
-        immediate, red = split_by_zone(calls)
-        assert len(immediate) == 2
-        assert len(red) == 1
-        assert red[0].name == "email_send"
-
-
-class TestSplitByZoneWithIntent:
-    """Tests for split_by_zone with parameter-bound user intent.
-
-    The bypass is authorized only when the tool-call parameter matches a value
-    the user actually typed, not merely when the tool was mentioned.
-    """
-
-    def test_red_tool_matching_param_goes_to_immediate(self):
-        """RED tool whose target matches a user-typed value skips confirmation."""
-        calls = [
-            ToolCall(id="c1", name="email_send", parameters={"to": "boss@firma.com"})
-        ]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"email_send": {"boss@firma.com"}},
-        )
-        assert len(immediate) == 1
-        assert len(red) == 0
-
-    def test_red_tool_param_mismatch_goes_to_red(self):
-        """RED tool sent to an address the user did NOT type requires confirmation.
-
-        This is the core of the parameter-binding fix: the user wrote
-        boss@firma.com but the model targets attacker@evil.com.
-        """
-        calls = [
-            ToolCall(id="c1", name="email_send", parameters={"to": "attacker@evil.com"})
-        ]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"email_send": {"boss@firma.com"}},
-        )
-        assert len(immediate) == 0
-        assert len(red) == 1
-
-    def test_red_tool_missing_param_goes_to_red(self):
-        """RED tool with no target parameter cannot be bypassed."""
-        calls = [ToolCall(id="c1", name="email_send", parameters={})]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"email_send": {"boss@firma.com"}},
-        )
-        assert len(immediate) == 0
-        assert len(red) == 1
-
-    def test_red_tool_no_intent_goes_to_red(self):
-        """RED tool with no matching intent entry requires confirmation."""
-        calls = [
-            ToolCall(id="c1", name="email_send", parameters={"to": "boss@firma.com"})
-        ]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"http_fetch": {"https://example.com"}},
-        )
-        assert len(immediate) == 0
-        assert len(red) == 1
-
-    def test_http_fetch_matching_url_immediate_trailing_slash(self):
-        """http_fetch to a user-typed URL skips confirmation (slash-tolerant)."""
-        calls = [
-            ToolCall(
-                id="c1", name="http_fetch", parameters={"url": "https://example.com/"}
-            )
-        ]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"http_fetch": {"https://example.com"}},
-        )
-        assert len(immediate) == 1
-        assert len(red) == 0
-
-    def test_green_tool_unaffected_by_intent(self):
-        """Verify GREEN tool stays immediate regardless of intent."""
-        calls = [ToolCall(id="c1", name="file_read", parameters={})]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"http_fetch": {"https://example.com"}},
-        )
-        assert len(immediate) == 1
-        assert len(red) == 0
-
-    def test_yellow_tool_unaffected_by_intent(self):
-        """Verify YELLOW tool stays immediate regardless of intent."""
-        calls = [ToolCall(id="c1", name="file_write", parameters={})]
-        immediate, red = split_by_zone(
-            calls,
-            user_intent={"http_fetch": {"https://example.com"}},
-        )
-        assert len(immediate) == 1
-        assert len(red) == 0
-
-    def test_empty_intent_same_as_no_intent(self):
-        """Verify empty intent behaves like no intent parameter."""
-        calls = [
-            ToolCall(id="c1", name="file_read", parameters={}),
-            ToolCall(id="c2", name="http_fetch", parameters={}),
-        ]
-        immediate_empty, red_empty = split_by_zone(
-            calls,
-            user_intent={},
-        )
-        immediate_none, red_none = split_by_zone(calls)
-        assert len(immediate_empty) == len(immediate_none)
-        assert len(red_empty) == len(red_none)
-
-
 class TestBuildToolResultMessages:
     """Tests for tool result message building."""
 
@@ -247,7 +105,6 @@ class TestBuildToolResultMessages:
                 tool_name="file_read",
                 success=True,
                 result="content",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             )
         ]
@@ -271,7 +128,6 @@ class TestBuildToolResultMessages:
                 tool_name="file_read",
                 success=False,
                 result="not found",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             )
         ]
@@ -295,14 +151,12 @@ class TestBuildToolResultMessages:
                 tool_name="a",
                 success=True,
                 result="r1",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             ),
             ToolResult(
                 tool_name="b",
                 success=True,
                 result="r2",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             ),
         ]
@@ -330,50 +184,6 @@ class TestFinalAnswerRecovery:
         assert not looks_like_status_only_answer(
             "Я нашел инструкции и вот краткая выжимка: настройте параметр X."
         )
-
-    def test_current_data_requirement_detection(self):
-        """Detect realtime price questions as mandatory web-search turns."""
-        requirements = detect_turn_requirements(
-            "какой курс биткойна, эфириума и соланы на данный момент?"
-        )
-        english_requirements = detect_turn_requirements(
-            "What is the current BTC price now?"
-        )
-
-        assert requirements.needs_current_data
-        assert requirements.required_tools == ("web_search",)
-        assert english_requirements.needs_current_data
-        assert english_requirements.required_tools == ("web_search",)
-
-    def test_url_file_and_memory_requirement_detection(self):
-        """Detect non-current evidence requirements without user-facing modes."""
-        url_requirements = detect_turn_requirements(
-            "Summarize https://example.com/docs, please."
-        )
-        file_requirements = detect_turn_requirements(
-            "Проанализируй файл sandbox/CODE_RULES.md"
-        )
-        memory_requirements = detect_turn_requirements(
-            "Помнишь, что мы обсуждали в прошлом разговоре?"
-        )
-
-        assert url_requirements.needs_url_fetch
-        assert url_requirements.urls == ("https://example.com/docs",)
-        assert "http_fetch" in url_requirements.required_tools
-        assert file_requirements.needs_file_context
-        assert "file-context" in file_requirements.reason
-        assert memory_requirements.needs_memory_recall
-        assert "memory_recall" not in memory_requirements.required_tools
-        assert "memory-recall" in memory_requirements.reason
-
-    def test_requirement_detection_does_not_treat_pasted_code_as_file_context(self):
-        """Pasted code analysis must not expose file-context requirements."""
-        requirements = detect_turn_requirements(
-            "Проанализируй этот код:\n```python\ndef hello():\n    return 'world'\n```"
-        )
-
-        assert not requirements.needs_file_context
-        assert "file-context" not in requirements.reason
 
     def test_finalization_rejects_unsatisfied_current_data(self):
         """Do not accept answers when mandatory evidence is missing."""
@@ -446,20 +256,6 @@ class TestFinalAnswerRecovery:
 
         assert decision.accepted
 
-    def test_current_data_targets_no_garbage_from_conjunction(self):
-        """A conjunction in a sentence must not manufacture a garbage target."""
-        # Pure pattern logic — no broker/LLM needed.
-        caller = LLMCaller.__new__(LLMCaller)
-
-        single = caller._current_data_targets(
-            "Проверить текущий курс биткойна и сообщить результат"
-        )
-        assert [t.label for t in single] == ["Bitcoin"]
-
-        # A genuine multi-entity list still yields both known entities.
-        multi = caller._current_data_targets("курс bitcoin и ethereum")
-        assert [t.label for t in multi] == ["Bitcoin", "Ethereum"]
-
     def test_with_current_data_targets_covered_drops_covered(self):
         """Covered targets leave the missing set; others stay (R1)."""
         satisfaction = RequirementSatisfaction(
@@ -471,27 +267,6 @@ class TestFinalAnswerRecovery:
 
         assert updated.missing_current_data_targets == ("Solana",)
         assert updated.current_data_targets == ("Bitcoin", "Ethereum", "Solana")
-
-    def test_covered_by_tools_credits_only_tool_result_content(self):
-        """A target is credited from tool output, not prose or invocation (R2, R4)."""
-        messages = [
-            {"role": "user", "content": "какой курс эфириума"},
-            {"role": "assistant", "content": "Ethereum looks interesting"},
-            {"role": "tool", "content": '{"ethereum": {"usd": 1902.5}}'},
-        ]
-
-        covered = LLMCaller._current_data_targets_covered_by_tools(
-            messages, ("Ethereum", "Solana")
-        )
-
-        assert covered == ("Ethereum",)  # in the tool result
-        # "Solana" appears nowhere; "Ethereum" in the assistant prose does not count
-        assert (
-            LLMCaller._current_data_targets_covered_by_tools(
-                [{"role": "assistant", "content": "Ethereum Solana"}], ("Ethereum",)
-            )
-            == ()
-        )
 
     def test_finalization_accepts_when_target_covered_by_fetch(self):
         """A fetch covering the target clears the guard's rejection (R1, R3)."""
@@ -529,230 +304,12 @@ class TestFinalAnswerRecovery:
         assert "timeout" in answer
 
     @pytest.mark.asyncio
-    async def test_required_web_search_context_tracks_success(self):
-        """Record mandatory web_search success before answer synthesis."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=True,
-                result="BTC: 100",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
-        llm_caller = LLMCaller(
-            model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
-            broker=broker,
-        )
-        messages: list[dict[str, object]] = []
-
-        satisfaction = await llm_caller.append_required_tool_context(
-            filtered_message="current BTC price?",
-            messages=messages,
-            requirements=ResponseRequirements(
-                needs_current_data=True,
-                required_tools=("web_search",),
-            ),
-        )
-
-        assert "web_search" in satisfaction.satisfied_tools
-        assert not satisfaction.failed_tools
-        assert "BTC: 100" in str(messages[-1]["content"])
-
-    @pytest.mark.asyncio
-    async def test_required_web_search_expands_crypto_price_queries(self):
-        """Fetch targeted evidence for each requested crypto price."""
-        broker = MagicMock()
-
-        async def execute(tool_name: str, params: dict) -> ToolResult:
-            query = params["query"]
-            return ToolResult(
-                tool_name=tool_name,
-                success=True,
-                result={
-                    "results": [
-                        {
-                            "title": f"{query} result",
-                            "url": f"https://example.test/{query}",
-                            "snippet": f"Live data for {query}",
-                        }
-                    ]
-                },
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-
-        broker.execute = AsyncMock(side_effect=execute)
-        llm_caller = LLMCaller(
-            model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
-            broker=broker,
-        )
-        messages: list[dict[str, object]] = []
-
-        satisfaction = await llm_caller.append_required_tool_context(
-            filtered_message="Покажи текущий курс Bitcoin, Ethereum и Solana",
-            messages=messages,
-            requirements=ResponseRequirements(
-                needs_current_data=True,
-                required_tools=("web_search",),
-            ),
-        )
-
-        queries = [
-            call.args[1]["query"]
-            for call in broker.execute.await_args_list
-            if call.args[0] == "web_search"
-        ]
-        assert queries[:3] == [
-            "current Bitcoin BTC price USD today",
-            "current Ethereum ETH price USD today",
-            "current Solana SOL price USD today",
-        ]
-        assert "web_search" in satisfaction.satisfied_tools
-        content = str(messages[-1]["content"])
-        assert "current Bitcoin BTC price USD today" in content
-        assert "current Ethereum ETH price USD today" in content
-        assert "current Solana SOL price USD today" in content
-
-    @pytest.mark.asyncio
-    async def test_required_web_search_tracks_missing_target_evidence(self):
-        """Partial current-data evidence is tracked at target level."""
-        broker = MagicMock()
-
-        async def execute(tool_name: str, params: dict) -> ToolResult:
-            query = params["query"]
-            results = []
-            if "Solana" not in query:
-                results = [
-                    {
-                        "title": f"{query} result",
-                        "url": f"https://example.test/{query}",
-                        "snippet": f"Live data for {query}",
-                    }
-                ]
-            return ToolResult(
-                tool_name=tool_name,
-                success=True,
-                result={"results": results},
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-
-        broker.execute = AsyncMock(side_effect=execute)
-        llm_caller = LLMCaller(
-            model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
-            broker=broker,
-        )
-        messages: list[dict[str, object]] = []
-
-        satisfaction = await llm_caller.append_required_tool_context(
-            filtered_message="Покажи текущий курс Bitcoin, Ethereum и Solana",
-            messages=messages,
-            requirements=ResponseRequirements(
-                needs_current_data=True,
-                required_tools=("web_search",),
-            ),
-        )
-
-        assert "web_search" in satisfaction.satisfied_tools
-        assert satisfaction.current_data_targets == (
-            "Bitcoin",
-            "Ethereum",
-            "Solana",
-        )
-        assert satisfaction.missing_current_data_targets == ("Solana",)
-        assert "Solana: missing" in str(messages[-1]["content"])
-
-    @pytest.mark.asyncio
-    async def test_required_web_search_context_tracks_failure(self):
-        """Record mandatory web_search failure without marking it satisfied."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=False,
-                result="search backend unavailable",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
-        llm_caller = LLMCaller(
-            model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
-            broker=broker,
-        )
-        messages: list[dict[str, object]] = []
-
-        satisfaction = await llm_caller.append_required_tool_context(
-            filtered_message="current BTC price?",
-            messages=messages,
-            requirements=ResponseRequirements(
-                needs_current_data=True,
-                required_tools=("web_search",),
-            ),
-        )
-
-        assert "web_search" not in satisfaction.satisfied_tools
-        assert satisfaction.failed_tools == {
-            "web_search": "search backend unavailable",
-        }
-        assert "Required web_search failed" in str(messages[-1]["content"])
-
-    @pytest.mark.asyncio
-    async def test_required_url_fetch_context_tracks_success(self):
-        """Record mandatory http_fetch success before answer synthesis."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="http_fetch",
-                success=True,
-                result="Example Domain page text",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
-        llm_caller = LLMCaller(
-            model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
-            broker=broker,
-        )
-        messages: list[dict[str, object]] = []
-
-        satisfaction = await llm_caller.append_required_tool_context(
-            filtered_message="Summarize https://example.com",
-            messages=messages,
-            requirements=ResponseRequirements(
-                needs_url_fetch=True,
-                required_tools=("http_fetch",),
-                urls=("https://example.com",),
-            ),
-        )
-
-        assert "http_fetch" in satisfaction.satisfied_tools
-        assert "Example Domain" in str(messages[-1]["content"])
-        broker.execute.assert_awaited_once_with(
-            "http_fetch",
-            {"url": "https://example.com"},
-        )
-
-    @pytest.mark.asyncio
     async def test_run_model_loop_returns_failure_when_required_web_search_failed(
         self,
     ):
         """Do not call the LLM when mandatory evidence already failed."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -785,8 +342,6 @@ class TestFinalAnswerRecovery:
         """Buffer answer tokens while still streaming model reasoning."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         llm_caller.sse_queue = asyncio.Queue()
@@ -868,8 +423,6 @@ class TestFinalAnswerRecovery:
         """Keep suggestions when one final recovery call is needed."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -929,8 +482,6 @@ class TestFinalAnswerRecovery:
         """Recover when the model returns a searching status after tool results."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -1016,8 +567,6 @@ class TestFinalAnswerRecovery:
         """Recover when the model returns a status phrase without tool calls."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -1082,8 +631,6 @@ class TestFinalAnswerRecovery:
         """Ask the model for suggestions when the final answer omitted them."""
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -1145,8 +692,6 @@ class TestFinalAnswerRecovery:
         complete_suggestions = ["First step", "Second step", "Third step"]
         llm_caller = LLMCaller(
             model_name="qwen3.5:9b",
-            web_search_classifier_fn=None,
-            memory_recall_classifier_fn=None,
             broker=MagicMock(),
         )
         loop = MagicMock()
@@ -1199,11 +744,30 @@ def _make_orchestrator(
     if broker is None:
         broker = MagicMock()
     ctx = context if context is not None else []
-    return AgentOrchestrator(
+    orchestrator = AgentOrchestrator(
         broker=broker,
         concurrency=AgentConcurrency(),
         context_fn=lambda sid, **kwargs: ctx,
     )
+    if not hasattr(broker, "finalized") or isinstance(broker, MagicMock):
+        orchestrator.tool_executor.action_decisions.decide = MagicMock(
+            side_effect=lambda context: ActionDecision(
+                DecisionKind.ASK_ONCE,
+                details={
+                    "permission_mode": "per_invocation",
+                    "policy_revision": "registry-v1",
+                },
+            )
+            if context.tool_name == "email_send"
+            else ActionDecision(
+                DecisionKind.ALLOW,
+                details={
+                    "permission_mode": "implicit",
+                    "policy_revision": "registry-v1",
+                },
+            )
+        )
+    return orchestrator
 
 
 class TestAgentOrchestrator:
@@ -1293,59 +857,20 @@ class TestAgentOrchestrator:
             "Search files in app/backend for file_read"
         )
 
-    def test_explicit_online_search_phrases_force_web_search(self):
-        """Detect explicit requests to search online before the first answer."""
-        assert message_requires_forced_web_search(
-            "Тогда узнай в интернете какой курс биткойна"
-        )
-        assert message_requires_forced_web_search(
-            "Please search the web for the latest BTC price"
-        )
-        assert not message_requires_forced_web_search("Объясни, что такое биткойн")
-
-    def test_only_online_hints_trigger_classifier_prefilter(self):
-        """Avoid the extra classifier call for ordinary questions."""
-        assert message_may_need_forced_web_search_classifier(
-            "Prašau paieškok internete, koks dabar bitkoino kursas"
-        )
-        assert message_may_need_forced_web_search_classifier(
-            "Can you check online what the latest BTC price is?"
-        )
-        assert not message_may_need_forced_web_search_classifier(
-            "Объясни, что такое биткойн"
-        )
-        assert not message_may_need_forced_web_search_classifier(
-            "какой курс биткойна, эфириума и соланы на данный момент?"
-        )
-
-    async def test_non_english_online_search_uses_classifier_and_runs_web_search(
+    async def test_non_english_online_request_has_no_marker_classifier(
         self,
     ):
-        """Use the classifier so online-search requests work across languages."""
+        """Language-specific text cannot trigger a backend tool decision."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=True,
-                result="Search results: BTC is trading at 100.",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
+        broker.execute = AsyncMock()
         broker.list_openai_schemas = MagicMock(return_value=[])
         orchestrator = _make_orchestrator(broker=broker)
-
         llm_call_count = 0
-        seen_classifier_messages: list[dict[str, object]] = []
-        seen_main_messages: list[dict[str, object]] = []
 
         async def mock_llm(messages):
-            nonlocal llm_call_count, seen_classifier_messages, seen_main_messages
+            del messages
+            nonlocal llm_call_count
             llm_call_count += 1
-            if llm_call_count == 1:
-                seen_classifier_messages = list(messages)
-                return _text_response("YES")
-            seen_main_messages = list(messages)
             return _text_response("BTC is trading at 100.")
 
         resp = await orchestrator.process_message(
@@ -1354,36 +879,14 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-
         assert "BTC is trading at 100" in resp.structured_content.answer
-        assert llm_call_count == 2
-        assert (
-            seen_classifier_messages[0]["content"]
-            == FORCED_WEB_SEARCH_CLASSIFIER_PROMPT
-        )
-        broker.execute.assert_awaited_once_with(
-            "web_search",
-            {"query": "Prašau paieškok internete, koks dabar bitkoino kursas"},
-        )
-        assert any(
-            message["role"] == "system"
-            and "Web search results were fetched before the first answer"
-            in str(message["content"])
-            for message in seen_main_messages
-        )
+        assert llm_call_count == 1
+        broker.execute.assert_not_awaited()
 
-    async def test_online_search_classifier_does_not_stream_yes_no_into_sse(self):
-        """Classifier should stay silent in SSE so YES/NO does not leak to chat."""
+    async def test_no_marker_classifier_uses_the_normal_stream(self):
+        """One semantic model call uses the normal chat stream directly."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=True,
-                result="Search results: BTC is trading at 100.",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
+        broker.execute = AsyncMock()
         broker.list_openai_schemas = MagicMock(return_value=[])
         orchestrator = _make_orchestrator(broker=broker)
         orchestrator.sse_queue = object()
@@ -1400,9 +903,6 @@ class TestAgentOrchestrator:
             del tools_override
             nonlocal llm_call_count
             llm_call_count += 1
-            if llm_call_count == 1:
-                assert sse_queue_override is None
-                return _text_response("YES")
             assert sse_queue_override is orchestrator.sse_queue
             return _text_response("BTC is trading at 100.")
 
@@ -1412,9 +912,9 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             conversation_id="test-conv",
         )
-
         assert "BTC is trading at 100" in resp.structured_content.answer
-        assert llm_call_count == 2
+        assert llm_call_count == 1
+        broker.execute.assert_not_awaited()
 
     async def test_regular_question_skips_forced_web_search_classifier(self):
         """Do not add an extra classifier call for an ordinary question."""
@@ -1464,7 +964,6 @@ class TestAgentOrchestrator:
         """Even an ordinary chat is normalized through the final JSON schema."""
         from backend.config import reset_settings
 
-        monkeypatch.setenv("BIMEMO_STRUCTURED_FINALIZATION_ENABLED", "true")
         reset_settings()
         broker = MagicMock()
         broker.registry.tool_names = []
@@ -1536,54 +1035,10 @@ class TestAgentOrchestrator:
             for call in turn_store.append_agent_turn_event.await_args_list
         )
 
-    async def test_tool_execution(self):
-        """Verify tool calls are executed."""
+    async def test_explicit_online_words_do_not_run_backend_prefetch(self):
+        """Tool selection belongs to the model, not a phrase preflight."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_read",
-                success=True,
-                result="file content",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {"path": "/t"}),
-                    ]
-                )
-            return _text_response("Done reading file.")
-
-        resp = await orchestrator.process_message(
-            message="read file",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        assert "Done reading file" in resp.structured_content.answer
-        broker.execute.assert_called_once()
-
-    async def test_explicit_online_search_runs_web_search_before_first_llm_answer(self):
-        """Run web_search early when the user explicitly asks to search online."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=True,
-                result="Search results: BTC is trading at 100.",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
+        broker.execute = AsyncMock()
         broker.list_openai_schemas = MagicMock(return_value=[])
         orchestrator = _make_orchestrator(broker=broker)
 
@@ -1602,36 +1057,19 @@ class TestAgentOrchestrator:
         )
 
         assert "BTC is trading at 100" in resp.structured_content.answer
-        broker.execute.assert_awaited_once_with(
-            "web_search",
-            {"query": "Тогда узнай в интернете какой курс биткойна"},
-        )
-        assert any(
-            message["role"] == "system"
-            and (
-                "Required web_search evidence was fetched before answer synthesis"
-                in str(message["content"])
-                or "Web search results were fetched before the first answer"
-                in str(message["content"])
-            )
+        broker.execute.assert_not_awaited()
+        assert not any(
+            "fetched before" in str(message.get("content", "")).lower()
             for message in seen_messages
         )
 
-    async def test_required_web_search_failure_finishes_without_llm_call(self):
-        """Return a terminal answer when mandatory current-data evidence fails."""
+    async def test_current_data_words_do_not_create_backend_obligation(self):
+        """A phrase alone cannot fail the turn before semantic planning."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="web_search",
-                success=False,
-                result="search backend unavailable",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
+        broker.execute = AsyncMock()
         broker.list_openai_schemas = MagicMock(return_value=[])
         orchestrator = _make_orchestrator(broker=broker)
-        llm_call = AsyncMock()
+        llm_call = AsyncMock(return_value=_text_response("Need semantic planning."))
 
         resp = await orchestrator.process_message(
             message="какой курс биткойна на данный момент?",
@@ -1640,91 +1078,9 @@ class TestAgentOrchestrator:
             conversation_id="test-conv",
         )
 
-        assert "could not fetch current data" in resp.structured_content.answer
-        broker.execute.assert_awaited_once_with(
-            "web_search",
-            {"query": "какой курс биткойна на данный момент?"},
-        )
-        llm_call.assert_not_awaited()
-
-    async def test_empty_final_answer_after_tool_use_triggers_recovery(self):
-        """Recover with one final plain-text answer when tool flow ends blank."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_read",
-                success=True,
-                result="Recovered file content",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-
-        call_count = 0
-
-        async def mock_llm(messages, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response([("call_1", "file_read", {"path": "/tmp/x"})])
-            if call_count == 2:
-                return _text_response("")
-            if call_count == 4:
-                assert any(
-                    message["role"] == "system"
-                    and "Generate follow-up suggestions" in message["content"]
-                    for message in messages
-                )
-                return _text_response(
-                    '{"suggestions":["Inspect the file again",'
-                    '"Summarize the file content","Search related documentation"]}'
-                )
-            assert any(
-                message["role"] == "system"
-                and "Do not return an empty reply." in message["content"]
-                for message in messages
-            )
-            if call_count == 3:
-                return _text_response("Recovered final answer.")
-            raise AssertionError(f"Unexpected LLM call {call_count}")
-
-        resp = await orchestrator.process_message(
-            message="read the file and answer",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-
-        assert resp.structured_content.answer == "Recovered final answer."
-        assert resp.structured_content.suggestions == [
-            "Inspect the file again",
-            "Summarize the file content",
-            "Search related documentation",
-        ]
-        assert broker.execute.call_count == 1
-        assert call_count == 4
-
-    async def test_red_zone_deferred(self):
-        """Verify RED zone calls are deferred."""
-        orchestrator = _make_orchestrator()
-
-        async def mock_llm(messages):
-            return _tool_response(
-                [
-                    ("call_1", "email_send", {"to": "user@example.com"}),
-                ],
-                text="I need to send this email.",
-            )
-
-        await orchestrator.process_message(
-            message="send email",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        assert len(orchestrator.pending_red_calls) == 1
-        assert orchestrator.pending_red_calls[0].tool_name == "email_send"
+        assert resp.structured_content.answer == "Need semantic planning."
+        broker.execute.assert_not_awaited()
+        llm_call.assert_awaited_once()
 
     async def test_clear_pending(self):
         """Verify clear_pending empties list."""
@@ -1740,36 +1096,6 @@ class TestAgentOrchestrator:
         ]
         orchestrator.clear_pending()
         assert orchestrator.pending_red_calls == []
-
-    async def test_injection_flag_limits(self):
-        """Verify injection flag reduces iterations."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_read",
-                success=True,
-                result="ok",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-
-        async def mock_llm(messages):
-            return _tool_response(
-                [
-                    ("call_1", "file_read", {}),
-                ]
-            )
-
-        resp = await orchestrator.process_message(
-            message="loop",
-            channel="web",
-            llm_call=mock_llm,
-            injection_flag=True,
-            conversation_id="test-conv",
-        )
-        assert resp.loop_result.iterations <= 10
 
     async def test_context_loaded(self):
         """Verify context entries are included in messages."""
@@ -2446,359 +1772,16 @@ class TestAgentOrchestrator:
             "end",
         ]
 
-    async def test_red_calls_get_real_action_ids(self):
-        """Verify RED calls have cryptographic action IDs."""
-        orchestrator = _make_orchestrator()
-
-        async def mock_llm(messages):
-            return _tool_response(
-                [
-                    ("call_1", "email_send", {"to": "user@example.com"}),
-                ],
-                text="Need to send.",
-            )
-
-        await orchestrator.process_message(
-            message="send",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        pending = orchestrator.pending_red_calls
-        assert len(pending) == 1
-        assert len(pending[0].action_id) > 20
-        assert pending[0].action_id != "pending"
-        assert pending[0].channel == "web"
-
-    async def test_yellow_notification_emitted(self):
-        """Verify YELLOW tool pushes SSE notification."""
-        queue: asyncio.Queue = asyncio.Queue()
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_write",
-                success=True,
-                result="wrote 100 bytes",
-                zone=TrustZone.YELLOW,
-                duration_ms=5.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-        orchestrator.sse_queue = queue
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_write", {"path": "/t", "content": "x"}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        await orchestrator.process_message(
-            message="write",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        events = []
-        while not queue.empty():
-            events.append(queue.get_nowait())
-        event = next(item for item in events if item["type"] == "notification")
-        assert event["type"] == "notification"
-        assert event["tool"] == "file_write"
-
-    async def test_green_no_notification(self):
-        """Verify GREEN tool does not push notification."""
-        queue: asyncio.Queue = asyncio.Queue()
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_read",
-                success=True,
-                result="content",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-        orchestrator.sse_queue = queue
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        await orchestrator.process_message(
-            message="read",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        events = []
-        while not queue.empty():
-            events.append(queue.get_nowait())
-        assert all(event["type"] == "tool_status" for event in events)
-
-    async def test_no_queue_skips_notification(self):
-        """Verify None sse_queue does not crash."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_write",
-                success=True,
-                result="ok",
-                zone=TrustZone.YELLOW,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-        assert orchestrator.sse_queue is None
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_write", {"path": "/t", "content": "x"}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        resp = await orchestrator.process_message(
-            message="write",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        assert "Done" in resp.structured_content.answer
-
-    async def test_parallel_execution_concurrent(self):
-        """Verify multiple tool calls run concurrently."""
-        execution_log: list[tuple[str, str]] = []
-
-        async def slow_execute(name, params):
-            """Simulate a slow tool with timing log."""
-            execution_log.append((name, "start"))
-            await asyncio.sleep(0.05)
-            execution_log.append((name, "end"))
-            return ToolResult(
-                tool_name=name,
-                success=True,
-                result="ok",
-                zone=TrustZone.GREEN,
-                duration_ms=50.0,
-            )
-
-        broker = MagicMock()
-        broker.execute = AsyncMock(side_effect=slow_execute)
-        orchestrator = _make_orchestrator(broker=broker)
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {}),
-                        ("call_2", "file_search", {}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        start = time.monotonic()
-        await orchestrator.process_message(
-            message="read files and scan the workspace",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        elapsed = time.monotonic() - start
-
-        # Parallel: should complete in ~50ms, not ~100ms
-        assert elapsed < 0.15
-        assert broker.execute.call_count == 2
-        # Both starts should happen before any end
-        starts = [i for i, (_, e) in enumerate(execution_log) if e == "start"]
-        ends = [i for i, (_, e) in enumerate(execution_log) if e == "end"]
-        assert starts[1] < ends[0]
-
-    async def test_single_immediate_via_gather(self):
-        """Verify single tool call works via gather."""
-        broker = MagicMock()
-        broker.execute = AsyncMock(
-            return_value=ToolResult(
-                tool_name="file_read",
-                success=True,
-                result="content",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-        )
-        orchestrator = _make_orchestrator(broker=broker)
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        resp = await orchestrator.process_message(
-            message="read",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        assert "Done" in resp.structured_content.answer
-        broker.execute.assert_called_once()
-
-    async def test_parallel_one_fails_others_succeed(
+    async def test_recall_words_do_not_trigger_backend_prefetch(
         self,
     ):
-        """Verify one failing tool does not block others."""
-        call_index = 0
-
-        async def mixed_execute(name, params):
-            """Return failure for first, success for second."""
-            nonlocal call_index
-            call_index += 1
-            if call_index == 1:
-                return ToolResult(
-                    tool_name=name,
-                    success=False,
-                    result="error occurred",
-                    zone=TrustZone.GREEN,
-                    duration_ms=1.0,
-                )
-            return ToolResult(
-                tool_name=name,
-                success=True,
-                result="ok",
-                zone=TrustZone.GREEN,
-                duration_ms=1.0,
-            )
-
-        broker = MagicMock()
-        broker.execute = AsyncMock(side_effect=mixed_execute)
-        orchestrator = _make_orchestrator(broker=broker)
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {}),
-                        ("call_2", "file_search", {}),
-                    ]
-                )
-            return _text_response("All done.")
-
-        resp = await orchestrator.process_message(
-            message="multi",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        assert "All done" in resp.structured_content.answer
-        assert broker.execute.call_count == 2
-
-    async def test_parallel_mixed_yellow_notifications(
-        self,
-    ):
-        """Verify YELLOW notifications after parallel gather."""
-        queue: asyncio.Queue = asyncio.Queue()
-
-        async def mixed_zone_execute(name, params):
-            """Return GREEN for first, YELLOW for second."""
-            if name == "file_read":
-                return ToolResult(
-                    tool_name=name,
-                    success=True,
-                    result="content",
-                    zone=TrustZone.GREEN,
-                    duration_ms=1.0,
-                )
-            return ToolResult(
-                tool_name=name,
-                success=True,
-                result="wrote bytes",
-                zone=TrustZone.YELLOW,
-                duration_ms=5.0,
-            )
-
-        broker = MagicMock()
-        broker.execute = AsyncMock(side_effect=mixed_zone_execute)
-        orchestrator = _make_orchestrator(broker=broker)
-        orchestrator.sse_queue = queue
-
-        call_count = 0
-
-        async def mock_llm(messages):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _tool_response(
-                    [
-                        ("call_1", "file_read", {}),
-                        ("call_2", "file_write", {"path": "/t", "content": "x"}),
-                    ]
-                )
-            return _text_response("Done.")
-
-        await orchestrator.process_message(
-            message="read and write",
-            channel="web",
-            llm_call=mock_llm,
-            conversation_id="test-conv",
-        )
-        events = []
-        while not queue.empty():
-            events.append(queue.get_nowait())
-        notification_events = [
-            event for event in events if event["type"] == "notification"
-        ]
-        assert len(notification_events) == 1
-        event = notification_events[0]
-        assert event["tool"] == "file_write"
-
-    async def test_forced_memory_recall_injects_results_into_messages(
-        self,
-    ):
-        """Recall runs early when classifier detects a past-conversation question."""
+        """A language marker cannot make the backend call memory_recall."""
         broker = MagicMock()
         broker.execute = AsyncMock(
             return_value=ToolResult(
                 tool_name="memory_recall",
                 success=True,
                 result="Past context: user prefers detailed answers.",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             ),
         )
@@ -2822,26 +1805,20 @@ class TestAgentOrchestrator:
         )
 
         assert "detailed answers" in resp.structured_content.answer
-        broker.execute.assert_any_call(
-            "memory_recall",
-            {"query": "помнишь что я просил?"},
-        )
-        assert any(
-            message["role"] == "system"
-            and "Memory recall results from past conversations"
-            in str(message["content"])
+        broker.execute.assert_not_awaited()
+        assert not any(
+            "memory recall results" in str(message.get("content", "")).lower()
             for message in seen_messages
         )
 
-    async def test_forced_memory_recall_updates_zone_usage_recall_results(self):
-        """Forced recall tokens are reflected in zone_usage recall_results."""
+    async def test_recall_words_do_not_fabricate_recall_usage(self):
+        """No semantic tool call means no recall evidence is reported."""
         broker = MagicMock()
         broker.execute = AsyncMock(
             return_value=ToolResult(
                 tool_name="memory_recall",
                 success=True,
                 result="Past discussion about Ollama configuration.",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             ),
         )
@@ -2900,7 +1877,8 @@ class TestAgentOrchestrator:
 
         assert resp.stats is not None
         assert resp.stats.memory_zones is not None
-        assert resp.stats.memory_zones.recall_results.used > 0
+        assert resp.stats.memory_zones.recall_results.used == 0
+        broker.execute.assert_not_awaited()
 
     async def test_forced_memory_recall_skipped_when_classifier_returns_false(self):
         """No recall injection when the classifier says no."""
@@ -3011,7 +1989,6 @@ class TestAgentOrchestrator:
                 "User discussed Python FastAPI project with PostgreSQL. "
                 "Testing done with pytest fixtures."
             ),
-            zone=TrustZone.GREEN,
             duration_ms=1.0,
         )
         broker.execute = AsyncMock(return_value=recall_result)
@@ -3130,9 +2107,9 @@ class TestAgentOrchestrator:
         final_s = zone_history[-1]["S"]
         assert final_s >= 30, f"S zone too low: {final_s}, expected >= 30"
 
-        # R must reach at least 5 tokens (forced recall injected)
+        # Marker text alone must not fabricate an R-zone tool result.
         final_r = zone_history[-1]["R"]
-        assert final_r >= 5, f"R zone too low: {final_r}, expected >= 5"
+        assert final_r == 0
 
     async def test_zone_stress_w_overflow_s_accumulates(self):
         """Stress: many turns overflow W, S accumulates, system stays stable."""
@@ -3193,7 +2170,6 @@ class TestAgentOrchestrator:
                 "Testing done with pytest fixtures. "
                 "Database is PostgreSQL with migrations."
             ),
-            zone=TrustZone.GREEN,
             duration_ms=1.0,
         )
         broker.execute = AsyncMock(return_value=recall_result)
@@ -3313,9 +2289,9 @@ class TestAgentOrchestrator:
             f"S={final_s} should be near budget={s_budget} after 15+ turns of overflow"
         )
 
-        # R must be non-zero after forced recall
+        # Marker text alone must not fabricate an R-zone tool result.
         final_r = zone_history[-1]["R"]
-        assert final_r >= 5, f"R zone too low: {final_r}, expected >= 5"
+        assert final_r == 0
 
         # System stability: no crashes, all 16 turns completed
         assert len(zone_history) == 16, f"Expected 16 turns, got {len(zone_history)}"

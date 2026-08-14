@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -11,8 +10,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from backend.processes.orchestrator.client import DBProxyClient
 
-
-logger = logging.getLogger(__name__)
 
 STREAM_EVENT_TYPE_KEY = "type"
 
@@ -50,8 +47,7 @@ class RunEventContext:
     run_id: str = ""
     request_id: str = ""
     conversation_id: str = ""
-    authority_store: str = "runtime"
-    architecture_version: str = "legacy"
+    architecture_version: str = "structured_v1"
 
 
 class RunEventRecorder:
@@ -80,27 +76,11 @@ class RunEventRecorder:
         """Persist one runtime event when the run context is ready."""
         if not self._context.run_id or not self._context.conversation_id:
             return None
-        if self._context.authority_store == "core":
-            return await self._db_client.append_agent_turn_event(
-                turn_id=self._context.run_id,
-                event_type=event_type.value,
-                payload=payload or {},
-            )
-        try:
-            return await self._db_client.create_agent_run_event(
-                run_id=self._context.run_id,
-                request_id=self._context.request_id,
-                conversation_id=self._context.conversation_id,
-                event_type=event_type.value,
-                payload=payload or {},
-            )
-        except Exception:
-            logger.debug(
-                "Failed to persist runtime event %s",
-                event_type.value,
-                exc_info=True,
-            )
-            return None
+        return await self._db_client.append_agent_turn_event(
+            turn_id=self._context.run_id,
+            event_type=event_type.value,
+            payload=payload or {},
+        )
 
     async def record_provider_attempt(
         self,
@@ -112,17 +92,12 @@ class RunEventRecorder:
         """Persist one actual HTTP provider attempt with stable phase metadata."""
         if not self._context.run_id:
             return None
-        if self._context.authority_store == "core":
-            return await self._db_client.append_agent_turn_event(
-                turn_id=self._context.run_id,
-                event_type="provider_attempt",
-                phase=phase,
-                attempt=attempt,
-                payload=payload,
-            )
-        return await self.record(
-            AgentRunEventType.LLM_STARTED,
-            {"phase": phase, "attempt": attempt, **payload},
+        return await self._db_client.append_agent_turn_event(
+            turn_id=self._context.run_id,
+            event_type="provider_attempt",
+            phase=phase,
+            attempt=attempt,
+            payload=payload,
         )
 
     async def record_stream_event(

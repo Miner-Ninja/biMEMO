@@ -718,6 +718,13 @@ class DBProxyClient:
 
     # --- Scheduled tasks ---
 
+    async def activate_tool_registry(self, revisions: dict[str, str]) -> dict[str, Any]:
+        """Activate the finalized broker projection at the DB write boundary."""
+        return await self.send_operation(
+            "activate_tool_registry",
+            {"revisions": revisions},
+        )
+
     async def create_scheduled_task(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a new scheduled task."""
         return await self.send_operation("create_scheduled_task", params)
@@ -1035,10 +1042,10 @@ class DBProxyClient:
         scope_value: str,
         capability: str,
         decision: str,
+        policy_revision: str,
         channel: str = "",
         scope_json: dict[str, Any] | None = None,
         scope_hash: str = "",
-        policy_revision: str = "legacy",
         origin_confirmation_id: str | None = None,
         expires_at: str | None = None,
     ) -> dict[str, Any] | None:
@@ -1066,9 +1073,9 @@ class DBProxyClient:
         scope_type: str,
         scope_value: str,
         capability: str,
+        policy_revision: str,
         channel: str = "",
         scope_hash: str = "",
-        policy_revision: str = "legacy",
     ) -> dict[str, Any] | None:
         """Return the best persisted grant for one action scope."""
         result = await self.send_operation(
@@ -1097,10 +1104,10 @@ class DBProxyClient:
         scope_json: dict[str, Any],
         scope_hash: str,
         policy_revision: str,
+        canonical_args_hash: str,
         confirmation_id: str | None = None,
         create_reusable_grant: bool = False,
         grant_expires_at: str | None = None,
-        expected_statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Atomically authorize and claim one structured invocation."""
         parameters: dict[str, Any] = {
@@ -1114,12 +1121,11 @@ class DBProxyClient:
             "scope_json": scope_json,
             "scope_hash": scope_hash,
             "policy_revision": policy_revision,
+            "canonical_args_hash": canonical_args_hash,
             "confirmation_id": confirmation_id,
             "create_reusable_grant": create_reusable_grant,
             "grant_expires_at": grant_expires_at,
         }
-        if expected_statuses is not None:
-            parameters["expected_statuses"] = expected_statuses
         return await self.send_operation("authorize_agent_invocation", parameters)
 
     async def revoke_capability_grant(self, grant_id: str) -> bool:
@@ -1132,61 +1138,6 @@ class DBProxyClient:
         params = {"now": now} if now is not None else {}
         result = await self.send_operation("expire_capability_grants", params)
         return int(result.get("expired", 0))
-
-    async def create_agent_run(
-        self,
-        *,
-        conversation_id: str,
-        run_id: str | None = None,
-        session_id: str = "",
-        channel: str = "",
-        request_id: str = "",
-        status: str = "running",
-        current_step: str = "",
-        resume_payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """Create a persisted assistant run."""
-        result = await self.send_operation(
-            "create_agent_run",
-            {
-                "conversation_id": conversation_id,
-                "run_id": run_id,
-                "session_id": session_id,
-                "channel": channel,
-                "request_id": request_id,
-                "status": status,
-                "current_step": current_step,
-                "resume_payload": resume_payload or {},
-            },
-        )
-        return result.get("agent_run")
-
-    async def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
-        """Return one persisted assistant run."""
-        result = await self.send_operation("get_agent_run", {"run_id": run_id})
-        return result.get("agent_run")
-
-    async def create_agent_run_event(
-        self,
-        *,
-        run_id: str,
-        conversation_id: str,
-        event_type: str,
-        request_id: str = "",
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """Append one runtime event for an assistant run."""
-        result = await self.send_operation(
-            "create_agent_run_event",
-            {
-                "run_id": run_id,
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "event_type": event_type,
-                "payload": payload or {},
-            },
-        )
-        return result.get("event")
 
     async def list_agent_run_events(
         self,
@@ -1211,76 +1162,6 @@ class DBProxyClient:
         events = result.get("events", [])
         return events if isinstance(events, list) else []
 
-    async def update_agent_run_status(
-        self,
-        *,
-        run_id: str,
-        status: str,
-        current_step: str = "",
-        resume_payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """Update one persisted assistant run status."""
-        params: dict[str, Any] = {
-            "run_id": run_id,
-            "status": status,
-            "current_step": current_step,
-        }
-        if resume_payload is not None:
-            params["resume_payload"] = resume_payload
-        result = await self.send_operation("update_agent_run_status", params)
-        return result.get("agent_run")
-
-    async def create_pending_action(
-        self,
-        *,
-        run_id: str,
-        tool_name: str,
-        action_id: str | None = None,
-        parameters: dict[str, Any] | None = None,
-        channel: str = "",
-        status: str = "waiting",
-        preview: dict[str, Any] | None = None,
-        resume_snapshot: dict[str, Any] | None = None,
-        expires_at: str | None = None,
-    ) -> dict[str, Any] | None:
-        """Create a persisted pending action for one assistant run."""
-        result = await self.send_operation(
-            "create_pending_action",
-            {
-                "run_id": run_id,
-                "action_id": action_id,
-                "tool_name": tool_name,
-                "parameters": parameters or {},
-                "channel": channel,
-                "status": status,
-                "preview": preview or {},
-                "resume_snapshot": resume_snapshot or {},
-                "expires_at": expires_at,
-            },
-        )
-        return result.get("pending_action")
-
-    async def get_pending_action(self, action_id: str) -> dict[str, Any] | None:
-        """Return one persisted pending action."""
-        result = await self.send_operation(
-            "get_pending_action",
-            {"action_id": action_id},
-        )
-        return result.get("pending_action")
-
-    async def get_resume_snapshot(
-        self,
-        *,
-        action_id: str = "",
-        snapshot_id: str = "",
-    ) -> dict[str, Any] | None:
-        """Return continuation state for one persisted pending action."""
-        result = await self.send_operation(
-            "get_resume_snapshot",
-            {"action_id": action_id, "snapshot_id": snapshot_id},
-        )
-        return result.get("resume_snapshot")
-
     async def list_pending_actions(
         self,
         *,
@@ -1300,44 +1181,6 @@ class DBProxyClient:
         }
         result = await self.send_operation("list_pending_actions", params)
         return result.get("pending_actions", [])
-
-    async def decide_pending_action(
-        self,
-        *,
-        action_id: str,
-        decision: str,
-        channel: str = "",
-    ) -> dict[str, Any]:
-        """Persist an approve/deny decision for one pending action."""
-        return await self.send_operation(
-            "decide_pending_action",
-            {"action_id": action_id, "decision": decision, "channel": channel},
-        )
-
-    async def complete_pending_action(
-        self,
-        *,
-        action_id: str,
-        status: str,
-        result: dict[str, Any] | None = None,
-        error_message: str = "",
-    ) -> dict[str, Any]:
-        """Persist the execution result for one approved pending action."""
-        return await self.send_operation(
-            "complete_pending_action",
-            {
-                "action_id": action_id,
-                "status": status,
-                "result": result or {},
-                "error_message": error_message,
-            },
-        )
-
-    async def expire_pending_actions(self, now: str | None = None) -> int:
-        """Mark expired pending actions as expired."""
-        params = {"now": now} if now is not None else {}
-        result = await self.send_operation("expire_pending_actions", params)
-        return int(result.get("expired", 0))
 
     async def prune_runtime_state(
         self,
@@ -1370,8 +1213,6 @@ class DBProxyClient:
         channel: str,
         turn_id: str | None = None,
         finalization_id: str | None = None,
-        architecture_version: str = "structured_v1",
-        authority_store: str = "core",
     ) -> dict[str, Any]:
         """Create or replay one architecture-pinned authoritative turn."""
         return await self.send_operation(
@@ -1382,8 +1223,6 @@ class DBProxyClient:
                 "conversation_id": conversation_id,
                 "session_id": session_id,
                 "channel": channel,
-                "architecture_version": architecture_version,
-                "authority_store": authority_store,
             },
         )
 
@@ -1433,7 +1272,6 @@ class DBProxyClient:
         turn_id: str,
         invocation_id: str,
         idempotency_key: str,
-        expected_statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Commit the durable execution claim before broker dispatch."""
         parameters: dict[str, Any] = {
@@ -1441,8 +1279,6 @@ class DBProxyClient:
             "invocation_id": invocation_id,
             "idempotency_key": idempotency_key,
         }
-        if expected_statuses is not None:
-            parameters["expected_statuses"] = expected_statuses
         return await self.send_operation("claim_agent_invocation", parameters)
 
     async def complete_agent_invocation(

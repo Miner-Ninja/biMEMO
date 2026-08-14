@@ -57,7 +57,7 @@ _NUMERIC_IP_RE = re.compile(r"^(0x[0-9a-fA-F]+|0[0-7]+|\d{8,})$")
 _TRAVERSAL_RE = re.compile(r"(^|[\\/])\.\.($|[\\/])")
 
 # --- Always-on private-key paths (locked critical) ---
-_PRIVATE_KEY_PATHS: frozenset[str] = frozenset({".ssh", ".gnupg"})
+_PRIVATE_KEY_PATHS: frozenset[str] = frozenset({".ssh", ".gnupg", ".env"})
 
 # --- Always-allowed URL schemes (HTTPS is permanent) ---
 _ALWAYS_ALLOWED_SCHEMES: frozenset[str] = frozenset({"https"})
@@ -124,6 +124,11 @@ def _active_read_block_paths() -> frozenset[str]:
         blocked.update(_DOTFILE_NAMES)
     blocked.update(resolver.get_list_str(_KEY_CUSTOM_DENY_LIST))
     return frozenset(blocked)
+
+
+def sensitive_read_components() -> frozenset[str]:
+    """Return the active path-component deny set for read/search boundaries."""
+    return _active_read_block_paths()
 
 
 def _allowed_url_schemes() -> frozenset[str]:

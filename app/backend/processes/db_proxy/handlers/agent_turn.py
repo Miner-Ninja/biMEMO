@@ -78,25 +78,27 @@ def _turn_record(row: tuple[Any, ...]) -> dict[str, Any]:
         "session_id": row[2],
         "channel": row[3],
         "architecture_version": row[4],
-        "authority_store": row[5],
-        "status": row[6],
-        "terminal_outcome": row[7],
-        "finalization_id": row[8],
-        "active_time_ms": row[9],
-        "provider_calls": row[10],
-        "tool_rounds": row[11],
-        "enforcement_reasks": row[12],
-        "synthesis_attempts": row[13],
-        "cancellation_requested": bool(row[14]),
-        "terminal_error": _load_json(row[15], None),
-        "outcome_payload": _load_json(row[16], None),
-        "created_at": row[17],
-        "updated_at": row[18],
+        "tool_policy_version": row[5],
+        "authority_store": row[6],
+        "status": row[7],
+        "terminal_outcome": row[8],
+        "finalization_id": row[9],
+        "active_time_ms": row[10],
+        "provider_calls": row[11],
+        "tool_rounds": row[12],
+        "enforcement_reasks": row[13],
+        "synthesis_attempts": row[14],
+        "cancellation_requested": bool(row[15]),
+        "terminal_error": _load_json(row[16], None),
+        "outcome_payload": _load_json(row[17], None),
+        "created_at": row[18],
+        "updated_at": row[19],
     }
 
 
 _TURN_COLUMNS = (
     "id, conversation_id, session_id, channel, architecture_version, "
+    "tool_policy_version, "
     "authority_store, status, terminal_outcome, finalization_id, active_time_ms, "
     "provider_calls, tool_rounds, enforcement_reasks, synthesis_attempts, "
     "cancellation_requested, terminal_error, outcome_payload, created_at, updated_at"
@@ -124,7 +126,7 @@ def _read_ledger(db: DatabaseManager, turn_id: str) -> dict[str, Any]:
     ).fetchall()
     invocations = db.execute(
         "SELECT id, batch_id, tool_call_id, tool_name, canonical_arguments, "
-        "canonical_args_hash, evidence_key, source, trust_zone, status, "
+        "canonical_args_hash, policy_revision, evidence_key, source, status, "
         "claim_generation, idempotency_key, result_payload, error, confirmation_id "
         "FROM agent_tool_invocations WHERE turn_id = ? ORDER BY created_at, id",
         (turn_id,),
@@ -187,9 +189,9 @@ def _read_ledger(db: DatabaseManager, turn_id: str) -> dict[str, Any]:
                 "tool_name": row[3],
                 "arguments": _load_json(row[4], {}),
                 "canonical_args_hash": row[5],
-                "evidence_key": row[6],
-                "source": row[7],
-                "trust_zone": row[8],
+                "policy_revision": row[6],
+                "evidence_key": row[7],
+                "source": row[8],
                 "status": row[9],
                 "claim_generation": row[10],
                 "idempotency_key": row[11],
@@ -279,14 +281,16 @@ def make_create_agent_turn_handler(db: DatabaseManager) -> OperationHandler:
         db.execute(
             "INSERT OR IGNORE INTO agent_turns "
             "(id, conversation_id, session_id, channel, architecture_version, "
-            "authority_store, finalization_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "tool_policy_version, authority_store, finalization_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 turn_id,
                 p.conversation_id,
                 p.session_id,
                 p.channel,
                 p.architecture_version,
-                p.authority_store,
+                p.tool_policy_version,
+                "core",
                 finalization_id,
             ),
         )
@@ -297,12 +301,14 @@ def make_create_agent_turn_handler(db: DatabaseManager) -> OperationHandler:
         expected = (
             p.conversation_id,
             p.architecture_version,
-            p.authority_store,
+            p.tool_policy_version,
+            "core",
             finalization_id,
         )
         actual = (
             turn["conversation_id"],
             turn["architecture_version"],
+            turn["tool_policy_version"],
             turn["authority_store"],
             turn["finalization_id"],
         )
@@ -403,6 +409,11 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                 raise ValueError("tool batch replay payload mismatch")
             for invocation in p.invocations:
                 arguments_json = _json(invocation.arguments)
+                if (
+                    arguments_hash(invocation.arguments)
+                    != invocation.canonical_args_hash
+                ):
+                    raise ValueError("canonical invocation hash mismatch")
                 status = (
                     "pending_confirmation"
                     if invocation.confirmation_id is not None
@@ -412,7 +423,7 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                     "INSERT OR IGNORE INTO agent_tool_invocations "
                     "(id, turn_id, batch_id, tool_call_id, tool_name, "
                     "canonical_arguments, canonical_args_hash, evidence_key, source, "
-                    "trust_zone, status, confirmation_id) "
+                    "policy_revision, status, confirmation_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         invocation.invocation_id,
@@ -421,18 +432,19 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                         invocation.tool_call_id,
                         invocation.tool_name,
                         arguments_json,
-                        arguments_hash(invocation.arguments),
+                        invocation.canonical_args_hash,
                         invocation.evidence_key,
                         invocation.source,
-                        invocation.trust_zone,
+                        invocation.policy_revision,
                         status,
                         invocation.confirmation_id,
                     ),
                 )
                 invocation_row = db.execute(
                     "SELECT turn_id, batch_id, tool_call_id, tool_name, "
-                    "canonical_arguments, canonical_args_hash, source, trust_zone, "
-                    "confirmation_id FROM agent_tool_invocations WHERE id = ?",
+                    "canonical_arguments, canonical_args_hash, source, "
+                    "policy_revision, confirmation_id "
+                    "FROM agent_tool_invocations WHERE id = ?",
                     (invocation.invocation_id,),
                 ).fetchone()
                 expected_invocation = (
@@ -441,9 +453,9 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                     invocation.tool_call_id,
                     invocation.tool_name,
                     arguments_json,
-                    arguments_hash(invocation.arguments),
+                    invocation.canonical_args_hash,
                     invocation.source,
-                    invocation.trust_zone,
+                    invocation.policy_revision,
                     invocation.confirmation_id,
                 )
                 if invocation_row != expected_invocation:
@@ -542,7 +554,7 @@ def make_claim_agent_invocation_handler(db: DatabaseManager) -> OperationHandler
                     "status": row[0],
                     "claim_generation": row[1],
                 }
-            if row[0] not in p.expected_statuses:
+            if row[0] != "required":
                 raise RuntimeError(f"invocation cannot be claimed from {row[0]}")
             generation = int(row[1]) + 1
             db.execute(
@@ -1404,9 +1416,7 @@ def _pending_input_payload(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-_PENDING_INPUT_EXPIRED_MESSAGE = (
-    "The requested input expired before it was received."
-)
+_PENDING_INPUT_EXPIRED_MESSAGE = "The requested input expired before it was received."
 
 
 def _expire_pending_inputs(

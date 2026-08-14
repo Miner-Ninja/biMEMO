@@ -5,7 +5,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Request, WebSocket
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, WebSocket
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.ipc.models import StopRequest as IPCStopRequest
@@ -316,7 +316,7 @@ async def websocket_stream(
 @chat_router.post("/stop")
 async def stop(
     request: Request,
-    body: HTTPStopRequest | None = Body(default=None),
+    body: HTTPStopRequest,
     claims: TokenClaims = Depends(_require_auth),
     orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
 ) -> HTTPStopResponse:
@@ -331,11 +331,14 @@ async def stop(
     Returns:
         StopResponse indicating whether a loop was stopped.
     """
-    request_id = body.request_id.strip() if body is not None else ""
-    run_id = body.run_id.strip() if body is not None else ""
-    if not request_id:
-        request_id = str(uuid.uuid4())
-    ipc_request = IPCStopRequest(request_id=request_id, run_id=run_id)
+    request_id = body.request_id.strip()
+    run_id = body.run_id.strip()
+    ipc_request = IPCStopRequest(
+        request_id=str(uuid.uuid4()),
+        target_request_id=request_id,
+        run_id=run_id,
+        session_id=claims.jti,
+    )
     ipc_response = await send_ipc_control_request(
         send_fn=orchestrator_client.send_stop,
         ipc_request=ipc_request,

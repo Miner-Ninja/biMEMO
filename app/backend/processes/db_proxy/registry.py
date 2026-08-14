@@ -1,5 +1,7 @@
 """Channel constants, operation sets, and registry/allowlist builders."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from backend.ipc.db_proxy import (
@@ -165,17 +167,8 @@ from .handlers.memory_debug import (
 from .handlers.permissions import (
     make_add_project_root_handler,
     make_authorize_agent_invocation_handler,
-    make_complete_pending_action_handler,
-    make_create_agent_run_event_handler,
-    make_create_agent_run_handler,
     make_create_capability_grant_handler,
-    make_create_pending_action_handler,
-    make_decide_pending_action_handler,
     make_expire_capability_grants_handler,
-    make_expire_pending_actions_handler,
-    make_get_agent_run_handler,
-    make_get_pending_action_handler,
-    make_get_resume_snapshot_handler,
     make_list_agent_run_events_handler,
     make_list_agent_runs_handler,
     make_list_capability_grants_handler,
@@ -188,9 +181,10 @@ from .handlers.permissions import (
     make_rename_project_root_handler,
     make_resolve_project_root_handler,
     make_revoke_capability_grant_handler,
-    make_update_agent_run_status_handler,
 )
 from .handlers.scheduler import (
+    ToolRevisionAuthority,
+    make_activate_tool_registry_handler,
     make_advance_task_next_run_handler,
     make_create_scheduled_task_handler,
     make_delete_scheduled_task_handler,
@@ -228,6 +222,7 @@ CHANNEL_C = "socket_c"
 # ============================================================
 
 SOCKET_A_OPERATIONS = {
+    "activate_tool_registry",
     "save_message",
     "save_conversation_summary",
     "load_recent_messages",
@@ -324,20 +319,10 @@ SOCKET_A_OPERATIONS = {
     "authorize_agent_invocation",
     "revoke_capability_grant",
     "expire_capability_grants",
-    "create_agent_run",
-    "get_agent_run",
-    "create_agent_run_event",
     "project_agent_turn_event",
     "list_agent_run_events",
     "list_agent_runs",
-    "update_agent_run_status",
-    "create_pending_action",
-    "get_pending_action",
-    "get_resume_snapshot",
     "list_pending_actions",
-    "decide_pending_action",
-    "complete_pending_action",
-    "expire_pending_actions",
     "prune_runtime_state",
     "create_agent_turn",
     "get_agent_turn",
@@ -420,19 +405,9 @@ SOCKET_B_ONLY_OPERATIONS = {
     "lookup_capability_grant",
     "revoke_capability_grant",
     "expire_capability_grants",
-    "create_agent_run",
-    "get_agent_run",
-    "create_agent_run_event",
     "list_agent_run_events",
     "list_agent_runs",
-    "update_agent_run_status",
-    "create_pending_action",
-    "get_pending_action",
-    "get_resume_snapshot",
     "list_pending_actions",
-    "decide_pending_action",
-    "complete_pending_action",
-    "expire_pending_actions",
     "prune_runtime_state",
 }
 
@@ -782,12 +757,6 @@ def _register_permission_operations(
         "expire_capability_grants",
         make_expire_capability_grants_handler(core_db),
     )
-    registry.register("create_agent_run", make_create_agent_run_handler(runtime_db))
-    registry.register("get_agent_run", make_get_agent_run_handler(runtime_db))
-    registry.register(
-        "create_agent_run_event",
-        make_create_agent_run_event_handler(runtime_db),
-    )
     registry.register(
         "project_agent_turn_event",
         make_project_agent_turn_event_handler(runtime_db),
@@ -801,36 +770,8 @@ def _register_permission_operations(
         make_list_agent_runs_handler(runtime_db),
     )
     registry.register(
-        "update_agent_run_status",
-        make_update_agent_run_status_handler(runtime_db),
-    )
-    registry.register(
-        "create_pending_action",
-        make_create_pending_action_handler(runtime_db),
-    )
-    registry.register(
-        "get_pending_action",
-        make_get_pending_action_handler(runtime_db),
-    )
-    registry.register(
-        "get_resume_snapshot",
-        make_get_resume_snapshot_handler(runtime_db),
-    )
-    registry.register(
         "list_pending_actions",
         make_list_pending_actions_handler(runtime_db),
-    )
-    registry.register(
-        "decide_pending_action",
-        make_decide_pending_action_handler(runtime_db),
-    )
-    registry.register(
-        "complete_pending_action",
-        make_complete_pending_action_handler(runtime_db),
-    )
-    registry.register(
-        "expire_pending_actions",
-        make_expire_pending_actions_handler(runtime_db),
     )
     registry.register(
         "prune_runtime_state",
@@ -939,6 +880,7 @@ def _register_integration_operations(
 def _register_misc_db_operations(
     registry: OperationRegistry,
     db: DatabaseManager,
+    tool_revision_authority: ToolRevisionAuthority,
 ) -> None:
     """Register rate-limit, vector-table, user, file, and admin operations."""
     registry.register(
@@ -964,12 +906,18 @@ def _register_misc_db_operations(
     registry.register("get_avatar", make_get_avatar_handler(db))
     registry.register("store_avatar", make_store_avatar_handler(db))
     registry.register("delete_avatar", make_delete_avatar_handler(db))
-    registry.register("create_scheduled_task", make_create_scheduled_task_handler(db))
+    registry.register(
+        "create_scheduled_task",
+        make_create_scheduled_task_handler(db, tool_revision_authority),
+    )
     registry.register("list_scheduled_tasks", make_list_scheduled_tasks_handler(db))
     registry.register("get_due_tasks", make_get_due_tasks_handler(db))
     registry.register("advance_task_next_run", make_advance_task_next_run_handler(db))
     registry.register("mark_task_run", make_mark_task_run_handler(db))
-    registry.register("update_scheduled_task", make_update_scheduled_task_handler(db))
+    registry.register(
+        "update_scheduled_task",
+        make_update_scheduled_task_handler(db, tool_revision_authority),
+    )
     registry.register("delete_scheduled_task", make_delete_scheduled_task_handler(db))
     registry.register("record_task_run", make_record_task_run_handler(db))
     registry.register("list_task_runs", make_list_task_runs_handler(db))
@@ -1091,7 +1039,12 @@ def build_registry(
     _register_conversation_and_bridge_operations(registry, core_db)
     _register_permission_operations(registry, core_db, runtime_db)
     _register_integration_operations(registry, core_db)
-    _register_misc_db_operations(registry, core_db)
+    tool_revision_authority = ToolRevisionAuthority()
+    registry.register(
+        "activate_tool_registry",
+        make_activate_tool_registry_handler(tool_revision_authority),
+    )
+    _register_misc_db_operations(registry, core_db, tool_revision_authority)
     _register_auth_and_schema_operations(registry, core_db, master_key)
     _register_health_check(registry, core_db, runtime_db, diagnostics_db)
     return registry

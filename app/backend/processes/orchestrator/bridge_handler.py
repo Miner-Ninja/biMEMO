@@ -20,7 +20,6 @@ from backend.chat_bridge import (
 from backend.chat_bridge.providers import (
     build_configured_providers,
 )
-from backend.config import get_settings
 
 from .chat_handler import (
     DEFAULT_CONVERSATION_PROCESSING_STAGE,
@@ -132,20 +131,18 @@ async def _run_bridge_message_through_orchestrator(
     db_client: DBProxyClient,
 ) -> object:
     """Run one inbound bridge message through the normal chat path."""
-    turn_id = ""
-    if get_settings().structured_finalization_enabled:
-        turn_id = str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"bimemo:bridge:{message.provider.value}:{message.external_message_id}",
-            )
+    turn_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"bimemo:bridge:{message.provider.value}:{message.external_message_id}",
         )
-        await db_client.create_agent_turn(
-            conversation_id=conversation_id,
-            turn_id=turn_id,
-            session_id=session_id,
-            channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
-        )
+    )
+    await db_client.create_agent_turn(
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        session_id=session_id,
+        channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
+    )
     return await _run_orchestrator_message(
         orch=orch,
         message=message.content,

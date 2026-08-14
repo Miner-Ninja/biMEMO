@@ -4,21 +4,58 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.llm_caller import LLMCaller
 from backend.ipc.models import ChatRequest
 from backend.llm.call_factory import LLMResponse
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.usage import LLMCallUsage
-from backend.permissions import ActionDecisionService
 from backend.processes.orchestrator.chat_handler import (
     _maybe_handle_permission_reply,
     _run_chat_request_with_prepared_message,
 )
 
 
+def _read_only_action_decisions() -> SimpleNamespace:
+    """Return a policy stub for one reusable read-only capability."""
+
+    def decide(context):
+        read_only = context.tool_name != "email_send"
+        return SimpleNamespace(
+            kind=SimpleNamespace(value="ask_once"),
+            details={
+                "permission_mode": "conversation_capability",
+                "read_only": read_only,
+                "scope": {"conversation_id": "conversation-1"},
+            },
+        )
+
+    return SimpleNamespace(decide=MagicMock(side_effect=decide))
+
+
+def _policy_broker() -> SimpleNamespace:
+    """Return the policy preparation boundary used by reply routing."""
+    return SimpleNamespace(prepare=MagicMock(return_value=MagicMock()))
+
+
+def _canonical_turn(confirmations: list[dict]) -> dict:
+    """Build the minimum paused canonical turn used by reply tests."""
+    return {
+        "turn_id": "turn-1",
+        "tool_policy_version": "registry-v1",
+        "terminal_outcome": "paused",
+        "finalization_id": "final-1",
+        "confirmations": [
+            {**item, "status": "pending", "parameters": item.get("arguments", {})}
+            for item in confirmations
+        ],
+        "pending_inputs": [],
+    }
+
+
 async def test_permission_reply_matrix() -> None:
     """Valid multilingual decisions pass; malformed output retries then is unclear."""
-    caller = LLMCaller("test", None, None, MagicMock())
+    caller = LLMCaller("test", MagicMock())
     caller.invoke = AsyncMock(
         side_effect=[
             SimpleNamespace(text='{"decision":"approved"}', usage=None),
@@ -44,6 +81,7 @@ async def test_permission_reply_matrix() -> None:
 
     request = ChatRequest(
         request_id="request-1",
+        run_id="turn-1",
         message="да",
         channel="web",
         session_id="session-1",
@@ -51,23 +89,28 @@ async def test_permission_reply_matrix() -> None:
     )
     classifier = AsyncMock()
     orch = SimpleNamespace(
-        tool_executor=SimpleNamespace(action_decisions=ActionDecisionService()),
+        tool_executor=SimpleNamespace(
+            action_decisions=_read_only_action_decisions(),
+            broker=_policy_broker(),
+        ),
         llm_caller=SimpleNamespace(classify_permission_reply=classifier),
     )
     for pending in ([], [{"confirmation_id": "one"}, {"confirmation_id": "two"}]):
         db_client = SimpleNamespace(
-            list_pending_agent_confirmations=AsyncMock(return_value=pending)
+            list_pending_agent_confirmations=AsyncMock(return_value=pending),
+            get_agent_turn=AsyncMock(return_value=_canonical_turn(pending)),
         )
-        assert (
-            await _maybe_handle_permission_reply(
-                request=request,
-                orch=orch,
-                db_client=db_client,
-                llm_call=AsyncMock(),
-                run_event_context=None,
-            )
-            is None
+        response = await _maybe_handle_permission_reply(
+            request=request,
+            orch=orch,
+            db_client=db_client,
+            llm_call=AsyncMock(),
+            run_event_context=None,
         )
+        if pending:
+            assert response.outcome_kind.value == "paused"
+        else:
+            assert response is None
     sensitive = {
         "confirmation_id": "sensitive-1",
         "turn_id": "turn-1",
@@ -76,7 +119,8 @@ async def test_permission_reply_matrix() -> None:
         "arguments": {"to": "user@example.test", "body": "hello"},
     }
     db_client = SimpleNamespace(
-        list_pending_agent_confirmations=AsyncMock(return_value=[sensitive])
+        list_pending_agent_confirmations=AsyncMock(return_value=[sensitive]),
+        get_agent_turn=AsyncMock(return_value=_canonical_turn([sensitive])),
     )
     assert (
         await _maybe_handle_permission_reply(
@@ -93,7 +137,7 @@ async def test_permission_reply_matrix() -> None:
 
 async def test_permission_classifier_sends_custom_schema_without_tools() -> None:
     """The real invoke boundary carries the strict enum schema to the provider."""
-    caller = LLMCaller("test", None, None, MagicMock())
+    caller = LLMCaller("test", MagicMock())
     captured = {}
 
     async def llm_call(messages, *, options):
@@ -135,7 +179,9 @@ async def test_sole_read_only_permission_reply_resumes_bound_confirmation(
     classifier = AsyncMock(return_value=decision)
     resume = AsyncMock(return_value=MagicMock())
     orch = SimpleNamespace(
-        tool_executor=SimpleNamespace(action_decisions=ActionDecisionService()),
+        tool_executor=SimpleNamespace(
+            action_decisions=_read_only_action_decisions(), broker=_policy_broker()
+        ),
         llm_caller=SimpleNamespace(
             classify_permission_reply=classifier,
             model_name="test-model",
@@ -144,7 +190,8 @@ async def test_sole_read_only_permission_reply_resumes_bound_confirmation(
         _flush_provider_attempts=AsyncMock(),
     )
     db_client = SimpleNamespace(
-        list_pending_agent_confirmations=AsyncMock(return_value=[confirmation])
+        list_pending_agent_confirmations=AsyncMock(return_value=[confirmation]),
+        get_agent_turn=AsyncMock(return_value=_canonical_turn([confirmation])),
     )
     expected = MagicMock()
     monkeypatch.setattr(
@@ -155,6 +202,7 @@ async def test_sole_read_only_permission_reply_resumes_bound_confirmation(
     response = await _maybe_handle_permission_reply(
         request=ChatRequest(
             request_id="request-1",
+            run_id="turn-1",
             message="да" if decision == "approved" else "нет",
             channel="web",
             session_id="session-1",
@@ -174,8 +222,8 @@ async def test_sole_read_only_permission_reply_resumes_bound_confirmation(
     )
 
 
-async def test_one_reply_resolves_compatible_web_search_group(monkeypatch) -> None:
-    """One chat reply grants every waiting call of the same reusable tool."""
+async def test_one_reply_does_not_resolve_multiple_confirmations() -> None:
+    """One prose reply cannot authorize more than one pending identity."""
     confirmations = [
         {
             "confirmation_id": f"confirmation-{index}",
@@ -190,7 +238,9 @@ async def test_one_reply_resolves_compatible_web_search_group(monkeypatch) -> No
     responses = [MagicMock(), MagicMock(), MagicMock()]
     resume = AsyncMock(side_effect=responses)
     orch = SimpleNamespace(
-        tool_executor=SimpleNamespace(action_decisions=ActionDecisionService()),
+        tool_executor=SimpleNamespace(
+            action_decisions=_read_only_action_decisions(), broker=_policy_broker()
+        ),
         llm_caller=SimpleNamespace(
             classify_permission_reply=classifier,
             model_name="test-model",
@@ -199,18 +249,15 @@ async def test_one_reply_resolves_compatible_web_search_group(monkeypatch) -> No
         _flush_provider_attempts=AsyncMock(),
     )
     db_client = SimpleNamespace(
-        list_pending_agent_confirmations=AsyncMock(return_value=confirmations)
-    )
-    expected = MagicMock()
-    monkeypatch.setattr(
-        "backend.processes.orchestrator.chat_handler._build_chat_response",
-        lambda **_kwargs: expected,
+        list_pending_agent_confirmations=AsyncMock(return_value=confirmations),
+        get_agent_turn=AsyncMock(return_value=_canonical_turn(confirmations)),
     )
     provider_call = AsyncMock()
 
     result = await _maybe_handle_permission_reply(
         request=ChatRequest(
             request_id="request-1",
+            run_id="turn-1",
             message="да",
             channel="web",
             session_id="session-1",
@@ -222,16 +269,9 @@ async def test_one_reply_resolves_compatible_web_search_group(monkeypatch) -> No
         run_event_context=None,
     )
 
-    assert result is expected
-    classifier.assert_awaited_once()
-    assert [
-        call.kwargs["confirmation_id"] for call in resume.await_args_list
-    ] == ["confirmation-1", "confirmation-2", "confirmation-3"]
-    assert all(
-        call.kwargs["decision"] == "approved" for call in resume.await_args_list
-    )
-    assert resume.await_args_list[0].kwargs["preliminary_call_usages"] == []
-    assert resume.await_args_list[-1].kwargs["llm_call"] is provider_call
+    assert result.outcome_kind.value == "paused"
+    classifier.assert_not_awaited()
+    resume.assert_not_awaited()
 
 
 async def test_fresh_http_run_id_does_not_bypass_permission_classifier(
@@ -291,6 +331,7 @@ async def test_unclear_permission_reply_keeps_card_and_reports_usage() -> None:
     }
     canonical = {
         "turn_id": "turn-1",
+        "tool_policy_version": "registry-v1",
         "terminal_outcome": "paused",
         "finalization_id": "final-1",
         "confirmations": [
@@ -300,7 +341,9 @@ async def test_unclear_permission_reply_keeps_card_and_reports_usage() -> None:
     }
     resume = AsyncMock()
     orch = SimpleNamespace(
-        tool_executor=SimpleNamespace(action_decisions=ActionDecisionService()),
+        tool_executor=SimpleNamespace(
+            action_decisions=_read_only_action_decisions(), broker=_policy_broker()
+        ),
         llm_caller=SimpleNamespace(
             classify_permission_reply=classify,
             model_name="test-model",
@@ -315,6 +358,7 @@ async def test_unclear_permission_reply_keeps_card_and_reports_usage() -> None:
     response = await _maybe_handle_permission_reply(
         request=ChatRequest(
             request_id="request-1",
+            run_id="turn-1",
             message="maybe",
             channel="web",
             session_id="session-1",

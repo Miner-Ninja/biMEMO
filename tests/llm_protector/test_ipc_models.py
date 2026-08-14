@@ -6,6 +6,8 @@ rejects unknown fields and required fields are enforced.
 """
 
 import pytest
+from pydantic import ValidationError
+
 from backend.ipc.models import (
     ChatRequest,
     ChatResponse,
@@ -19,7 +21,6 @@ from backend.ipc.models import (
     StreamEventType,
     StructuredAssistantContent,
 )
-from pydantic import ValidationError
 
 
 class TestChatRequest:
@@ -29,6 +30,7 @@ class TestChatRequest:
         """Create a valid ChatRequest with all fields."""
         req = ChatRequest(
             request_id="req-1",
+            run_id="run-1",
             message="Hello",
             channel="web",
             session_id="sess-1",
@@ -41,6 +43,7 @@ class TestChatRequest:
         """Serialize to JSON and deserialize back."""
         req = ChatRequest(
             request_id="req-1",
+            run_id="run-1",
             message="Hello",
             channel="web",
             session_id="sess-1",
@@ -55,6 +58,7 @@ class TestChatRequest:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             ChatRequest(
                 request_id="req-1",
+                run_id="run-1",
                 message="Hello",
                 channel="web",
                 session_id="sess-1",
@@ -76,12 +80,22 @@ class TestStopRequest:
 
     def test_valid(self):
         """Create a valid StopRequest."""
-        req = StopRequest(request_id="req-1")
-        assert req.request_id == "req-1"
+        req = StopRequest(
+            request_id="stop-1",
+            target_request_id="req-1",
+            run_id="run-1",
+            session_id="session-1",
+        )
+        assert req.target_request_id == "req-1"
 
     def test_json_roundtrip(self):
         """Serialize to JSON and deserialize back."""
-        req = StopRequest(request_id="req-1")
+        req = StopRequest(
+            request_id="stop-1",
+            target_request_id="req-1",
+            run_id="run-1",
+            session_id="session-1",
+        )
         restored = StopRequest.model_validate_json(req.model_dump_json())
         assert restored == req
 

@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from backend.agent.conversation_settings import read_suggestions_enabled
-from backend.config import get_settings
 from backend.ipc.models import StreamEventType
 from backend.processes.orchestrator.run_event_recorder import (
     RunEventContext,
@@ -33,10 +32,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-# A scheduled agent task's declared tools must actually be called. If the model
-# does not call them, it is reinforced and retried up to this many times.
-MAX_TOOL_ENFORCE_ATTEMPTS = 3
 
 
 @dataclass
@@ -108,7 +103,17 @@ async def _execute_agent_task(
     task_id = task["id"]
     task_name = task["name"]
     prompt = task["prompt"]
-    allowed_tools = _parse_allowed_tools(task.get("allowed_tools", "[]"))
+    try:
+        allowed_authorizations = _parse_allowed_tool_authorizations(
+            task.get("allowed_tools", "[]"), services.broker
+        )
+    except ValueError as exc:
+        task["_authorization_quarantined"] = True
+        await services.db_client.update_scheduled_task(
+            {"task_id": task_id, "status": "paused"}
+        )
+        return f"Scheduled tool authorization is invalid: {exc}", False
+    allowed_tools = list(allowed_authorizations)
 
     # One stable conversation per task (bound to the task id) so every run's
     # result accumulates in the same chat instead of spawning a new one each run.
@@ -133,6 +138,7 @@ async def _execute_agent_task(
         "started_at": scheduled_started_at.isoformat(),
     }
     orch.tool_executor.allowed_tool_names = allowed_set
+    orch.tool_executor.allowed_tool_revisions = dict(allowed_authorizations)
     # Suggestions are off for a task chat by default (an autonomous run has no
     # one to click them), but the per-chat toggle can turn them back on.
     orch.prompt_builder.suggestions_enabled = await read_suggestions_enabled(
@@ -148,79 +154,50 @@ async def _execute_agent_task(
     missing_tools: set[str] = set()
     cumulative_used: set[str] = set()
     try:
-        if get_settings().structured_finalization_enabled:
-            turn_id = str(uuid.uuid4())
-            await services.db_client.create_agent_turn(
+        turn_id = str(uuid.uuid4())
+        await services.db_client.create_agent_turn(
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            session_id=f"sched_{task_id}",
+            channel="scheduler",
+        )
+        orch.run_event_recorder = RunEventRecorder(
+            db_client=services.db_client,
+            context=RunEventContext(
+                run_id=turn_id,
+                request_id=f"sched_{task_id}",
                 conversation_id=conversation_id,
-                turn_id=turn_id,
-                session_id=f"sched_{task_id}",
-                channel="scheduler",
-            )
-            orch.run_event_recorder = RunEventRecorder(
-                db_client=services.db_client,
-                context=RunEventContext(
-                    run_id=turn_id,
-                    request_id=f"sched_{task_id}",
-                    conversation_id=conversation_id,
-                    authority_store="core",
-                    architecture_version="structured_v1",
-                ),
-            )
-            response = await orch.process_message(
-                message=prompt,
-                channel="scheduler",
-                llm_call=services.llm_call,
-                session_id=f"sched_{task_id}",
-                conversation_id=conversation_id,
-                agent_run_id=turn_id,
-                forced_tools=sorted(required_tools),
-            )
-            services.atomic_task_result_committed = bool(
-                getattr(response, "outcome", None) is not None
-            )
-            canonical = await services.db_client.get_agent_turn(turn_id)
-            obligations = {
-                str(item.get("obligation_id", "")): str(item.get("required_tool", ""))
-                for item in (canonical or {}).get("obligations", [])
-                if isinstance(item, dict)
-            }
-            bound_ids = {
-                str(item.get("obligation_id", ""))
-                for item in (canonical or {}).get("binds", [])
-                if isinstance(item, dict)
-            }
-            cumulative_used = {
-                tool_name
-                for obligation_id, tool_name in obligations.items()
-                if obligation_id in bound_ids
-            }
-        else:
-            attempt_prompt = prompt
-            for _attempt in range(MAX_TOOL_ENFORCE_ATTEMPTS):
-                response = await orch.process_message(
-                    message=attempt_prompt,
-                    channel="scheduler",
-                    llm_call=services.llm_call,
-                    session_id=f"sched_{task_id}",
-                    conversation_id=conversation_id,
-                    forced_tools=sorted(missing_tools or required_tools),
-                )
-                used = {
-                    str(record.get("name"))
-                    for record in orch.tool_executor.executed_tools
-                    if record.get("success") is True
-                    or record.get("status") == "succeeded"
-                }
-                cumulative_used |= used
-                missing_tools = required_tools - cumulative_used
-                if not missing_tools:
-                    break
-                attempt_prompt = (
-                    f"{prompt}\n\n"
-                    "IMPORTANT — this is an autonomous scheduled task. You MUST "
-                    "actually CALL these tools to complete it: "
-                    f"{', '.join(sorted(missing_tools))}."
-                )
+                architecture_version="structured_v1",
+            ),
+        )
+        response = await orch.process_message(
+            message=prompt,
+            channel="scheduler",
+            llm_call=services.llm_call,
+            session_id=f"sched_{task_id}",
+            conversation_id=conversation_id,
+            agent_run_id=turn_id,
+            forced_tools=sorted(required_tools),
+        )
+        services.atomic_task_result_committed = bool(
+            getattr(response, "outcome", None) is not None
+        )
+        canonical = await services.db_client.get_agent_turn(turn_id)
+        obligations = {
+            str(item.get("obligation_id", "")): str(item.get("required_tool", ""))
+            for item in (canonical or {}).get("obligations", [])
+            if isinstance(item, dict)
+        }
+        bound_ids = {
+            str(item.get("obligation_id", ""))
+            for item in (canonical or {}).get("binds", [])
+            if isinstance(item, dict)
+        }
+        cumulative_used = {
+            tool_name
+            for obligation_id, tool_name in obligations.items()
+            if obligation_id in bound_ids
+        }
         result_text = (
             response.structured_content.answer
             if response is not None and response.structured_content
@@ -319,6 +296,7 @@ async def _execute_agent_task(
         orch.prompt_builder.scheduled_task_mode = False
         orch.prompt_builder.suggestions_enabled = True
         orch.tool_executor.allowed_tool_names = None
+        orch.tool_executor.allowed_tool_revisions = {}
         orch.run_event_recorder = None
         orch.scheduled_task_run = None
 
@@ -353,15 +331,34 @@ async def _execute_agent_task(
     return result_text, success
 
 
-def _parse_allowed_tools(raw: str) -> list[str]:
-    """Parse the allowed_tools JSON string into a list."""
+def _parse_allowed_tool_authorizations(
+    raw: str,
+    broker: ToolBroker,
+) -> dict[str, str]:
+    """Validate persisted scheduler grants against the live policy revision."""
     try:
-        tools = json.loads(raw)
-        if isinstance(tools, list):
-            return [str(t) for t in tools]
-    except json.JSONDecodeError, TypeError:
-        pass
-    return []
+        entries = json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("malformed allowlist") from exc
+    if not isinstance(entries, list):
+        raise ValueError("allowlist must be an array")
+    authorizations: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("legacy name-only allowlist is quarantined")
+        name = entry.get("tool_name")
+        revision = entry.get("approved_policy_revision")
+        if not isinstance(name, str) or not isinstance(revision, str):
+            raise ValueError("authorization requires name and policy revision")
+        definition = broker.registry.get(name)
+        if definition is None:
+            raise ValueError(f"unknown tool {name}")
+        if definition.permission.revision != revision:
+            raise ValueError(f"stale policy revision for {name}")
+        if name in authorizations:
+            raise ValueError(f"duplicate tool {name}")
+        authorizations[name] = revision
+    return authorizations
 
 
 async def _emit_result_event(

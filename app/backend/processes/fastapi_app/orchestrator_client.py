@@ -70,6 +70,12 @@ from backend.ipc.models import (
     ReloadLLMResponse as IPCReloadLLMResponse,
 )
 from backend.ipc.models import (
+    ScheduledToolAuthorizationRequest as IPCScheduledToolAuthorizationRequest,
+)
+from backend.ipc.models import (
+    ScheduledToolAuthorizationResponse as IPCScheduledToolAuthorizationResponse,
+)
+from backend.ipc.models import (
     StopRequest as IPCStopRequest,
 )
 from backend.ipc.models import (
@@ -79,9 +85,8 @@ from backend.ipc.models import (
     StreamEvent,
     StreamEventType,
 )
-from backend.ipc.models import (
-    StructuredAssistantContent as IPCStructuredAssistantContent,
-)
+from backend.ipc.models import ToolCatalogRequest as IPCToolCatalogRequest
+from backend.ipc.models import ToolCatalogResponse as IPCToolCatalogResponse
 
 
 if TYPE_CHECKING:
@@ -107,6 +112,8 @@ ORCHESTRATOR_RESPONSE_TYPES: dict[str, type[BaseModel]] = {
     "StopResponse": IPCStopResponse,
     "ConfirmResponse": IPCConfirmResponse,
     "StreamEvent": StreamEvent,
+    "ToolCatalogResponse": IPCToolCatalogResponse,
+    "ScheduledToolAuthorizationResponse": IPCScheduledToolAuthorizationResponse,
 }
 
 
@@ -141,8 +148,9 @@ class OrchestratorClient:
         self._session_queues: dict[str, list[RealtimeSubscriber]] = {}
         self._request_to_session: dict[str, str] = {}
         self._request_to_conversation: dict[str, str] = {}
+        self._request_to_run: dict[str, str] = {}
+        self._chat_send_events: dict[str, asyncio.Event] = {}
         self._active_chat_request_id = ""
-        self._stopped_chat_request_ids: set[str] = set()
         self._memory_event_queues: list[asyncio.Queue] = []
         self._reader_task: asyncio.Task | None = None
         self._connected = False
@@ -177,11 +185,17 @@ class OrchestratorClient:
         request_id: str,
         session_id: str,
         conversation_id: str = "",
+        run_id: str = "",
     ) -> None:
         """Mark a chat request active before its background task starts."""
+        if not run_id:
+            raise ValueError("registered chat request requires run_id")
         self._request_to_session[request_id] = session_id
         if conversation_id:
             self._request_to_conversation[request_id] = conversation_id
+        if run_id:
+            self._request_to_run[request_id] = run_id
+        self._chat_send_events[request_id] = asyncio.Event()
         self._active_chat_request_id = request_id
         self._is_processing = True
 
@@ -284,6 +298,8 @@ class OrchestratorClient:
                         IPCReloadLLMResponse,
                         IPCStopResponse,
                         IPCConfirmResponse,
+                        IPCToolCatalogResponse,
+                        IPCScheduledToolAuthorizationResponse,
                     ),
                 ):
                     self._resolve_response_future(message)
@@ -318,33 +334,27 @@ class OrchestratorClient:
         """
         self._require_connected()
 
-        if request.request_id in self._stopped_chat_request_ids:
-            self._stopped_chat_request_ids.discard(request.request_id)
-            self._request_to_session.pop(request.request_id, None)
-            self._request_to_conversation.pop(request.request_id, None)
-            if self._active_chat_request_id == request.request_id:
-                self._active_chat_request_id = ""
-            self._is_processing = False
-            return IPCChatResponse(
-                request_id=request.request_id,
-                structured_content=IPCStructuredAssistantContent(answer="Stopped."),
-            )
-
         self._request_to_session[request.request_id] = session_id
+        self._request_to_run[request.request_id] = request.run_id
         if request.conversation_id:
             self._request_to_conversation[request.request_id] = request.conversation_id
         self._active_chat_request_id = request.request_id
         self._is_processing = True
         try:
-            return await self._send_request_and_wait(
-                request=request,
-                timeout=timeout,
-            )
+            response_future = self._register_response_future(request.request_id)
+            await self._ipc.send(request)
+            self._chat_send_events.setdefault(
+                request.request_id, asyncio.Event()
+            ).set()
+            return await asyncio.wait_for(response_future, timeout=timeout)
         except TimeoutError:
+            self._response_futures.pop(request.request_id, None)
             raise
         finally:
             self._request_to_session.pop(request.request_id, None)
             self._request_to_conversation.pop(request.request_id, None)
+            self._request_to_run.pop(request.request_id, None)
+            self._chat_send_events.pop(request.request_id, None)
             if self._active_chat_request_id == request.request_id:
                 self._active_chat_request_id = ""
             self._is_processing = False
@@ -504,14 +514,31 @@ class OrchestratorClient:
         """
         self._require_connected()
 
+        if (
+            self._request_to_session.get(request.target_request_id)
+            != request.session_id
+            or self._request_to_run.get(request.target_request_id) != request.run_id
+        ):
+            return IPCStopResponse(
+                request_id=request.request_id,
+                stopped=False,
+                run_id=request.run_id,
+            )
+
+        sent_event = self._chat_send_events.get(request.target_request_id)
+        if sent_event is None:
+            return IPCStopResponse(
+                request_id=request.request_id,
+                stopped=False,
+                run_id=request.run_id,
+            )
+        await asyncio.wait_for(sent_event.wait(), timeout=timeout)
+
         try:
-            response = await self._send_request_and_wait(
+            return await self._send_request_and_wait(
                 request=request,
                 timeout=timeout,
             )
-            if response.stopped:
-                self._release_stopped_chat_request(request.request_id)
-            return response
         except TimeoutError:
             raise
 
@@ -586,41 +613,36 @@ class OrchestratorClient:
         self._response_futures[request_id] = response_future
         return response_future
 
-    def _release_stopped_chat_request(self, request_id: str) -> None:
-        """Resolve the pending chat future after a successful stop command."""
-        chat_request_id = self._resolve_stopped_chat_request_id(request_id)
-        if not chat_request_id:
-            return
-        response_future = self._response_futures.pop(chat_request_id, None)
-        if response_future is None:
-            self._stopped_chat_request_ids.add(chat_request_id)
-            self._request_to_session.pop(chat_request_id, None)
-            self._request_to_conversation.pop(chat_request_id, None)
-            if self._active_chat_request_id == chat_request_id:
-                self._active_chat_request_id = ""
-            self._is_processing = False
-            return
-        if response_future.done():
-            return
-        self._request_to_session.pop(chat_request_id, None)
-        self._request_to_conversation.pop(chat_request_id, None)
-        if self._active_chat_request_id == chat_request_id:
-            self._active_chat_request_id = ""
-        self._is_processing = False
-        response_future.set_result(
-            IPCChatResponse(
-                request_id=chat_request_id,
-                structured_content=IPCStructuredAssistantContent(answer="Stopped."),
-            )
+    async def list_tool_catalog(self, timeout: float = 10.0) -> list[dict[str, str]]:
+        """Read the minimal catalog from the finalized orchestrator registry."""
+        self._require_connected()
+        response = await self._send_request_and_wait(
+            request=IPCToolCatalogRequest(request_id=str(uuid.uuid4())),
+            timeout=timeout,
         )
+        if not isinstance(response, IPCToolCatalogResponse):
+            raise IPCChannelError("Unexpected tool catalog response")
+        return response.tools
 
-    def _resolve_stopped_chat_request_id(self, request_id: str) -> str:
-        """Find the pending chat request associated with one stop command."""
-        if request_id in self._request_to_session:
-            return request_id
-        if self._active_chat_request_id in self._request_to_session:
-            return self._active_chat_request_id
-        return ""
+    async def authorize_scheduled_tools(
+        self,
+        tool_names: list[str],
+        timeout: float = 10.0,
+    ) -> list[dict[str, str]]:
+        """Validate names and return revision-pinned scheduler entries."""
+        self._require_connected()
+        response = await self._send_request_and_wait(
+            request=IPCScheduledToolAuthorizationRequest(
+                request_id=str(uuid.uuid4()),
+                tool_names=tool_names,
+            ),
+            timeout=timeout,
+        )
+        if not isinstance(response, IPCScheduledToolAuthorizationResponse):
+            raise IPCChannelError("Unexpected scheduled tool response")
+        if response.error:
+            raise ValueError(response.error)
+        return response.authorizations
 
     async def _handle_stream_event(self, message: StreamEvent) -> None:
         """Dispatch one incoming stream event to its target queue."""

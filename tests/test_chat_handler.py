@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import (
     ChatRequest,
@@ -37,6 +38,50 @@ from backend.processes.orchestrator.chat_handler import (
     _run_chat_request_with_prepared_message,
 )
 from backend.trust.confirmation import PendingAction
+
+
+def _core_chat_db() -> SimpleNamespace:
+    """Build a stateful core-authority DB stand-in for chat lifecycle tests."""
+    turn = {
+        "turn_id": "run-1",
+        "conversation_id": "conv-1",
+        "session_id": "session-1",
+        "channel": "web",
+        "tool_policy_version": "registry-v1",
+        "finalization_id": "final-1",
+        "terminal_outcome": None,
+        "outcome_payload": None,
+        "confirmations": [],
+        "pending_inputs": [],
+    }
+
+    async def get_agent_turn(_turn_id: str):
+        return turn if _turn_id == "run-1" else None
+
+    async def create_agent_turn(**_kwargs):
+        return {"turn": turn}
+
+    async def commit_agent_turn_finalization(**kwargs):
+        turn["terminal_outcome"] = kwargs["outcome_kind"]
+        turn["outcome_payload"] = kwargs["outcome_payload"]
+        return {"turn": turn}
+
+    async def cancel_agent_turn(_turn_id: str, **_kwargs):
+        turn["terminal_outcome"] = "cancelled"
+        return {"turn": turn}
+
+    return SimpleNamespace(
+        get_agent_turn=AsyncMock(side_effect=get_agent_turn),
+        create_agent_turn=AsyncMock(side_effect=create_agent_turn),
+        commit_agent_turn_finalization=AsyncMock(
+            side_effect=commit_agent_turn_finalization
+        ),
+        cancel_agent_turn=AsyncMock(side_effect=cancel_agent_turn),
+        append_agent_turn_event=AsyncMock(return_value={"event_id": "event-1"}),
+        list_pending_agent_confirmations=AsyncMock(return_value=[]),
+        update_conversation_processing_state=AsyncMock(),
+        send_operation=AsyncMock(return_value={}),
+    )
 
 
 def _paused_input_turn(*, conversation_id: str = "conversation-1") -> dict:
@@ -685,6 +730,7 @@ def test_orchestrator_handler_streams_missing_llm_final_response() -> None:
         handler(
             ChatRequest(
                 request_id="req-no-llm",
+                run_id="run-no-llm",
                 message="hello",
                 channel="web",
                 session_id="session-1",
@@ -713,40 +759,36 @@ def test_chat_request_failure_streams_error_and_done() -> None:
         process_message=AsyncMock(side_effect=TimeoutError("llm timeout")),
         pending_red_calls=[],
     )
-    db_client = SimpleNamespace(
-        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
-        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
-        update_agent_run_status=AsyncMock(),
-        update_conversation_processing_state=AsyncMock(),
+    db_client = _core_chat_db()
+
+    response = asyncio.run(
+        _run_chat_request(
+            request=ChatRequest(
+                request_id="req-timeout",
+                run_id="run-timeout",
+                message="hello",
+                channel="web",
+                session_id="session-1",
+                conversation_id="conv-1",
+            ),
+            orch=orch,
+            ipc_server=ipc_server,
+            db_client=db_client,
+            broker=SimpleNamespace(),
+            llm_call=AsyncMock(),
+            stt_client=None,
+        )
     )
 
-    with pytest.raises(TimeoutError):
-        asyncio.run(
-            _run_chat_request(
-                request=ChatRequest(
-                    request_id="req-timeout",
-                    message="hello",
-                    channel="web",
-                    session_id="session-1",
-                    conversation_id="conv-1",
-                ),
-                orch=orch,
-                ipc_server=ipc_server,
-                db_client=db_client,
-                broker=SimpleNamespace(),
-                llm_call=AsyncMock(),
-                stt_client=None,
-            )
-        )
-
+    assert response.outcome_kind.value == "failed"
     assert [event.event_type for event in ipc_server.events][-2:] == [
-        StreamEventType.ERROR,
+        StreamEventType.FAILED,
         StreamEventType.DONE,
     ]
-    assert ipc_server.events[-2].data["type"] == "error"
+    assert ipc_server.events[-2].data["type"] == "failed"
     recorded_event_types = [
         call.kwargs["event_type"]
-        for call in db_client.create_agent_run_event.await_args_list
+        for call in db_client.append_agent_turn_event.await_args_list
     ]
     assert "run_started" in recorded_event_types
     assert "run_failed" in recorded_event_types
@@ -770,17 +812,13 @@ def test_chat_request_success_records_completed_runtime_event() -> None:
         ),
         pending_red_calls=[],
     )
-    db_client = SimpleNamespace(
-        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
-        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
-        update_agent_run_status=AsyncMock(),
-        update_conversation_processing_state=AsyncMock(),
-    )
+    db_client = _core_chat_db()
 
     response = asyncio.run(
         _run_chat_request(
             request=ChatRequest(
                 request_id="req-success",
+                run_id="run-success",
                 message="hello",
                 channel="web",
                 session_id="session-1",
@@ -797,12 +835,11 @@ def test_chat_request_success_records_completed_runtime_event() -> None:
 
     recorded_event_types = [
         call.kwargs["event_type"]
-        for call in db_client.create_agent_run_event.await_args_list
+        for call in db_client.append_agent_turn_event.await_args_list
     ]
     assert response.structured_content.answer == "Done."
     assert "run_started" in recorded_event_types
     assert "final_accepted" in recorded_event_types
-    assert "run_completed" in recorded_event_types
     assert (
         db_client.update_conversation_processing_state.await_args_list[-1].args[1]
         == "idle"
@@ -825,12 +862,7 @@ def test_chat_request_cancellation_records_stopped_runtime_event() -> None:
         process_message=slow_process_message,
         pending_red_calls=[],
     )
-    db_client = SimpleNamespace(
-        create_agent_run=AsyncMock(return_value={"id": "run-1"}),
-        create_agent_run_event=AsyncMock(return_value={"id": "event-1"}),
-        update_agent_run_status=AsyncMock(),
-        update_conversation_processing_state=AsyncMock(),
-    )
+    db_client = _core_chat_db()
 
     async def run_and_cancel() -> None:
         """Start the chat task and cancel it after processing begins."""
@@ -854,27 +886,16 @@ def test_chat_request_cancellation_records_stopped_runtime_event() -> None:
         )
         await started.wait()
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        response = await task
+        assert response.outcome_kind.value == "cancelled"
 
     asyncio.run(run_and_cancel())
 
-    status_updates = [
-        call.kwargs
-        for call in db_client.update_agent_run_status.await_args_list
-        if call.kwargs.get("run_id") == "run-1"
-    ]
     recorded_event_types = [
         call.kwargs["event_type"]
-        for call in db_client.create_agent_run_event.await_args_list
+        for call in db_client.append_agent_turn_event.await_args_list
     ]
-    assert {"status": "stopped", "current_step": "stopped"} in [
-        {
-            "status": update["status"],
-            "current_step": update["current_step"],
-        }
-        for update in status_updates
-    ]
+    db_client.cancel_agent_turn.assert_awaited_once()
     assert "run_stopped" in recorded_event_types
     assert (
         db_client.update_conversation_processing_state.await_args_list[-1].args[1]

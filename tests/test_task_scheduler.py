@@ -11,7 +11,9 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from backend.processes.db_proxy.handlers.scheduler import (
+    ToolRevisionAuthority,
     make_advance_task_next_run_handler,
     make_create_scheduled_task_handler,
     make_delete_scheduled_task_handler,
@@ -173,12 +175,14 @@ class TestScheduledTaskDBHandlers:
     @pytest.mark.asyncio
     async def test_create_and_list(self, fake_db):
         """Create a task and list it back."""
-        create = make_create_scheduled_task_handler(fake_db)
+        authority = ToolRevisionAuthority()
+        authority.activate({"web_search": "registry-v1"})
+        create = make_create_scheduled_task_handler(fake_db, authority)
         list_h = make_list_scheduled_tasks_handler(fake_db)
         result = await create(
             {
                 "name": "Test Task",
-                "task_type": "reminder",
+                "task_type": "agent_task",
                 "prompt": "Hello",
                 "schedule_kind": "once",
                 "schedule_expr": "2026-04-10T09:00:00",
@@ -193,7 +197,9 @@ class TestScheduledTaskDBHandlers:
     @pytest.mark.asyncio
     async def test_get_due_tasks(self, fake_db):
         """Get due tasks returns only overdue active tasks."""
-        create = make_create_scheduled_task_handler(fake_db)
+        authority = ToolRevisionAuthority()
+        authority.activate({"web_search": "registry-v1"})
+        create = make_create_scheduled_task_handler(fake_db, authority)
         get_due = make_get_due_tasks_handler(fake_db)
         await create(
             {
@@ -222,7 +228,9 @@ class TestScheduledTaskDBHandlers:
     @pytest.mark.asyncio
     async def test_advance_next_run(self, fake_db):
         """Advance updates next_run_at and repeat_count."""
-        create = make_create_scheduled_task_handler(fake_db)
+        authority = ToolRevisionAuthority()
+        authority.activate({"web_search": "registry-v1"})
+        create = make_create_scheduled_task_handler(fake_db, authority)
         advance = make_advance_task_next_run_handler(fake_db)
         result = await create(
             {
@@ -251,7 +259,9 @@ class TestScheduledTaskDBHandlers:
     @pytest.mark.asyncio
     async def test_mark_task_run(self, fake_db):
         """Mark run updates last_run_at and last_status."""
-        create = make_create_scheduled_task_handler(fake_db)
+        authority = ToolRevisionAuthority()
+        authority.activate({"web_search": "registry-v1"})
+        create = make_create_scheduled_task_handler(fake_db, authority)
         mark = make_mark_task_run_handler(fake_db)
         result = await create(
             {
@@ -281,7 +291,9 @@ class TestScheduledTaskDBHandlers:
     @pytest.mark.asyncio
     async def test_delete_task(self, fake_db):
         """Delete removes the task."""
-        create = make_create_scheduled_task_handler(fake_db)
+        authority = ToolRevisionAuthority()
+        authority.activate({"web_search": "registry-v1"})
+        create = make_create_scheduled_task_handler(fake_db, authority)
         delete = make_delete_scheduled_task_handler(fake_db)
         list_h = make_list_scheduled_tasks_handler(fake_db)
         result = await create(
@@ -519,32 +531,116 @@ class TestSchedulerLoop:
 class TestToolAllowlist:
     """Tests for tool allowlist parsing."""
 
-    def test_parse_valid_allowlist(self):
-        """Valid JSON list is parsed."""
-        from backend.scheduler.executor import _parse_allowed_tools
+    def test_registry_projection_is_required_and_activated_once(self):
+        """Scheduler persistence fails closed before the live broker activates it."""
+        authority = ToolRevisionAuthority()
+        with pytest.raises(RuntimeError, match="not active"):
+            authority.require()
 
-        assert _parse_allowed_tools('["web_search", "memory_recall"]') == [
-            "web_search",
-            "memory_recall",
-        ]
+        authority.activate({"web_search": "registry-v1"})
+        assert authority.require() == {"web_search": "registry-v1"}
+        authority.activate({"web_search": "registry-v1"})
+        with pytest.raises(TypeError):
+            authority.require()["http_fetch"] = "registry-v1"
+        with pytest.raises(RuntimeError, match="already active"):
+            authority.activate({"http_fetch": "registry-v1"})
 
-    def test_parse_empty_allowlist(self):
-        """Empty list returns empty."""
-        from backend.scheduler.executor import _parse_allowed_tools
+    def test_revisioned_authorization_matches_registry(self):
+        """Persisted scheduler permission must match the live revision."""
+        from backend.scheduler.executor import _parse_allowed_tool_authorizations
 
-        assert _parse_allowed_tools("[]") == []
+        broker = MagicMock()
+        broker.registry.get.return_value.permission.revision = "registry-v1"
+        raw = '[{"tool_name":"web_search","approved_policy_revision":"registry-v1"}]'
 
-    def test_parse_invalid_json(self):
-        """Invalid JSON returns empty."""
-        from backend.scheduler.executor import _parse_allowed_tools
+        assert _parse_allowed_tool_authorizations(raw, broker) == {
+            "web_search": "registry-v1"
+        }
 
-        assert _parse_allowed_tools("not json") == []
+    @pytest.mark.parametrize(
+        ("raw", "match"),
+        [
+            ('["web_search"]', "legacy name-only"),
+            (
+                '[{"tool_name":"web_search","approved_policy_revision":"old"}]',
+                "stale policy revision",
+            ),
+        ],
+    )
+    def test_unsafe_scheduler_authorization_is_quarantined(self, raw, match):
+        """Legacy or stale scheduler permissions cannot execute."""
+        from backend.scheduler.executor import _parse_allowed_tool_authorizations
 
-    def test_parse_non_array(self):
-        """Non-array JSON returns empty."""
-        from backend.scheduler.executor import _parse_allowed_tools
+        broker = MagicMock()
+        broker.registry.get.return_value.permission.revision = "registry-v1"
 
-        assert _parse_allowed_tools('{"a": 1}') == []
+        with pytest.raises(ValueError, match=match):
+            _parse_allowed_tool_authorizations(raw, broker)
+
+    @pytest.mark.parametrize(
+        ("allowed_tools", "match"),
+        [
+            (
+                '[{"tool_name":"missing_tool",'
+                '"approved_policy_revision":"registry-v1"}]',
+                "unknown allowed tool",
+            ),
+            (
+                '[{"tool_name":"web_search","approved_policy_revision":"obsolete"}]',
+                "obsolete policy revision",
+            ),
+        ],
+    )
+    def test_db_params_reject_unknown_or_obsolete_authorizations(
+        self,
+        allowed_tools,
+        match,
+    ):
+        """The DB boundary validates entries against the one live registry source."""
+        from backend.processes.db_proxy.params import (
+            validate_revisioned_tool_authorizations,
+        )
+        from backend.tools.handlers.registration import TOOL_DEFINITIONS
+
+        with pytest.raises(ValueError, match=match):
+            validate_revisioned_tool_authorizations(
+                allowed_tools,
+                {
+                    definition.name: definition.permission.revision
+                    for definition in TOOL_DEFINITIONS
+                },
+            )
+
+    @pytest.mark.asyncio
+    async def test_invalid_authorization_pauses_scheduled_task(self):
+        """A quarantined authorization cannot remain active for later retries."""
+        from backend.scheduler.executor import SchedulerServices, execute_task
+
+        db_client = AsyncMock()
+        broker = MagicMock()
+        broker.registry.get.return_value.permission.revision = "registry-v1"
+        services = SchedulerServices(
+            db_client=db_client,
+            orchestrator=MagicMock(),
+            llm_call=AsyncMock(),
+            broker=broker,
+        )
+        task = {
+            "id": "task-1",
+            "name": "legacy",
+            "task_type": "agent_task",
+            "prompt": "run",
+            "allowed_tools": '["web_search"]',
+        }
+
+        result, success = await execute_task(services, task)
+
+        assert success is False
+        assert "invalid" in result
+        assert task["_authorization_quarantined"] is True
+        db_client.update_scheduled_task.assert_awaited_once_with(
+            {"task_id": "task-1", "status": "paused"}
+        )
 
 
 class TestScheduleTaskTool:
@@ -561,14 +657,18 @@ class TestScheduleTaskTool:
             "task_id": "abc-123",
             "next_run_at": "2026-04-06T11:00:00",
         }
-        handler = make_schedule_task_handler(mock_db)
+        broker = MagicMock()
+        broker.scheduler_authorizations.return_value = [
+            {"name": "web_search", "policy_revision": "registry-v1"}
+        ]
+        handler = make_schedule_task_handler(mock_db, broker=broker)
         result = await handler(
             {
                 "action": "create",
                 "name": "Test",
                 "prompt": "Check weather",
                 "schedule": "1h",
-                "task_type": "agent_task",
+                "task_type": "reminder",
                 "allowed_tools": '["web_search"]',
             }
         )
@@ -639,11 +739,15 @@ class TestScheduleTaskTool:
     @pytest.mark.asyncio
     async def test_broker_executes_schedule_task_with_validated_model(self):
         """Broker should pass validated models to schedule_task without crashing."""
-        from backend.tools.broker import ToolBroker
+        from backend.tools.broker import AuthorizationContext, ToolBroker
         from backend.tools.builtin import ScheduleTaskInput
         from backend.tools.handlers.schedule import make_schedule_task_handler
-        from backend.tools.registry import ToolDefinition, ToolRegistry, WorkerTarget
-        from backend.trust.zones import TrustZone
+        from backend.tools.registry import (
+            PermissionMode,
+            PermissionPolicy,
+            ToolDefinition,
+            ToolRegistry,
+        )
 
         mock_db = AsyncMock()
         mock_db.get_user_profile.return_value = {"profile": {"timezone": "UTC"}}
@@ -658,14 +762,16 @@ class TestScheduleTaskTool:
                 name="schedule_task",
                 description="Manage scheduled tasks",
                 input_model=ScheduleTaskInput,
-                zone=TrustZone.YELLOW,
-                worker=WorkerTarget.CORE,
+                permission=PermissionPolicy(mode=PermissionMode.IMPLICIT),
             )
         )
         broker = ToolBroker(registry=registry)
-        broker.set_handler("schedule_task", make_schedule_task_handler(mock_db))
+        broker.bind_handler(
+            "schedule_task", make_schedule_task_handler(mock_db, broker=broker)
+        )
+        broker.finalize()
 
-        result = await broker.execute(
+        prepared = broker.prepare(
             "schedule_task",
             {
                 "action": "create",
@@ -673,8 +779,12 @@ class TestScheduleTaskTool:
                 "prompt": "Collect AI news",
                 "schedule": "0 7 * * *",
                 "task_type": "agent_task",
-                "allowed_tools": '["web_search"]',
+                "allowed_tools": '["schedule_task"]',
             },
+        )
+        result = await broker.execute_prepared(
+            prepared,
+            AuthorizationContext("implicit", "registry-v1", "test"),
         )
 
         assert result.success
@@ -781,6 +891,11 @@ class TestAllowlistEnforcement:
         mock_broker.execute = AsyncMock(return_value=MagicMock())
         executor = ToolExecutor(mock_broker, ConfirmationManager())
         executor.allowed_tool_names = {"web_search"}
+        from backend.permissions import ActionDecision, DecisionKind
+
+        executor.action_decisions.decide = MagicMock(
+            return_value=ActionDecision(DecisionKind.ALLOW)
+        )
 
         tool_call = MagicMock()
         tool_call.name = "file_write"
@@ -797,9 +912,14 @@ class TestAllowlistEnforcement:
 
         mock_broker = MagicMock()
         mock_result = MagicMock()
-        mock_broker.execute = AsyncMock(return_value=mock_result)
+        mock_broker.execute_prepared = AsyncMock(return_value=mock_result)
         executor = ToolExecutor(mock_broker, ConfirmationManager())
         executor.allowed_tool_names = {"web_search"}
+        from backend.permissions import ActionDecision, DecisionKind
+
+        executor.action_decisions.decide = MagicMock(
+            return_value=ActionDecision(DecisionKind.ALLOW)
+        )
 
         tool_call = MagicMock()
         tool_call.name = "web_search"
@@ -825,6 +945,7 @@ class TestToolBrokerContextPropagation:
         }
         broker = MagicMock()
         broker.current_context = {"conversation_id": "conv-from-context"}
+        broker.scheduler_authorizations.return_value = []
 
         handler = make_schedule_task_handler(mock_db, broker=broker)
         await handler(
@@ -853,6 +974,7 @@ class TestToolBrokerContextPropagation:
         }
         broker = MagicMock()
         broker.current_context = {"conversation_id": "from-context"}
+        broker.scheduler_authorizations.return_value = []
 
         handler = make_schedule_task_handler(mock_db, broker=broker)
         await handler(
@@ -887,7 +1009,7 @@ class TestToolBrokerContextPropagation:
                 "name": "T",
                 "prompt": "X",
                 "schedule": "1h",
-                "task_type": "agent_task",
+                "task_type": "reminder",
                 "allowed_tools": "[]",
             }
         )

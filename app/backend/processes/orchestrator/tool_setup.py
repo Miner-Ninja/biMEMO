@@ -74,7 +74,7 @@ async def _setup_tools(
         validate_all_registered,
     )
     from backend.tools.registry import ToolRegistry
-    from backend.workers.fs_worker import make_fs_dispatch
+    from backend.workers.fs_worker import WorkspaceDirs, make_fs_dispatch
     from backend.workers.net_worker import make_net_dispatch
 
     registry = ToolRegistry()
@@ -88,11 +88,18 @@ async def _setup_tools(
         make_fs_dispatch_fn=make_fs_dispatch,
         make_net_dispatch_fn=make_net_dispatch,
     )
+    policy_workspace = WorkspaceDirs([])
+    for project_root in await db_client.list_project_roots():
+        root_path = str(project_root.get("root_path", "")).strip()
+        if root_path:
+            workspace.add(root_path)
+            policy_workspace.add(root_path)
     from backend.workspace.history_store import WorkspaceHistoryStore
     from backend.workspace.history_tracker import WorkspaceHistoryTracker
 
     history_tracker = WorkspaceHistoryTracker()
     history_store = WorkspaceHistoryStore()
+    broker.workspace_roots_fn = policy_workspace.get
     register_tool_definitions(registry)
     _register_runtime_tool_handlers(
         register_all_handlers_fn=register_all_handlers,
@@ -101,11 +108,18 @@ async def _setup_tools(
         fs_worker=fs_worker,
         net_worker=net_worker,
         workspace=workspace,
+        policy_workspace=policy_workspace,
         history_tracker=history_tracker,
         history_store=history_store,
         data_dir=data_dir,
     )
     validate_all_registered(broker)
+    await db_client.activate_tool_registry(
+        {
+            definition.name: definition.permission.revision
+            for definition in registry.definitions.values()
+        }
+    )
 
     return broker, fs_worker, net_worker, history_tracker, history_store
 
@@ -162,6 +176,7 @@ def _register_runtime_tool_handlers(
     fs_worker: _InProcessWorker,
     net_worker: _InProcessWorker,
     workspace: object,
+    policy_workspace: object,
     history_tracker: object,
     history_store: object,
     data_dir: str,
@@ -188,6 +203,7 @@ def _register_runtime_tool_handlers(
         fs_worker=fs_worker,
         net_worker=net_worker,
         workspace=workspace,
+        policy_workspace=policy_workspace,
         history_tracker=history_tracker,
         history_store=history_store,
         data_dir=data_dir,

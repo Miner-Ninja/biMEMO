@@ -6,14 +6,17 @@ queries, next-run advancement, run completion marking, status
 updates, and deletion.
 """
 
-# ruff: noqa: S608
+from __future__ import annotations
 
+# ruff: noqa: S608
 import uuid
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..common import OperationHandler, validate_params
 from ..params import (
+    ActivateToolRegistryParams,
     AdvanceTaskParams,
     CreateScheduledTaskParams,
     DeleteScheduledTaskParams,
@@ -22,11 +25,53 @@ from ..params import (
     ListTaskRunsParams,
     RecordTaskRunParams,
     UpdateScheduledTaskParams,
+    validate_revisioned_tool_authorizations,
 )
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from backend.security.database import DatabaseManager
+
+
+class ToolRevisionAuthority:
+    """One-time registry revision projection owned by the live orchestrator."""
+
+    def __init__(self) -> None:
+        """Start inactive so scheduler writes fail closed."""
+        self._revisions: Mapping[str, str] | None = None
+
+    def activate(self, revisions: dict[str, str]) -> None:
+        """Accept the finalized live projection exactly once."""
+        if self._revisions is not None:
+            if dict(self._revisions) == revisions:
+                return
+            raise RuntimeError("tool registry projection is already active")
+        if not revisions or any(
+            not name or not revision for name, revision in revisions.items()
+        ):
+            raise ValueError("tool registry projection is invalid")
+        self._revisions = MappingProxyType(dict(revisions))
+
+    def require(self) -> Mapping[str, str]:
+        """Return the active projection or reject persistence."""
+        if self._revisions is None:
+            raise RuntimeError("tool registry projection is not active")
+        return self._revisions
+
+
+def make_activate_tool_registry_handler(
+    authority: ToolRevisionAuthority,
+) -> OperationHandler:
+    """Activate the sole scheduler persistence projection once."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        parsed = validate_params(params, ActivateToolRegistryParams)
+        authority.activate(parsed.revisions)
+        return {"activated": True, "tool_count": len(parsed.revisions)}
+
+    return handle
 
 
 def _current_utc_timestamp() -> str:
@@ -68,12 +113,17 @@ _SELECT_COLUMNS = (
 
 def make_create_scheduled_task_handler(
     db: DatabaseManager,
+    authority: ToolRevisionAuthority,
 ) -> OperationHandler:
     """Create handler for create_scheduled_task operation."""
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Create a new scheduled task."""
         p = validate_params(params, CreateScheduledTaskParams)
+        validate_revisioned_tool_authorizations(
+            p.allowed_tools,
+            authority.require(),
+        )
         task_id = str(uuid.uuid4())
         db.execute(
             "INSERT INTO scheduled_tasks "
@@ -207,12 +257,18 @@ def make_mark_task_run_handler(
 
 def make_update_scheduled_task_handler(
     db: DatabaseManager,
+    authority: ToolRevisionAuthority,
 ) -> OperationHandler:
     """Create handler for update_scheduled_task operation."""
 
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Update one or more fields on a scheduled task."""
         p = validate_params(params, UpdateScheduledTaskParams)
+        if p.allowed_tools is not None:
+            validate_revisioned_tool_authorizations(
+                p.allowed_tools,
+                authority.require(),
+            )
         updates: list[str] = []
         values: list[Any] = []
         if p.status is not None:

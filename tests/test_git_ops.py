@@ -5,12 +5,17 @@ and code_search functionality.
 """
 
 import asyncio
+import importlib
+import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
 from backend.tools.handlers.code_search import code_search
 from backend.tools.handlers.git_ops import (
     git_commit,
@@ -19,6 +24,9 @@ from backend.tools.handlers.git_ops import (
     git_push,
     git_status,
 )
+
+
+code_search_module = importlib.import_module("backend.tools.handlers.code_search")
 
 
 def _run_git_sync(repo: str, *args: str) -> subprocess.CompletedProcess:
@@ -258,3 +266,81 @@ async def test_code_search_regex():
         assert result["count"] >= 3
     finally:
         shutil.rmtree(repo)
+
+
+@pytest.mark.asyncio
+async def test_code_search_excludes_sensitive_files():
+    """Recursive code search never reads environment or private-key content."""
+    repo = _setup_git_repo()
+    try:
+        _add_file(repo, ".env", "SHARED_SECRET=needle")
+        (Path(repo) / ".ssh").mkdir()
+        _add_file(repo, ".ssh/id_rsa", "needle private")
+        _add_file(repo, "public.txt", "needle public")
+
+        result = await code_search(pattern="needle", cwd=repo)
+
+        assert result["count"] == 1
+        assert result["matches"][0]["file"].endswith("public.txt")
+    finally:
+        shutil.rmtree(repo)
+
+
+@pytest.mark.asyncio
+async def test_code_search_rejects_root_symlink_swap(tmp_path):
+    """A canonical search root replaced by a symlink cannot escape."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("needle")
+    root.rmdir()
+    root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError, match="symbolic link|Too many levels|Not a directory"):
+        await code_search(pattern="needle", cwd=str(root))
+
+
+@pytest.mark.asyncio
+async def test_code_search_bounds_pathological_regex(tmp_path):
+    """A backtracking expression cannot occupy a worker indefinitely."""
+    (tmp_path / "input.txt").write_text("a" * 50_000 + "!")
+
+    result = await asyncio.wait_for(
+        code_search(pattern="(a+)+$", cwd=str(tmp_path), use_regex=True),
+        timeout=2,
+    )
+
+    assert result["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_code_search_skips_fifo_without_blocking(tmp_path):
+    """A named pipe is never opened as a blocking searchable file."""
+    os.mkfifo(tmp_path / "blocking.pipe")
+    (tmp_path / "public.txt").write_text("needle")
+
+    result = await asyncio.wait_for(
+        code_search(pattern="needle", cwd=str(tmp_path)),
+        timeout=2,
+    )
+
+    assert result["count"] == 1
+    assert result["matches"][0]["file"] == "public.txt"
+
+
+@pytest.mark.asyncio
+async def test_code_search_counts_bytes_read_after_file_growth(tmp_path, monkeypatch):
+    """The aggregate bound uses actual reads rather than stale metadata size."""
+    (tmp_path / "growing.txt").write_text("12345x")
+    monkeypatch.setattr(code_search_module, "_MAX_FILE_BYTES", 10)
+    monkeypatch.setattr(code_search_module, "_MAX_AGGREGATE_BYTES", 5)
+    monkeypatch.setattr(
+        code_search_module.os,
+        "fstat",
+        lambda _fd: SimpleNamespace(st_mode=stat.S_IFREG, st_size=0),
+    )
+
+    result = await code_search(pattern="x", cwd=str(tmp_path))
+
+    assert result["count"] == 0

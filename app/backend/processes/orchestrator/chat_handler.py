@@ -387,9 +387,7 @@ def _build_replayed_core_response(
                         for value in item.get("suggestions", [])
                         if isinstance(value, str)
                     ],
-                    expected_input_schema=dict(
-                        item.get("expected_input_schema", {})
-                    ),
+                    expected_input_schema=dict(item.get("expected_input_schema", {})),
                     expires_at=str(item.get("expires_at", "")),
                     cas_version=int(item.get("cas_version", 1)),
                 )
@@ -658,6 +656,7 @@ async def _run_prepared_chat_request(
     message: str,
     transcription: str | None,
     agent_run_id: str = "",
+    tool_policy_version: str = "registry-v1",
     pending_input_resume: dict[str, object] | None = None,
 ) -> ChatResponse:
     """Run one already-prepared chat message through the orchestrator."""
@@ -666,6 +665,7 @@ async def _run_prepared_chat_request(
         request_meta["source"] = "voice"
     if pending_input_resume is not None:
         request_meta["pending_input_resume"] = pending_input_resume
+    request_meta["tool_policy_version"] = tool_policy_version
     response = await _run_orchestrator_message(
         orch=orch,
         message=message,
@@ -779,7 +779,7 @@ async def _run_chat_request(
         )
         return response
     except asyncio.CancelledError:
-        if run_event_context.authority_store == "core" and run_event_context.run_id:
+        if run_event_context.run_id:
             cancelled = await db_client.cancel_agent_turn(
                 run_event_context.run_id,
                 reason="Request cancelled.",
@@ -835,17 +835,10 @@ async def _run_chat_request_with_prepared_message(
     """Prepare one chat request message and run it through the orchestrator."""
     get_agent_turn = getattr(db_client, "get_agent_turn", None)
     create_agent_turn = getattr(db_client, "create_agent_turn", None)
-    supports_core_authority = callable(get_agent_turn) and callable(create_agent_turn)
-    existing_core = (
-        await get_agent_turn(request.run_id)
-        if request.run_id and supports_core_authority
-        else None
-    )
-    if (
-        supports_core_authority
-        and existing_core is None
-        and not request.pending_input_id
-    ):
+    if not callable(get_agent_turn) or not callable(create_agent_turn):
+        raise RuntimeError("registry-v1 core authority is unavailable")
+    existing_core = await get_agent_turn(request.run_id) if request.run_id else None
+    if existing_core is None and not request.pending_input_id:
         permission_reply = await _maybe_handle_permission_reply(
             request=request,
             orch=orch,
@@ -856,109 +849,83 @@ async def _run_chat_request_with_prepared_message(
         if permission_reply is not None:
             return permission_reply
     pending_input_resume: dict[str, object] | None = None
-    existing_legacy = None
-    get_agent_run = getattr(db_client, "get_agent_run", None)
-    if request.run_id and existing_core is None and callable(get_agent_run):
-        existing_legacy = await get_agent_run(request.run_id)
-    core_authority = bool(
-        supports_core_authority
-        and (
-            existing_core is not None
-            or (
-                existing_legacy is None
-                and get_settings().structured_finalization_enabled
-            )
-        )
-    )
-    if core_authority:
-        if existing_core is None:
-            created = await create_agent_turn(
-                conversation_id=request.conversation_id,
-                turn_id=request.run_id or None,
-                session_id=request.session_id,
-                channel=request.channel,
-            )
-            raw_turn = created.get("turn")
-            turn = raw_turn if isinstance(raw_turn, dict) else {}
-        else:
-            turn = existing_core
-        agent_run_id = str(turn.get("turn_id", ""))
-        if str(turn.get("conversation_id", "")) != request.conversation_id:
-            return ChatResponse(
-                request_id=request.request_id,
-                run_id=agent_run_id,
-                error=TurnError(
-                    code="pending_input_conversation_mismatch",
-                    message="The pending input does not belong to this conversation.",
-                    retryable=False,
-                ),
-            )
-        terminal_replay = _build_replayed_core_response(
-            request_id=request.request_id,
-            turn=turn,
-        )
-        if terminal_replay is not None and turn.get("terminal_outcome") != "paused":
-            return terminal_replay
-        if request.pending_input_id:
-            pending_input_resume = await db_client.reply_agent_pending_input(
-                turn_id=agent_run_id,
-                pending_input_id=request.pending_input_id,
-                conversation_id=request.conversation_id,
-                cas_version=int(request.pending_input_version or 0),
-                value=request.pending_input_value,
-            )
-            validation_error = pending_input_resume.get("validation_error")
-            if validation_error:
-                canonical_turn = await get_agent_turn(agent_run_id)
-                if canonical_turn is None:
-                    raise RuntimeError("pending-input turn disappeared")
-                replay = _build_replayed_core_response(
-                    request_id=request.request_id,
-                    turn=canonical_turn,
-                )
-                if replay is None:
-                    raise RuntimeError("invalid pending input has no paused response")
-                return replay.model_copy(
-                    update={
-                        "error": TurnError(
-                            code="invalid_pending_input",
-                            message=str(validation_error),
-                            retryable=True,
-                        )
-                    }
-                )
-            if pending_input_resume.get("status") != "answered":
-                return await _commit_core_request_failure(
-                    db_client=db_client,
-                    request=request,
-                    turn_id=agent_run_id,
-                    code="pending_input_expired",
-                    message="The requested input expired before it was received.",
-                )
-        elif request.run_id:
-            canonical_turn = await get_agent_turn(agent_run_id)
-            if canonical_turn is not None:
-                replay = _build_replayed_core_response(
-                    request_id=request.request_id,
-                    turn=canonical_turn,
-                )
-                if replay is not None:
-                    return replay
-    else:
-        agent_run = await db_client.create_agent_run(
+    if existing_core is None:
+        created = await create_agent_turn(
             conversation_id=request.conversation_id,
-            run_id=request.run_id or None,
+            turn_id=request.run_id or None,
             session_id=request.session_id,
             channel=request.channel,
-            request_id=request.request_id,
         )
-        agent_run_id = str((agent_run or {}).get("id", ""))
+        raw_turn = created.get("turn")
+        turn = raw_turn if isinstance(raw_turn, dict) else {}
+    else:
+        turn = existing_core
+    agent_run_id = str(turn.get("turn_id", ""))
+    if str(turn.get("conversation_id", "")) != request.conversation_id:
+        return ChatResponse(
+            request_id=request.request_id,
+            run_id=agent_run_id,
+            error=TurnError(
+                code="pending_input_conversation_mismatch",
+                message="The pending input does not belong to this conversation.",
+                retryable=False,
+            ),
+        )
+    terminal_replay = _build_replayed_core_response(
+        request_id=request.request_id,
+        turn=turn,
+    )
+    if terminal_replay is not None and turn.get("terminal_outcome") != "paused":
+        return terminal_replay
+    if request.pending_input_id:
+        pending_input_resume = await db_client.reply_agent_pending_input(
+            turn_id=agent_run_id,
+            pending_input_id=request.pending_input_id,
+            conversation_id=request.conversation_id,
+            cas_version=int(request.pending_input_version or 0),
+            value=request.pending_input_value,
+        )
+        validation_error = pending_input_resume.get("validation_error")
+        if validation_error:
+            canonical_turn = await get_agent_turn(agent_run_id)
+            if canonical_turn is None:
+                raise RuntimeError("pending-input turn disappeared")
+            replay = _build_replayed_core_response(
+                request_id=request.request_id,
+                turn=canonical_turn,
+            )
+            if replay is None:
+                raise RuntimeError("invalid pending input has no paused response")
+            return replay.model_copy(
+                update={
+                    "error": TurnError(
+                        code="invalid_pending_input",
+                        message=str(validation_error),
+                        retryable=True,
+                    )
+                }
+            )
+        if pending_input_resume.get("status") != "answered":
+            return await _commit_core_request_failure(
+                db_client=db_client,
+                request=request,
+                turn_id=agent_run_id,
+                code="pending_input_expired",
+                message="The requested input expired before it was received.",
+            )
+    elif request.run_id:
+        canonical_turn = await get_agent_turn(agent_run_id)
+        if canonical_turn is not None:
+            replay = _build_replayed_core_response(
+                request_id=request.request_id,
+                turn=canonical_turn,
+            )
+            if replay is not None:
+                return replay
+    pinned_tool_policy_version = str(turn.get("tool_policy_version", "registry-v1"))
     if run_event_context is not None:
         run_event_context.run_id = agent_run_id
-        run_event_context.authority_store = "core" if core_authority else "runtime"
-        run_event_context.architecture_version = (
-            "structured_v1" if core_authority else "legacy"
-        )
+        run_event_context.architecture_version = "structured_v1"
     if run_event_recorder is not None:
         await run_event_recorder.record(
             AgentRunEventType.RUN_STARTED,
@@ -980,28 +947,19 @@ async def _run_chat_request_with_prepared_message(
             )
         except VoiceTranscriptionError:
             logger.error("Voice transcription failed", exc_info=True)
-            if core_authority:
-                failed_response = await _commit_core_request_failure(
-                    db_client=db_client,
-                    request=request,
-                    turn_id=agent_run_id,
-                    code="voice_transcription_failed",
-                    message="Voice transcription failed.",
-                )
-            else:
-                await db_client.update_agent_run_status(
-                    run_id=agent_run_id,
-                    status="failed",
-                    current_step="voice_transcription",
-                )
+            failed_response = await _commit_core_request_failure(
+                db_client=db_client,
+                request=request,
+                turn_id=agent_run_id,
+                code="voice_transcription_failed",
+                message="Voice transcription failed.",
+            )
             if run_event_recorder is not None:
                 await run_event_recorder.record(
                     AgentRunEventType.RUN_FAILED,
                     {"current_step": "voice_transcription"},
                 )
-            if core_authority:
-                return failed_response
-            return _build_voice_transcription_failure_response(request.request_id)
+            return failed_response
         response = await _run_prepared_chat_request(
             request=request,
             orch=orch,
@@ -1010,14 +968,9 @@ async def _run_chat_request_with_prepared_message(
             transcription=transcription,
             agent_run_id=agent_run_id,
             pending_input_resume=pending_input_resume,
+            tool_policy_version=pinned_tool_policy_version,
         )
     except asyncio.CancelledError:
-        if agent_run_id and not core_authority:
-            await db_client.update_agent_run_status(
-                run_id=agent_run_id,
-                status="stopped",
-                current_step="stopped",
-            )
         if run_event_recorder is not None:
             await run_event_recorder.record(
                 AgentRunEventType.RUN_STOPPED,
@@ -1026,51 +979,30 @@ async def _run_chat_request_with_prepared_message(
         raise
     except Exception:
         logger.exception(
-            "Prepared chat request failed request_id=%s run_id=%s core_authority=%s",
+            "Prepared chat request failed request_id=%s run_id=%s",
             request.request_id,
             agent_run_id,
-            core_authority,
         )
         if agent_run_id:
-            if core_authority:
-                failed_response = await _commit_core_request_failure(
-                    db_client=db_client,
-                    request=request,
-                    turn_id=agent_run_id,
-                    code="internal_error",
-                    message="Internal error while processing the chat request.",
-                )
-                if run_event_recorder is not None:
-                    await run_event_recorder.record(
-                        AgentRunEventType.RUN_FAILED,
-                        {"current_step": "exception"},
-                    )
-                return failed_response
-            await db_client.update_agent_run_status(
-                run_id=agent_run_id,
-                status="failed",
-                current_step="exception",
+            failed_response = await _commit_core_request_failure(
+                db_client=db_client,
+                request=request,
+                turn_id=agent_run_id,
+                code="internal_error",
+                message="Internal error while processing the chat request.",
             )
+            if run_event_recorder is not None:
+                await run_event_recorder.record(
+                    AgentRunEventType.RUN_FAILED,
+                    {"current_step": "exception"},
+                )
+            return failed_response
         if run_event_recorder is not None:
             await run_event_recorder.record(
                 AgentRunEventType.RUN_FAILED,
                 {"current_step": "exception"},
             )
         raise
-    if agent_run_id and not core_authority:
-        pending = getattr(orch, "pending_red_calls", [])
-        status = "waiting" if pending else "completed"
-        current_step = "pending_action" if pending else "completed"
-        await db_client.update_agent_run_status(
-            run_id=agent_run_id,
-            status=status,
-            current_step=current_step,
-        )
-        if run_event_recorder is not None and not pending:
-            await run_event_recorder.record(
-                AgentRunEventType.RUN_COMPLETED,
-                {"current_step": current_step},
-            )
     return response
 
 
@@ -1089,11 +1021,25 @@ async def _maybe_handle_permission_reply(
     pending = await list_pending(request.conversation_id)
     if not pending:
         return None
+    if len(pending) != 1:
+        latest_turn = await db_client.get_agent_turn(
+            str(pending[-1].get("turn_id", ""))
+        )
+        if latest_turn is None:
+            return None
+        return _build_replayed_core_response(
+            request_id=request.request_id,
+            turn=latest_turn,
+        )
     latest_turn_id = str(pending[-1].get("turn_id", ""))
     pending = [
         item for item in pending if str(item.get("turn_id", "")) == latest_turn_id
     ]
+    canonical_turn = await db_client.get_agent_turn(latest_turn_id)
+    if canonical_turn is None:
+        raise RuntimeError("pending confirmation turn disappeared")
     confirmation = pending[0]
+    tool_policy_version = str(canonical_turn.get("tool_policy_version", ""))
     logger.info(
         "Classifying permission reply for turn=%s tool=%s calls=%d",
         latest_turn_id,
@@ -1102,11 +1048,13 @@ async def _maybe_handle_permission_reply(
     )
     if run_event_context is not None:
         run_event_context.run_id = str(confirmation.get("turn_id", ""))
-        run_event_context.authority_store = "core"
         run_event_context.architecture_version = "structured_v1"
     tool_executor = getattr(orch, "tool_executor", None)
     llm_caller = getattr(orch, "llm_caller", None)
     if tool_executor is None or llm_caller is None:
+        return None
+    policy_broker = getattr(tool_executor, "broker", None)
+    if policy_broker is None:
         return None
     policy_decisions = [
         tool_executor.action_decisions.decide(
@@ -1116,7 +1064,11 @@ async def _maybe_handle_permission_reply(
                 session_id=request.session_id,
                 tool_name=str(item.get("tool_name", "")),
                 parameters=dict(item.get("arguments", {})),
-                structured_authority=True,
+                tool_policy_version=tool_policy_version,
+                prepared=policy_broker.prepare(
+                    str(item.get("tool_name", "")),
+                    dict(item.get("arguments", {})),
+                ),
             )
         )
         for item in pending

@@ -1,17 +1,16 @@
 """Tests for ToolExecutor action-decision integration."""
 
-import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop_models import ToolCall
 from backend.agent.tool_executor import ToolExecutor
 from backend.permissions import ActionDecision, DecisionKind
 from backend.tools.broker import ToolResult
 from backend.trust.confirmation import ConfirmationManager
-from backend.trust.zones import TrustZone
 
 
 class _BlockingDecisions:
@@ -35,20 +34,14 @@ class _ConfirmDecisions:
 
     def decide(self, context):
         """Return a confirmation-required decision (not ALLOW, not BLOCK)."""
-        return ActionDecision(DecisionKind.ASK_ONCE)
-
-
-class _PendingActionRecorder:
-    """Fake pending-action recorder."""
-
-    def __init__(self):
-        """Initialize recorded calls."""
-        self.calls = []
-
-    async def create(self, **kwargs):
-        """Record one pending-action create call."""
-        self.calls.append(kwargs)
-        return {"id": kwargs.get("action_id")}
+        return ActionDecision(
+            DecisionKind.ASK_ONCE,
+            details={
+                "policy_revision": "registry-v1",
+                "scheduler_preauthorizable": context.tool_name
+                not in {"execute_command", "execute_command_stream"},
+            },
+        )
 
 
 class TestToolExecutorActionDecisions:
@@ -72,12 +65,11 @@ class TestToolExecutorActionDecisions:
     async def test_allowed_decision_calls_broker(self):
         """Call the broker when a decision allows the call."""
         broker = MagicMock()
-        broker.execute = AsyncMock()
-        broker.execute.return_value = ToolResult(
+        broker.execute_prepared = AsyncMock()
+        broker.execute_prepared.return_value = ToolResult(
             tool_name="file_read",
             success=True,
             result="ok",
-            zone=TrustZone.GREEN,
             duration_ms=1.0,
         )
         executor = ToolExecutor(
@@ -89,13 +81,14 @@ class TestToolExecutorActionDecisions:
         result = await executor._execute_with_status(ToolCall("1", "file_read", {}))
 
         assert result.result == "ok"
-        broker.execute.assert_awaited_once_with("file_read", {})
+        broker.execute_prepared.assert_awaited_once()
         assert executor.executed_tools == [
             {
                 "id": "1",
                 "name": "file_read",
                 "parameters": {},
-                "zone": "green",
+                "permission_mode": "implicit",
+                "authorization_source": "unspecified",
                 "status": "succeeded",
                 "success": True,
             }
@@ -121,8 +114,7 @@ class TestToolExecutorActionDecisions:
             raw_message={
                 "role": "assistant",
                 "tool_calls": [
-                    {"id": f"call-{index}", "type": "function"}
-                    for index in range(3)
+                    {"id": f"call-{index}", "type": "function"} for index in range(3)
                 ],
             },
         )
@@ -131,19 +123,16 @@ class TestToolExecutorActionDecisions:
         assistant_message = executor._assistant_message_for_calls(response, calls)
 
         assert [call.id for call in calls] == ["call-0"]
-        assert assistant_message["tool_calls"] == [
-            {"id": "call-0", "type": "function"}
-        ]
+        assert assistant_message["tool_calls"] == [{"id": "call-0", "type": "function"}]
 
     async def test_failed_result_is_not_successful_evidence(self):
         """A broker failure result remains failed in the execution ledger."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
+        broker.execute_prepared = AsyncMock(
             return_value=ToolResult(
                 tool_name="file_read",
                 success=False,
                 result="read failed",
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             )
         )
@@ -161,12 +150,11 @@ class TestToolExecutorActionDecisions:
     async def test_truncated_mandatory_result_cannot_satisfy_evidence(self):
         """A bounded excerpt is audit data, not complete mandatory evidence."""
         broker = MagicMock()
-        broker.execute = AsyncMock(
+        broker.execute_prepared = AsyncMock(
             return_value=ToolResult(
                 tool_name="file_read",
                 success=True,
                 result="x" * 70_000,
-                zone=TrustZone.GREEN,
                 duration_ms=1.0,
             )
         )
@@ -184,7 +172,6 @@ class TestToolExecutorActionDecisions:
         )
         executor.current_context = {
             "agent_run_id": "run-1",
-            "authority_store": "core",
         }
         executor.current_obligations = (SimpleNamespace(required_tool="file_read"),)
 
@@ -200,7 +187,6 @@ class TestToolExecutorActionDecisions:
         executor = ToolExecutor(MagicMock(), ConfirmationManager())
         executor.current_context = {
             "agent_run_id": "run-1",
-            "authority_store": "core",
         }
         messages = []
         call = ToolCall("provider-call-1", "file_read", {})
@@ -219,7 +205,6 @@ class TestToolExecutorActionDecisions:
                     tool_name="file_read",
                     success=True,
                     result="evidence",
-                    zone=TrustZone.GREEN,
                     duration_ms=1.0,
                 )
             ],
@@ -260,51 +245,6 @@ class TestToolExecutorActionDecisions:
                 [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
             )
 
-    async def test_red_confirmation_is_persisted_when_run_context_exists(self):
-        """Persist a red confirmation when an agent run context exists."""
-        broker = MagicMock()
-        recorder = _PendingActionRecorder()
-        executor = ToolExecutor(
-            broker,
-            ConfirmationManager(),
-            pending_action_recorder=recorder.create,
-        )
-        executor.current_context = {"agent_run_id": "run-1"}
-
-        await executor.queue_red_tool_confirmations(
-            [ToolCall("1", "email_send", {"to": "a@example.com"})],
-            "web",
-            messages=[{"role": "user", "content": "send it"}],
-            assistant_message={"role": "assistant", "tool_calls": []},
-        )
-
-        assert len(recorder.calls) == 1
-        assert recorder.calls[0]["run_id"] == "run-1"
-        assert recorder.calls[0]["tool_name"] == "email_send"
-        assert recorder.calls[0]["action_id"] == executor.pending_red_calls[0].action_id
-        assert recorder.calls[0]["preview"]["tool_call_id"] == "1"
-        assert "messages" not in recorder.calls[0]["preview"]
-        assert recorder.calls[0]["resume_snapshot"]["tool_call_id"] == "1"
-        assert recorder.calls[0]["resume_snapshot"]["messages"][0]["role"] == "user"
-
-    async def test_red_confirmation_emits_waiting_event(self):
-        """Emit a waiting-confirmation event for red calls."""
-        broker = MagicMock()
-        queue: asyncio.Queue = asyncio.Queue()
-        executor = ToolExecutor(broker, ConfirmationManager())
-        executor.sse_queue = queue
-
-        await executor.queue_red_tool_confirmations(
-            [ToolCall("1", "email_send", {"to": "a@example.com"})],
-            "web",
-        )
-
-        event = queue.get_nowait()
-        assert event["type"] == "confirmation"
-        assert event["status"] == "waiting_confirmation"
-        assert event["tool_name"] == "email_send"
-        assert event["action_id"] == executor.pending_red_calls[0].action_id
-
 
 class TestScheduledTaskPreauthorization:
     """A scheduled task's allowlist pre-authorizes its RED tools.
@@ -330,6 +270,7 @@ class TestScheduledTaskPreauthorization:
         executor = self._executor(_ConfirmDecisions())
         executor.current_context = {"channel": "scheduler"}
         executor.allowed_tool_names = {"http_fetch"}
+        executor.allowed_tool_revisions = {"http_fetch": "registry-v1"}
 
         immediate, still_red = executor._promote_saved_grants(
             [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
@@ -359,6 +300,20 @@ class TestScheduledTaskPreauthorization:
 
         immediate, still_red = executor._promote_saved_grants(
             [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
+        )
+
+        assert immediate == []
+        assert len(still_red) == 1
+
+    def test_scheduler_command_tools_never_receive_preauthorization(self):
+        """General host commands remain interactive until OS sandboxing exists."""
+        executor = self._executor(_ConfirmDecisions())
+        executor.current_context = {"channel": "scheduler"}
+        executor.allowed_tool_names = {"execute_command"}
+        executor.allowed_tool_revisions = {"execute_command": "registry-v1"}
+
+        immediate, still_red = executor._promote_saved_grants(
+            [ToolCall("1", "execute_command", {"command": "python -c pass"})]
         )
 
         assert immediate == []

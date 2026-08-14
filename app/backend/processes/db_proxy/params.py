@@ -4,9 +4,16 @@ Each model validates the parameters dict from a DBOperation message.
 All models use ``extra="forbid"`` to reject unexpected fields.
 """
 
-from typing import Any, Self
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class ForbidExtraParams(BaseModel):
@@ -18,6 +25,44 @@ class ForbidExtraParams(BaseModel):
 def _empty_string() -> str:
     """Return an empty string for named default-factory use."""
     return ""
+
+
+def validate_revisioned_tool_authorizations(
+    raw: str,
+    approved_revisions: Mapping[str, str],
+) -> str:
+    """Reject scheduler allowlists that bypass runtime revision pinning."""
+    try:
+        entries = json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("allowed_tools must be a JSON array") from exc
+    if not isinstance(entries, list):
+        raise ValueError("allowed_tools must be a JSON array")
+    names: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {
+            "tool_name",
+            "approved_policy_revision",
+        }:
+            raise ValueError("allowed_tools requires revision-pinned entries")
+        name = entry.get("tool_name")
+        revision = entry.get("approved_policy_revision")
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(revision, str)
+            or not revision
+        ):
+            raise ValueError("allowed_tools entry is invalid")
+        if name in names:
+            raise ValueError(f"duplicate allowed tool: {name}")
+        expected_revision = approved_revisions.get(name)
+        if expected_revision is None:
+            raise ValueError(f"unknown allowed tool: {name}")
+        if revision != expected_revision:
+            raise ValueError(f"obsolete policy revision for allowed tool: {name}")
+        names.add(name)
+    return raw
 
 
 class LimitOffsetParams(ForbidExtraParams):
@@ -37,6 +82,12 @@ class ConversationIdParams(ForbidExtraParams):
     """Common conversation identifier field."""
 
     conversation_id: str
+
+
+class ActivateToolRegistryParams(ForbidExtraParams):
+    """One-time immutable projection from the finalized runtime broker."""
+
+    revisions: dict[str, str] = Field(min_length=1)
 
 
 class FileIdParams(ForbidExtraParams):
@@ -965,7 +1016,7 @@ class CreateCapabilityGrantParams(ForbidExtraParams):
     channel: str = Field(default="", max_length=128)
     scope_json: dict[str, Any] = Field(default_factory=dict)
     scope_hash: str = Field(default="", max_length=128)
-    policy_revision: str = Field(default="legacy", max_length=128)
+    policy_revision: str = Field(min_length=1, max_length=128)
     origin_confirmation_id: str | None = Field(default=None, max_length=128)
     expires_at: str | None = None
 
@@ -987,7 +1038,7 @@ class LookupCapabilityGrantParams(ForbidExtraParams):
     capability: str = Field(min_length=1, max_length=128)
     channel: str = Field(default="", max_length=128)
     scope_hash: str = Field(default="", max_length=128)
-    policy_revision: str = Field(default="legacy", max_length=128)
+    policy_revision: str = Field(min_length=1, max_length=128)
 
 
 class AuthorizeAgentInvocationParams(ForbidExtraParams):
@@ -1003,12 +1054,10 @@ class AuthorizeAgentInvocationParams(ForbidExtraParams):
     scope_json: dict[str, Any] = Field(default_factory=dict)
     scope_hash: str = Field(min_length=1, max_length=128)
     policy_revision: str = Field(min_length=1, max_length=128)
+    canonical_args_hash: str = Field(min_length=64, max_length=64)
     confirmation_id: str | None = Field(default=None, max_length=128)
     create_reusable_grant: bool = False
     grant_expires_at: str | None = Field(default=None, max_length=64)
-    expected_statuses: list[str] = Field(
-        default_factory=lambda: ["required", "pending_confirmation"]
-    )
 
 
 class RevokeCapabilityGrantParams(ForbidExtraParams):
@@ -1021,38 +1070,6 @@ class ExpireCapabilityGrantsParams(ForbidExtraParams):
     """Parameters for expire_capability_grants operation."""
 
     now: str | None = None
-
-
-class CreateAgentRunParams(ForbidExtraParams):
-    """Parameters for create_agent_run operation."""
-
-    run_id: str | None = Field(default=None, max_length=128)
-    conversation_id: str = Field(min_length=1, max_length=128)
-    session_id: str = Field(default="", max_length=128)
-    channel: str = Field(default="", max_length=128)
-    request_id: str = Field(default="", max_length=128)
-    status: str = Field(default="running", max_length=64)
-    current_step: str = Field(default="", max_length=128)
-    resume_payload: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentRunIdParams(ForbidExtraParams):
-    """Common agent run identifier field."""
-
-    run_id: str = Field(min_length=1, max_length=128)
-
-
-class GetAgentRunParams(AgentRunIdParams):
-    """Parameters for get_agent_run operation."""
-
-
-class CreateAgentRunEventParams(AgentRunIdParams):
-    """Parameters for create_agent_run_event operation."""
-
-    request_id: str = Field(default="", max_length=128)
-    conversation_id: str = Field(min_length=1, max_length=128)
-    event_type: str = Field(min_length=1, max_length=64)
-    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectAgentTurnEventParams(ForbidExtraParams):
@@ -1087,69 +1104,12 @@ class ListAgentRunsParams(ForbidExtraParams):
     offset: int = Field(default=0, ge=0)
 
 
-class UpdateAgentRunStatusParams(AgentRunIdParams):
-    """Parameters for update_agent_run_status operation."""
-
-    status: str = Field(min_length=1, max_length=64)
-    current_step: str = Field(default="", max_length=128)
-    resume_payload: dict[str, Any] | None = None
-
-
 class ListPendingActionsParams(ForbidExtraParams):
     """Parameters for list_pending_actions operation."""
 
     run_id: str | None = Field(default=None, max_length=128)
     status: str | None = Field(default=None, max_length=64)
     channel: str | None = Field(default=None, max_length=128)
-
-
-class CreatePendingActionParams(AgentRunIdParams):
-    """Parameters for create_pending_action operation."""
-
-    action_id: str | None = Field(default=None, max_length=128)
-    tool_name: str = Field(min_length=1, max_length=128)
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    channel: str = Field(default="", max_length=128)
-    status: str = Field(default="waiting", max_length=64)
-    preview: dict[str, Any] = Field(default_factory=dict)
-    resume_snapshot: dict[str, Any] = Field(default_factory=dict)
-    expires_at: str | None = None
-
-
-class DecidePendingActionParams(ForbidExtraParams):
-    """Parameters for decide_pending_action operation."""
-
-    action_id: str = Field(min_length=1, max_length=128)
-    decision: str = Field(min_length=1, max_length=64)
-    channel: str = Field(default="", max_length=128)
-
-
-class CompletePendingActionParams(ForbidExtraParams):
-    """Parameters for complete_pending_action operation."""
-
-    action_id: str = Field(min_length=1, max_length=128)
-    status: str = Field(min_length=1, max_length=64)
-    result: dict[str, Any] = Field(default_factory=dict)
-    error_message: str = Field(default="", max_length=4096)
-
-
-class GetPendingActionParams(ForbidExtraParams):
-    """Parameters for get_pending_action operation."""
-
-    action_id: str = Field(min_length=1, max_length=128)
-
-
-class GetResumeSnapshotParams(ForbidExtraParams):
-    """Parameters for get_resume_snapshot operation."""
-
-    action_id: str = Field(default="", max_length=128)
-    snapshot_id: str = Field(default="", max_length=128)
-
-
-class ExpirePendingActionsParams(ForbidExtraParams):
-    """Parameters for expire_pending_actions operation."""
-
-    now: str | None = None
 
 
 class PruneRuntimeStateParams(ForbidExtraParams):
@@ -1171,8 +1131,8 @@ class CreateAgentTurnParams(ForbidExtraParams):
     conversation_id: str = Field(min_length=1, max_length=128)
     session_id: str = Field(default="", max_length=128)
     channel: str = Field(default="", max_length=128)
-    architecture_version: str = Field(default="structured_v1", max_length=64)
-    authority_store: str = Field(default="core", max_length=32)
+    architecture_version: Literal["structured_v1"] = "structured_v1"
+    tool_policy_version: Literal["registry-v1"] = "registry-v1"
 
 
 class AgentTurnIdParams(ForbidExtraParams):
@@ -1208,9 +1168,10 @@ class ToolInvocationInput(ForbidExtraParams):
     tool_call_id: str = Field(min_length=1, max_length=256)
     tool_name: str = Field(min_length=1, max_length=128)
     arguments: dict[str, Any] = Field(default_factory=dict)
+    canonical_args_hash: str = Field(min_length=64, max_length=64)
+    policy_revision: str = Field(min_length=1, max_length=128)
     evidence_key: str | None = Field(default=None, max_length=1024)
     source: str = Field(default="model", max_length=128)
-    trust_zone: str | None = Field(default=None, max_length=32)
     candidate_obligation_ids: list[str] = Field(default_factory=list, max_length=128)
     confirmation_id: str | None = Field(default=None, max_length=128)
     confirmation_title: str = Field(default="", max_length=256)
@@ -1231,9 +1192,6 @@ class ClaimAgentInvocationParams(AgentTurnIdParams):
     """CAS one invocation into EXECUTING before external dispatch."""
 
     invocation_id: str = Field(min_length=1, max_length=128)
-    expected_statuses: list[str] = Field(
-        default_factory=lambda: ["required", "pending_confirmation"]
-    )
     idempotency_key: str = Field(min_length=1, max_length=256)
 
 
@@ -1248,10 +1206,10 @@ class CompleteAgentInvocationParams(AgentTurnIdParams):
 
 
 class DecideAgentConfirmationParams(ForbidExtraParams):
-    """CAS a canonical core confirmation decision."""
+    """CAS denial or expiration; approval uses atomic authorize-and-claim."""
 
     confirmation_id: str = Field(min_length=1, max_length=128)
-    decision: str = Field(pattern="^(approved|denied|expired)$")
+    decision: str = Field(pattern="^(denied|expired)$")
 
 
 class GetAgentConfirmationParams(ForbidExtraParams):

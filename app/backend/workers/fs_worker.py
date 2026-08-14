@@ -15,12 +15,13 @@ import glob
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Callable
+from typing import TYPE_CHECKING
 
 from backend.tools.validation import (
     ValidationError,
     check_path_traversal,
     check_sensitive_path,
+    check_sensitive_read_path,
 )
 
 
@@ -39,6 +40,7 @@ class WorkspaceDirs:
     """
 
     def __init__(self, initial: list[str]) -> None:
+        """Initialize the canonical workspace root snapshot."""
         self._dirs: list[str] = [str(Path(d).resolve()) for d in initial]
 
     def get(self) -> list[str]:
@@ -62,6 +64,8 @@ class WorkspaceDirs:
 
 if TYPE_CHECKING:
     import multiprocessing.connection
+    from collections.abc import Callable
+    from typing import BinaryIO
 
     from backend.ipc.protocol import ToolRequest, ToolResponse
 
@@ -111,7 +115,8 @@ def _resolve_and_check(path: str, workspace: WorkspaceDirs) -> Path:
     """
     check_path_traversal(path)
     resolved = Path(path).resolve()
-    for allowed in workspace.get():
+    roots = workspace.get() if isinstance(workspace, WorkspaceDirs) else workspace
+    for allowed in roots:
         allowed_resolved = Path(allowed).resolve()
         try:
             resolved.relative_to(allowed_resolved)
@@ -174,20 +179,71 @@ def _file_search_params(params: dict) -> tuple[str, str]:
 
 def _open_for_no_symlink_write(path: Path) -> BinaryIO:
     """Open a file for writing while atomically rejecting symlink targets."""
+    parent_fd = open_directory_no_symlinks(path.parent)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
-        fd = os.open(path, flags, FILE_WRITE_MODE)
+        fd = os.open(path.name, flags, FILE_WRITE_MODE, dir_fd=parent_fd)
     except OSError as error:
         if error.errno == errno.ELOOP:
             raise ValidationError("Write through symlink is not allowed") from error
         raise
+    finally:
+        os.close(parent_fd)
     try:
         return os.fdopen(fd, "wb")
     except Exception:
         os.close(fd)
         raise
+
+
+def open_directory_no_symlinks(path: Path) -> int:
+    """Open an absolute directory one component at a time without symlinks."""
+    absolute = Path(os.path.abspath(path))
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    current_fd = os.open(absolute.anchor or "/", flags)
+    try:
+        for part in absolute.parts[1:]:
+            next_fd = os.open(part, flags, dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd
+    except Exception:
+        os.close(current_fd)
+        raise
+
+
+def _open_for_no_symlink_read(path: Path) -> BinaryIO:
+    """Open a file from a pinned parent while rejecting a symlink target."""
+    parent_fd = open_directory_no_symlinks(path.parent)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path.name, flags, dir_fd=parent_fd)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ValidationError("Read through symlink is not allowed") from error
+        raise
+    finally:
+        os.close(parent_fd)
+    try:
+        return os.fdopen(fd, "rb")
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def read_file_no_symlinks(path: Path, *, max_size: int) -> bytes | None:
+    """Read a policy-approved file through pinned no-symlink descriptors."""
+    check_sensitive_read_path(str(path))
+    with _open_for_no_symlink_read(path) as file_handle:
+        if os.fstat(file_handle.fileno()).st_size > max_size:
+            return None
+        return file_handle.read()
 
 
 def execute_file_read(path: str, workspace: WorkspaceDirs) -> dict:
@@ -203,13 +259,13 @@ def execute_file_read(path: str, workspace: WorkspaceDirs) -> dict:
     Raises:
         ValidationError: If path is invalid.
     """
+    if _has_symlink_component(path):
+        raise ValidationError("Read through symlink is not allowed")
     resolved = _resolve_and_check(path, workspace)
-    size = os.path.getsize(resolved)
-    if size > MAX_READ_SIZE:
-        return {"error": (f"File too large: {size} bytes (max {MAX_READ_SIZE})")}
-
-    with open(resolved, encoding="utf-8", errors="replace") as f:
-        content = f.read()
+    content_bytes = read_file_no_symlinks(resolved, max_size=MAX_READ_SIZE)
+    if content_bytes is None:
+        return {"error": f"File too large (max {MAX_READ_SIZE} bytes)"}
+    content = content_bytes.decode("utf-8", errors="replace")
     return {"content": content}
 
 
@@ -262,11 +318,31 @@ def execute_file_search(
     Raises:
         ValidationError: If directory is outside allowed dirs.
     """
+    if _has_symlink_component(directory):
+        raise ValidationError("Search through symlink is not allowed")
     resolved_dir = _resolve_and_check(directory, workspace)
 
     check_path_traversal(pattern)
-    full_pattern = str(resolved_dir / pattern)
-    matches = sorted(glob.glob(full_pattern, recursive=True))
+    directory_fd = open_directory_no_symlinks(resolved_dir)
+    try:
+        relative_matches = glob.glob(
+            pattern,
+            root_dir=".",
+            dir_fd=directory_fd,
+            recursive=True,
+        )
+    finally:
+        os.close(directory_fd)
+    matches: list[str] = []
+    for match in sorted(relative_matches):
+        candidate = str(resolved_dir / match)
+        if _has_symlink_component(candidate):
+            continue
+        try:
+            check_sensitive_read_path(candidate)
+        except ValidationError:
+            continue
+        matches.append(candidate)
 
     return {"matches": matches[:MAX_SEARCH_RESULTS]}
 

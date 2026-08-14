@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import type { TranslationKey } from "@/i18n";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Bell, Bot, Loader2 } from "lucide-react";
 import {
@@ -7,7 +6,6 @@ import {
   type ScheduledTask,
   type ScheduledTaskType,
   type ToolCatalogEntry,
-  type TrustZone,
   type UpdateScheduledTaskPayload,
   createScheduledTask,
   listToolCatalog,
@@ -71,29 +69,6 @@ function formFromTask(task: ScheduledTask): FormState {
   };
 }
 
-const ZONE_ORDER: TrustZone[] = ["green", "yellow", "red"];
-
-const ZONE_STYLES: Record<
-  TrustZone,
-  { labelKey: TranslationKey; chip: string; dot: string }
-> = {
-  green: {
-    labelKey: "scheduler.zoneSafe",
-    chip: "border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400",
-    dot: "bg-emerald-500",
-  },
-  yellow: {
-    labelKey: "scheduler.zoneCaution",
-    chip: "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400",
-    dot: "bg-amber-500",
-  },
-  red: {
-    labelKey: "scheduler.zoneRestricted",
-    chip: "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400",
-    dot: "bg-red-500",
-  },
-};
-
 export function CreateTaskModal({
   open,
   onClose,
@@ -116,19 +91,6 @@ export function CreateTaskModal({
       .then(setTools)
       .catch(() => setTools([]));
   }, [open, task]);
-
-  const groupedTools = useMemo(() => {
-    const groups: Record<TrustZone, ToolCatalogEntry[]> = {
-      green: [],
-      yellow: [],
-      red: [],
-    };
-    for (const tool of tools) {
-      const zone = (tool.zone ?? "green").toLowerCase() as TrustZone;
-      if (groups[zone]) groups[zone].push(tool);
-    }
-    return groups;
-  }, [tools]);
 
   const isAgent = form.task_type === "agent_task";
 
@@ -310,42 +272,25 @@ export function CreateTaskModal({
                       {t("scheduler.noToolsAvailable")}
                     </p>
                   ) : (
-                    <div className="max-h-[160px] space-y-2 overflow-y-auto pr-1">
-                      {ZONE_ORDER.map((zone) => {
-                        const items = groupedTools[zone];
-                        if (items.length === 0) return null;
-                        const styles = ZONE_STYLES[zone];
+                    <div className="flex max-h-[160px] flex-wrap gap-1 overflow-y-auto pr-1">
+                      {tools.map((tool) => {
+                        const active = form.allowed_tools.has(tool.name);
                         return (
-                          <div key={zone} className="flex items-start gap-2">
-                            <span className="mt-1.5 inline-flex w-16 shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                              <span
-                                className={cn("h-1.5 w-1.5 rounded-full", styles.dot)}
-                              />
-                              {t(styles.labelKey)}
-                            </span>
-                            <div className="flex flex-1 flex-wrap gap-1">
-                              {items.map((tool) => {
-                                const active = form.allowed_tools.has(tool.name);
-                                return (
-                                  <button
-                                    key={tool.name}
-                                    type="button"
-                                    onClick={() => toggleTool(tool.name)}
-                                    title={tool.description}
-                                    disabled={submitting}
-                                    className={cn(
-                                      "inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors",
-                                      active
-                                        ? styles.chip
-                                        : "border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                                    )}
-                                  >
-                                    {tool.name}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          <button
+                            key={tool.name}
+                            type="button"
+                            onClick={() => toggleTool(tool.name)}
+                            title={tool.description}
+                            disabled={submitting}
+                            className={cn(
+                              "inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors",
+                              active
+                                ? "border-primary/40 bg-primary/10 text-primary"
+                                : "border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                            )}
+                          >
+                            {tool.name}
+                          </button>
                         );
                       })}
                     </div>

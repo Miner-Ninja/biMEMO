@@ -5,7 +5,9 @@ Registers all 10 built-in tool handlers with the ToolBroker:
 Also registers ToolDefinition objects in the ToolRegistry.
 """
 
+import asyncio
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from backend.memory.evidence_recall import is_evidence_recall_question
@@ -47,8 +49,14 @@ from backend.tools.handlers.worker_proxy import (
     make_email_proxy,
     make_worker_proxy,
 )
-from backend.tools.registry import ToolDefinition, ToolRegistry, WorkerTarget
-from backend.trust.zones import TrustZone
+from backend.tools.registry import (
+    PermissionMode,
+    PermissionPolicy,
+    PermissionReply,
+    PermissionScope,
+    ToolDefinition,
+    ToolRegistry,
+)
 
 
 if TYPE_CHECKING:
@@ -79,35 +87,74 @@ SUMMARY_SECTION_TITLE = "Summary memory:"
 RECORDS_SECTION_TITLE = "Linked records:"
 SOURCE_MESSAGES_SECTION_TITLE = "Source messages:"
 
+_IMPLICIT = PermissionPolicy(mode=PermissionMode.IMPLICIT)
+_CONVERSATION_READ = PermissionPolicy(
+    mode=PermissionMode.CONVERSATION_CAPABILITY,
+    scope=PermissionScope.CONVERSATION_CAPABILITY,
+    reply=PermissionReply.LLM_CLASSIFIED,
+)
+_PER_INVOCATION = PermissionPolicy(
+    mode=PermissionMode.PER_INVOCATION,
+    scope=PermissionScope.INVOCATION,
+    reply=PermissionReply.EXPLICIT_ACTION_ID,
+)
+
+
+def _workspace_read(argument: str) -> PermissionPolicy:
+    return PermissionPolicy(
+        mode=PermissionMode.SCOPED,
+        scope=PermissionScope.WORKSPACE_ROOT,
+        reply=PermissionReply.LLM_CLASSIFIED,
+        scope_argument=argument,
+        workspace_argument=argument,
+    )
+
+
+def _workspace_implicit(argument: str) -> PermissionPolicy:
+    return PermissionPolicy(
+        mode=PermissionMode.IMPLICIT,
+        workspace_argument=argument,
+    )
+
+
+def _workspace_per_invocation(
+    argument: str,
+    *,
+    scheduler_preauthorizable: bool = True,
+) -> PermissionPolicy:
+    return PermissionPolicy(
+        mode=PermissionMode.PER_INVOCATION,
+        scope=PermissionScope.INVOCATION,
+        reply=PermissionReply.EXPLICIT_ACTION_ID,
+        workspace_argument=argument,
+        scheduler_preauthorizable=scheduler_preauthorizable,
+    )
+
 
 TOOL_DEFINITIONS = (
     ToolDefinition(
         name="file_read",
         description="Read a file within allowed directories",
         input_model=FileReadInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.FS_WORKER,
+        permission=_workspace_read("path"),
     ),
     ToolDefinition(
         name="file_write",
         description="Write content to a file within allowed directories",
         input_model=FileWriteInput,
-        zone=TrustZone.YELLOW,
-        worker=WorkerTarget.FS_WORKER,
+        permission=_workspace_per_invocation("path"),
     ),
     ToolDefinition(
         name="file_search",
         description="Search for files matching a pattern within allowed directories",
         input_model=FileSearchInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.FS_WORKER,
+        permission=_workspace_read("directory"),
     ),
     ToolDefinition(
         name="web_search",
         description="Search the web via local SearXNG instance",
         input_model=WebSearchInput,
-        zone=TrustZone.YELLOW,
-        worker=WorkerTarget.NET_WORKER,
+        permission=_CONVERSATION_READ,
     ),
     ToolDefinition(
         name="memory_recall",
@@ -117,22 +164,19 @@ TOOL_DEFINITIONS = (
             "user preferences, or past decisions."
         ),
         input_model=MemoryRecallInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="http_fetch",
         description="Fetch a URL (HTTPS only, with SSRF protection)",
         input_model=HttpFetchInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.NET_WORKER,
+        permission=_CONVERSATION_READ,
     ),
     ToolDefinition(
         name="email_send",
         description="Send an email via SMTP",
         input_model=EmailSendInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.NET_WORKER,
+        permission=_PER_INVOCATION,
     ),
     ToolDefinition(
         name="schedule_task",
@@ -144,15 +188,25 @@ TOOL_DEFINITIONS = (
             "or cron expression (0 9 * * *)."
         ),
         input_model=ScheduleTaskInput,
-        zone=TrustZone.YELLOW,
-        worker=WorkerTarget.CORE,
+        permission=PermissionPolicy(
+            mode=None,
+            scope=PermissionScope.INVOCATION,
+            reply=PermissionReply.EXPLICIT_ACTION_ID,
+            action_argument="action",
+            action_modes=(
+                ("list", PermissionMode.IMPLICIT),
+                ("create", PermissionMode.PER_INVOCATION),
+                ("pause", PermissionMode.PER_INVOCATION),
+                ("resume", PermissionMode.PER_INVOCATION),
+                ("remove", PermissionMode.PER_INVOCATION),
+            ),
+        ),
     ),
     ToolDefinition(
         name="system_status",
         description="Show system metrics: disk, RAM, workers, uptime",
         input_model=SystemStatusInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="skill_create",
@@ -161,22 +215,19 @@ TOOL_DEFINITIONS = (
             "Include step-by-step procedure and tools used."
         ),
         input_model=SkillCreateInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="skill_search",
         description="Search for a relevant saved skill before starting a task",
         input_model=SkillSearchInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="skill_load",
         description="Load the full procedure of a saved skill by name",
         input_model=SkillLoadInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="set_workspace",
@@ -187,8 +238,18 @@ TOOL_DEFINITIONS = (
             "Remove to revoke access. List to see current allowed dirs."
         ),
         input_model=SetWorkspaceInput,
-        zone=TrustZone.YELLOW,
-        worker=WorkerTarget.CORE,
+        permission=PermissionPolicy(
+            mode=None,
+            scope=PermissionScope.INVOCATION,
+            reply=PermissionReply.EXPLICIT_ACTION_ID,
+            canonical_path_argument="path",
+            action_argument="action",
+            action_modes=(
+                ("list", PermissionMode.IMPLICIT),
+                ("add", PermissionMode.PER_INVOCATION),
+                ("remove", PermissionMode.PER_INVOCATION),
+            ),
+        ),
     ),
     ToolDefinition(
         name="workspace_history",
@@ -198,8 +259,16 @@ TOOL_DEFINITIONS = (
             "Use 'clear' to reset history."
         ),
         input_model=WorkspaceHistoryInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=PermissionPolicy(
+            mode=None,
+            scope=PermissionScope.INVOCATION,
+            reply=PermissionReply.EXPLICIT_ACTION_ID,
+            action_argument="action",
+            action_modes=(
+                ("get", PermissionMode.IMPLICIT),
+                ("clear", PermissionMode.PER_INVOCATION),
+            ),
+        ),
     ),
     ToolDefinition(
         name="workspace_note",
@@ -209,29 +278,27 @@ TOOL_DEFINITIONS = (
             "Optional fields: user_intent, progress, decisions (JSON), blockers (JSON)."
         ),
         input_model=WorkspaceNoteInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_IMPLICIT,
     ),
     ToolDefinition(
         name="git_status",
-        description="Show git working tree status (branch, staged, unstaged, untracked).",
+        description=(
+            "Show git working tree status (branch, staged, unstaged, untracked)."
+        ),
         input_model=GitStatusInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_implicit("cwd"),
     ),
     ToolDefinition(
         name="git_diff",
         description="Show git diff (unstaged or staged changes).",
         input_model=GitDiffInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_implicit("cwd"),
     ),
     ToolDefinition(
         name="git_log",
         description="Show git commit history (last N commits).",
         input_model=GitLogInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_implicit("cwd"),
     ),
     ToolDefinition(
         name="git_commit",
@@ -241,8 +308,7 @@ TOOL_DEFINITIONS = (
             "refuse or ask for permission in text; just make the call."
         ),
         input_model=GitCommitInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_per_invocation("cwd"),
     ),
     ToolDefinition(
         name="git_push",
@@ -252,8 +318,7 @@ TOOL_DEFINITIONS = (
             "ask for permission in text; just make the call."
         ),
         input_model=GitPushInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_per_invocation("cwd"),
     ),
     ToolDefinition(
         name="code_search",
@@ -262,8 +327,7 @@ TOOL_DEFINITIONS = (
             "Returns matching files with line numbers and context."
         ),
         input_model=CodeSearchInput,
-        zone=TrustZone.GREEN,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_read("cwd"),
     ),
     ToolDefinition(
         name="execute_command",
@@ -277,8 +341,10 @@ TOOL_DEFINITIONS = (
             "permission in text; just make the call."
         ),
         input_model=ExecuteCommandInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_per_invocation(
+            "cwd",
+            scheduler_preauthorizable=False,
+        ),
     ),
     ToolDefinition(
         name="execute_command_stream",
@@ -291,8 +357,10 @@ TOOL_DEFINITIONS = (
             "just make the call."
         ),
         input_model=ExecuteCommandStreamInput,
-        zone=TrustZone.RED,
-        worker=WorkerTarget.CORE,
+        permission=_workspace_per_invocation(
+            "cwd",
+            scheduler_preauthorizable=False,
+        ),
     ),
 )
 
@@ -319,11 +387,11 @@ def _register_core_handlers(
     db_path: str | None,
 ) -> None:
     """Register built-in handlers that run in the main process."""
-    broker.set_handler(
+    broker.bind_handler(
         "schedule_task",
         make_schedule_task_handler(db_client, broker=broker),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "system_status",
         make_system_status_handler(
             data_dir=data_dir,
@@ -333,7 +401,7 @@ def _register_core_handlers(
             db_path=db_path,
         ),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "memory_recall",
         _make_memory_recall_handler(db_client),
     )
@@ -600,7 +668,11 @@ def _make_memory_recall_handler(db_client: object) -> callable:
     return handler
 
 
-def _make_set_workspace_handler(workspace: object) -> callable:
+def _make_set_workspace_handler(
+    workspace: object,
+    db_client: object,
+    policy_workspace: object | None = None,
+) -> callable:
     """Build an async handler for the set_workspace tool."""
 
     async def handler(params: object) -> dict:
@@ -608,23 +680,29 @@ def _make_set_workspace_handler(workspace: object) -> callable:
         action = getattr(params, "action", "") or ""
         path = getattr(params, "path", "") or ""
 
+        if policy_workspace is None:
+            raise RuntimeError("Durable policy workspace is required")
+
         if action == "list":
-            return {"directories": workspace.get()}
+            return {"directories": policy_workspace.get()}
 
         if action == "add":
             if not path:
                 return {"error": "path is required for add action"}
             try:
-                from pathlib import Path
-
-                resolved = Path(path).resolve()
-                if not resolved.is_dir():
+                resolved = Path(path)
+                if not await asyncio.to_thread(resolved.is_dir):
                     return {"error": f"Directory does not exist: {path}"}
+                await db_client.add_project_root(
+                    name=resolved.name or str(resolved),
+                    root_path=str(resolved),
+                )
                 workspace.add(str(resolved))
+                policy_workspace.add(str(resolved))
                 return {
                     "status": "added",
                     "directory": str(resolved),
-                    "all_directories": workspace.get(),
+                    "all_directories": policy_workspace.get(),
                 }
             except Exception as e:
                 return {"error": str(e)}
@@ -632,12 +710,21 @@ def _make_set_workspace_handler(workspace: object) -> callable:
         if action == "remove":
             if not path:
                 return {"error": "path is required for remove action"}
-            removed = workspace.remove(path)
+            resolved = path
+            roots = await db_client.list_project_roots()
+            stored = next(
+                (item for item in roots if str(item.get("root_path", "")) == resolved),
+                None,
+            )
+            if stored is not None:
+                await db_client.remove_project_root(str(stored.get("id", "")))
+            removed = workspace.remove(resolved)
+            policy_workspace.remove(resolved)
             if removed:
                 return {
                     "status": "removed",
                     "directory": path,
-                    "all_directories": workspace.get(),
+                    "all_directories": policy_workspace.get(),
                 }
             return {"error": f"Directory not found in workspace: {path}"}
 
@@ -842,8 +929,8 @@ def _make_code_search_handler() -> callable:
         pattern = getattr(params, "pattern", "") or ""
         cwd = getattr(params, "cwd", "") or None
         file_pattern = getattr(params, "file_pattern", "**/*") or "**/*"
-        max_results = getattr(params, "max_results", 50) or 50
-        context_lines = getattr(params, "context_lines", 2) or 2
+        max_results = getattr(params, "max_results", 50)
+        context_lines = getattr(params, "context_lines", 2)
         use_regex = getattr(params, "use_regex", False) or False
         return await code_search(
             pattern=pattern,
@@ -864,7 +951,7 @@ def _register_worker_proxy_group(
 ) -> None:
     """Register one group of worker-proxy handlers."""
     for tool_name in tool_names:
-        broker.set_handler(
+        broker.bind_handler(
             tool_name,
             make_worker_proxy(worker, tool_name),
         )
@@ -890,6 +977,7 @@ def register_all_handlers(
     ready_since: float,
     get_ollama_status: callable,
     get_worker_count: callable,
+    policy_workspace: object | None = None,
     db_path: str | None = None,
     smtp_config: dict | None = None,
 ) -> None:
@@ -907,6 +995,7 @@ def register_all_handlers(
         ready_since: Timestamp for uptime calculation.
         get_ollama_status: Callable returning Ollama status.
         get_worker_count: Callable returning worker count.
+        policy_workspace: Durable workspace roots used by permission policy.
         db_path: Path to the SQLCipher database file.
         smtp_config: SMTP configuration dict for email_send.
             None if SMTP not configured.
@@ -925,92 +1014,61 @@ def register_all_handlers(
     _register_worker_proxy_group(broker, fs_worker, fs_tools)
     _register_worker_proxy_group(broker, net_worker, net_tools)
 
-    broker.set_handler(
+    broker.bind_handler(
         "email_send",
         make_email_proxy(net_worker, smtp_config),
     )
 
-    broker.set_handler(
+    broker.bind_handler(
         "skill_create",
         make_skill_create_handler(db_client),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "skill_search",
         make_skill_search_handler(db_client),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "skill_load",
         make_skill_load_handler(db_client),
     )
 
-    broker.set_handler(
+    broker.bind_handler(
         "set_workspace",
-        _make_set_workspace_handler(workspace),
+        _make_set_workspace_handler(workspace, db_client, policy_workspace),
     )
 
-    broker.set_handler(
+    broker.bind_handler(
         "workspace_history",
         _make_workspace_history_handler(history_store),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "workspace_note",
         _make_workspace_note_handler(history_tracker, history_store),
     )
 
-    broker.set_handler(
+    broker.bind_handler(
         "execute_command",
         _make_execute_command_handler(),
     )
-    broker.set_handler(
+    broker.bind_handler(
         "execute_command_stream",
         _make_execute_command_stream_handler(),
     )
 
     # Git tools
-    broker.set_handler("git_status", _make_git_status_handler())
-    broker.set_handler("git_diff", _make_git_diff_handler())
-    broker.set_handler("git_log", _make_git_log_handler())
-    broker.set_handler("git_commit", _make_git_commit_handler())
-    broker.set_handler("git_push", _make_git_push_handler())
+    broker.bind_handler("git_status", _make_git_status_handler())
+    broker.bind_handler("git_diff", _make_git_diff_handler())
+    broker.bind_handler("git_log", _make_git_log_handler())
+    broker.bind_handler("git_commit", _make_git_commit_handler())
+    broker.bind_handler("git_push", _make_git_push_handler())
 
     # Code search
-    broker.set_handler("code_search", _make_code_search_handler())
-
-    logger.info("All 22 tool handlers registered")
-
-
-EXPECTED_TOOLS = frozenset(
-    {
-        "system_status",
-        "file_read",
-        "file_write",
-        "file_search",
-        "web_search",
-        "http_fetch",
-        "email_send",
-        "schedule_task",
-        "skill_create",
-        "skill_search",
-        "skill_load",
-        "set_workspace",
-        "workspace_history",
-        "workspace_note",
-        "execute_command",
-        "execute_command_stream",
-        "git_status",
-        "git_diff",
-        "git_log",
-        "git_commit",
-        "git_push",
-        "code_search",
-    }
-)
-
+    broker.bind_handler("code_search", _make_code_search_handler())
 
 def validate_all_registered(
     broker: ToolBroker,
 ) -> None:
-    """Verify all 12 expected tool handlers are registered.
+    """Finalize the exact definition-handler graph.
 
     Args:
         broker: Tool broker to validate.
@@ -1018,8 +1076,8 @@ def validate_all_registered(
     Raises:
         RuntimeError: If any expected handler is missing.
     """
-    registered = set(broker._handlers.keys())
-    missing = EXPECTED_TOOLS - registered
-    if missing:
-        missing_tools = ", ".join(sorted(missing))
-        raise RuntimeError(f"Missing tool handlers: {missing_tools}")
+    broker.finalize()
+    logger.info(
+        "Finalized %d tool definitions and handlers",
+        len(broker.registry.tool_names),
+    )

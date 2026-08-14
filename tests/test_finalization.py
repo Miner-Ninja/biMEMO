@@ -1,19 +1,15 @@
 """Tool-use-reask requirement/decision tests (R1-R3)."""
 
-from unittest.mock import AsyncMock, MagicMock
 
 from backend.agent.finalization import (
     FinalAnswerDecision,
     RequirementSatisfaction,
     RequirementStatus,
     ResponseRequirements,
-    detect_turn_requirements,
     requirements_with_expected_tools,
 )
-from backend.agent.llm_caller import LLMCaller, _tool_to_reask
+from backend.agent.llm_caller import _tool_to_reask
 from backend.llm.structured_response import StructuredAssistantContent
-from backend.tools.broker import ToolResult
-from backend.trust.zones import TrustZone
 
 
 def _decision(reason: str) -> FinalAnswerDecision:
@@ -107,43 +103,3 @@ def test_requirement_satisfaction_non_satisfaction_states() -> None:
     assert rs4.invocations[0].error == "DNS error"
     assert rs.invocations == ()
     assert rs.failed_tools == {}
-
-
-def test_two_url_invocation_identity() -> None:
-    """Two URLs produce invocation requirements with unique keys."""
-    msg = "Read https://example.com and https://other.org/page"
-    reqs = detect_turn_requirements(msg)
-    assert len(reqs.invocations) == 2
-    assert reqs.invocations[0].key == "url:1"
-    assert reqs.invocations[0].description == "https://example.com"
-    assert reqs.invocations[1].key == "url:2"
-    assert reqs.invocations[1].description == "https://other.org/page"
-    assert reqs.urls == ("https://example.com", "https://other.org/page")
-
-
-async def test_two_urls_require_two_successful_fetches() -> None:
-    """Each explicit URL produces and satisfies its own fetch evidence."""
-    broker = MagicMock()
-    broker.execute = AsyncMock(
-        side_effect=[
-            ToolResult("http_fetch", True, "first", TrustZone.RED, 1.0),
-            ToolResult("http_fetch", True, "second", TrustZone.RED, 1.0),
-        ]
-    )
-    caller = LLMCaller("test", None, None, broker)
-    requirements = detect_turn_requirements(
-        "Read https://example.com and https://other.org/page"
-    )
-
-    satisfaction = await caller.append_required_tool_context(
-        filtered_message="read both",
-        messages=[],
-        requirements=requirements,
-    )
-
-    assert broker.execute.await_count == 2
-    assert satisfaction.satisfied_tools == frozenset({"http_fetch"})
-    assert all(
-        invocation.status is RequirementStatus.SATISFIED
-        for invocation in satisfaction.invocations
-    )

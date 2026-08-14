@@ -1,5 +1,7 @@
 """Contract tests for core-authority structured agent turns."""
 
+import hashlib
+import json
 import os
 
 import pytest
@@ -43,6 +45,11 @@ def _open_db(tmp_path) -> DatabaseManager:
     return db
 
 
+def _args_hash(arguments: dict[str, object]) -> str:
+    canonical = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 async def test_rate_limit_write_closes_before_next_transaction(tmp_path) -> None:
     """Persistent tool accounting cannot poison invocation persistence."""
     db = _open_db(tmp_path)
@@ -53,6 +60,27 @@ async def test_rate_limit_write_closes_before_next_transaction(tmp_path) -> None
     assert db.in_transaction is False
     db.execute("BEGIN IMMEDIATE")
     db.rollback()
+
+
+async def test_turn_pins_tool_policy_version_and_replay_identity(tmp_path) -> None:
+    """A turn keeps its permission architecture across restart and replay."""
+    db = _open_db(tmp_path)
+    create = make_create_agent_turn_handler(db)
+    payload = {
+        "turn_id": "policy-turn",
+        "conversation_id": "conversation-1",
+        "session_id": "session-1",
+        "channel": "web",
+        "tool_policy_version": "registry-v1",
+    }
+
+    first = await create(payload)
+    replay = await create(payload)
+
+    assert first["turn"]["tool_policy_version"] == "registry-v1"
+    assert replay["turn"]["finalization_id"] == first["turn"]["finalization_id"]
+    with pytest.raises(ValueError, match="registry-v1"):
+        await create({**payload, "tool_policy_version": "legacy"})
 
 
 async def _prepared_turn(db: DatabaseManager) -> tuple[str, str, str]:
@@ -105,6 +133,10 @@ async def test_success_binds_only_after_durable_execution_claim(tmp_path):
                     "tool_call_id": "call-1",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
+                    "canonical_args_hash": _args_hash(
+                        {"url": "https://example.test"}
+                    ),
+                    "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
             ],
@@ -370,6 +402,10 @@ async def test_batch_replay_rejects_changed_arguments(tmp_path):
                 "tool_call_id": "call-1",
                 "tool_name": "http_fetch",
                 "arguments": {"url": "https://example.test"},
+                "canonical_args_hash": _args_hash(
+                    {"url": "https://example.test"}
+                ),
+                "policy_revision": "registry-v1",
                 "candidate_obligation_ids": [obligation_id],
             }
         ],
@@ -378,7 +414,13 @@ async def test_batch_replay_rejects_changed_arguments(tmp_path):
     changed = {
         **base,
         "invocations": [
-            {**base["invocations"][0], "arguments": {"url": "https://other.test"}}
+            {
+                **base["invocations"][0],
+                "arguments": {"url": "https://other.test"},
+                "canonical_args_hash": _args_hash(
+                    {"url": "https://other.test"}
+                ),
+            }
         ],
     }
     with pytest.raises(ValueError, match="invocation replay payload mismatch"):
@@ -403,6 +445,10 @@ async def test_late_callback_after_cancel_is_audited_without_binding(tmp_path):
                     "tool_call_id": "call-late",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
+                    "canonical_args_hash": _args_hash(
+                        {"url": "https://example.test"}
+                    ),
+                    "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
             ],
@@ -453,6 +499,10 @@ async def test_restart_fences_abandoned_execution_claim(tmp_path):
                     "tool_call_id": "call-crash",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
+                    "canonical_args_hash": _args_hash(
+                        {"url": "https://example.test"}
+                    ),
+                    "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
             ],

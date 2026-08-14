@@ -50,9 +50,9 @@ from backend.processes.db_proxy import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 133
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 69
-EXPECTED_SOCKET_B_OPERATION_COUNT = 106
+EXPECTED_SOCKET_A_OPERATION_COUNT = 124
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 59
+EXPECTED_SOCKET_B_OPERATION_COUNT = 96
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -1159,7 +1159,11 @@ class TestRegistryIntegration:
     @pytest.mark.asyncio
     async def test_dispatch_save_message(self, db: FakeDB) -> None:
         """Dispatches ``save_message`` through the registry."""
-        registry = build_registry(db, "/tmp/test.db", b"\x00" * 32)
+        registry = build_registry(
+            db,
+            "/tmp/test.db",
+            b"\x00" * 32,
+        )
         operation = DBOperation(
             request_id="r1",
             operation="save_message",
@@ -1176,7 +1180,11 @@ class TestRegistryIntegration:
     @pytest.mark.asyncio
     async def test_dispatch_unknown_operation(self, db: FakeDB) -> None:
         """Rejects unknown operations via dispatch."""
-        registry = build_registry(db, "/tmp/test.db", b"\x00" * 32)
+        registry = build_registry(
+            db,
+            "/tmp/test.db",
+            b"\x00" * 32,
+        )
         operation = DBOperation(
             request_id="r1",
             operation="drop_table",
@@ -1189,7 +1197,11 @@ class TestRegistryIntegration:
     @pytest.mark.asyncio
     async def test_dispatch_invalid_params(self, db: FakeDB) -> None:
         """Rejects invalid parameters via dispatch."""
-        registry = build_registry(db, "/tmp/test.db", b"\x00" * 32)
+        registry = build_registry(
+            db,
+            "/tmp/test.db",
+            b"\x00" * 32,
+        )
         operation = DBOperation(
             request_id="r1",
             operation="save_message",
@@ -1201,7 +1213,11 @@ class TestRegistryIntegration:
     @pytest.mark.asyncio
     async def test_health_check(self, db: FakeDB) -> None:
         """Dispatches the built-in health-check operation."""
-        registry = build_registry(db, "/tmp/test.db", b"\x00" * 32)
+        registry = build_registry(
+            db,
+            "/tmp/test.db",
+            b"\x00" * 32,
+        )
         operation = DBOperation(
             request_id="r1",
             operation="_health_check",

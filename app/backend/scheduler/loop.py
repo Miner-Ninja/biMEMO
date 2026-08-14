@@ -165,7 +165,7 @@ async def _process_due_task(
     }
 
     # Complete one-shot tasks
-    if schedule_kind == "once":
+    if schedule_kind == "once" and not task.get("_authorization_quarantined"):
         update_params["status"] = "completed"
 
     await services.db_client.mark_task_run(update_params)

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 23
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -474,7 +474,7 @@ CREATE TABLE IF NOT EXISTS capability_grants (
     channel TEXT NOT NULL DEFAULT '',
     scope_json TEXT NOT NULL DEFAULT '{}',
     scope_hash TEXT NOT NULL DEFAULT '',
-    policy_revision TEXT NOT NULL DEFAULT 'legacy',
+    policy_revision TEXT NOT NULL,
     origin_confirmation_id TEXT,
     revoked_at TEXT,
     expires_at TEXT,
@@ -497,6 +497,7 @@ CREATE TABLE IF NOT EXISTS agent_turns (
     channel TEXT NOT NULL,
     architecture_version TEXT NOT NULL
         CHECK (architecture_version IN ('legacy', 'structured_v1')),
+    tool_policy_version TEXT NOT NULL DEFAULT 'registry-v1',
     authority_store TEXT NOT NULL CHECK (authority_store IN ('core', 'runtime')),
     status TEXT NOT NULL DEFAULT 'prepared',
     terminal_outcome TEXT CHECK (
@@ -554,6 +555,7 @@ CREATE TABLE IF NOT EXISTS agent_tool_invocations (
     tool_name TEXT NOT NULL,
     canonical_arguments TEXT NOT NULL,
     canonical_args_hash TEXT NOT NULL,
+    policy_revision TEXT NOT NULL DEFAULT 'registry-v1',
     evidence_key TEXT,
     source TEXT NOT NULL DEFAULT 'model',
     trust_zone TEXT,
@@ -939,20 +941,51 @@ def _ensure_chat_bridge_schema(
 
 
 def _ensure_capability_grants_schema(db: DatabaseManager) -> None:
-    """Add structured permission authority fields to legacy grants."""
+    """Add registry policy fields and retire every pre-registry grant."""
     columns = _table_columns(db, "capability_grants")
     additions = {
         "scope_json": "TEXT NOT NULL DEFAULT '{}'",
         "scope_hash": "TEXT NOT NULL DEFAULT ''",
-        "policy_revision": "TEXT NOT NULL DEFAULT 'legacy'",
+        "policy_revision": "TEXT",
         "origin_confirmation_id": "TEXT",
         "revoked_at": "TEXT",
     }
     for name, declaration in additions.items():
         if name not in columns:
-            db.execute(
-                f"ALTER TABLE capability_grants ADD COLUMN {name} {declaration}"
-            )
+            db.execute(f"ALTER TABLE capability_grants ADD COLUMN {name} {declaration}")
+    db.execute(
+        "UPDATE capability_grants SET revoked_at = "
+        "COALESCE(revoked_at, strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
+        "WHERE policy_revision IS NULL OR policy_revision != 'registry-v1'"
+    )
+
+
+def _ensure_agent_turns_schema(db: DatabaseManager) -> None:
+    """Pin permission architecture for new turns without rerouting old turns."""
+    columns = _table_columns(db, "agent_turns")
+    if "tool_policy_version" not in columns:
+        db.execute("ALTER TABLE agent_turns ADD COLUMN tool_policy_version TEXT")
+    db.execute(
+        "UPDATE agent_turns SET status = 'failed', terminal_outcome = 'failed', "
+        "terminal_error = 'Turn retired during tool-policy migration', "
+        "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+        "WHERE (tool_policy_version IS NULL "
+        "OR tool_policy_version != 'registry-v1') "
+        "AND (terminal_outcome IS NULL OR terminal_outcome = 'paused')"
+    )
+    db.execute(
+        "UPDATE agent_confirmations SET status = 'expired', "
+        "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+        "WHERE status = 'pending' AND turn_id IN ("
+        "SELECT id FROM agent_turns WHERE tool_policy_version IS NULL "
+        "OR tool_policy_version != 'registry-v1')"
+    )
+    invocation_columns = _table_columns(db, "agent_tool_invocations")
+    if "policy_revision" not in invocation_columns:
+        db.execute(
+            "ALTER TABLE agent_tool_invocations ADD COLUMN "
+            "policy_revision TEXT NOT NULL DEFAULT 'registry-v1'"
+        )
 
 
 def _ensure_agent_pending_inputs_schema(db: DatabaseManager) -> None:
@@ -1108,6 +1141,7 @@ def initialize_schema(
     _ensure_file_context_schema(db)
     _ensure_chat_bridge_schema(db)
     _ensure_capability_grants_schema(db)
+    _ensure_agent_turns_schema(db)
     _ensure_agent_pending_inputs_schema(db)
     _ensure_skills_schema(db)
     _migrate_reminders_to_scheduled_tasks(db)

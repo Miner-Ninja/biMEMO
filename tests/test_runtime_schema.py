@@ -56,4 +56,4 @@ def test_runtime_schema_creates_lifecycle_tables() -> None:
     version = db.execute(
         "SELECT version FROM runtime_schema_version LIMIT 1"
     ).fetchone()
-    assert version == (2,)
+    assert version == (3,)

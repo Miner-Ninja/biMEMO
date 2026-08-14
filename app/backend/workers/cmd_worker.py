@@ -16,13 +16,34 @@ import asyncio
 import logging
 import os
 import shutil
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
+
+
+def _open_working_directory(path: str) -> tuple[int, str]:
+    """Pin a working directory while rejecting every symlink component."""
+    absolute = Path(os.path.abspath(Path(path).expanduser()))
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    current_fd = os.open(absolute.anchor or "/", flags)
+    try:
+        for part in absolute.parts[1:]:
+            next_fd = os.open(part, flags, dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd, f"/proc/self/fd/{current_fd}"
+    except Exception:
+        os.close(current_fd)
+        raise
+
 
 # ---------------------------------------------------------------------------
 # Allowlist / Blocklist
@@ -185,8 +206,7 @@ def _resolve_command(cmd_name: str) -> str | None:
         return None
     if basename not in ALLOWED_COMMANDS:
         return None
-    resolved = shutil.which(basename)
-    return resolved
+    return shutil.which(basename)
 
 
 def validate_command(command: str) -> tuple[str | None, list[str]]:
@@ -237,7 +257,7 @@ class CommandResult:
 async def execute_command(
     command: str,
     cwd: str | None = None,
-    timeout: float = 30.0,
+    timeout: float = 30.0,  # noqa: ASYNC109 - public execution timeout API
     env_extra: dict[str, str] | None = None,
 ) -> CommandResult:
     """Run a single command and return its output.
@@ -265,34 +285,39 @@ async def execute_command(
     if env_extra:
         env.update(env_extra)
 
-    # Ensure cwd exists
     work_dir = cwd or str(Path.home())
-    if not Path(work_dir).is_dir():
+    try:
+        work_dir_fd, pinned_work_dir = _open_working_directory(work_dir)
+    except OSError:
         return CommandResult(
             stdout="",
             stderr="",
             exit_code=1,
-            error=f"Working directory does not exist: {work_dir}",
+            error=f"Working directory is invalid or contains a symlink: {work_dir}",
         )
 
     full_cmd = [resolved, *args]
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            *full_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=work_dir,
-            env=env,
-            start_new_session=True,  # process isolation
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *full_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=pinned_work_dir,
+                env=env,
+                start_new_session=True,  # process isolation
+                pass_fds=(work_dir_fd,),
+            )
+        finally:
+            os.close(work_dir_fd)
 
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 process.communicate(),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Kill the process group
             try:
                 import signal
@@ -358,17 +383,19 @@ class CommandStream:
 
     @property
     def result(self) -> CommandResult | None:
+        """Return the completed command result, if available."""
         return self._result
 
     @property
     def is_done(self) -> bool:
+        """Return whether the streaming command has completed."""
         return self._result is not None
 
     async def run(
         self,
         command: str,
         cwd: str | None = None,
-        timeout: float = 30.0,
+        timeout: float = 30.0,  # noqa: ASYNC109 - public execution timeout API
         env_extra: dict[str, str] | None = None,
     ) -> CommandResult:
         """Start the streaming command execution.
@@ -391,12 +418,16 @@ class CommandStream:
             env.update(env_extra)
 
         work_dir = cwd or str(Path.home())
-        if not Path(work_dir).is_dir():
+        try:
+            work_dir_fd, pinned_work_dir = _open_working_directory(work_dir)
+        except OSError:
             result = CommandResult(
                 stdout="",
                 stderr="",
                 exit_code=1,
-                error=f"Working directory does not exist: {work_dir}",
+                error=(
+                    f"Working directory is invalid or contains a symlink: {work_dir}"
+                ),
             )
             self._result = result
             return result
@@ -404,14 +435,18 @@ class CommandStream:
         full_cmd = [resolved, *args]
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *full_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=work_dir,
-                env=env,
-                start_new_session=True,
-            )
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *full_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=pinned_work_dir,
+                    env=env,
+                    start_new_session=True,
+                    pass_fds=(work_dir_fd,),
+                )
+            finally:
+                os.close(work_dir_fd)
         except FileNotFoundError:
             result = CommandResult(
                 stdout="",
@@ -445,7 +480,7 @@ class CommandStream:
             while not self._cancelled:
                 try:
                     line = await asyncio.wait_for(stream.readline(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 if not line:
                     break
@@ -464,7 +499,7 @@ class CommandStream:
                 timeout=timeout,
             )
             exit_code = process.returncode or 0
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._cancelled = True
             try:
                 import signal

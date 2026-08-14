@@ -84,7 +84,8 @@ export interface Message {
  */
 export interface UsedTool {
   name: string;
-  zone: string;
+  permission_mode: string;
+  authorization_source: string;
   success: boolean;
 }
 

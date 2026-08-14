@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator, _semantic_tool_choice
 from backend.agent.agent_loop_models import PreparedContext, TurnPreparation
 from backend.agent.concurrency import AgentConcurrency
@@ -26,9 +27,14 @@ from backend.llm.call_factory import (
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.structured_response import StructuredAssistantContent
 from backend.memory.classification.question_router import route_memory_question
-from backend.permissions import ActionDecision, DecisionKind
-from backend.tools.broker import ToolResult
-from backend.trust.zones import TrustZone
+from backend.tools.broker import ToolBroker
+from backend.tools.builtin import HttpFetchInput, WebSearchInput
+from backend.tools.registry import (
+    PermissionMode,
+    PermissionPolicy,
+    ToolDefinition,
+    ToolRegistry,
+)
 
 
 def _response(*calls, text: str = "") -> SimpleNamespace:
@@ -211,26 +217,38 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
             return None
 
     store = TurnStore()
-    broker = MagicMock()
-    broker.registry.tool_names = ["web_search", "http_fetch"]
-    broker.execute = AsyncMock(
-        side_effect=[
-            ToolResult(
-                "web_search",
-                True,
-                {"url": "https://api.example.test/btc"},
-                TrustZone.YELLOW,
-                1.0,
-            ),
-            ToolResult(
-                "http_fetch",
-                True,
-                {"price": 64000},
-                TrustZone.RED,
-                1.0,
-            ),
-        ]
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            "web_search",
+            "Search",
+            WebSearchInput,
+            PermissionPolicy(mode=PermissionMode.IMPLICIT),
+        )
     )
+    registry.register(
+        ToolDefinition(
+            "http_fetch",
+            "Fetch",
+            HttpFetchInput,
+            PermissionPolicy(mode=PermissionMode.IMPLICIT),
+        )
+    )
+    executed_names: list[str] = []
+    fetch_prices = iter((64000, 65000))
+
+    async def search_handler(_input):
+        executed_names.append("web_search")
+        return {"url": "https://1.1.1.1/btc"}
+
+    async def fetch_handler(_input):
+        executed_names.append("http_fetch")
+        return {"price": next(fetch_prices)}
+
+    broker = ToolBroker(registry=registry)
+    broker.bind_handler("web_search", search_handler)
+    broker.bind_handler("http_fetch", fetch_handler)
+    broker.finalize()
     orchestrator = AgentOrchestrator(
         broker=broker,
         concurrency=AgentConcurrency(),
@@ -238,16 +256,13 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
         turn_store=store,
     )
     orchestrator.tool_executor.allowed_tool_names = {"web_search", "http_fetch"}
-    orchestrator.tool_executor.action_decisions.decide = MagicMock(
-        return_value=ActionDecision(DecisionKind.ALLOW)
-    )
     orchestrator.tool_executor.current_context = {
         "conversation_id": "conversation-1",
         "session_id": "session-1",
         "channel": "scheduler",
-        "agent_run_id": "turn-1",
-        "authority_store": "core",
-    }
+            "agent_run_id": "turn-1",
+            "tool_policy_version": "registry-v1",
+        }
     orchestrator._capabilities_resolver = lambda: SimpleNamespace(
         native_tools=SimpleNamespace(value="supported"),
         required_native_decision=SimpleNamespace(value="supported"),
@@ -284,7 +299,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
                     LLMToolCall(
                         "fetch",
                         "http_fetch",
-                        {"url": "https://api.example.test/btc"},
+                            {"url": "https://1.1.1.1/btc"},
                     )
                 ],
             ),
@@ -343,16 +358,13 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
     finally:
         set_thinking_enabled(None)
     assert result is expected
-    assert [call.args[0] for call in broker.execute.await_args_list] == [
-        "web_search",
-        "http_fetch",
-    ]
+    assert executed_names == ["web_search", "http_fetch"]
     assert [item["status"] for item in store.state["invocations"]] == [
         "succeeded",
         "succeeded",
     ]
     assert store.state["tool_rounds"] == 3
-    assert "api.example.test" in str(captured[1][0])
+    assert "1.1.1.1" in str(captured[1][0])
     assert "64000" in str(captured[2][0])
     assert inherited_thinking == [True, True, True]
     assert all(options.thinking_enabled is None for _, options in captured)
@@ -368,16 +380,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
         synthesis_attempts=0,
         invocations=[],
     )
-    broker.execute.reset_mock()
-    broker.execute.side_effect = [
-        ToolResult(
-            "http_fetch",
-            True,
-            {"price": 65000},
-            TrustZone.RED,
-            1.0,
-        )
-    ]
+    executed_names.clear()
     direct_responses = iter(
         [
             LLMResponse(
@@ -386,7 +389,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
                     LLMToolCall(
                         "direct-fetch",
                         "http_fetch",
-                        {"url": "https://api.example.test/btc"},
+                        {"url": "https://1.1.1.1/btc"},
                     )
                 ],
             ),
@@ -410,7 +413,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
         messages=[
             {
                 "role": "system",
-                "content": "Known endpoint: https://api.example.test/btc",
+                "content": "Known endpoint: https://1.1.1.1/btc",
             },
             {
                 "role": "user",
@@ -435,9 +438,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
         channel="scheduler",
     )
     assert direct_result is expected
-    assert [call.args[0] for call in broker.execute.await_args_list] == [
-        "http_fetch"
-    ]
+    assert executed_names == ["http_fetch"]
     assert store.state["tool_rounds"] == 2
 
 

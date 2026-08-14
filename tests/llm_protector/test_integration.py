@@ -61,6 +61,7 @@ class TestEndToEndFlow:
         """ChatRequest serializes and deserializes through IPC envelope."""
         request = ChatRequest(
             request_id="test-123",
+            run_id="run-test-123",
             message="Hello",
             channel="web",
             session_id="sess-1",

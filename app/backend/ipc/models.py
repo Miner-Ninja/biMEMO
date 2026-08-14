@@ -41,7 +41,7 @@ class ChatRequest(IPCModel):
     """
 
     request_id: str
-    run_id: str = ""
+    run_id: str = Field(min_length=1)
     message: str
     channel: str
     session_id: str
@@ -71,11 +71,16 @@ class StopRequest(IPCModel):
     """Request from frontend to stop an in-progress chat.
 
     Attributes:
-        request_id: Identifier of the chat request to stop.
+        request_id: Unique correlation identifier for this stop command.
+        target_request_id: Identifier of the chat request to stop.
+        run_id: Durable run identity of the target request.
+        session_id: Authenticated owner of the target request.
     """
 
-    request_id: str
-    run_id: str = ""
+    request_id: str = Field(min_length=1)
+    target_request_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
 
 
 class ConfirmRequest(IPCModel):
@@ -90,6 +95,34 @@ class ConfirmRequest(IPCModel):
     request_id: str
     action_id: str
     decision: str
+
+
+class ToolCatalogRequest(IPCModel):
+    """Request the finalized runtime tool catalog."""
+
+    request_id: str
+
+
+class ToolCatalogResponse(IPCModel):
+    """Minimal non-security catalog projection for administration UI."""
+
+    request_id: str
+    tools: list[dict[str, str]] = []
+
+
+class ScheduledToolAuthorizationRequest(IPCModel):
+    """Validate and version-pin an administrative scheduler selection."""
+
+    request_id: str
+    tool_names: list[str]
+
+
+class ScheduledToolAuthorizationResponse(IPCModel):
+    """Persistable scheduler authorizations from the runtime registry."""
+
+    request_id: str
+    authorizations: list[dict[str, str]] = []
+    error: str = ""
 
 
 class BridgeInboundSyncRequest(IPCModel):

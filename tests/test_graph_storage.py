@@ -66,9 +66,9 @@ class TestEntitiesSchema:
     def test_fresh_schema_has_entities_and_current_version(self, tmp_path):
         """S1.1 — fresh database gets entities at the current version."""
         db = _open_db(tmp_path)
-        assert SCHEMA_VERSION == 20
+        assert SCHEMA_VERSION == 23
         row = db.execute("SELECT version FROM schema_version").fetchone()
-        assert row[0] == 20
+        assert row[0] == SCHEMA_VERSION
         db.execute("SELECT id FROM entities").fetchall()
         db.close()
 

@@ -7,6 +7,7 @@ and registration of all 9 handlers and tool definitions.
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.ipc.protocol import ToolResponse
 from backend.tools.broker import ToolBroker
 from backend.tools.builtin import (
@@ -25,8 +26,7 @@ from backend.tools.handlers.worker_proxy import (
     make_email_proxy,
     make_worker_proxy,
 )
-from backend.tools.registry import ToolRegistry, WorkerTarget
-from backend.trust.zones import TrustZone
+from backend.tools.registry import PermissionMode, ToolRegistry
 
 
 class TestWorkerProxy:
@@ -147,29 +147,19 @@ class TestRegisterAllHandlers:
             db_client=db,
             fs_worker=fs_worker,
             net_worker=net_worker,
+            workspace=MagicMock(),
+            history_tracker=MagicMock(),
+            history_store=MagicMock(),
             data_dir="/data",
             ready_since=0.0,
             get_ollama_status=lambda: "ok",
             get_worker_count=lambda: 2,
         )
 
-        assert broker.set_handler.call_count == 12
+        assert broker.bind_handler.call_count == len(TOOL_DEFINITIONS)
 
-        registered = {call.args[0] for call in broker.set_handler.call_args_list}
-        expected = {
-            "schedule_task",
-            "system_status",
-            "memory_recall",
-            "file_read",
-            "file_write",
-            "file_search",
-            "web_search",
-            "http_fetch",
-            "email_send",
-            "skill_create",
-            "skill_search",
-            "skill_load",
-        }
+        registered = {call.args[0] for call in broker.bind_handler.call_args_list}
+        expected = {definition.name for definition in TOOL_DEFINITIONS}
         assert registered == expected
 
     def test_handlers_are_callable(self):
@@ -184,13 +174,16 @@ class TestRegisterAllHandlers:
             db_client=db,
             fs_worker=fs_worker,
             net_worker=net_worker,
+            workspace=MagicMock(),
+            history_tracker=MagicMock(),
+            history_store=MagicMock(),
             data_dir="/data",
             ready_since=0.0,
             get_ollama_status=lambda: "ok",
             get_worker_count=lambda: 2,
         )
 
-        for call in broker.set_handler.call_args_list:
+        for call in broker.bind_handler.call_args_list:
             handler = call.args[1]
             assert callable(handler)
 
@@ -258,33 +251,23 @@ class TestValidateAllRegistered:
 
     def test_missing_handler_raises(self):
         """Verify RuntimeError when handler is missing."""
-        broker = ToolBroker(
-            registry=MagicMock(),
-        )
-        broker.set_handler("file_read", lambda p: p)
-        with pytest.raises(RuntimeError, match="Missing tool handlers"):
+        registry = ToolRegistry()
+        register_tool_definitions(registry)
+        broker = ToolBroker(registry=registry)
+        for definition in TOOL_DEFINITIONS[:-1]:
+            broker.bind_handler(definition.name, lambda p: p)
+        with pytest.raises(RuntimeError, match="missing handlers"):
             validate_all_registered(broker)
 
     def test_all_present_passes(self):
         """Verify no error when all handlers present."""
-        broker = ToolBroker(
-            registry=MagicMock(),
-        )
-        for name in (
-            "schedule_task",
-            "system_status",
-            "file_read",
-            "file_write",
-            "file_search",
-            "web_search",
-            "http_fetch",
-            "email_send",
-            "skill_create",
-            "skill_search",
-            "skill_load",
-        ):
-            broker.set_handler(name, lambda p: p)
+        registry = ToolRegistry()
+        register_tool_definitions(registry)
+        broker = ToolBroker(registry=registry)
+        for definition in TOOL_DEFINITIONS:
+            broker.bind_handler(definition.name, lambda p: p)
         validate_all_registered(broker)
+        assert broker.finalized
 
 
 class TestRegisterToolDefinitions:
@@ -300,42 +283,34 @@ class TestRegisterToolDefinitions:
             assert registered is not None, f"Missing: {tool_def.name}"
             assert registered.name == tool_def.name
 
-    def test_correct_zones(self):
-        """Verify each tool has the expected trust zone."""
+    def test_permission_modes_are_registry_owned(self):
+        """Verify representative tools carry backend permission policy."""
         registry = ToolRegistry()
         register_tool_definitions(registry)
 
-        expected_zones = {
-            "file_read": TrustZone.GREEN,
-            "file_write": TrustZone.YELLOW,
-            "file_search": TrustZone.GREEN,
-            "web_search": TrustZone.YELLOW,
-            "http_fetch": TrustZone.RED,
-            "email_send": TrustZone.RED,
-            "schedule_task": TrustZone.YELLOW,
-            "system_status": TrustZone.GREEN,
+        expected_modes = {
+            "file_read": PermissionMode.SCOPED,
+            "file_write": PermissionMode.PER_INVOCATION,
+            "web_search": PermissionMode.CONVERSATION_CAPABILITY,
+            "http_fetch": PermissionMode.CONVERSATION_CAPABILITY,
+            "email_send": PermissionMode.PER_INVOCATION,
+            "system_status": PermissionMode.IMPLICIT,
         }
-        for name, zone in expected_zones.items():
-            assert registry.get(name).zone == zone, f"{name} zone mismatch"
+        for name, mode in expected_modes.items():
+            assert registry.get(name).permission.mode == mode
 
-    def test_correct_worker_targets(self):
-        """Verify each tool has the expected worker target."""
+    def test_definitions_have_only_unified_registry_fields(self):
+        """Routing metadata is not duplicated in definitions."""
         registry = ToolRegistry()
         register_tool_definitions(registry)
 
-        expected_workers = {
-            "file_read": WorkerTarget.FS_WORKER,
-            "file_write": WorkerTarget.FS_WORKER,
-            "file_search": WorkerTarget.FS_WORKER,
-            "web_search": WorkerTarget.NET_WORKER,
-            "http_fetch": WorkerTarget.NET_WORKER,
-            "email_send": WorkerTarget.NET_WORKER,
-            "schedule_task": WorkerTarget.CORE,
-            "system_status": WorkerTarget.CORE,
+        assert set(registry.get("file_read").__dataclass_fields__) == {
+            "name",
+            "description",
+            "input_model",
+            "permission",
         }
-        for name, worker in expected_workers.items():
-            assert registry.get(name).worker == worker, f"{name} worker mismatch"
 
     def test_definition_count(self):
         """Verify all built-in definitions exist."""
-        assert len(TOOL_DEFINITIONS) == 12
+        assert len(TOOL_DEFINITIONS) == 23

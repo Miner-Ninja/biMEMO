@@ -1,9 +1,8 @@
 """Tool execution delegate for the gateway orchestrator.
 
 Handles building tool calls from LLM responses, executing them
-through the broker with trust-zone enforcement, emitting SSE
-notifications for yellow-zone results, and queuing red-zone
-confirmations. Manages the pending red-call state for the
+through registry authorization, emitting progress notifications,
+and queuing required confirmations. Manages the pending-call state for the
 orchestrator's public API.
 """
 
@@ -18,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
     build_tool_result_messages,
-    split_by_zone,
 )
 from backend.agent.agent_loop_models import (
     ToolCall,
@@ -30,19 +28,15 @@ from backend.permissions import (
     ActionDecision,
     ActionDecisionService,
     DecisionKind,
+    PermissionMode,
 )
 from backend.security.provenance import serialize_tool_result
-from backend.trust.zones import TrustZone, get_zone
+from backend.tools.broker import AuthorizationContext, PreparedInvocation, ToolBroker
 
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
-    from backend.tools.broker import ToolBroker, ToolResult
+    from backend.tools.broker import ToolResult
     from backend.trust.confirmation import ConfirmationManager, PendingAction
-
-    PendingActionRecorder = Callable[..., Awaitable[dict[str, object] | None]]
-
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +54,6 @@ class ToolExecutor:
         broker: ToolBroker,
         confirmation_mgr: ConfirmationManager,
         action_decisions: ActionDecisionService | None = None,
-        pending_action_recorder: PendingActionRecorder | None = None,
         turn_store: object | None = None,
     ) -> None:
         """Initialize tool executor.
@@ -69,14 +62,17 @@ class ToolExecutor:
             broker: Tool broker for execution.
             confirmation_mgr: Manager for red-zone confirmations.
             action_decisions: Optional action decision service.
-            pending_action_recorder: Optional async persistence hook for
-                confirmation-required actions.
             turn_store: Optional core-authority turn persistence client.
         """
         self.broker = broker
         self.confirmation_mgr = confirmation_mgr
-        self.action_decisions = action_decisions or ActionDecisionService()
-        self.pending_action_recorder = pending_action_recorder
+        if action_decisions is not None:
+            self.action_decisions = action_decisions
+        else:
+            self.action_decisions = ActionDecisionService(
+                registry=broker.registry,
+                workspace_roots=broker.workspace_roots,
+            )
         self.turn_store = turn_store
         self.sse_queue: object | None = None
         self._pending_red: list[PendingAction] = []
@@ -84,6 +80,7 @@ class ToolExecutor:
         self.tool_names_used: list[str] = []
         self.executed_tools: list[dict] = []
         self.allowed_tool_names: set[str] | None = None
+        self.allowed_tool_revisions: dict[str, str] = {}
         # Context propagated to tool handlers via the broker
         # (e.g. {"conversation_id": ..., "session_id": ...}).
         # Set by the orchestrator before processing a turn.
@@ -96,13 +93,18 @@ class ToolExecutor:
         self._pending_continuation: dict[str, object] | None = None
         self.current_obligations: tuple[object, ...] = ()
         self._authorized_grants: dict[str, dict[str, object]] = {}
+        self._prepared_calls: dict[str, object] = {}
+        self._policy_decisions: dict[str, ActionDecision] = {}
 
     @property
     def _core_turn_id(self) -> str:
         """Return the active core-authority turn id or an empty string."""
-        if self.current_context.get("authority_store") != "core":
-            return ""
         return self.current_context.get("agent_run_id", "")
+
+    @property
+    def _uses_registry_policy(self) -> bool:
+        """Require the sole supported permission-policy version."""
+        return self.current_context.get("tool_policy_version") == "registry-v1"
 
     def _invocation_id(self, tool_call_id: str) -> str:
         """Derive one stable invocation identity within the active turn."""
@@ -111,6 +113,8 @@ class ToolExecutor:
 
     def build_tool_calls(self, llm_response: object) -> list[ToolCall]:
         """Convert calls and collapse identical tool/argument requests."""
+        self._prepared_calls = {}
+        self._policy_decisions = {}
         calls: list[ToolCall] = []
         seen: set[str] = set()
         for tool_call in llm_response.tool_calls:
@@ -159,7 +163,7 @@ class ToolExecutor:
                 "id": tool_call.id,
                 "name": tool_call.name,
                 "parameters": dict(tool_call.parameters),
-                "zone": "unknown",
+                "permission_mode": "unknown",
                 "status": "requested",
                 "success": False,
             }
@@ -179,12 +183,40 @@ class ToolExecutor:
         decision = self._decide_tool_action(tool_call)
         if decision.kind == DecisionKind.BLOCK:
             msg = f"Tool action blocked: {decision.reason}"
-            self.executed_tools[-1]["zone"] = get_zone(tool_call.name).value
+            self.executed_tools[-1]["permission_mode"] = str(
+                decision.details.get("permission_mode", "blocked")
+            )
             self.executed_tools[-1]["status"] = "blocked"
             self.executed_tools[-1]["error"] = decision.reason
             if self.sse_queue is not None:
                 await self.sse_queue.put(
                     {"type": "tool_status", "name": tool_call.name, "status": "error"}
+                )
+            prepared = self._prepared_calls.get(tool_call.id)
+            if isinstance(self.broker, ToolBroker) and isinstance(
+                prepared, PreparedInvocation
+            ):
+                self.broker.record_authorization_outcome(
+                    prepared=prepared,
+                    authorization=AuthorizationContext(
+                        permission_mode=str(
+                            decision.details.get("permission_mode", "blocked")
+                        ),
+                        policy_revision=str(
+                            decision.details.get("policy_revision", "registry-v1")
+                        ),
+                        source=str(decision.details.get("source", "registry_policy")),
+                    ),
+                    outcome="tool_blocked",
+                    reason=decision.reason,
+                    correlation={
+                        **self.current_context,
+                        "invocation_id": (
+                            self._invocation_id(tool_call.id)
+                            if self._core_turn_id
+                            else str(tool_call.id)
+                        ),
+                    },
                 )
             raise PermissionError(msg)
         if self.sse_queue is not None:
@@ -194,11 +226,18 @@ class ToolExecutor:
         # Push the current execution context into the broker so handlers
         # that need it (e.g. schedule_task) can read conversation_id from
         # broker.current_context. Cleared in finally to keep state clean.
+        prepared = self._prepared_calls.get(tool_call.id)
+        if isinstance(self.broker, ToolBroker) and not isinstance(
+            prepared, PreparedInvocation
+        ):
+            raise RuntimeError("Prepared invocation is required for execution")
         claim_generation: int | None = None
         invocation_id = self._invocation_id(tool_call.id) if self._core_turn_id else ""
         if invocation_id and self.turn_store is not None:
             grant = self._authorized_grants.get(tool_call.id)
             if grant is not None:
+                if not isinstance(prepared, PreparedInvocation):
+                    raise RuntimeError("Prepared invocation is required for grant use")
                 claim = await self.turn_store.authorize_agent_invocation(
                     turn_id=self._core_turn_id,
                     invocation_id=invocation_id,
@@ -210,6 +249,7 @@ class ToolExecutor:
                     scope_json=dict(grant["scope"]),
                     scope_hash=str(grant["scope_hash"]),
                     policy_revision=str(grant["policy_revision"]),
+                    canonical_args_hash=prepared.canonical_hash,
                 )
             else:
                 claim = await self.turn_store.claim_agent_invocation(
@@ -218,9 +258,38 @@ class ToolExecutor:
                     idempotency_key=f"{self._core_turn_id}:{invocation_id}",
                 )
             claim_generation = int(claim["claim_generation"])
-        self.broker.set_context(self.current_context)
+        execution_context = {
+            **self.current_context,
+            "invocation_id": invocation_id or str(tool_call.id),
+        }
+        self.broker.set_context(execution_context)
+        grant = self._authorized_grants.get(tool_call.id)
+        preauthorized = self._scheduled_task_preauthorized(tool_call)
+        source = (
+            "saved_grant"
+            if grant is not None
+            else "scheduled_task"
+            if preauthorized
+            else str(decision.details.get("source", "registry_policy"))
+        )
+        authorization = AuthorizationContext(
+            permission_mode=str(decision.details.get("permission_mode", "implicit")),
+            policy_revision=str(decision.details.get("policy_revision", "registry-v1")),
+            source=source,
+            authorization_id=(
+                str(grant.get("authorization_id", ""))
+                if grant is not None
+                else str(self.current_context.get("scheduled_task_id", ""))
+                if preauthorized
+                else ""
+            ),
+        )
         try:
-            result = await self.broker.execute(tool_call.name, tool_call.parameters)
+            result = await self.broker.execute_prepared(
+                prepared,
+                authorization,
+                correlation=execution_context,
+            )
         except Exception as exc:
             if self.sse_queue is not None:
                 await self.sse_queue.put(
@@ -264,7 +333,10 @@ class ToolExecutor:
             )
         )
         effective_success = bool(result.success and not mandatory_result_truncated)
-        self.executed_tools[-1]["zone"] = result.zone.value
+        self.executed_tools[-1]["permission_mode"] = (
+            result.authorization.permission_mode
+        )
+        self.executed_tools[-1]["authorization_source"] = result.authorization.source
         self.executed_tools[-1]["success"] = effective_success
         self.executed_tools[-1]["status"] = (
             "succeeded" if effective_success else "failed"
@@ -280,7 +352,8 @@ class ToolExecutor:
                 result={
                     "data": result.result,
                     "duration_ms": result.duration_ms,
-                    "zone": result.zone.value,
+                    "permission_mode": result.authorization.permission_mode,
+                    "authorization_source": result.authorization.source,
                 }
                 if effective_success
                 else None,
@@ -320,6 +393,9 @@ class ToolExecutor:
         invocations: list[dict[str, object]] = []
         for call in calls:
             action = red_actions.get(call.id)
+            prepared = self._prepared_calls.get(call.id)
+            if not isinstance(prepared, PreparedInvocation):
+                raise RuntimeError("Prepared invocation is required before persistence")
             candidates = [
                 str(item.obligation_id)
                 for item in obligations
@@ -330,9 +406,10 @@ class ToolExecutor:
                     "invocation_id": self._invocation_id(call.id),
                     "tool_call_id": call.id,
                     "tool_name": call.name,
-                    "arguments": call.parameters,
+                    "arguments": dict(prepared.canonical_parameters),
+                    "canonical_args_hash": prepared.canonical_hash,
+                    "policy_revision": prepared.definition.permission.revision,
                     "source": "model",
-                    "trust_zone": get_zone(call.name).value,
                     "candidate_obligation_ids": candidates,
                     "confirmation_id": action.action_id if action is not None else None,
                     "confirmation_title": call.name if action is not None else "",
@@ -356,19 +433,27 @@ class ToolExecutor:
 
     def _action_context(self, tool_call: ToolCall) -> ActionContext:
         """Build the action policy context for one tool call."""
+        prepared = self._prepared_calls.get(tool_call.id)
+        if prepared is None and isinstance(self.broker, ToolBroker):
+            prepared = self.broker.prepare(tool_call.name, tool_call.parameters)
+            self._prepared_calls[tool_call.id] = prepared
         return ActionContext(
             conversation_id=self.current_context.get("conversation_id", ""),
             channel=self.current_context.get("channel", ""),
             session_id=self.current_context.get("session_id", ""),
             tool_name=tool_call.name,
             parameters=tool_call.parameters,
-            trust_zone=get_zone(tool_call.name).value,
-            structured_authority=bool(self._core_turn_id),
+            tool_policy_version=self.current_context.get("tool_policy_version", ""),
+            prepared=prepared if isinstance(prepared, PreparedInvocation) else None,
         )
 
     def _decide_tool_action(self, tool_call: ToolCall) -> ActionDecision:
         """Evaluate one tool call against the action policy."""
-        return self.action_decisions.decide(self._action_context(tool_call))
+        decision = self._policy_decisions.get(tool_call.id)
+        if decision is None:
+            decision = self.action_decisions.decide(self._action_context(tool_call))
+            self._policy_decisions[tool_call.id] = decision
+        return decision
 
     def _scheduled_task_preauthorized(self, call: ToolCall) -> bool:
         """Whether an autonomous scheduled run pre-authorises this RED tool.
@@ -378,10 +463,15 @@ class ToolExecutor:
         confirmation that can never happen in an autonomous run. Bounded to the
         scheduler channel and the task allowlist only.
         """
+        decision = self._decide_tool_action(call)
+        if not bool(decision.details.get("scheduler_preauthorizable", False)):
+            return False
         return (
             self.current_context.get("channel") == "scheduler"
             and self.allowed_tool_names is not None
             and call.name in self.allowed_tool_names
+            and self.allowed_tool_revisions.get(call.name)
+            == str(decision.details.get("policy_revision", ""))
         )
 
     def _grant_coordinates(
@@ -410,13 +500,35 @@ class ToolExecutor:
         self,
         calls: list[ToolCall],
     ) -> tuple[list[ToolCall], list[ToolCall]]:
-        """Apply backend manifests and authoritative grants to a native batch."""
+        """Apply registry policy and authoritative grants to a native batch."""
         immediate: list[ToolCall] = []
         confirmation: list[ToolCall] = []
         self._authorized_grants = {}
         for call in calls:
             decision = self._decide_tool_action(call)
             if decision.kind == DecisionKind.BLOCK:
+                prepared = self._prepared_calls.get(call.id)
+                if isinstance(prepared, PreparedInvocation):
+                    self.broker.record_authorization_outcome(
+                        prepared=prepared,
+                        authorization=AuthorizationContext(
+                            permission_mode=str(
+                                decision.details.get("permission_mode", "blocked")
+                            ),
+                            policy_revision=str(
+                                decision.details.get("policy_revision", "registry-v1")
+                            ),
+                            source=str(
+                                decision.details.get("source", "registry_policy")
+                            ),
+                        ),
+                        outcome="tool_blocked",
+                        reason=decision.reason,
+                        correlation={
+                            **self.current_context,
+                            "invocation_id": self._invocation_id(call.id),
+                        },
+                    )
                 raise PermissionError(f"Tool action blocked: {decision.reason}")
             preauthorized = self._scheduled_task_preauthorized(call)
             if decision.kind == DecisionKind.ALLOW or preauthorized:
@@ -441,6 +553,9 @@ class ToolExecutor:
                 confirmation.append(call)
                 continue
             self._authorized_grants[call.id] = coordinates
+            self._authorized_grants[call.id]["authorization_id"] = str(
+                grant.get("id", "")
+            )
             immediate.append(call)
         return immediate, confirmation
 
@@ -453,9 +568,7 @@ class ToolExecutor:
         still_red: list[ToolCall] = []
         for call in red_calls:
             decision = self._decide_tool_action(call)
-            if decision.kind == DecisionKind.ALLOW and decision.details.get(
-                "source"
-            ) != "legacy_trust_zone":
+            if decision.kind == DecisionKind.ALLOW:
                 immediate.append(call)
             elif decision.kind == DecisionKind.BLOCK:
                 raise PermissionError(f"Tool action blocked: {decision.reason}")
@@ -475,78 +588,6 @@ class ToolExecutor:
                 *[self._execute_with_status(tool_call) for tool_call in immediate_calls]
             )
         )
-
-    async def emit_yellow_tool_notifications(
-        self,
-        results: list[ToolResult],
-    ) -> None:
-        """Send short SSE notifications for yellow-zone tool results."""
-        if self.sse_queue is None:
-            return
-        for result in results:
-            if result.zone == TrustZone.YELLOW:
-                await self.sse_queue.put(
-                    {
-                        "type": "notification",
-                        "tool": result.tool_name,
-                        "summary": str(result.result)[:200],
-                    }
-                )
-
-    async def queue_red_tool_confirmations(
-        self,
-        red_calls: list[ToolCall],
-        channel: str,
-        messages: list[dict[str, object]] | None = None,
-        assistant_message: dict[str, object] | None = None,
-        required_tools: tuple[str, ...] = (),
-    ) -> None:
-        """Queue confirmation requests for red-zone tool calls."""
-        if not red_calls:
-            return
-        # Stable invocation identity derived from the tool call IDs.
-        invocation_id = tuple(call.id for call in red_calls)
-        # Idempotent: skip if already queued for this invocation.
-        if invocation_id == self._last_invocation_id:
-            return
-        if self._pending_red:
-            raise RuntimeError("A tool confirmation continuation is already pending")
-        self._last_invocation_id = invocation_id
-        # Freeze one pending continuation for resume.
-        self._pending_continuation = {
-            "tool_call_ids": invocation_id,
-            "messages": messages or [],
-            "assistant_message": assistant_message or {},
-            "required_tools": list(required_tools),
-        }
-        pending_actions: list[PendingAction] = []
-        for call in red_calls:
-            action = self.confirmation_mgr.request_confirmation(
-                call.name,
-                call.parameters,
-                channel,
-            )
-            await self._persist_pending_action(
-                call,
-                action.action_id,
-                channel,
-                messages=messages,
-                assistant_message=assistant_message,
-                required_tools=required_tools,
-            )
-            await self._emit_waiting_confirmation(call, action.action_id)
-            pending_actions.append(action)
-            self.executed_tools.append(
-                {
-                    "id": call.id,
-                    "name": call.name,
-                    "parameters": dict(call.parameters),
-                    "zone": TrustZone.RED.value,
-                    "status": "pending",
-                    "success": False,
-                }
-            )
-        self._pending_red = pending_actions
 
     async def _activate_core_red_confirmations(
         self,
@@ -576,7 +617,7 @@ class ToolExecutor:
                     "id": call.id,
                     "name": call.name,
                     "parameters": dict(call.parameters),
-                    "zone": TrustZone.RED.value,
+                    "permission_mode": PermissionMode.PER_INVOCATION.value,
                     "status": "pending",
                     "success": False,
                     "invocation_id": self._invocation_id(call.id),
@@ -601,39 +642,6 @@ class ToolExecutor:
                 "tool_name": call.name,
                 "parameters": call.parameters,
             }
-        )
-
-    async def _persist_pending_action(
-        self,
-        call: ToolCall,
-        action_id: str,
-        channel: str,
-        messages: list[dict[str, object]] | None = None,
-        assistant_message: dict[str, object] | None = None,
-        required_tools: tuple[str, ...] = (),
-    ) -> None:
-        """Persist one confirmation-required action when a recorder is configured."""
-        if self.pending_action_recorder is None:
-            return
-        run_id = self.current_context.get("agent_run_id", "")
-        if not run_id:
-            return
-        await self.pending_action_recorder(
-            run_id=run_id,
-            action_id=action_id,
-            tool_name=call.name,
-            parameters=call.parameters,
-            channel=channel,
-            preview={
-                "action_id": action_id,
-                "tool_call_id": call.id,
-            },
-            resume_snapshot={
-                "tool_call_id": call.id,
-                "messages": messages or [],
-                "assistant_message": assistant_message or {},
-                "required_tools": list(required_tools),
-            },
         )
 
     def append_tool_results_to_messages(
@@ -671,7 +679,6 @@ class ToolExecutor:
         llm_response: object,
         messages: list[dict[str, object]],
         channel: str,
-        user_intent: dict[str, set[str]] | None = None,
         required_tools: tuple[str, ...] = (),
     ) -> ToolRoundResult:
         """Execute one batch of tool calls and update the prompt state."""
@@ -682,21 +689,17 @@ class ToolExecutor:
                 executed_immediate_tools=False,
                 should_continue=False,
             )
+        if not self._core_turn_id:
+            raise RuntimeError("Tool execution requires a core-authority turn")
 
         tool_calls = self.build_tool_calls(llm_response)
         assistant_message = self._assistant_message_for_calls(
             llm_response,
             tool_calls,
         )
-        if self._core_turn_id:
-            immediate, red = await self._partition_structured_calls(tool_calls)
-        else:
-            immediate, red = split_by_zone(
-                tool_calls,
-                user_intent=user_intent,
-            )
-            granted_red, red = self._promote_saved_grants(red)
-            immediate.extend(granted_red)
+        if not self._uses_registry_policy:
+            raise PermissionError("Unsupported tool policy version")
+        immediate, red = await self._partition_structured_calls(tool_calls)
         core_actions: dict[str, PendingAction] = {}
         if self._core_turn_id:
             core_actions = {
@@ -714,23 +717,13 @@ class ToolExecutor:
                 assistant_message=assistant_message,
             )
         results = await self.execute_immediate_tool_calls(immediate)
-        await self.emit_yellow_tool_notifications(results)
-        if self._core_turn_id:
-            await self._activate_core_red_confirmations(
-                red_calls=red,
-                actions=core_actions,
-                messages=messages,
-                assistant_message=assistant_message,
-                required_tools=required_tools,
-            )
-        else:
-            await self.queue_red_tool_confirmations(
-                red,
-                channel,
-                messages=messages,
-                assistant_message=assistant_message,
-                required_tools=required_tools,
-            )
+        await self._activate_core_red_confirmations(
+            red_calls=red,
+            actions=core_actions,
+            messages=messages,
+            assistant_message=assistant_message,
+            required_tools=required_tools,
+        )
         self.append_tool_results_to_messages(
             messages=messages,
             llm_response=llm_response,

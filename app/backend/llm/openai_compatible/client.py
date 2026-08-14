@@ -573,7 +573,7 @@ class OpenAICompatibleClient:
         the ``tools`` parameter. Tool call deltas are accumulated
         across SSE chunks and returned as ``LLMToolCall`` objects.
 
-        When ``structured_finalization_enabled`` is active and tools are
+        When structured tool execution is active and tools are
         present, a two-stage flow is used: Stage 1 sends TEXT+tools
         (streaming by default); Stage 2 sends JSON_SCHEMA with no tools
         (non-streaming) to obtain structured output from the Stage 1

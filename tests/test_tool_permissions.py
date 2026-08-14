@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+
 from backend.permissions import ActionContext, ActionDecisionService
 from backend.processes.db_proxy.handlers.agent_turn import (
     make_create_agent_turn_handler,
@@ -16,6 +17,52 @@ from backend.processes.db_proxy.handlers.permissions import (
 )
 from backend.security.database import DatabaseManager
 from backend.security.schema import initialize_schema
+from backend.tools.broker import ToolBroker
+from backend.tools.handlers.registration import register_tool_definitions
+from backend.tools.registry import ToolRegistry
+
+
+_WEB_SEARCH_ARGS_HASH = (
+    "199de5ed5d369b7243a55fe3d9d0b3e511fddd59aa83a315b3291de497017b7e"
+)
+
+
+def _registry_decision(
+    tool_name: str,
+    parameters: dict,
+    conversation_id: str,
+    *,
+    workspace_roots: list[str] | None = None,
+):
+    registry = ToolRegistry()
+    register_tool_definitions(registry)
+    broker = ToolBroker(
+        registry=registry,
+        workspace_roots_fn=(lambda: workspace_roots or []),
+    )
+    for name in registry.tool_names:
+        broker.bind_handler(name, lambda _input: None)
+    broker.finalize()
+    return ActionDecisionService(
+        registry=registry,
+        workspace_roots=broker.workspace_roots,
+    ).decide(
+        ActionContext(
+            conversation_id=conversation_id,
+            channel="web",
+            session_id="session-1",
+            tool_name=tool_name,
+            parameters=parameters,
+            prepared=broker.prepare(tool_name, parameters),
+        )
+    )
+
+
+def _web_search_decision(conversation_id: str = "conversation-1"):
+    """Build a registry decision from one canonical prepared invocation."""
+    return _registry_decision(
+        "web_search", {"query": "current btc price"}, conversation_id
+    )
 
 
 def _open_db(tmp_path) -> DatabaseManager:
@@ -54,6 +101,8 @@ async def _turn_with_web_search(
                     "tool_call_id": f"call-{turn_id}",
                     "tool_name": "web_search",
                     "arguments": {"query": "current btc price"},
+                    "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
+                    "policy_revision": "registry-v1",
                     "confirmation_id": confirmation_id,
                     "confirmation_title": "web_search",
                     "confirmation_description": "Allow internet reads",
@@ -69,16 +118,7 @@ async def _turn_with_web_search(
 async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
     """Approval is reusable in one chat and authorization+claim is atomic."""
     db = _open_db(tmp_path)
-    decision = ActionDecisionService().decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="web_search",
-            parameters={"query": "current btc price"},
-            structured_authority=True,
-        )
-    )
+    decision = _web_search_decision()
     scope = dict(decision.details["scope"])
     scope_hash = str(decision.details["scope_hash"])
     scope_value = "conversation-1"
@@ -102,11 +142,11 @@ async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
             "scope_value": scope_value,
             "scope_json": scope,
             "scope_hash": scope_hash,
-            "policy_revision": "1",
+            "policy_revision": "registry-v1",
+            "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
             "confirmation_id": "confirmation-1",
             "create_reusable_grant": True,
             "grant_expires_at": "2999-01-01T00:00:00+00:00",
-            "expected_statuses": ["pending_confirmation"],
         }
     )
     assert first["claimed"] is True
@@ -118,66 +158,43 @@ async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
                 "capability": "web_search",
                 "channel": "web",
                 "scope_hash": scope_hash,
-                "policy_revision": "1",
+                "policy_revision": "registry-v1",
             }
         )
     )["grant"]
     assert grant["origin_confirmation_id"] == "confirmation-1"
     assert grant["expires_at"] == "2999-01-01T00:00:00+00:00"
 
-    scoped_service = ActionDecisionService()
-    path_a = scoped_service.decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="file_read",
-            parameters={"path": "./README.md"},
-            structured_authority=True,
-        )
+    path_a = _registry_decision(
+        "file_read",
+        {"path": str(tmp_path / "README.md")},
+        "conversation-1",
+        workspace_roots=[str(tmp_path)],
     )
-    path_a_equivalent = scoped_service.decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="file_read",
-            parameters={"path": "README.md"},
-            structured_authority=True,
-        )
+    path_a_equivalent = _registry_decision(
+        "file_read",
+        {"path": str(tmp_path / "." / "README.md")},
+        "conversation-1",
+        workspace_roots=[str(tmp_path)],
     )
-    path_b = scoped_service.decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="file_read",
-            parameters={"path": "SECURITY.md"},
-            structured_authority=True,
-        )
+    path_b = _registry_decision(
+        "file_read",
+        {"path": str(tmp_path / "SECURITY.md")},
+        "conversation-1",
+        workspace_roots=[str(tmp_path)],
     )
     assert path_a.details["scope_hash"] == path_a_equivalent.details["scope_hash"]
-    assert path_a.details["scope_hash"] != path_b.details["scope_hash"]
+    assert path_a.details["scope_hash"] == path_b.details["scope_hash"]
 
-    sensitive_a = scoped_service.decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="email_send",
-            parameters={"to": "a@example.test", "body": "hello"},
-            structured_authority=True,
-        )
+    sensitive_a = _registry_decision(
+        "email_send",
+        {"to": "a@example.test", "subject": "x", "body": "hello"},
+        "conversation-1",
     )
-    sensitive_b = scoped_service.decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="email_send",
-            parameters={"to": "b@example.test", "body": "hello"},
-            structured_authority=True,
-        )
+    sensitive_b = _registry_decision(
+        "email_send",
+        {"to": "b@example.test", "subject": "x", "body": "hello"},
+        "conversation-1",
     )
     assert sensitive_a.details["scope_hash"] != sensitive_b.details["scope_hash"]
 
@@ -199,8 +216,8 @@ async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
             "scope_value": scope_value,
             "scope_json": scope,
             "scope_hash": scope_hash,
-            "policy_revision": "1",
-            "expected_statuses": ["required"],
+            "policy_revision": "registry-v1",
+            "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
         }
     )
     assert reused["claimed"] is True
@@ -224,8 +241,8 @@ async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
                 "scope_value": scope_value,
                 "scope_json": scope,
                 "scope_hash": scope_hash,
-                "policy_revision": "1",
-                "expected_statuses": ["required"],
+                "policy_revision": "registry-v1",
+                "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
             }
         )
 
@@ -249,27 +266,61 @@ async def test_conversation_scoped_grant_matrix(tmp_path) -> None:
                 "scope_value": scope_value,
                 "scope_json": scope,
                 "scope_hash": scope_hash,
-                "policy_revision": "1",
-                "expected_statuses": ["required"],
+                "policy_revision": "registry-v1",
+                "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
             }
         )
     assert db.in_transaction is False
     db.close()
 
 
+async def test_approved_confirmation_recovery_uses_atomic_authorize_claim(
+    tmp_path,
+) -> None:
+    """A crash after approval resumes through the same checked transaction."""
+    db = _open_db(tmp_path)
+    decision = _web_search_decision()
+    scope = dict(decision.details["scope"])
+    await _turn_with_web_search(
+        db,
+        turn_id="turn-recovery",
+        conversation_id="conversation-1",
+        invocation_id="invocation-recovery",
+        confirmation_id="confirmation-recovery",
+    )
+    db.execute(
+        "UPDATE agent_confirmations SET status = 'approved', expires_at = ? "
+        "WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", "confirmation-recovery"),
+    )
+    db.commit()
+
+    result = await make_authorize_agent_invocation_handler(db)(
+        {
+            "turn_id": "turn-recovery",
+            "invocation_id": "invocation-recovery",
+            "idempotency_key": "dispatch-recovery",
+            "capability": "web_search",
+            "channel": "web",
+            "scope_type": "conversation_capability",
+            "scope_value": "conversation-1",
+            "scope_json": scope,
+            "scope_hash": str(decision.details["scope_hash"]),
+            "policy_revision": "registry-v1",
+            "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
+            "confirmation_id": "confirmation-recovery",
+            "create_reusable_grant": True,
+            "grant_expires_at": "2999-01-01T00:00:00+00:00",
+        }
+    )
+
+    assert result["claimed"] is True
+
+
 async def test_reusable_grant_requires_active_expiration(tmp_path) -> None:
     """Structured authorization rejects expired and legacy unbounded grants."""
     db = _open_db(tmp_path)
-    decision = ActionDecisionService().decide(
-        ActionContext(
-            conversation_id="conversation-1",
-            channel="web",
-            session_id="session-1",
-            tool_name="web_search",
-            parameters={"query": "btc"},
-            structured_authority=True,
-        )
-    )
+    decision = _web_search_decision()
     scope = dict(decision.details["scope"])
     scope_hash = str(decision.details["scope_hash"])
     await _turn_with_web_search(
@@ -292,11 +343,11 @@ async def test_reusable_grant_requires_active_expiration(tmp_path) -> None:
                 "scope_value": "conversation-1",
                 "scope_json": scope,
                 "scope_hash": scope_hash,
-                "policy_revision": "1",
+                "policy_revision": "registry-v1",
+                "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
                 "confirmation_id": "confirmation-expired-grant",
                 "create_reusable_grant": True,
                 "grant_expires_at": "2000-01-01T00:00:00+00:00",
-                "expected_statuses": ["pending_confirmation"],
             }
         )
     db.execute(
@@ -304,7 +355,7 @@ async def test_reusable_grant_requires_active_expiration(tmp_path) -> None:
         "(id, scope_type, scope_value, capability, decision, channel, scope_json, "
         "scope_hash, policy_revision, expires_at) "
         "VALUES ('legacy-null', 'conversation_capability', 'conversation-1', "
-        "'web_search', 'allow', 'web', ?, ?, '1', NULL)",
+        "'web_search', 'allow', 'web', ?, ?, 'registry-v1', NULL)",
         (
             json.dumps(scope, sort_keys=True, separators=(",", ":")),
             scope_hash,
@@ -330,8 +381,8 @@ async def test_reusable_grant_requires_active_expiration(tmp_path) -> None:
                 "scope_value": "conversation-1",
                 "scope_json": scope,
                 "scope_hash": scope_hash,
-                "policy_revision": "1",
-                "expected_statuses": ["required"],
+                "policy_revision": "registry-v1",
+                "canonical_args_hash": _WEB_SEARCH_ARGS_HASH,
             }
         )
     db.close()

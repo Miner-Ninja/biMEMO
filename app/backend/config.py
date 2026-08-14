@@ -53,8 +53,6 @@ class Settings(BaseSettings):
             token-by-token (true) or block until the full JSON body
             arrives (false). Ignored when llm_response_format=text,
             which always streams.
-        structured_finalization_enabled: Enable structured finalization of
-            agent task outputs (required, no default).
     """
 
     model_config = {"env_prefix": "BIMEMO_"}
@@ -98,7 +96,6 @@ class Settings(BaseSettings):
 
     # --- MCP (Model Context Protocol) ---
     mcp_enabled: bool = False
-    structured_finalization_enabled: bool
     llm_native_tools_support: str
     llm_exact_named_choice_support: str
     llm_required_native_decision_support: str

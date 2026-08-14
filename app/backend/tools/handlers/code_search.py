@@ -6,14 +6,31 @@ directory. Returns matching files with line numbers and context.
 
 from __future__ import annotations
 
+import asyncio
+import fnmatch
 import logging
+import os
+import stat
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from backend.workers.cmd_worker import execute_command
+import regex
+
+from backend.tools.validation import ValidationError, check_sensitive_read_path
+from backend.workers.fs_worker import open_directory_no_symlinks
 
 
 logger = logging.getLogger(__name__)
+
+_MAX_PATTERN_LENGTH = 4096
+_MAX_FILES_SCANNED = 5000
+_MAX_AGGREGATE_BYTES = 32 * 1024 * 1024
+_MAX_FILE_BYTES = 2 * 1024 * 1024
+_MAX_LINE_LENGTH = 64 * 1024
+_SEARCH_TIMEOUT_SECONDS = 30.0
+_REGEX_TIMEOUT_SECONDS = 0.01
 
 
 @dataclass
@@ -35,7 +52,7 @@ async def code_search(
 ) -> dict[str, Any]:
     """Search for text/regex patterns across workspace files.
 
-    Uses grep under the hood.
+    Traverses files directly so safety checks run before every open.
 
     Args:
         pattern: Text or regex pattern to search for.
@@ -50,81 +67,122 @@ async def code_search(
     """
     if not pattern:
         return {"error": "pattern is required", "matches": [], "count": 0}
+    if len(pattern) > _MAX_PATTERN_LENGTH:
+        return {"error": "pattern is too long", "matches": [], "count": 0}
 
-    # Build grep command
-    import shlex
+    try:
+        matcher = regex.compile(pattern) if use_regex else None
+    except regex.error as exc:
+        return {"error": f"invalid regex: {exc}", "matches": [], "count": 0}
 
-    grep_args = [
-        "grep",
-        "-E" if use_regex else "-F",
-        "-n",
-        "-r",
-        f"-C{context_lines}",
-        pattern,
-        ".",  # Search current directory
-    ]
+    def search() -> tuple[list[SearchMatch], set[str]]:
+        root = Path(os.path.abspath(cwd or "."))
+        root_fd = open_directory_no_symlinks(root)
+        matches: list[SearchMatch] = []
+        files_seen: set[str] = set()
+        emitted: set[tuple[str, int]] = set()
+        files_scanned = 0
+        aggregate_bytes = 0
+        deadline = time.monotonic() + _SEARCH_TIMEOUT_SECONDS
+        try:
+            for current_root, directories, filenames, directory_fd in os.fwalk(
+                ".",
+                topdown=True,
+                follow_symlinks=False,
+                dir_fd=root_fd,
+            ):
+                if time.monotonic() >= deadline:
+                    return matches, files_seen
+                relative_dir = Path(current_root)
+                directories[:] = [
+                    name
+                    for name in directories
+                    if _read_path_allowed(root / relative_dir / name)
+                ]
+                for filename in filenames:
+                    if time.monotonic() >= deadline:
+                        return matches, files_seen
+                    relative_path = relative_dir / filename
+                    relative = relative_path.as_posix().removeprefix("./")
+                    candidate = root / relative_path
+                    if not _read_path_allowed(candidate):
+                        continue
+                    if file_pattern not in {"", "**/*"} and not (
+                        fnmatch.fnmatch(relative, file_pattern)
+                        or fnmatch.fnmatch(filename, file_pattern)
+                    ):
+                        continue
+                    files_scanned += 1
+                    if files_scanned > _MAX_FILES_SCANNED:
+                        return matches, files_seen
+                    flags = os.O_RDONLY | os.O_NONBLOCK
+                    if hasattr(os, "O_NOFOLLOW"):
+                        flags |= os.O_NOFOLLOW
+                    try:
+                        descriptor = os.open(filename, flags, dir_fd=directory_fd)
+                        with os.fdopen(descriptor, "rb") as handle:
+                            metadata = os.fstat(handle.fileno())
+                            if not stat.S_ISREG(metadata.st_mode):
+                                continue
+                            size = metadata.st_size
+                            if size > _MAX_FILE_BYTES:
+                                continue
+                            content = handle.read(_MAX_FILE_BYTES + 1)
+                            aggregate_bytes += len(content)
+                            if aggregate_bytes > _MAX_AGGREGATE_BYTES:
+                                return matches, files_seen
+                            if len(content) > _MAX_FILE_BYTES:
+                                continue
+                            lines = (
+                                content
+                                .decode("utf-8", errors="replace")
+                                .splitlines()
+                            )
+                    except OSError, UnicodeError:
+                        continue
+                    if time.monotonic() >= deadline:
+                        return matches, files_seen
+                    for index, line in enumerate(lines):
+                        if time.monotonic() >= deadline:
+                            return matches, files_seen
+                        bounded_line = line[:_MAX_LINE_LENGTH]
+                        try:
+                            found = (
+                                bool(
+                                    matcher.search(
+                                        bounded_line,
+                                        timeout=_REGEX_TIMEOUT_SECONDS,
+                                    )
+                                )
+                                if matcher
+                                else pattern in bounded_line
+                            )
+                        except TimeoutError:
+                            return matches, files_seen
+                        if not found:
+                            continue
+                        files_seen.add(relative)
+                        start = max(0, index - context_lines)
+                        end = min(len(lines), index + context_lines + 1)
+                        for context_index in range(start, end):
+                            key = (relative, context_index)
+                            if key in emitted:
+                                continue
+                            emitted.add(key)
+                            matches.append(
+                                SearchMatch(
+                                    relative,
+                                    context_index + 1,
+                                    lines[context_index][:_MAX_LINE_LENGTH].strip(),
+                                )
+                            )
+                            if len(matches) >= max_results:
+                                return matches, files_seen
+            return matches, files_seen
+        finally:
+            os.close(root_fd)
 
-    # Add file pattern filter if not default
-    if file_pattern and file_pattern != "**/*":
-        grep_args.insert(len(grep_args) - 2, f"--include={file_pattern}")
-
-    # Use shlex.join for proper shell escaping (Python 3.8+)
-    command = shlex.join(grep_args)
-
-    result = await execute_command(
-        command=command,
-        cwd=cwd,
-        timeout=30.0,
-    )
-
-    if result.error and result.exit_code not in (0, 1):
-        # exit_code 1 = no matches (normal), other = error
-        return {"error": result.error, "matches": [], "count": 0}
-
-    # Parse grep output
-    matches: list[SearchMatch] = []
-    files_seen: set[str] = set()
-    current_file = ""
-
-    output_text = result.stdout or ""
-    for line in output_text.split("\n"):
-        if not line:
-            continue
-
-        # grep output format: filename:line_number:text
-        # With -C context, we get "---" separators and context lines
-        if line == "--":
-            continue
-
-        # Try to parse as filename:line:text
-        parts = line.split(":", 2)
-        if len(parts) == 3:
-            try:
-                filename = parts[0]
-                line_num = int(parts[1])
-                text = parts[2]
-                current_file = filename
-                files_seen.add(filename)
-                matches.append(
-                    SearchMatch(
-                        file=filename,
-                        line=line_num,
-                        text=text.strip(),
-                    )
-                )
-            except ValueError:
-                # Context line without line number
-                if current_file:
-                    matches.append(
-                        SearchMatch(
-                            file=current_file,
-                            line=0,
-                            text=line.strip(),
-                        )
-                    )
-
-    # Limit results
-    matches = matches[:max_results]
+    matches, files_seen = await asyncio.to_thread(search)
 
     return {
         "matches": [{"file": m.file, "line": m.line, "text": m.text} for m in matches],
@@ -132,3 +190,12 @@ async def code_search(
         "files": sorted(files_seen),
         "file_count": len(files_seen),
     }
+
+
+def _read_path_allowed(path: Path) -> bool:
+    """Return whether a traversal candidate passes active read policy."""
+    try:
+        check_sensitive_read_path(str(path))
+    except ValidationError:
+        return False
+    return True

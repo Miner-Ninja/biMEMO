@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 
-RUNTIME_SCHEMA_VERSION = 2
+RUNTIME_SCHEMA_VERSION = 3
 RUN_TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed", "stopped"})
 ACTION_TERMINAL_STATUSES = frozenset({"completed", "failed", "denied", "expired"})
 
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     current_step TEXT NOT NULL DEFAULT '',
     request_id TEXT NOT NULL DEFAULT '',
     resume_payload TEXT NOT NULL DEFAULT '{}',
+    tool_policy_version TEXT NOT NULL DEFAULT 'registry-v1',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     completed_at TEXT
@@ -151,6 +152,26 @@ def initialize_runtime_schema(db: DatabaseManager) -> None:
     """Create runtime database tables and indexes if they do not exist."""
     for statement in RUNTIME_SCHEMA_STATEMENTS:
         db.execute(statement)
+    columns = {row[1] for row in db.execute("PRAGMA table_info(agent_runs)")}
+    if "tool_policy_version" not in columns:
+        db.execute("ALTER TABLE agent_runs ADD COLUMN tool_policy_version TEXT")
+    db.execute(
+        "UPDATE agent_runs SET status = 'failed', "
+        "completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
+        "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+        "WHERE (tool_policy_version IS NULL "
+        "OR tool_policy_version != 'registry-v1') "
+        "AND status NOT IN ('cancelled', 'completed', 'failed', 'stopped')"
+    )
+    db.execute(
+        "UPDATE pending_actions SET status = 'expired', "
+        "error_message = 'Action retired during tool-policy migration', "
+        "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
+        "WHERE status NOT IN ('completed', 'failed', 'denied', 'expired') "
+        "AND run_id IN (SELECT id FROM agent_runs "
+        "WHERE tool_policy_version IS NULL "
+        "OR tool_policy_version != 'registry-v1')"
+    )
     _ensure_runtime_schema_version(db)
     db.commit()
 

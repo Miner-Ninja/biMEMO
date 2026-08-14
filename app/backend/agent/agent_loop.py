@@ -36,14 +36,9 @@ from backend.agent.finalization import (
     RequirementSatisfaction,
     ResponseRequirements,
     build_tool_obligations,
-    detect_turn_requirements,
     requirements_with_expected_tools,
 )
-from backend.agent.llm_caller import (
-    FORCED_WEB_SEARCH_CLASSIFIER_PROMPT,
-    LLMCaller,
-    LLMStreamMode,
-)
+from backend.agent.llm_caller import LLMCaller, LLMStreamMode
 from backend.agent.loop import (
     AgenticLoop,
 )
@@ -91,7 +86,6 @@ from backend.memory.classification.resolver import (
 from backend.permissions import (
     ActionContext,
     ActionDecisionService,
-    ActionGrantReader,
     DecisionKind,
 )
 from backend.security.content_filter import (
@@ -100,21 +94,19 @@ from backend.security.content_filter import (
 )
 from backend.security.policy import get_policy
 from backend.security.provenance import serialize_tool_result
+from backend.tools.broker import AuthorizationContext, ToolBroker
 from backend.tools.rate_limits import ToolRateLimiter
 from backend.trust.confirmation import (
     ConfirmationManager,
 )
-from backend.trust.zones import extract_user_intent
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.concurrency import AgentConcurrency
-    from backend.agent.tool_executor import PendingActionRecorder
     from backend.llm.call_factory import AttemptRecord
     from backend.llm.usage import LLMCallUsage
-    from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
 
 
@@ -141,7 +133,6 @@ SKILL_JSON_RESPONSE_VERIFICATION = (
 
 # Re-export for backward compatibility (used by tests)
 __all__ = [
-    "FORCED_WEB_SEARCH_CLASSIFIER_PROMPT",
     "AgentOrchestrator",
 ]
 
@@ -251,8 +242,6 @@ class AgentOrchestrator:
     notify_primary_started: Callable[[], None] | None = None
     notify_primary_finished: Callable[[], None] | None = None
     confirmation_mgr: ConfirmationManager = field(default_factory=ConfirmationManager)
-    web_search_classifier_fn: Callable | None = None
-    memory_recall_classifier_fn: Callable | None = None
     sse_queue: object | None = None
     user_profile: dict[str, str] = field(default_factory=dict)
     model_name: str = ""
@@ -260,19 +249,20 @@ class AgentOrchestrator:
     search_skills_fn: Callable | None = None
     create_skill_fn: Callable | None = None
     log_skill_usage_fn: Callable | None = None
-    action_grants: ActionGrantReader | None = None
-    pending_action_recorder: PendingActionRecorder | None = None
     turn_store: object | None = None
     run_event_recorder: object | None = None
     scheduled_task_run: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         """Initialize delegate objects after dataclass construction."""
+        action_decisions = ActionDecisionService(
+            registry=self.broker.registry,
+            workspace_roots=self.broker.workspace_roots,
+        )
         self.tool_executor = ToolExecutor(
             self.broker,
             self.confirmation_mgr,
-            action_decisions=ActionDecisionService(self.action_grants),
-            pending_action_recorder=self.pending_action_recorder,
+            action_decisions=action_decisions,
             turn_store=self.turn_store,
         )
         # Per-turn accumulator for the processing-stage timing breakdown; reset
@@ -284,8 +274,6 @@ class AgentOrchestrator:
         self._forced_tools: list[str] = []
         self.llm_caller = LLMCaller(
             self.model_name,
-            self.web_search_classifier_fn,
-            self.memory_recall_classifier_fn,
             self.broker,
         )
         self._provider_attempt_tasks: list[asyncio.Task] = []
@@ -322,10 +310,6 @@ class AgentOrchestrator:
             self.persistence.save_record_fn = value
         elif name == "context_fn" and hasattr(self, "memory_loader"):
             self.memory_loader.context_fn = value
-        elif name == "web_search_classifier_fn" and hasattr(self, "llm_caller"):
-            self.llm_caller.web_search_classifier_fn = value
-        elif name == "memory_recall_classifier_fn" and hasattr(self, "llm_caller"):
-            self.llm_caller.memory_recall_classifier_fn = value
         elif name == "model_name":
             if hasattr(self, "llm_caller"):
                 self.llm_caller.model_name = value
@@ -1094,9 +1078,7 @@ class AgentOrchestrator:
             meta=meta,
         )
         pending_input_resume = (
-            meta.get("pending_input_resume")
-            if isinstance(meta, dict)
-            else None
+            meta.get("pending_input_resume") if isinstance(meta, dict) else None
         )
         if isinstance(pending_input_resume, dict):
             snapshot = pending_input_resume.get("transcript_snapshot")
@@ -1146,8 +1128,8 @@ class AgentOrchestrator:
                 tuple(self._forced_tools),
             )
             satisfaction = RequirementSatisfaction()
-        elif structured_turn:
-            # Structured turns delegate semantic selection to the model. Only
+        else:
+            # Every turn delegates semantic selection to the model. Only
             # explicit UI/caller requirements create backend obligations.
             requirements = ResponseRequirements()
             if self._forced_tools and get_policy().get_bool(
@@ -1158,49 +1140,6 @@ class AgentOrchestrator:
                     tuple(self._forced_tools),
                 )
             satisfaction = RequirementSatisfaction()
-        else:
-            requirements = detect_turn_requirements(turn_input.filtered_message)
-            if self._forced_tools and get_policy().get_bool(
-                "tools.manual_control_enabled"
-            ):
-                requirements = requirements_with_expected_tools(
-                    requirements, tuple(self._forced_tools)
-                )
-            satisfaction = await self.llm_caller.append_required_tool_context(
-                filtered_message=turn_input.filtered_message,
-                messages=messages,
-                requirements=requirements,
-            )
-            if "web_search" not in requirements.required_tools:
-                web_search_satisfied = (
-                    await self.llm_caller.append_forced_web_search_context(
-                        filtered_message=turn_input.filtered_message,
-                        messages=messages,
-                        llm_call=llm_call,
-                        call_usages=call_usages,
-                    )
-                )
-                if web_search_satisfied:
-                    satisfaction = satisfaction.with_success("web_search")
-        forced_recall_tokens = 0
-        if not structured_turn and "memory_recall" not in requirements.required_tools:
-            recall_zone_budget = (
-                prepared_context.zone_budget.get("recall_results")
-                if prepared_context.zone_budget is not None
-                else None
-            )
-            forced_recall_tokens = (
-                await self.llm_caller.append_forced_memory_recall_context(
-                    filtered_message=turn_input.filtered_message,
-                    messages=messages,
-                    recall_token_budget=recall_zone_budget,
-                )
-            )
-        if forced_recall_tokens > 0 and prepared_context.zone_usage is not None:
-            prepared_context.zone_usage["recall_results"] = (
-                prepared_context.zone_usage.get("recall_results", 0)
-                + forced_recall_tokens
-            )
         question_route = await self.memory_loader.prepare_turn_memory_context(
             llm_call=llm_call,
             session_id=session_id,
@@ -1377,13 +1316,8 @@ class AgentOrchestrator:
         if self.turn_store is None:
             raise RuntimeError("structured confirmation has no core authority store")
         confirmation = await self.turn_store.get_agent_confirmation(confirmation_id)
-        legacy_decision: dict[str, object] | None = None
         if not isinstance(confirmation, dict):
-            legacy_decision = await self.turn_store.decide_agent_confirmation(
-                confirmation_id,
-                decision,
-            )
-            confirmation = legacy_decision
+            raise RuntimeError("Unknown confirmation identity")
         turn_id = str(confirmation.get("turn_id", ""))
         invocation_id = str(confirmation.get("invocation_id", ""))
         canonical = await self.turn_store.get_agent_turn(turn_id)
@@ -1405,7 +1339,7 @@ class AgentOrchestrator:
                 "session_id": str(canonical.get("session_id", "")),
                 "channel": str(canonical.get("channel", "")),
                 "agent_run_id": turn_id,
-                "authority_store": "core",
+                "tool_policy_version": str(canonical.get("tool_policy_version", "")),
             }
             prepared = self._restore_structured_preparation(canonical, invocation_id)
             prepared.call_usages.extend(preliminary_call_usages or [])
@@ -1418,12 +1352,60 @@ class AgentOrchestrator:
             ]
             canonical_decision = confirmation
             if decision == "denied":
-                canonical_decision = legacy_decision or (
-                    await self.turn_store.decide_agent_confirmation(
-                        confirmation_id,
-                        decision,
-                    )
+                canonical_decision = await self.turn_store.decide_agent_confirmation(
+                    confirmation_id,
+                    decision,
                 )
+                if canonical_decision.get("changed") and isinstance(
+                    self.tool_executor.broker, ToolBroker
+                ):
+                    tool_name = str(confirmation.get("tool_name", ""))
+                    arguments = dict(confirmation.get("parameters", {}))
+                    denied_prepared = self.tool_executor.broker.prepare(
+                        tool_name,
+                        arguments,
+                    )
+                    denied_policy = self.tool_executor.action_decisions.decide(
+                        ActionContext(
+                            conversation_id=str(canonical.get("conversation_id", "")),
+                            channel=str(canonical.get("channel", "")),
+                            session_id=str(canonical.get("session_id", "")),
+                            tool_name=tool_name,
+                            parameters=arguments,
+                            tool_policy_version=str(
+                                canonical.get("tool_policy_version", "")
+                            ),
+                            prepared=denied_prepared,
+                        )
+                    )
+                    self.tool_executor.broker.record_authorization_outcome(
+                        prepared=denied_prepared,
+                        authorization=AuthorizationContext(
+                            permission_mode=str(
+                                denied_policy.details.get(
+                                    "permission_mode", "per_invocation"
+                                )
+                            ),
+                            policy_revision=str(
+                                denied_policy.details.get(
+                                    "policy_revision", "registry-v1"
+                                )
+                            ),
+                            source="user_confirmation",
+                            authorization_id=confirmation_id,
+                        ),
+                        outcome="tool_denied",
+                        reason="User denied the requested tool action",
+                        correlation={
+                            "agent_run_id": turn_id,
+                            "invocation_id": invocation_id,
+                            "conversation_id": str(
+                                canonical.get("conversation_id", "")
+                            ),
+                            "session_id": str(canonical.get("session_id", "")),
+                            "scheduled_task_id": "",
+                        },
+                    )
                 refreshed = await self.turn_store.get_agent_turn(turn_id)
                 if refreshed is None:
                     raise RuntimeError(
@@ -1471,15 +1453,10 @@ class AgentOrchestrator:
                         llm_call=llm_call,
                         channel=str(canonical.get("channel", "")),
                     )
-                approval_needs_claim = (
-                    canonical_decision.get("status") == "approved"
-                    and invocation_status == "pending_confirmation"
+                raise RuntimeError(
+                    "confirmation is already "
+                    f"{canonical_decision.get('status', 'decided')}"
                 )
-                if not approval_needs_claim:
-                    raise RuntimeError(
-                        "confirmation is already "
-                        f"{canonical_decision.get('status', 'decided')}"
-                    )
             if decision == "denied":
                 if pending_confirmations:
                     return self._paused_response_from_canonical(canonical, loop)
@@ -1525,15 +1502,23 @@ class AgentOrchestrator:
             )
             if not isinstance(invocation, dict):
                 raise RuntimeError("confirmed invocation is missing")
+            invocation_tool = str(invocation.get("tool_name", ""))
+            invocation_arguments = dict(invocation.get("arguments", {}))
+            prepared_invocation = self.tool_executor.broker.restore_prepared(
+                invocation_tool,
+                invocation_arguments,
+                expected_hash=str(invocation.get("canonical_args_hash", "")),
+                expected_policy_revision=str(invocation.get("policy_revision", "")),
+            )
             permission = self.tool_executor.action_decisions.decide(
                 ActionContext(
                     conversation_id=str(canonical.get("conversation_id", "")),
                     channel=str(canonical.get("channel", "")),
                     session_id=str(canonical.get("session_id", "")),
-                    tool_name=str(invocation.get("tool_name", "")),
-                    parameters=dict(invocation.get("arguments", {})),
-                    trust_zone=str(invocation.get("trust_zone", "")),
-                    structured_authority=True,
+                    tool_name=invocation_tool,
+                    parameters=invocation_arguments,
+                    tool_policy_version=str(canonical.get("tool_policy_version", "")),
+                    prepared=prepared_invocation,
                 )
             )
             if permission.kind == DecisionKind.BLOCK:
@@ -1550,49 +1535,58 @@ class AgentOrchestrator:
                 "conversation_capability",
                 "scoped",
             }
-            if canonical_decision.get("status") == "approved":
-                claim = await self.turn_store.claim_agent_invocation(
-                    turn_id=turn_id,
-                    invocation_id=invocation_id,
-                    idempotency_key=f"{turn_id}:{invocation_id}",
-                    expected_statuses=["pending_confirmation"],
-                )
-            else:
-                claim = await self.turn_store.authorize_agent_invocation(
-                    turn_id=turn_id,
-                    invocation_id=invocation_id,
-                    idempotency_key=f"{turn_id}:{invocation_id}",
-                    capability=str(invocation.get("tool_name", "")),
-                    channel=str(canonical.get("channel", "")),
-                    scope_type=str(coordinates["scope_type"]),
-                    scope_value=str(coordinates["scope_value"]),
-                    scope_json=dict(coordinates["scope"]),
-                    scope_hash=str(coordinates["scope_hash"]),
-                    policy_revision=str(coordinates["policy_revision"]),
-                    confirmation_id=confirmation_id,
-                    create_reusable_grant=reusable,
-                    grant_expires_at=(
-                        (
-                            datetime.now(UTC)
-                            + timedelta(
-                                days=get_policy().get_int(
-                                    "trust.capability_grant_ttl_days"
-                                )
-                            )
-                        ).isoformat()
-                        if reusable
-                        else None
-                    ),
-                    expected_statuses=["pending_confirmation"],
-                )
+            claim = await self.turn_store.authorize_agent_invocation(
+                turn_id=turn_id,
+                invocation_id=invocation_id,
+                idempotency_key=f"{turn_id}:{invocation_id}",
+                capability=str(invocation.get("tool_name", "")),
+                channel=str(canonical.get("channel", "")),
+                scope_type=str(coordinates["scope_type"]),
+                scope_value=str(coordinates["scope_value"]),
+                scope_json=dict(coordinates["scope"]),
+                scope_hash=str(coordinates["scope_hash"]),
+                policy_revision=str(coordinates["policy_revision"]),
+                canonical_args_hash=prepared_invocation.canonical_hash,
+                confirmation_id=confirmation_id,
+                create_reusable_grant=reusable,
+                grant_expires_at=(
+                    (
+                        datetime.now(UTC)
+                        + timedelta(
+                            days=get_policy().get_int("trust.capability_grant_ttl_days")
+                        )
+                    ).isoformat()
+                    if reusable
+                    else None
+                ),
+            )
             if not claim.get("claimed"):
                 raise RuntimeError("confirmed invocation was already dispatched")
             generation = int(claim["claim_generation"])
-            self.broker.set_context(self.tool_executor.current_context)
+            self.broker.set_context(
+                {
+                    **self.tool_executor.current_context,
+                    "invocation_id": invocation_id,
+                }
+            )
+            authorization = AuthorizationContext(
+                permission_mode=str(
+                    permission.details.get("permission_mode", "per_invocation")
+                ),
+                policy_revision=str(
+                    permission.details.get("policy_revision", "registry-v1")
+                ),
+                source="user_confirmation",
+                authorization_id=confirmation_id,
+            )
             try:
-                result = await self.broker.execute(
-                    str(invocation.get("tool_name", "")),
-                    dict(invocation.get("arguments", {})),
+                result = await self.broker.execute_prepared(
+                    prepared_invocation,
+                    authorization,
+                    correlation={
+                        **self.tool_executor.current_context,
+                        "invocation_id": invocation_id,
+                    },
                 )
             except Exception as exc:
                 await self.turn_store.complete_agent_invocation(
@@ -1632,7 +1626,20 @@ class AgentOrchestrator:
                 result={
                     "data": result_data,
                     "duration_ms": float(getattr(result, "duration_ms", 0)),
-                    "zone": str(getattr(getattr(result, "zone", ""), "value", "")),
+                    "permission_mode": str(
+                        getattr(
+                            getattr(result, "authorization", None),
+                            "permission_mode",
+                            "unspecified",
+                        )
+                    ),
+                    "authorization_source": str(
+                        getattr(
+                            getattr(result, "authorization", None),
+                            "source",
+                            "unspecified",
+                        )
+                    ),
                 }
                 if success
                 else None,
@@ -1977,8 +1984,14 @@ class AgentOrchestrator:
                 "session_id": session_id,
                 "channel": channel,
                 "agent_run_id": agent_run_id,
-                "authority_store": (
-                    "core" if canonical_authority_turn is not None else "runtime"
+                "tool_policy_version": str(
+                    (canonical_authority_turn or {}).get(
+                        "tool_policy_version",
+                        str((meta or {}).get("tool_policy_version", "registry-v1")),
+                    )
+                ),
+                "scheduled_task_id": str(
+                    (self.scheduled_task_run or {}).get("task_id", "")
                 ),
             }
 
@@ -2169,9 +2182,6 @@ class AgentOrchestrator:
                 channel=channel,
             )
 
-        user_intent = extract_user_intent(
-            prepared_turn.filtered_message,
-        )
         # Force the first exact tool. The final gate selects each remaining
         # required tool after successful execution.
         forced = self._forced_tools
@@ -2189,7 +2199,6 @@ class AgentOrchestrator:
             call_usages=prepared_turn.call_usages,
             channel=channel,
             tool_executor=self.tool_executor,
-            user_intent=user_intent or None,
             forced_tool_choice=forced_tool_choice,
             requirements=prepared_turn.requirements,
             satisfaction=prepared_turn.satisfaction,
@@ -2277,8 +2286,7 @@ class AgentOrchestrator:
             for item in prepared_turn.openai_tools or []
             if isinstance(item, dict)
             and isinstance(item.get("function"), dict)
-            and str(item.get("function", {}).get("name", ""))
-            != "bimemo_ask_user"
+            and str(item.get("function", {}).get("name", "")) != "bimemo_ask_user"
         }
         for _round in range(max_rounds):
             canonical = await self.turn_store.get_agent_turn(prepared_turn.run_id)
@@ -2364,8 +2372,7 @@ class AgentOrchestrator:
                         loop=loop,
                         code="native_decision_invalid",
                         message=(
-                            "The model provider returned an invalid decision: "
-                            f"{exc}"
+                            f"The model provider returned an invalid decision: {exc}"
                         ),
                     )
                 await self.turn_store.append_agent_turn_event(
@@ -2484,8 +2491,6 @@ class AgentOrchestrator:
                     llm_response=llm_response,
                     messages=prepared_turn.messages,
                     channel=channel,
-                    user_intent=extract_user_intent(prepared_turn.filtered_message)
-                    or None,
                     required_tools=prepared_turn.requirements.required_tools,
                 )
             except Exception as exc:
@@ -2650,9 +2655,7 @@ class AgentOrchestrator:
         if stage == "tool":
             required = ["native_tools"]
             if exact_choice:
-                required.extend(
-                    ["required_native_decision", "exact_named_choice"]
-                )
+                required.extend(["required_native_decision", "exact_named_choice"])
         missing = [
             name
             for name in required

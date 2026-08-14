@@ -10,12 +10,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
-import json
 import logging
 import signal
 from typing import TYPE_CHECKING
 
-from backend.agent.agent_loop_helpers import llm_accepts_tools_override
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import (
     ConfirmRequest,
@@ -27,7 +25,6 @@ from backend.ipc.models import (
     StreamEventType,
 )
 from backend.llm.capabilities_registry import CapabilitiesRegistry
-from backend.permissions import ActionGrantCache
 
 from .client import DBProxyClient, DBProxyError
 from .ipc_server import OrchestratorIPCServer
@@ -145,7 +142,6 @@ async def _repair_agent_turn_event_projections(db_client: DBProxyClient) -> None
                             **dict(event.get("payload", {})),
                             "phase": str(event.get("phase", "")),
                             "attempt": int(event.get("attempt", 0)),
-                            "authority_store": "core",
                         },
                         "created_at": str(event.get("created_at", "")),
                     }
@@ -259,7 +255,6 @@ def _build_runtime_ipc_server(
         confirm_fn=_build_confirm_handler(
             orch=orch,
             db_client=db_client,
-            broker=broker,
             get_llm_call=get_llm_call,
             ipc_server_ref=ipc_server_ref,
         ),
@@ -271,6 +266,8 @@ def _build_runtime_ipc_server(
         ),
         mcp_ask_fn=mcp_ask_fn,
         memory_invalidate_fn=make_memory_invalidate_fn(db_client),
+        tool_catalog_fn=broker.registry.list_catalog,
+        scheduled_tool_authorization_fn=broker.scheduler_authorizations,
     )
 
 
@@ -327,133 +324,56 @@ def _build_confirm_handler(
     *,
     orch: object,
     db_client: DBProxyClient,
-    broker: object,
     get_llm_call: Callable[[], Callable | None],
     ipc_server_ref: Callable[[], OrchestratorIPCServer],
 ) -> Callable[[ConfirmRequest], Awaitable[ConfirmResponse]]:
     """Build the confirmation handler used by FastAPI IPC."""
 
     async def confirm(request: ConfirmRequest) -> ConfirmResponse:
-        core_response = None
         try:
             core_response = await orch.resume_structured_confirmation(
                 confirmation_id=request.action_id,
                 decision="approved" if request.decision == "approve" else "denied",
                 llm_call=get_llm_call(),
             )
-        except DBProxyError as exc:
+        except (DBProxyError, RuntimeError) as exc:
             if "unknown confirmation" not in str(exc).lower():
                 raise
-        if core_response is not None:
-            outcome = core_response.outcome
-            if outcome is None:
-                raise RuntimeError("core confirmation resume returned no typed outcome")
-            status = outcome.kind.value
-            message_id = outcome.assistant_message_id or ""
-            summary = (
-                core_response.structured_content.answer
-                if core_response.structured_content is not None
-                else ""
-            )
-            await _push_confirmation_event(
-                ipc_server=ipc_server_ref(),
-                request_id=request.request_id,
-                action_id=request.action_id,
-                status=status,
-                message_id=message_id,
-            )
-            await _push_core_confirmation_outcome(
-                ipc_server=ipc_server_ref(),
-                request_id=request.request_id,
-                response=core_response,
-            )
             return ConfirmResponse(
                 request_id=request.request_id,
                 action_id=request.action_id,
-                accepted=True,
-                status=status,
-                message_id=message_id,
-                result_summary=summary[:500],
+                accepted=False,
+                status="unknown",
             )
-
-        stored_action = await db_client.get_pending_action(request.action_id)
-        channel = str((stored_action or {}).get("channel", ""))
-        accepted = False
-        if request.decision == "approve":
-            action = orch.confirmation_mgr.approve(request.action_id, channel)
-            accepted = action is not None
-        elif request.decision == "deny":
-            accepted = orch.confirmation_mgr.deny(request.action_id)
-
-        if stored_action is not None and accepted:
-            orch.consume_pending_action(request.action_id)
-            if request.decision == "approve":
-                await _push_confirmation_event(
-                    ipc_server=ipc_server_ref(),
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    status="approved",
-                )
-            decision_result = await db_client.decide_pending_action(
-                action_id=request.action_id,
-                decision=request.decision,
-                channel=channel,
-            )
-            accepted = bool(decision_result.get("accepted"))
-            if accepted and request.decision == "approve":
-                await _push_confirmation_event(
-                    ipc_server=ipc_server_ref(),
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    status="resuming",
-                )
-                execution = await _execute_confirmed_action(
-                    broker=broker,
-                    db_client=db_client,
-                    stored_action=stored_action,
-                    llm_call=get_llm_call(),
-                )
-                await _push_confirmation_event(
-                    ipc_server=ipc_server_ref(),
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    status=execution["status"],
-                    message_id=execution["message_id"],
-                )
-                return ConfirmResponse(
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    accepted=True,
-                    status=execution["status"],
-                    message_id=execution["message_id"],
-                    result_summary=execution["result_summary"],
-                )
-            if accepted and request.decision == "deny":
-                message_id = await _save_denied_action_message(
-                    db_client=db_client,
-                    stored_action=stored_action,
-                )
-                await _push_confirmation_event(
-                    ipc_server=ipc_server_ref(),
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    status="denied",
-                    message_id=message_id,
-                )
-                return ConfirmResponse(
-                    request_id=request.request_id,
-                    action_id=request.action_id,
-                    accepted=True,
-                    status="denied",
-                    message_id=message_id,
-                    result_summary="The requested action was not allowed.",
-                )
-
+        outcome = core_response.outcome
+        if outcome is None:
+            raise RuntimeError("core confirmation resume returned no typed outcome")
+        status = outcome.kind.value
+        message_id = outcome.assistant_message_id or ""
+        summary = (
+            core_response.structured_content.answer
+            if core_response.structured_content is not None
+            else ""
+        )
+        await _push_confirmation_event(
+            ipc_server=ipc_server_ref(),
+            request_id=request.request_id,
+            action_id=request.action_id,
+            status=status,
+            message_id=message_id,
+        )
+        await _push_core_confirmation_outcome(
+            ipc_server=ipc_server_ref(),
+            request_id=request.request_id,
+            response=core_response,
+        )
         return ConfirmResponse(
             request_id=request.request_id,
             action_id=request.action_id,
-            accepted=accepted,
-            status="denied" if accepted and request.decision == "deny" else "",
+            accepted=True,
+            status=status,
+            message_id=message_id,
+            result_summary=summary[:500],
         )
 
     return confirm
@@ -527,262 +447,6 @@ async def _push_confirmation_event(
                 "message_id": message_id,
             },
         )
-    )
-
-
-async def _execute_confirmed_action(
-    *,
-    broker: object,
-    db_client: DBProxyClient,
-    stored_action: dict[str, object],
-    llm_call: Callable | None = None,
-) -> dict[str, str]:
-    """Execute one approved action and persist its execution outcome."""
-    action_id = str(stored_action.get("id", ""))
-    run_id = str(stored_action.get("run_id", ""))
-    run = await db_client.get_agent_run(run_id) if run_id else None
-    context = {
-        "conversation_id": str((run or {}).get("conversation_id", "")),
-        "session_id": str((run or {}).get("session_id", "")),
-        "channel": str(stored_action.get("channel", "")),
-        "agent_run_id": run_id,
-    }
-    resume_context = await _load_resume_context(
-        db_client=db_client,
-        stored_action=stored_action,
-        llm_call=llm_call,
-    )
-    if resume_context == "missing":
-        result_summary = (
-            "The approved action could not continue because its runtime "
-            "resume snapshot is no longer available."
-        )
-        await db_client.complete_pending_action(
-            action_id=action_id,
-            status="failed",
-            error_message=result_summary,
-        )
-        message_id = await _save_confirmed_action_message(
-            db_client=db_client,
-            run=run,
-            stored_action=stored_action,
-            status="failed",
-            result_summary=result_summary,
-        )
-        return {
-            "status": "failed",
-            "message_id": message_id,
-            "result_summary": result_summary[:500],
-        }
-    broker.set_context(context)
-    try:
-        tool_result = await broker.execute(
-            str(stored_action.get("tool_name", "")),
-            dict(stored_action.get("parameters", {})),
-        )
-    except Exception as error:
-        logger.error("Confirmed action execution failed: %s", error, exc_info=True)
-        result_summary = str(error)
-        await db_client.complete_pending_action(
-            action_id=action_id,
-            status="failed",
-            error_message=result_summary,
-        )
-        message_id = await _save_confirmed_action_message(
-            db_client=db_client,
-            run=run,
-            stored_action=stored_action,
-            status="failed",
-            result_summary=result_summary,
-        )
-        return {
-            "status": "failed",
-            "message_id": message_id,
-            "result_summary": result_summary[:500],
-        }
-    else:
-        result_summary = str(getattr(tool_result, "result", ""))
-        used_tools_list = [
-            {
-                "name": str(getattr(tool_result, "tool_name", "")),
-                "zone": str(getattr(getattr(tool_result, "zone", ""), "value", "")),
-                "success": bool(getattr(tool_result, "success", False)),
-            }
-        ]
-        await db_client.complete_pending_action(
-            action_id=action_id,
-            status="completed",
-            result={
-                "success": bool(getattr(tool_result, "success", False)),
-                "result": result_summary,
-                "tool_name": str(getattr(tool_result, "tool_name", "")),
-                "zone": str(getattr(getattr(tool_result, "zone", ""), "value", "")),
-            },
-        )
-        final_answer = await _resume_llm_after_confirmed_action(
-            llm_call=llm_call,
-            resume_context=resume_context if isinstance(resume_context, dict) else None,
-            tool_result_text=result_summary,
-            completed_tool_name=str(getattr(tool_result, "tool_name", "")),
-        )
-        message_id = await _save_confirmed_action_message(
-            db_client=db_client,
-            run=run,
-            stored_action=stored_action,
-            status="completed",
-            result_summary=final_answer or result_summary,
-            used_tools=used_tools_list,
-        )
-        return {
-            "status": "completed",
-            "message_id": message_id,
-            "result_summary": (final_answer or result_summary)[:500],
-        }
-    finally:
-        broker.clear_context()
-
-
-async def _resume_llm_after_confirmed_action(
-    *,
-    llm_call: Callable | None,
-    resume_context: dict[str, object] | None,
-    tool_result_text: str,
-    completed_tool_name: str,
-) -> str:
-    """Ask the LLM for a final answer after an approved tool result."""
-    if llm_call is None:
-        return ""
-    if resume_context is None:
-        return ""
-    messages = resume_context.get("messages")
-    assistant_message = resume_context.get("assistant_message")
-    tool_call_id = str(resume_context.get("tool_call_id", ""))
-    if not isinstance(messages, list) or not isinstance(assistant_message, dict):
-        return ""
-    if not tool_call_id:
-        return ""
-    required_tools = {
-        str(name) for name in resume_context.get("required_tools", []) if name
-    }
-    remaining_tools = required_tools - {completed_tool_name}
-    if remaining_tools:
-        return (
-            "The approved tool completed, but the final answer remains blocked "
-            "because these required tools are incomplete: "
-            f"{', '.join(sorted(remaining_tools))}."
-        )
-    resume_messages = [
-        *messages,
-        assistant_message,
-        {
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": tool_result_text,
-        },
-    ]
-    if llm_accepts_tools_override(llm_call):
-        response = await llm_call(resume_messages, tools_override=[])
-    else:
-        response = await llm_call(resume_messages)
-    structured = getattr(response, "structured_content", None)
-    if structured is not None and getattr(structured, "answer", ""):
-        return str(structured.answer)
-    return str(getattr(response, "text", "")).strip()
-
-
-async def _load_resume_context(
-    *,
-    db_client: DBProxyClient,
-    stored_action: dict[str, object],
-    llm_call: Callable | None,
-) -> dict[str, object] | str | None:
-    """Load continuation state or report a missing runtime snapshot."""
-    if llm_call is None:
-        return None
-    preview = stored_action.get("preview")
-    if not isinstance(preview, dict):
-        return None
-    snapshot_id = str(preview.get("resume_snapshot_id", ""))
-    if snapshot_id:
-        snapshot = await db_client.get_resume_snapshot(
-            action_id=str(stored_action.get("id", "")),
-            snapshot_id=snapshot_id,
-        )
-        snapshot_payload = (
-            snapshot.get("snapshot") if isinstance(snapshot, dict) else None
-        )
-        return snapshot_payload if isinstance(snapshot_payload, dict) else "missing"
-    if "messages" in preview or "assistant_message" in preview:
-        # Backward-compatible fallback for actions created before resume_snapshots.
-        return preview
-    return None
-
-
-async def _save_confirmed_action_message(
-    *,
-    db_client: DBProxyClient,
-    run: dict[str, object] | None,
-    stored_action: dict[str, object],
-    status: str,
-    result_summary: str,
-    used_tools: list[dict[str, object]] | None = None,
-) -> str:
-    """Persist a concise assistant message for an approved action result."""
-    conversation_id = str((run or {}).get("conversation_id", ""))
-    if not conversation_id:
-        return ""
-    tool_name = str(stored_action.get("tool_name", ""))
-    visible_status = "completed" if status == "completed" else "failed"
-    content = (
-        f"Approved action `{tool_name}` {visible_status}.\n\n{result_summary[:2000]}"
-    ).strip()
-    meta_data: dict[str, object] = {
-        "source": "confirmed_action",
-        "pending_action_id": str(stored_action.get("id", "")),
-        "run_id": str(stored_action.get("run_id", "")),
-        "tool_name": tool_name,
-        "status": status,
-    }
-    if used_tools is not None:
-        meta_data["used_tools"] = used_tools
-    meta = json.dumps(meta_data)
-    return await db_client.save_message(
-        conversation_id,
-        "assistant",
-        content,
-        channel=str(stored_action.get("channel", "")),
-        meta=meta,
-    )
-
-
-async def _save_denied_action_message(
-    *,
-    db_client: DBProxyClient,
-    stored_action: dict[str, object],
-) -> str:
-    """Persist a visible assistant message for a denied action."""
-    run_id = str(stored_action.get("run_id", ""))
-    run = await db_client.get_agent_run(run_id) if run_id else None
-    conversation_id = str((run or {}).get("conversation_id", ""))
-    if not conversation_id:
-        return ""
-    tool_name = str(stored_action.get("tool_name", ""))
-    content = f"The requested action `{tool_name}` was not allowed."
-    meta = json.dumps(
-        {
-            "source": "confirmed_action",
-            "pending_action_id": str(stored_action.get("id", "")),
-            "run_id": run_id,
-            "tool_name": tool_name,
-            "status": "denied",
-        }
-    )
-    return await db_client.save_message(
-        conversation_id,
-        "assistant",
-        content,
-        channel=str(stored_action.get("channel", "")),
-        meta=meta,
     )
 
 
@@ -984,6 +648,7 @@ async def _shutdown_orchestrator_runtime(
     discord_bot: object | None,
     event_forwarder_task: asyncio.Task | None,
     bg_tasks: list[asyncio.Task],
+    broker: object,
     fs_worker: object,
     net_worker: object,
     ipc_server: OrchestratorIPCServer,
@@ -1001,6 +666,7 @@ async def _shutdown_orchestrator_runtime(
         with contextlib.suppress(asyncio.CancelledError):
             await event_forwarder_task
     await _cancel_background_tasks(bg_tasks)
+    await broker.flush()
     await _stop_runtime_workers(
         fs_worker=fs_worker,
         net_worker=net_worker,
@@ -1070,18 +736,12 @@ async def _prepare_runtime_core_services(
         settings,
     )
     user_profile, user_tz = await _load_runtime_user_context(db_client)
-    try:
-        action_grants = ActionGrantCache(await db_client.list_capability_grants())
-    except DBProxyError as error:
-        logger.warning("Could not load action grants: %s", error)
-        action_grants = ActionGrantCache()
     orch = _build_runtime_orchestrator(
         broker=broker,
         db_client=db_client,
         user_profile=user_profile,
         user_tz=user_tz,
         gateway_concurrency_cls=AgentConcurrency,
-        action_grants=action_grants,
     )
     llm_call, llm_config, active_service_type, llm_client = await _init_llm(
         db_client,
@@ -1106,7 +766,6 @@ async def _prepare_runtime_core_services(
             user_profile=user_profile,
             user_tz=user_tz,
             gateway_concurrency_cls=AgentConcurrency,
-            action_grants=action_grants,
         )
         # Wire the same capabilities resolver / context_fn as the main
         # orchestrator; without it the placeholder context_fn raises
@@ -1312,6 +971,7 @@ def orchestrator_main(
             discord_bot=discord_bot,
             event_forwarder_task=startup.event_forwarder_task,
             bg_tasks=startup.services.bg_tasks,
+            broker=startup.services.broker,
             fs_worker=startup.services.fs_worker,
             net_worker=startup.services.net_worker,
             ipc_server=startup.ipc_server,
