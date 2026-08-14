@@ -1680,7 +1680,7 @@ class AgentOrchestrator:
                 channel=str(canonical.get("channel", "")),
             )
         finally:
-            await self._flush_provider_attempts()
+            await self._flush_provider_attempts_logged()
             try:
                 await self.turn_store.append_agent_turn_event(
                     turn_id=turn_id,
@@ -1719,6 +1719,23 @@ class AgentOrchestrator:
         tasks, self._provider_attempt_tasks = self._provider_attempt_tasks, []
         if tasks:
             await asyncio.gather(*tasks)
+
+    async def _flush_provider_attempts_logged(self) -> None:
+        """Flush provider-attempt events, logging failures instead of raising.
+
+        A write failure here must not replace an outcome that is already
+        decided (committed final, typed failure, or an exception in flight).
+        """
+        tasks, self._provider_attempt_tasks = self._provider_attempt_tasks, []
+        if not tasks:
+            return
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.error(
+                    "Failed to persist provider-attempt telemetry: %s",
+                    result,
+                )
 
     @staticmethod
     def _json_safe(value: object) -> object:
@@ -2035,7 +2052,7 @@ class AgentOrchestrator:
 
             return response
         finally:
-            await self._flush_provider_attempts()
+            await self._flush_provider_attempts_logged()
             if active_core_turn_id and self.turn_store is not None:
                 try:
                     await self.turn_store.append_agent_turn_event(
@@ -2907,6 +2924,16 @@ class AgentOrchestrator:
             or prepared_turn.finalization_id is None
         ):
             raise RuntimeError("structured final commit lacks durable identities")
+        # The provider-attempt ledger is authoritative: a FINAL outcome may
+        # only be committed once every attempt is durably stored. A flush
+        # failure here surfaces before the commit, producing a clean typed
+        # failure instead of losing an already-committed answer. FAILED
+        # commits flush best-effort so a telemetry error cannot block
+        # recording the failure itself.
+        if kind is TurnOutcomeKind.FINAL:
+            await self._flush_provider_attempts()
+        else:
+            await self._flush_provider_attempts_logged()
         stats = aggregate_call_usages(
             prepared_turn.call_usages,
             fallback_model=self.model_name,

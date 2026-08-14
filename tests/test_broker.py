@@ -336,3 +336,63 @@ class TestRateLimitReset:
         assert result.result == {
             "echo": "unblocked",
         }
+
+
+class _CwdInput(BaseModel, extra="forbid", frozen=True):
+    """Input with an optional working-directory argument."""
+
+    cwd: str = ""
+
+
+def _setup_workspace_broker(roots):
+    """Create a broker with one workspace-scoped tool and given roots."""
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="ws_tool",
+            description="Workspace tool",
+            input_model=_CwdInput,
+            permission=PermissionPolicy(
+                mode=PermissionMode.IMPLICIT,
+                workspace_argument="cwd",
+            ),
+        )
+    )
+    broker = ToolBroker(registry=registry, workspace_roots_fn=lambda: roots)
+
+    async def handler(validated):
+        return {"cwd": validated.cwd}
+
+    broker.bind_handler("ws_tool", handler)
+    broker.finalize()
+    return broker
+
+
+class TestEmptyWorkspaceArgument:
+    """An omitted/empty workspace path resolves to the first root."""
+
+    def test_omitted_cwd_gets_first_root(self, tmp_path):
+        """An absent cwd resolves to the first workspace root."""
+        broker = _setup_workspace_broker([str(tmp_path)])
+        prepared = broker.prepare("ws_tool", {})
+        assert prepared.canonical_parameters["cwd"] == str(tmp_path.resolve())
+        assert prepared.typed_input.cwd == str(tmp_path.resolve())
+
+    def test_empty_cwd_gets_first_root(self, tmp_path):
+        """An empty-string cwd resolves to the first workspace root."""
+        broker = _setup_workspace_broker([str(tmp_path)])
+        prepared = broker.prepare("ws_tool", {"cwd": ""})
+        assert prepared.canonical_parameters["cwd"] == str(tmp_path.resolve())
+
+    def test_explicit_cwd_is_kept(self, tmp_path):
+        """An explicit cwd is canonicalized, not replaced."""
+        broker = _setup_workspace_broker([str(tmp_path)])
+        target = tmp_path / "sub"
+        prepared = broker.prepare("ws_tool", {"cwd": str(target)})
+        assert prepared.canonical_parameters["cwd"] == str(target.resolve())
+
+    def test_no_roots_fails_closed(self):
+        """No configured workspace root rejects an empty cwd."""
+        broker = _setup_workspace_broker([])
+        with pytest.raises(ToolBrokerError, match="no workspace root"):
+            broker.prepare("ws_tool", {})

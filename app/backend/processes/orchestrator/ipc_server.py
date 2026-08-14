@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 from typing import TYPE_CHECKING
@@ -493,7 +494,11 @@ class OrchestratorIPCServer:
             if self._stopping_task is not active_task:
                 self._stopping_task = active_task
                 active_task.cancel()
-            await active_task
+            # The chat task may finish in the cancelled state when Stop
+            # arrives before the turn row exists; the Stop reply must
+            # still be delivered.
+            with contextlib.suppress(asyncio.CancelledError):
+                await active_task
             return self._stop_response(
                 request.request_id,
                 stopped=True,

@@ -849,6 +849,56 @@ class TestOrchestratorIPCServer:
         assert pushed_response.run_id == "run-stop"
 
     @pytest.mark.asyncio
+    async def test_handle_stop_confirms_when_task_dies_cancelled(self) -> None:
+        """Stop still replies ``stopped=True`` when the chat task ends cancelled.
+
+        The chat handler re-raises CancelledError when Stop lands before the
+        turn row exists; the Stop reply must not be lost to that propagation.
+        """
+        started = asyncio.Event()
+
+        async def uncooperative_fn(request: ChatRequest) -> ChatResponse:
+            """Block without absorbing the cancellation."""
+            started.set()
+            await asyncio.sleep(60)
+            raise AssertionError("request was not cancelled")
+
+        server = OrchestratorIPCServer(
+            socket_path="/tmp/test.sock",
+            secret=b"\x00" * 32,
+            orchestrator_fn=uncooperative_fn,
+        )
+        server._server.push = AsyncMock()
+
+        chat_request = ChatRequest(
+            request_id="r-early-stop",
+            run_id="run-early-stop",
+            message="hi",
+            channel="web",
+            session_id="s1",
+            conversation_id="c1",
+        )
+        response = await server._handle_message("ChatRequest", chat_request)
+        assert response is None
+        await started.wait()
+        active_task = server._active_task
+        assert active_task is not None
+
+        stop_response = await server._handle_message(
+            "StopRequest",
+            StopRequest(
+                request_id="stop-early",
+                target_request_id="r-early-stop",
+                run_id="run-early-stop",
+                session_id="s1",
+            ),
+        )
+        assert isinstance(stop_response, StopResponse)
+        assert stop_response.stopped is True
+        assert active_task.cancelled()
+        assert server._active_task is None
+
+    @pytest.mark.asyncio
     async def test_handle_stop_rejects_mismatched_session(self) -> None:
         """A caller cannot cancel another session's active run."""
         started = asyncio.Event()

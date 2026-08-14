@@ -384,7 +384,7 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
         p = validate_params(params, UpsertAgentToolBatchParams)
         try:
             _begin(db)
-            db.execute(
+            batch_cursor = db.execute(
                 "INSERT OR IGNORE INTO agent_tool_batches "
                 "(id, turn_id, assistant_message, transcript_snapshot) "
                 "VALUES (?, ?, ?, ?)",
@@ -395,6 +395,7 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                     _json(p.transcript_snapshot),
                 ),
             )
+            batch_inserted = batch_cursor.rowcount == 1
             batch_row = db.execute(
                 "SELECT turn_id, assistant_message, transcript_snapshot "
                 "FROM agent_tool_batches WHERE id = ?",
@@ -482,7 +483,13 @@ def make_upsert_agent_tool_batch_handler(db: DatabaseManager) -> OperationHandle
                             invocation.confirmation_expires_at,
                         ),
                     )
-            if any(item.confirmation_id is not None for item in p.invocations):
+            # Pause and emit run_paused only on the first arrival of this
+            # batch: a replayed upsert (same deterministic batch_id) must not
+            # duplicate the event nor re-pause a turn a later claim already
+            # advanced.
+            if batch_inserted and any(
+                item.confirmation_id is not None for item in p.invocations
+            ):
                 db.execute(
                     "UPDATE agent_turns SET status = 'paused', "
                     "terminal_outcome = 'paused', updated_at = "
@@ -839,7 +846,7 @@ def make_append_agent_turn_event_handler(db: DatabaseManager) -> OperationHandle
                 (p.turn_id,),
             ).fetchone()
             sequence = int(row[0])
-            db.execute(
+            event_cursor = db.execute(
                 "INSERT OR IGNORE INTO agent_turn_events "
                 "(id, turn_id, sequence, event_type, phase, attempt, payload) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -853,6 +860,11 @@ def make_append_agent_turn_event_handler(db: DatabaseManager) -> OperationHandle
                     _json(p.payload),
                 ),
             )
+            if event_cursor.rowcount != 1:
+                # Replayed event (stable event_id): the counters below were
+                # already applied on first arrival.
+                db.commit()
+                return {"event_id": event_id, "sequence": sequence}
             db.execute(
                 "UPDATE agent_turns SET provider_calls = provider_calls + ?, "
                 "tool_rounds = tool_rounds + ?, "
@@ -950,6 +962,12 @@ def make_cancel_agent_turn_handler(db: DatabaseManager) -> OperationHandler:
                         task_result.error_message[:1000],
                         task_result.duration_ms,
                     ),
+                )
+                db.execute(
+                    "DELETE FROM scheduled_task_runs WHERE task_id = ? "
+                    "AND id NOT IN (SELECT id FROM scheduled_task_runs "
+                    "WHERE task_id = ? ORDER BY started_at DESC LIMIT 50)",
+                    (task_result.task_id, task_result.task_id),
                 )
             sequence_row = db.execute(
                 "SELECT COALESCE(MAX(sequence), 0) + 1 FROM agent_turn_events "

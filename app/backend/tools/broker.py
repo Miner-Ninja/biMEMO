@@ -431,7 +431,23 @@ class ToolBroker:
             if not raw_workspace:
                 mode = tool_def.permission.resolve(validated)
                 if not (tool_def.permission.action_modes and mode.value == "implicit"):
-                    raise ToolBrokerError(f"{path_argument} must be a non-empty path")
+                    # Tool schemas document the path as optional ("defaults to
+                    # workspace root"); honour that here so the canonical hash,
+                    # authorization scope, and workspace revalidation all see
+                    # the real directory.
+                    roots = [
+                        str(root)
+                        for root in self.workspace_roots()
+                        if str(root).strip()
+                    ]
+                    if not roots:
+                        raise ToolBrokerError(
+                            f"{path_argument} is empty and no workspace root "
+                            "is configured"
+                        )
+                    canonical_parameters[path_argument] = str(
+                        Path(roots[0]).expanduser().resolve(strict=False)
+                    )
             else:
                 canonical_parameters[path_argument] = str(
                     Path(raw_workspace).expanduser().resolve(strict=False)

@@ -283,10 +283,10 @@ def aggregate_call_usages(
         generation_ms = max(ZERO_DURATION_MS, total_wall_time_ms - measured_phase_ms)
     latest_usage = call_usages[-1]
 
-    # iterations = distinct phases (e.g. 2 for Stage 1 + Stage 2),
-    # retries are tracked per-phase in phase_stats (not exposed on
-    # ExtendedUsage since it has no field for that).
-    iterations = len(phase_stats)
+    # iterations = provider round-trips: the chat UI presents this as
+    # "N iterations" of the agent loop, so it must count calls, not the
+    # 1-2 distinct phase labels.
+    iterations = len(call_usages)
 
     return _build_extended_usage(
         prompt_tokens=prompt_tokens,

@@ -1077,6 +1077,42 @@ class TestOpenRouterClientEmptyRetry:
         finally:
             await client.close()
 
+    @pytest.mark.asyncio
+    async def test_empty_streamed_tool_arguments_become_empty_object(self):
+        """A zero-parameter tool call streams empty arguments and must run."""
+
+        async def handler(_request):
+            return httpx.Response(
+                200,
+                text=(
+                    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,'
+                    '"id":"call_1","type":"function","function":{'
+                    '"name":"system_status","arguments":""}}]}}]}\n\n'
+                    "data: [DONE]\n\n"
+                ),
+            )
+
+        client = make_client(httpx.MockTransport(handler))
+        try:
+            result = await client.chat(
+                [{"role": "user", "content": "status"}],
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "system_status",
+                            "description": "Status",
+                            "parameters": {"type": "object"},
+                        },
+                    }
+                ],
+            )
+        finally:
+            await client.close()
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].name == "system_status"
+        assert result.tool_calls[0].arguments == {}
+
 
 class TestOpenRouterStructuredStreaming:
     """Tests for OpenRouter JSON_SCHEMA + streaming path."""

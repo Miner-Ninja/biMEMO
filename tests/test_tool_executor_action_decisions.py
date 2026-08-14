@@ -329,3 +329,72 @@ class TestScheduledTaskPreauthorization:
             executor._promote_saved_grants(
                 [ToolCall("1", "http_fetch", {"url": "https://example.com"})]
             )
+
+
+class TestBatchFailureContainment:
+    """One failing tool must not abort its siblings or the round."""
+
+    def _executor_with_stubbed_execution(self, outcomes: dict) -> ToolExecutor:
+        """Build an executor whose per-call execution is replaced by a map."""
+        executor = ToolExecutor(
+            MagicMock(),
+            ConfirmationManager(),
+            action_decisions=_AllowingDecisions(),
+        )
+
+        async def fake_execute(tool_call):
+            outcome = outcomes[tool_call.name]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        executor._execute_with_status = fake_execute
+        return executor
+
+    async def test_sibling_failure_becomes_failed_result(self):
+        """A raising handler yields a failed ToolResult, siblings survive."""
+        ok = ToolResult(
+            tool_name="file_read",
+            success=True,
+            result="content",
+            duration_ms=1.0,
+        )
+        executor = self._executor_with_stubbed_execution(
+            {
+                "file_read": ok,
+                "web_search": RuntimeError("searx is down"),
+            }
+        )
+
+        results = await executor.execute_immediate_tool_calls(
+            [
+                ToolCall("1", "file_read", {"path": "/tmp/x"}),
+                ToolCall("2", "web_search", {"query": "y"}),
+            ]
+        )
+
+        assert len(results) == 2
+        assert results[0] is ok
+        assert results[1].success is False
+        assert "searx is down" in str(results[1].result)
+        assert results[1].authorization.source == "execution_error"
+
+    async def test_all_failures_still_return_per_call_results(self):
+        """Every call gets a result even when every handler raises."""
+        executor = self._executor_with_stubbed_execution(
+            {
+                "file_read": RuntimeError("boom-a"),
+                "web_search": RuntimeError("boom-b"),
+            }
+        )
+
+        results = await executor.execute_immediate_tool_calls(
+            [
+                ToolCall("1", "file_read", {}),
+                ToolCall("2", "web_search", {}),
+            ]
+        )
+
+        assert [r.success for r in results] == [False, False]
+        assert "boom-a" in str(results[0].result)
+        assert "boom-b" in str(results[1].result)

@@ -728,3 +728,111 @@ async def test_clarification_is_durable_and_closes_once(tmp_path):
         )
     )["clarification"] is None
     db.close()
+
+
+def _confirmation_batch_params(turn_id: str) -> dict:
+    """Build one deterministic batch carrying a red confirmation."""
+    return {
+        "turn_id": turn_id,
+        "batch_id": "batch-replay",
+        "assistant_message": {
+            "role": "assistant",
+            "tool_calls": [{"id": "call-red"}],
+        },
+        "transcript_snapshot": [{"role": "user", "content": "run it"}],
+        "invocations": [
+            {
+                "invocation_id": "invocation-red",
+                "tool_call_id": "call-red",
+                "tool_name": "execute_command",
+                "arguments": {"command": "ls", "cwd": "/tmp"},
+                "canonical_args_hash": _args_hash(
+                    {"command": "ls", "cwd": "/tmp"}
+                ),
+                "policy_revision": "registry-v1",
+                "confirmation_id": "confirm-replay",
+                "confirmation_title": "Run ls?",
+                "confirmation_description": "ls in /tmp",
+                "confirmation_expires_at": "2099-01-01T00:00:00.000",
+            }
+        ],
+    }
+
+
+async def _count_run_paused(db, turn_id: str) -> int:
+    events = await make_list_agent_turn_events_handler(db)(
+        {"turn_id": turn_id, "limit": 100}
+    )
+    return sum(
+        1 for event in events["events"] if event["event_type"] == "run_paused"
+    )
+
+
+async def test_batch_replay_does_not_duplicate_run_paused(tmp_path):
+    """Replaying the same confirmation batch keeps exactly one pause event."""
+    db = _open_db(tmp_path)
+    turn_id, _finalization_id, _obligation_id = await _prepared_turn(db)
+    upsert = make_upsert_agent_tool_batch_handler(db)
+
+    await upsert(_confirmation_batch_params(turn_id))
+    assert await _count_run_paused(db, turn_id) == 1
+
+    await upsert(_confirmation_batch_params(turn_id))
+    await upsert(_confirmation_batch_params(turn_id))
+    assert await _count_run_paused(db, turn_id) == 1
+
+    turn = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))["turn"]
+    assert turn["terminal_outcome"] == "paused"
+    db.close()
+
+
+async def test_batch_replay_does_not_repause_advanced_turn(tmp_path):
+    """A replay after the confirmation was decided cannot re-pause the turn."""
+    db = _open_db(tmp_path)
+    turn_id, _finalization_id, _obligation_id = await _prepared_turn(db)
+    upsert = make_upsert_agent_tool_batch_handler(db)
+    await upsert(_confirmation_batch_params(turn_id))
+
+    # Mirror the resume transition (status='tool_loop', outcome cleared)
+    # that follows an approved confirmation.
+    db.execute(
+        "UPDATE agent_turns SET status = 'tool_loop', terminal_outcome = NULL "
+        "WHERE id = ? AND terminal_outcome = 'paused'",
+        (turn_id,),
+    )
+    db.commit()
+    advanced = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))[
+        "turn"
+    ]
+    assert advanced["terminal_outcome"] is None
+
+    await upsert(_confirmation_batch_params(turn_id))
+
+    after = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))["turn"]
+    assert after["terminal_outcome"] is None
+    assert after["status"] == "tool_loop"
+    assert await _count_run_paused(db, turn_id) == 1
+    db.close()
+
+
+async def test_replayed_event_does_not_double_count_metrics(tmp_path):
+    """A replayed provider_attempt (stable event_id) counts exactly once."""
+    db = _open_db(tmp_path)
+    turn_id, _finalization_id, _obligation_id = await _prepared_turn(db)
+    append = make_append_agent_turn_event_handler(db)
+    event = {
+        "turn_id": turn_id,
+        "event_id": "attempt-replay-1",
+        "event_type": "provider_attempt",
+        "phase": "Stage 1",
+        "attempt": 1,
+        "payload": {"error": ""},
+    }
+
+    first = await append(event)
+    second = await append(event)
+
+    assert first["event_id"] == second["event_id"] == "attempt-replay-1"
+    turn = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))["turn"]
+    assert turn["provider_calls"] == 1
+    db.close()

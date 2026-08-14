@@ -1181,13 +1181,18 @@ class OpenAICompatibleClient:
         for tool_call_index in sorted(tool_call_acc):
             tool_call_parts = tool_call_acc[tool_call_index]
             raw_arguments = "".join(tool_call_parts["arguments_parts"])
-            try:
-                arguments = json.loads(raw_arguments)
-            except json.JSONDecodeError as exc:
-                raise OpenAICompatibleClientError(
-                    "Provider returned malformed tool call arguments for "
-                    f"{tool_call_parts['name']}"
-                ) from exc
+            # Providers legitimately stream empty arguments for zero-parameter
+            # tools; only non-empty malformed JSON is a protocol violation.
+            if not raw_arguments.strip():
+                arguments = {}
+            else:
+                try:
+                    arguments = json.loads(raw_arguments)
+                except json.JSONDecodeError as exc:
+                    raise OpenAICompatibleClientError(
+                        "Provider returned malformed tool call arguments for "
+                        f"{tool_call_parts['name']}"
+                    ) from exc
             if not isinstance(arguments, dict):
                 raise OpenAICompatibleClientError(
                     "Provider returned non-object tool call arguments for "
@@ -1351,10 +1356,16 @@ class OpenAICompatibleClient:
         """Parse one OpenAI-style tool-call argument payload into a dict."""
         if isinstance(raw_arguments, dict):
             return raw_arguments
-        if not isinstance(raw_arguments, str) or not raw_arguments.strip():
+        if raw_arguments is None:
+            return {}
+        if not isinstance(raw_arguments, str):
             raise OpenAICompatibleClientError(
                 "Provider returned missing tool call arguments"
             )
+        # An empty/whitespace string is how providers encode a call to a
+        # zero-parameter tool; treat it as an empty argument object.
+        if not raw_arguments.strip():
+            return {}
         try:
             parsed_arguments = json.loads(raw_arguments)
         except json.JSONDecodeError as exc:

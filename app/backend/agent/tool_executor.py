@@ -31,11 +31,15 @@ from backend.permissions import (
     PermissionMode,
 )
 from backend.security.provenance import serialize_tool_result
-from backend.tools.broker import AuthorizationContext, PreparedInvocation, ToolBroker
+from backend.tools.broker import (
+    AuthorizationContext,
+    PreparedInvocation,
+    ToolBroker,
+    ToolResult,
+)
 
 
 if TYPE_CHECKING:
-    from backend.tools.broker import ToolResult
     from backend.trust.confirmation import ConfirmationManager, PendingAction
 
 logger = logging.getLogger(__name__)
@@ -585,9 +589,35 @@ class ToolExecutor:
         """Run all non-confirmation tool calls for one model round."""
         return list(
             await asyncio.gather(
-                *[self._execute_with_status(tool_call) for tool_call in immediate_calls]
+                *[
+                    self._execute_containing_failure(tool_call)
+                    for tool_call in immediate_calls
+                ]
             )
         )
+
+    async def _execute_containing_failure(self, tool_call: ToolCall) -> ToolResult:
+        """Run one tool call, converting a failure into a failed result.
+
+        One failing tool must not abort its siblings mid-flight nor tear
+        down a round whose red confirmations are already persisted — the
+        model sees the error in the tool result and reacts to it.
+        """
+        try:
+            return await self._execute_with_status(tool_call)
+        except Exception as exc:
+            logger.exception("Tool %s failed during batch round", tool_call.name)
+            return ToolResult(
+                tool_name=tool_call.name,
+                success=False,
+                result=f"Tool execution failed: {exc}",
+                duration_ms=0.0,
+                authorization=AuthorizationContext(
+                    permission_mode="unspecified",
+                    policy_revision="registry-v1",
+                    source="execution_error",
+                ),
+            )
 
     async def _activate_core_red_confirmations(
         self,
