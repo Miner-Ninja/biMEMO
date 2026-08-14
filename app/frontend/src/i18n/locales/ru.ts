@@ -211,6 +211,7 @@ const ru = {
     toolGroupMemory: "Память",
     toolGroupShell: "Шелл",
     toolGroupSystem: "Система",
+    toolGroupOther: "Прочее",
     toolGroupWeb: "Веб",
     toolSendEmail: "Отправить письмо",
     tools: "Инструменты",

@@ -37,7 +37,7 @@ def parse_optional_int(raw_value: object) -> int | None:
         return None
     try:
         return int(str(raw_value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         logger.warning(
             "Ignoring invalid integer config value: %r",
             raw_value,
@@ -52,7 +52,7 @@ def resolve_user_tz(profile: dict[str, str]) -> ZoneInfo | None:
         return None
     try:
         return ZoneInfo(tz_name)
-    except KeyError, ValueError:
+    except (KeyError, ValueError):
         logger.warning("Invalid timezone in user profile: %r", tz_name)
         return None
 

@@ -6,7 +6,6 @@ write tools (git_commit, git_push) executed via cmd_worker.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any

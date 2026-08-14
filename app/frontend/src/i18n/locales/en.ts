@@ -210,6 +210,7 @@ const en = {
     toolGroupMemory: "Memory",
     toolGroupShell: "Shell",
     toolGroupSystem: "System",
+    toolGroupOther: "Other",
     toolGroupWeb: "Web",
     toolSendEmail: "Send Email",
     tools: "Tools",

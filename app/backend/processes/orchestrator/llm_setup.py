@@ -312,16 +312,16 @@ def _build_llm_client(
         )
     client.structured_capability_declarations = {
         "native_tools": CapabilitySupport(
-            getattr(settings, "llm_native_tools_support", "unknown")
+            settings.llm_native_tools_support
         ),
         "exact_named_choice": CapabilitySupport(
-            getattr(settings, "llm_exact_named_choice_support", "unknown")
+            settings.llm_exact_named_choice_support
         ),
         "required_native_decision": CapabilitySupport(
-            getattr(settings, "llm_required_native_decision_support", "unknown")
+            settings.llm_required_native_decision_support
         ),
         "non_streaming_custom_schema": CapabilitySupport(
-            getattr(settings, "llm_custom_schema_support", "unknown")
+            settings.llm_custom_schema_support
         ),
     }
     return client

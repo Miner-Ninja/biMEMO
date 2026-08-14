@@ -337,7 +337,7 @@ class DiscordChatBridgeProvider(ChatBridgeProviderBase):
                 filename = f"image_{idx}.{ext}"
                 mime = f"image/{ext}"
                 files.append((f"files[{idx}]", (filename, raw_bytes, mime)))
-            except ValueError, base64.binascii.Error:
+            except (ValueError, base64.binascii.Error):
                 logger.warning("Skipping malformed image data URL")
                 continue
         if not files:

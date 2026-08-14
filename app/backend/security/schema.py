@@ -558,7 +558,6 @@ CREATE TABLE IF NOT EXISTS agent_tool_invocations (
     policy_revision TEXT NOT NULL DEFAULT 'registry-v1',
     evidence_key TEXT,
     source TEXT NOT NULL DEFAULT 'model',
-    trust_zone TEXT,
     status TEXT NOT NULL DEFAULT 'required' CHECK (status IN (
         'required', 'pending_confirmation', 'executing', 'succeeded',
         'failed', 'denied', 'expired', 'unknown'

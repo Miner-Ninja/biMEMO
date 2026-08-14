@@ -15,7 +15,6 @@ from .history_tracker import WorkspaceHistoryEntry
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
 
     from backend.processes.orchestrator.client import DBProxyClient
 

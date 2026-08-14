@@ -1,6 +1,7 @@
 """Tests for Custom LLM Provider runtime wiring."""
 
 import sys
+from types import SimpleNamespace
 
 from backend.processes.orchestrator.dialog_recorder_setup import (
     _build_dialog_recorder_provider,
@@ -54,7 +55,12 @@ def test_custom_llm_client_uses_custom_runtime_class():
             "base_url": "https://ai.example.test",
             "num_ctx": "32768",
         },
-        settings=object(),
+        settings=SimpleNamespace(
+            llm_native_tools_support="unknown",
+            llm_exact_named_choice_support="unknown",
+            llm_required_native_decision_support="unknown",
+            llm_custom_schema_support="unknown",
+        ),
         custom_client_cls=_CustomClient,
         openrouter_client_cls=_OpenRouterClient,
         ollama_client_cls=_OllamaClient,

@@ -561,7 +561,7 @@ def _make_socket_probe(socket_path: str) -> Callable[[], Awaitable[bool]]:
             writer.close()
             await writer.wait_closed()
             return True
-        except FileNotFoundError, ConnectionRefusedError, OSError:
+        except (FileNotFoundError, ConnectionRefusedError, OSError):
             return False
 
     return _probe

@@ -54,7 +54,7 @@ def _parse_json_field(value: str, default: list | dict) -> list | dict:
         return default
     try:
         return json.loads(value)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         return default
 
 

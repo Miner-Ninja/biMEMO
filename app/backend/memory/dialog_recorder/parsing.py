@@ -132,6 +132,6 @@ def _parse_observation(raw: str) -> Record | None:
         cleaned = _extract_json(raw)
         data = json.loads(cleaned)
         return Record.model_validate(data)
-    except json.JSONDecodeError, ValidationError:
+    except (json.JSONDecodeError, ValidationError):
         logger.warning("Dialog recorder output failed validation: %.1000s", raw)
         return None

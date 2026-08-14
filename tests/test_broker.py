@@ -240,7 +240,6 @@ class TestAuditLogging:
         audit_fn.assert_awaited_once()
         call_args = audit_fn.await_args
         assert call_args.args == ("tool_success", "echo")
-        assert call_args.kwargs["zone"] is None
 
     @patch(
         f"{_FILTER_MOD}.filter_output",

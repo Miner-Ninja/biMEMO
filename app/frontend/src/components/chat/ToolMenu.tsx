@@ -74,7 +74,7 @@ export function ToolMenu({ selected, onToggle, disabled }: ToolMenuProps) {
     return remaining.length > 0
       ? [
           ...known,
-          { labelKey: "chat.toolGroupSystem" as TranslationKey, tools: remaining },
+          { labelKey: "chat.toolGroupOther" as TranslationKey, tools: remaining },
         ]
       : known;
   }, [catalog]);

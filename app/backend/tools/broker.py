@@ -222,7 +222,7 @@ class ToolBroker:
         filtered = filter_output(json.dumps(_bounded_value(parameters))).text
         try:
             safe_parameters = json.loads(filtered)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             safe_parameters = {"redacted": True}
         action: dict = {
             "tool": tool_name,
@@ -240,7 +240,6 @@ class ToolBroker:
         tool_name: str,
         parameters: object = None,
         result: object = None,
-        zone: str | None = None,
         duration_ms: float | None = None,
         authorization: AuthorizationContext | None = None,
         correlation: Mapping[str, str] | None = None,
@@ -255,7 +254,6 @@ class ToolBroker:
             tool_name: Name of the tool.
             parameters: Raw parameters (will be redacted).
             result: Execution result (will be truncated).
-            zone: Trust zone value string.
             duration_ms: Execution time in milliseconds.
             authorization: Authorization decision metadata.
             correlation: Immutable execution identity for this outcome.
@@ -305,7 +303,6 @@ class ToolBroker:
                 tool_name,
                 parameters=redacted_params,
                 result=result_summary,
-                zone=zone,
                 duration_ms=duration_ms,
             )
         )
@@ -549,10 +546,9 @@ class ToolBroker:
                 tool_name,
                 parameters,
                 str(result),
-                None,
-                elapsed,
-                authorization,
-                correlation,
+                duration_ms=elapsed,
+                authorization=authorization,
+                correlation=correlation,
             )
 
             return ToolResult(

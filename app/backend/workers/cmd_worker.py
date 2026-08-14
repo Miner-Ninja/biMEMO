@@ -323,7 +323,7 @@ async def execute_command(
                 import signal
 
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except ProcessLookupError, OSError:
+            except (ProcessLookupError, OSError):
                 process.kill()
             await process.wait()
             return CommandResult(
@@ -505,7 +505,7 @@ class CommandStream:
                 import signal
 
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except ProcessLookupError, OSError:
+            except (ProcessLookupError, OSError):
                 process.kill()
             await process.wait()
             exit_code = -1

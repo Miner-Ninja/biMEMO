@@ -541,7 +541,7 @@ class AgentOrchestrator:
                                             age,
                                         )
                                         return
-                                except ValueError, TypeError:
+                                except (ValueError, TypeError):
                                     pass
                         # Existing skill is old — will be updated via upsert
                         logger.info("Updating existing skill (older than 24h)")

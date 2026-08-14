@@ -163,7 +163,7 @@ def _json_metadata_profile(raw_value: object) -> dict[str, object]:
         return {}
     try:
         profile = json.loads(raw_value)
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         return {}
     return profile if isinstance(profile, dict) else {}
 
@@ -503,7 +503,7 @@ def make_get_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
             return {"settings": {}}
         try:
             settings = json.loads(raw)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             logger.warning("Stored UI settings are not valid JSON; returning empty")
             return {"settings": {}}
         if not isinstance(settings, dict):

@@ -56,7 +56,7 @@ const TOOL_META: Record<string, ToolMeta> = {
 
 const UNKNOWN_TOOL_META: ToolMeta = { icon: Wrench };
 
-/** Presentation metadata for one tool; unknown → wrench + RED (fail-closed). */
+/** Presentation metadata for one tool; unknown tools get a wrench icon. */
 export function getToolMeta(name: string): ToolMeta {
   return TOOL_META[name] ?? UNKNOWN_TOOL_META;
 }

@@ -111,7 +111,7 @@ async def test_invalid_pending_input_returns_typed_paused_error(monkeypatch) -> 
     """Validation failures keep the canonical prompt and identify the bad reply."""
     monkeypatch.setattr(
         "backend.processes.orchestrator.chat_handler.get_settings",
-        lambda: SimpleNamespace(structured_finalization_enabled=True),
+        lambda: SimpleNamespace(llm_response_stream=False),
     )
     turn = _paused_input_turn()
     db_client = SimpleNamespace(
@@ -158,7 +158,7 @@ async def test_pending_input_cannot_cross_conversations(monkeypatch) -> None:
     """A caller cannot resume a known run that belongs to another conversation."""
     monkeypatch.setattr(
         "backend.processes.orchestrator.chat_handler.get_settings",
-        lambda: SimpleNamespace(structured_finalization_enabled=True),
+        lambda: SimpleNamespace(llm_response_stream=False),
     )
     db_client = SimpleNamespace(
         get_agent_turn=AsyncMock(return_value=_paused_input_turn()),

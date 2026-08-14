@@ -138,7 +138,7 @@ async def code_search(
                                 .decode("utf-8", errors="replace")
                                 .splitlines()
                             )
-                    except OSError, UnicodeError:
+                    except (OSError, UnicodeError):
                         continue
                     if time.monotonic() >= deadline:
                         return matches, files_seen

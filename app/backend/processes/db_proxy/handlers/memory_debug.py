@@ -136,7 +136,7 @@ def make_get_memory_quality_report_handler(db: DatabaseManager) -> OperationHand
         for assertion in valid:
             try:
                 cited = json.loads(assertion["source_record_ids"])
-            except json.JSONDecodeError, TypeError:
+            except (json.JSONDecodeError, TypeError):
                 cited = []
             if not cited:
                 without_evidence += 1
