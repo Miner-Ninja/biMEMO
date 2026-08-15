@@ -772,7 +772,8 @@ export interface ConfirmResponse {
 /** Approve a pending RED zone tool action. */
 export async function confirmAction(
   actionId: string,
-  scope: "once" | "domain" | "conversation"
+  scope: "once" | "domain" | "conversation",
+  conversationId: string = ""
 ): Promise<ConfirmResponse> {
   return apiRequest<ConfirmResponse>("/confirm", {
     method: "POST",
@@ -780,17 +781,22 @@ export async function confirmAction(
       action_id: actionId,
       decision: "approve",
       scope: scope,
+      conversation_id: conversationId,
     }),
   });
 }
 
 /** Deny a pending RED zone tool action. */
-export async function denyAction(actionId: string): Promise<ConfirmResponse> {
+export async function denyAction(
+  actionId: string,
+  conversationId: string = ""
+): Promise<ConfirmResponse> {
   return apiRequest<ConfirmResponse>("/confirm", {
     method: "POST",
     body: JSON.stringify({
       action_id: actionId,
       decision: "deny",
+      conversation_id: conversationId,
     }),
   });
 }

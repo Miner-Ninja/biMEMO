@@ -85,11 +85,14 @@ class ConfirmRequest(StrictRequestModel):
         decision: Either "approve" or "deny".
         scope: Whether the approval applies once, to a domain, or to the
             whole conversation.
+        conversation_id: Conversation the confirmed turn belongs to, used to
+            route resume stream events back to the right browser view.
     """
 
     action_id: str = Field(min_length=1)
     decision: str = Field(pattern=r"^(approve|deny)$")
     scope: str = Field(default="once", pattern=r"^(once|domain|conversation)$")
+    conversation_id: str = Field(default="", max_length=200)
 
 
 class StopRequest(StrictRequestModel):

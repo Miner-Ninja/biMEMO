@@ -7,6 +7,12 @@ import { authStatus, refreshAccessToken } from "@/lib/bimemo-api";
 
 const MIN_BACKOFF = 1000;
 const MAX_BACKOFF = 30000;
+// The server sends a heartbeat every ~5 seconds. A socket that receives
+// nothing for longer than the liveness budget is a zombie (e.g. a NAT
+// gateway dropped the TCP session) — closing it triggers the normal
+// reconnect path even though the WebSocket API still reports it as open.
+const HEARTBEAT_CHECK_INTERVAL_MS = 5000;
+const LIVENESS_TIMEOUT_MS = 20000;
 
 export interface RealtimeEvent {
   type: string;
@@ -58,7 +64,40 @@ export function useRealtimeStream(
     onEventRef.current = onEvent;
   }, [onEvent]);
 
+  const livenessRef = useRef<{
+    timer: ReturnType<typeof setInterval> | null;
+    lastMessageAt: number;
+  }>({ timer: null, lastMessageAt: 0 });
+
+  const clearLiveness = useCallback(() => {
+    if (livenessRef.current.timer) {
+      clearInterval(livenessRef.current.timer);
+      livenessRef.current.timer = null;
+    }
+  }, []);
+
+  const armLiveness = useCallback(
+    (socket: WebSocket, generation: number) => {
+      clearLiveness();
+      livenessRef.current.lastMessageAt = Date.now();
+      livenessRef.current.timer = setInterval(() => {
+        if (generation !== generationRef.current) {
+          clearLiveness();
+          return;
+        }
+        if (Date.now() - livenessRef.current.lastMessageAt > LIVENESS_TIMEOUT_MS) {
+          // Zombie socket: the close() fires onclose, which schedules the
+          // backoff reconnect.
+          clearLiveness();
+          socket.close();
+        }
+      }, HEARTBEAT_CHECK_INTERVAL_MS);
+    },
+    [clearLiveness]
+  );
+
   const cleanup = useCallback(() => {
+    clearLiveness();
     if (retryRef.current) {
       clearTimeout(retryRef.current);
       retryRef.current = null;
@@ -67,7 +106,7 @@ export function useRealtimeStream(
       webSocketRef.current.close();
       webSocketRef.current = null;
     }
-  }, []);
+  }, [clearLiveness]);
 
   const scheduleReconnect = useCallback(() => {
     if (!activeRef.current || reconnectingRef.current) return;
@@ -116,10 +155,12 @@ export function useRealtimeStream(
       if (generation !== generationRef.current) return;
       setStatus("connected");
       backoffRef.current = MIN_BACKOFF;
+      armLiveness(socket, generation);
     };
 
     socket.onmessage = (event) => {
       if (generation !== generationRef.current) return;
+      livenessRef.current.lastMessageAt = Date.now();
       if (typeof event.data === "string") {
         dispatchEvent(event.data);
       }
@@ -134,6 +175,7 @@ export function useRealtimeStream(
 
     socket.onclose = () => {
       if (generation !== generationRef.current) return; // stale socket — ignore
+      clearLiveness();
       if (webSocketRef.current === socket) {
         webSocketRef.current = null;
       }
@@ -141,7 +183,7 @@ export function useRealtimeStream(
       if (!activeRef.current) return;
       scheduleReconnect();
     };
-  }, [conversationId, dispatchEvent, scheduleReconnect]);
+  }, [conversationId, dispatchEvent, scheduleReconnect, armLiveness, clearLiveness]);
 
   const connect = useCallback(async () => {
     generationRef.current += 1; // invalidate any in-flight/previous attempt

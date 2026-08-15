@@ -118,3 +118,62 @@ export function resolveStreamErrorMessage(message?: string | null): string {
   const trimmed = message?.trim();
   return trimmed || DEFAULT_STREAM_ERROR_MESSAGE;
 }
+
+export type PausedRunBinding = {
+  conversationId: string;
+  runId: string;
+};
+
+/**
+ * A paused turn (waiting on a tool confirmation) resumes through a separate
+ * /confirm request, and the resumed turn publishes its lifecycle events under
+ * that confirm request's request_id — one the page that started the original
+ * turn never saw. The only stable link between the original turn and its
+ * resume is the turn's run_id.
+ *
+ * Classifies such events against a paused-run binding:
+ * - "activity": a confirmation lifecycle event (carries no run_id) — the
+ *   user's decision just landed and the resume is about to run / is running.
+ * - "resync": a turn outcome (final/paused/failed/cancelled) whose run_id
+ *   matches the binding — the resume reached that outcome and the server
+ *   state is complete; the page should re-sync from it.
+ * - null: an event unrelated to the paused run — handled by the normal
+ *   active-stream path (or ignored).
+ */
+export function classifyPausedResumeEvent(
+  event: {
+    type: string;
+    data?: unknown;
+  },
+  pausedRun: PausedRunBinding | null,
+  options: {
+    activeAssistantMessageId: string | null;
+    conversationId: string | null;
+  }
+): "activity" | "resync" | null {
+  if (
+    pausedRun === null ||
+    !options.conversationId ||
+    pausedRun.conversationId !== options.conversationId ||
+    options.activeAssistantMessageId !== null
+  ) {
+    return null;
+  }
+  if (event.type === "confirmation") {
+    return "activity";
+  }
+  if (
+    event.type === "final" ||
+    event.type === "paused" ||
+    event.type === "failed" ||
+    event.type === "cancelled"
+  ) {
+    const data =
+      event.data && typeof event.data === "object"
+        ? (event.data as Record<string, unknown>)
+        : null;
+    const eventRunId = typeof data?.run_id === "string" ? data.run_id : "";
+    return eventRunId === pausedRun.runId ? "resync" : null;
+  }
+  return null;
+}

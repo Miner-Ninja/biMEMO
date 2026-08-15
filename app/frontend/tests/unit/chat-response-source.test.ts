@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_STREAM_ERROR_MESSAGE,
   chatInputIsDisabled,
+  classifyPausedResumeEvent,
   markStreamTerminalError,
   resolveStreamErrorMessage,
   runtimeBootstrapHasTerminalEvent,
   shouldApplyHttpChatResponse,
   shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
+  type PausedRunBinding,
 } from "@/lib/chat-response-source";
 
 describe("shouldApplyHttpChatResponse", () => {
@@ -134,5 +136,110 @@ describe("chatInputIsDisabled", () => {
         uploadActive: false,
       })
     ).toBe(false);
+  });
+});
+
+describe("classifyPausedResumeEvent", () => {
+  const pausedRun: PausedRunBinding = {
+    conversationId: "conv-1",
+    runId: "run-1",
+  };
+  const noActiveStream = {
+    activeAssistantMessageId: null,
+    conversationId: "conv-1" as string | null,
+  };
+
+  it.each([
+    ["final", { run_id: "run-1" }],
+    ["paused", { run_id: "run-1" }],
+    ["failed", { run_id: "run-1" }],
+    ["cancelled", { run_id: "run-1" }],
+  ])("resyncs on %s outcome carrying the paused run id", (type, data) => {
+    expect(classifyPausedResumeEvent({ type, data }, pausedRun, noActiveStream)).toBe(
+      "resync"
+    );
+  });
+
+  it("ignores outcomes of other runs in the same conversation", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "final", data: { run_id: "run-2" } },
+        pausedRun,
+        noActiveStream
+      )
+    ).toBeNull();
+  });
+
+  it("ignores outcomes without a run id", () => {
+    expect(
+      classifyPausedResumeEvent({ type: "final", data: {} }, pausedRun, noActiveStream)
+    ).toBeNull();
+  });
+
+  it("reports activity on confirmation lifecycle events", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "confirmation", data: { action_id: "a1", status: "approved" } },
+        pausedRun,
+        noActiveStream
+      )
+    ).toBe("activity");
+  });
+
+  it("yields to the active stream while one is live", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "final", data: { run_id: "run-1" } },
+        pausedRun,
+        { ...noActiveStream, activeAssistantMessageId: "msg-1" }
+      )
+    ).toBeNull();
+    expect(
+      classifyPausedResumeEvent(
+        { type: "confirmation", data: { action_id: "a1" } },
+        pausedRun,
+        { ...noActiveStream, activeAssistantMessageId: "msg-1" }
+      )
+    ).toBeNull();
+  });
+
+  it("ignores bindings for other conversations", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "final", data: { run_id: "run-1" } },
+        pausedRun,
+        { ...noActiveStream, conversationId: "conv-2" }
+      )
+    ).toBeNull();
+  });
+
+  it("ignores events without a binding or conversation", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "final", data: { run_id: "run-1" } },
+        null,
+        noActiveStream
+      )
+    ).toBeNull();
+    expect(
+      classifyPausedResumeEvent(
+        { type: "final", data: { run_id: "run-1" } },
+        pausedRun,
+        { ...noActiveStream, conversationId: null }
+      )
+    ).toBeNull();
+  });
+
+  it("ignores non-outcome event types", () => {
+    expect(
+      classifyPausedResumeEvent(
+        { type: "token", data: { run_id: "run-1" } },
+        pausedRun,
+        noActiveStream
+      )
+    ).toBeNull();
+    expect(
+      classifyPausedResumeEvent({ type: "done", data: null }, pausedRun, noActiveStream)
+    ).toBeNull();
   });
 });

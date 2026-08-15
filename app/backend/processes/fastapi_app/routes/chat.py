@@ -366,16 +366,24 @@ async def confirm(
         Confirmation result.
     """
     request_id = str(uuid.uuid4())
-    ipc_request = IPCConfirmRequest(
-        request_id=request_id,
-        action_id=body.action_id,
-        decision=body.decision,
-        scope=body.scope,
+    orchestrator_client.register_confirm_request(
+        request_id,
+        session_id=claims.jti,
+        conversation_id=body.conversation_id,
     )
-    ipc_response = await send_ipc_control_request(
-        send_fn=orchestrator_client.send_confirm,
-        ipc_request=ipc_request,
-    )
+    try:
+        ipc_request = IPCConfirmRequest(
+            request_id=request_id,
+            action_id=body.action_id,
+            decision=body.decision,
+            scope=body.scope,
+        )
+        ipc_response = await send_ipc_control_request(
+            send_fn=orchestrator_client.send_confirm,
+            ipc_request=ipc_request,
+        )
+    finally:
+        orchestrator_client.unregister_confirm_request(request_id)
     return build_confirm_response(
         accepted=ipc_response.accepted,
         action_id=body.action_id,

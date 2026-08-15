@@ -80,4 +80,98 @@ describe("useRealtimeStream", () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
     expect(FakeWebSocket.instances[1].url).toContain("/ws?conversation_id=conv-2");
   });
+
+  it("closes a zombie socket that stops sending heartbeats", async () => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const { result } = renderHook(() => useRealtimeStream(onEvent, "conv-3"));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const socket = FakeWebSocket.instances[0];
+    const closeSpy = vi.spyOn(socket, "close");
+    act(() => {
+      socket.onopen?.();
+    });
+
+    // The watchdog fires once the liveness budget elapses without any
+    // received frame (heartbeats included).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25000);
+    });
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the connection alive while heartbeats arrive", async () => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const { result } = renderHook(() => useRealtimeStream(onEvent, "conv-4"));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const socket = FakeWebSocket.instances[0];
+    const closeSpy = vi.spyOn(socket, "close");
+    act(() => {
+      socket.onopen?.();
+    });
+
+    // A heartbeat every 5s: the pipe is alive, no forced reconnect.
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      act(() => {
+        socket.onmessage?.(
+          new MessageEvent("message", {
+            data: JSON.stringify({ type: "heartbeat" }),
+          })
+        );
+      });
+    }
+
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("resets the liveness window on any received message", async () => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const { result } = renderHook(() => useRealtimeStream(onEvent, "conv-5"));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const socket = FakeWebSocket.instances[0];
+    const closeSpy = vi.spyOn(socket, "close");
+    act(() => {
+      socket.onopen?.();
+    });
+
+    // A real message at t=10s resets the window: the watchdog must not
+    // fire at open+20s, only after 20s of silence from t=10s.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    act(() => {
+      socket.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "final", request_id: "req-1" }),
+        })
+      );
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(closeSpy).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
 });

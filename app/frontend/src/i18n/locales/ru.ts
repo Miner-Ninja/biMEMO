@@ -20,6 +20,8 @@ const ru = {
     confirmBtnOnce: "Разрешить один раз",
     confirmPanelTitle: "Требуется разрешение",
     confirmStale: "Это подтверждение уже недействительно.",
+    confirmExpired:
+      "Подтверждение истекло до принятия решения — инструмент не был запущен. Задайте вопрос ещё раз, чтобы повторить запрос.",
     confirmTraceAllowedOnce: "Разрешено {{tool}} один раз",
     confirmTraceAllowedDomain: "Разрешено {{tool}} для домена {{host}}",
     confirmTraceAllowedConversation: "Разрешено {{tool}} на весь разговор",

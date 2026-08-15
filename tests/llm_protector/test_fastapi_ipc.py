@@ -8,7 +8,6 @@ and behavior on lost connections. Uses mock IPC to avoid actual sockets.
 import asyncio
 
 import pytest
-
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ChatRequest as IPCChatRequest,
@@ -347,6 +346,74 @@ class TestOrchestratorClient:
         await client._handle_stream_event(event)
 
         assert wrong_chat_queue.empty()
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_confirm_request_routes_resume_events_to_session(self) -> None:
+        """Confirm-request events reach the session's subscribed queue."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("session-1", queue, conversation_id="c1")
+        client.register_confirm_request("confirm-1", "session-1", "c1")
+
+        event = StreamEvent(
+            request_id="confirm-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        routed_event = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert routed_event is event
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_confirm_request_without_conversation_reaches_session_queues(
+        self,
+    ) -> None:
+        """A session-only confirm binding still reaches that session's queue."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("session-1", queue, conversation_id="c1")
+        client.register_confirm_request("confirm-1", "session-1")
+
+        event = StreamEvent(
+            request_id="confirm-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        routed_event = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert routed_event is event
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_unregistered_confirm_request_stops_event_routing(self) -> None:
+        """Unbinding a confirm request stops its events from routing."""
+        fake_ipc = FakeOrchestratorIPC()
+        client = OrchestratorClient(fake_ipc)
+        await client.start()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        client.register_session_queue("session-1", queue, conversation_id="c1")
+        client.register_confirm_request("confirm-1", "session-1", "c1")
+        client.unregister_confirm_request("confirm-1")
+
+        event = StreamEvent(
+            request_id="confirm-1",
+            event_type=StreamEventType.FINAL,
+            data={"content": "done"},
+        )
+        await client._handle_stream_event(event)
+
+        assert queue.empty()
         await client.stop()
 
     @pytest.mark.asyncio

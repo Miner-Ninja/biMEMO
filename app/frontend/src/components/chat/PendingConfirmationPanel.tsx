@@ -9,6 +9,7 @@ interface PendingConfirmationPanelProps {
   confirmation: PendingConfirmation;
   onDecide: (decision: "approve" | "deny", scope: ConfirmationScope) => void;
   busy: boolean;
+  actionable?: boolean;
   className?: string;
 }
 
@@ -34,6 +35,7 @@ export function PendingConfirmationPanel({
   onDecide,
   busy,
   className,
+  actionable = true,
 }: PendingConfirmationPanelProps) {
   const { t } = useTranslation();
   const meta = getToolMeta(confirmation.tool_name);
@@ -47,7 +49,10 @@ export function PendingConfirmationPanel({
     <div className="mx-auto w-full max-w-[1920px] shrink-0 px-1.5 sm:px-0 2xl:px-[10%]">
       <div
         className={cn(
-          "mx-auto mb-2 w-full max-w-3xl rounded-lg border border-amber-500/40 bg-amber-500/5 p-3",
+          "mx-auto mb-2 w-full max-w-3xl rounded-lg border p-3",
+          actionable
+            ? "border-amber-500/40 bg-amber-500/5"
+            : "border-border bg-muted/50",
           className
         )}
         data-testid="pending-confirmation-panel"
@@ -62,39 +67,49 @@ export function PendingConfirmationPanel({
             {preview}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap justify-end gap-2">
-          <Button size="sm" disabled={busy} onClick={() => onDecide("approve", "once")}>
-            {t("common.confirmBtnOnce")}
-          </Button>
-          {grantCapable && urlHost && (
+        {actionable ? (
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
             <Button
               size="sm"
-              variant="secondary"
               disabled={busy}
-              onClick={() => onDecide("approve", "domain")}
+              onClick={() => onDecide("approve", "once")}
             >
-              {t("common.confirmBtnDomain", { host: urlHost })}
+              {t("common.confirmBtnOnce")}
             </Button>
-          )}
-          {grantCapable && (
+            {grantCapable && urlHost && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onDecide("approve", "domain")}
+              >
+                {t("common.confirmBtnDomain", { host: urlHost })}
+              </Button>
+            )}
+            {grantCapable && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onDecide("approve", "conversation")}
+              >
+                {t("common.confirmBtnConversation")}
+              </Button>
+            )}
             <Button
               size="sm"
-              variant="secondary"
+              variant="outline"
               disabled={busy}
-              onClick={() => onDecide("approve", "conversation")}
+              onClick={() => onDecide("deny", "once")}
             >
-              {t("common.confirmBtnConversation")}
+              {t("common.confirmBtnDeny")}
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => onDecide("deny", "once")}
-          >
-            {t("common.confirmBtnDeny")}
-          </Button>
-        </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t("common.confirmExpired")}
+          </p>
+        )}
       </div>
     </div>
   );

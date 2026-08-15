@@ -123,4 +123,17 @@ describe("PendingConfirmationPanel", () => {
     expect(card.className).toContain("max-w-3xl");
     expect(card.className).toContain("mx-auto");
   });
+
+  it("shows the expired state instead of buttons when not actionable", () => {
+    render(
+      <PendingConfirmationPanel
+        confirmation={confirmation({ status: "expired" })}
+        onDecide={vi.fn()}
+        busy={false}
+        actionable={false}
+      />
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText(/expired/i)).toBeInTheDocument();
+  });
 });

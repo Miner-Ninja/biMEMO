@@ -464,9 +464,17 @@ def build_confirm_response(
     status: str = "",
     message_id: str = "",
     result_summary: str = "",
-) -> dict[str, str]:
-    """Build the HTTP response for one confirmation decision."""
-    response = {"detail": confirm_detail(accepted), "action_id": action_id}
+) -> dict[str, object]:
+    """Build the HTTP response for one confirmation decision.
+
+    ``accepted`` is the machine-readable decision flag consumed by the web
+    frontend; ``detail`` keeps the human-readable text for raw-HTTP clients.
+    """
+    response = {
+        "accepted": accepted,
+        "detail": confirm_detail(accepted),
+        "action_id": action_id,
+    }
     if status:
         response["status"] = status
     if message_id:
@@ -702,9 +710,7 @@ async def waiting_confirmations_for_conversation(
             continue
         payload = event.get("payload")
         raw = (
-            payload.get("pending_confirmations")
-            if isinstance(payload, dict)
-            else None
+            payload.get("pending_confirmations") if isinstance(payload, dict) else None
         )
         if not isinstance(raw, list):
             return []
@@ -721,7 +727,6 @@ async def waiting_confirmations_for_conversation(
             and statuses.get(str(item.get("action_id", ""))) == "pending"
         ]
     return []
-
 
 
 async def update_conversation_item(

@@ -199,6 +199,28 @@ class OrchestratorClient:
         self._active_chat_request_id = request_id
         self._is_processing = True
 
+    def register_confirm_request(
+        self,
+        request_id: str,
+        session_id: str,
+        conversation_id: str = "",
+    ) -> None:
+        """Bind a confirm request to its session for realtime event routing.
+
+        Args:
+            request_id: IPC request identifier for the confirm call.
+            session_id: Session identifier of the authenticated caller.
+            conversation_id: Conversation of the confirmed turn, when known.
+        """
+        self._request_to_session[request_id] = session_id
+        if conversation_id:
+            self._request_to_conversation[request_id] = conversation_id
+
+    def unregister_confirm_request(self, request_id: str) -> None:
+        """Remove a confirm request's realtime event routing bindings."""
+        self._request_to_session.pop(request_id, None)
+        self._request_to_conversation.pop(request_id, None)
+
     def register_session_queue(
         self,
         session_id: str,

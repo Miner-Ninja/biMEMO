@@ -54,6 +54,7 @@ import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
 import { shouldKeepStreamedAssistantResponseAfterRequestError } from "@/lib/chat-request-errors";
 import {
   chatInputIsDisabled,
+  classifyPausedResumeEvent,
   bindPendingInputReply,
   markStreamTerminalError,
   resolveStreamErrorMessage,
@@ -62,6 +63,7 @@ import {
   shouldApplyHttpChatResponse,
   shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
+  type PausedRunBinding,
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
 import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
@@ -462,6 +464,7 @@ export function ChatPage() {
   const processedFinalizationIdsRef = useRef<Set<string>>(new Set());
   const pseudoStreamRunIdRef = useRef(0);
   const stoppedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
+  const pausedRunRef = useRef<PausedRunBinding | null>(null);
   const activeAssistantStreamRef = useRef<ActiveAssistantStreamState>({
     assistantMessageId: null,
     conversationId: null,
@@ -893,6 +896,53 @@ export function ChatPage() {
 
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
+      const eventPayload =
+        event.data && typeof event.data === "object"
+          ? (event.data as Record<string, unknown>)
+          : null;
+
+      // A paused turn resumes through a separate /confirm request, and the
+      // resumed turn publishes its lifecycle events under that confirm
+      // request's request_id — one this page never saw. The only stable
+      // link between the original turn and its resume is the turn's run_id,
+      // so while a run is paused the outcome events are matched on run_id:
+      // the resume runs to its outcome before publishing it, the server
+      // state is complete, and re-syncing from it is the same strategy the
+      // runtime_bootstrap path uses.
+      const pausedResumeClass =
+        activeChatId !== null
+          ? classifyPausedResumeEvent(event, pausedRunRef.current, {
+              activeAssistantMessageId: assistantMessageIdRef.current,
+              conversationId: activeChatId,
+            })
+          : null;
+      if (pausedResumeClass !== null && activeChatId !== null) {
+        if (pausedResumeClass === "activity") {
+          updateConversation(activeChatId, {
+            processingStatus: "active",
+            processingStage: t("chat.processing"),
+            processingStartedAt: new Date(),
+            updatedAt: new Date(),
+          });
+          return;
+        }
+        if (
+          event.type === "final" ||
+          event.type === "failed" ||
+          event.type === "cancelled"
+        ) {
+          pausedRunRef.current = null;
+        }
+        void refreshConversationMessages(activeChatId).finally(() => {
+          updateConversation(activeChatId, {
+            processingStatus: "idle",
+            processingStage: "",
+            processingStartedAt: undefined,
+          });
+        });
+        return;
+      }
+
       const isAssistantRunEvent =
         event.type === "token" ||
         event.type === "thinking" ||
@@ -908,16 +958,17 @@ export function ChatPage() {
         return;
       }
 
-      const eventPayload =
-        event.data && typeof event.data === "object"
-          ? (event.data as Record<string, unknown>)
-          : null;
-
       if (event.type === "runtime_bootstrap") {
         const bootstrap = eventPayload as RuntimeBootstrapPayload | null;
         const conversationId = bootstrap?.conversation_id || "";
         const pausedEvent = runtimeBootstrapPausedEvent(bootstrap);
         if (pausedEvent && conversationId) {
+          if (pausedEvent.run_id) {
+            pausedRunRef.current = {
+              conversationId,
+              runId: pausedEvent.run_id,
+            };
+          }
           const rawConfirmations = pausedEvent.payload?.pending_confirmations;
           const confirmations = Array.isArray(rawConfirmations)
             ? rawConfirmations
@@ -986,6 +1037,9 @@ export function ChatPage() {
         }
         if (!runtimeBootstrapHasTerminalEvent(bootstrap)) {
           return;
+        }
+        if (pausedRunRef.current?.conversationId === conversationId) {
+          pausedRunRef.current = null;
         }
         updateConversation(conversationId, {
           processingStatus: "idle",
@@ -1089,6 +1143,13 @@ export function ChatPage() {
         activeAssistantStreamRef.current.realtimeCompleted = true;
         setIsLoading(false);
         clearStages();
+        const pausedConversationId = activeAssistantStreamRef.current.conversationId;
+        if (pausedPayload?.run_id && pausedConversationId) {
+          pausedRunRef.current = {
+            conversationId: pausedConversationId,
+            runId: pausedPayload.run_id,
+          };
+        }
       } else if (event.type === "cancelled") {
         pendingInputRef.current = null;
         const activeStream = activeAssistantStreamRef.current;
@@ -1506,6 +1567,8 @@ export function ChatPage() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      // A new turn supersedes any pending resume of an earlier turn.
+      pausedRunRef.current = null;
       if (response.outcome_kind !== "paused") {
         pendingInputRef.current = null;
       }
@@ -1727,6 +1790,8 @@ export function ChatPage() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      // A new turn supersedes any pending resume of an earlier turn.
+      pausedRunRef.current = null;
 
       if (isAssistantStreamStopped(assistantMessageId)) {
         stoppedAssistantMessageIdsRef.current.delete(assistantMessageId);
@@ -1830,22 +1895,37 @@ export function ChatPage() {
     }
   };
 
-  // Oldest still-pending confirmation of the active conversation drives the
-  // pinned panel; message order is chronological, so first hit = oldest.
+  // The pinned panel shows the oldest still-pending confirmation (message
+  // order is chronological, so the first hit wins); with nothing pending,
+  // a recently expired confirmation on the latest message explains why
+  // the card stopped waiting.
   const activePendingConfirmation = useMemo(() => {
-    for (const message of activeChat?.messages ?? []) {
+    const messages = activeChat?.messages ?? [];
+    for (const message of messages) {
       for (const item of message.pendingConfirmations ?? []) {
         if (item.status === "pending") {
-          return { messageId: message.id, confirmation: item };
+          return { messageId: message.id, confirmation: item, actionable: true };
         }
       }
+    }
+    const lastMessage = messages[messages.length - 1];
+    const expiredItems = (lastMessage?.pendingConfirmations ?? []).filter(
+      (item) => item.status === "expired"
+    );
+    const lastExpired = expiredItems[expiredItems.length - 1];
+    if (lastMessage && lastExpired) {
+      return {
+        messageId: lastMessage.id,
+        confirmation: lastExpired,
+        actionable: false,
+      };
     }
     return null;
   }, [activeChat]);
 
   const handleConfirmationDecision = useCallback(
     async (decision: "approve" | "deny", scope: ConfirmationScope) => {
-      if (!activePendingConfirmation || confirmBusy) return;
+      if (!activePendingConfirmation?.actionable || confirmBusy) return;
       const { messageId, confirmation } = activePendingConfirmation;
       // Captured at decision time so a chat switch mid-request cannot
       // redirect the status patch or the trace line into another chat.
@@ -1866,8 +1946,8 @@ export function ChatPage() {
       try {
         const response =
           decision === "approve"
-            ? await confirmAction(confirmation.action_id, scope)
-            : await denyAction(confirmation.action_id);
+            ? await confirmAction(confirmation.action_id, scope, conversationId)
+            : await denyAction(confirmation.action_id, conversationId);
         const failedOutcome =
           !response.accepted ||
           response.status === "failed" ||
@@ -2331,6 +2411,7 @@ export function ChatPage() {
           confirmation={activePendingConfirmation.confirmation}
           onDecide={handleConfirmationDecision}
           busy={confirmBusy}
+          actionable={activePendingConfirmation.actionable}
         />
       )}
       <ChatInput

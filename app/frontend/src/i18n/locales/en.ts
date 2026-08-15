@@ -17,6 +17,8 @@ const en = {
     confirmBtnOnce: "Allow once",
     confirmPanelTitle: "Permission required",
     confirmStale: "This confirmation is no longer valid.",
+    confirmExpired:
+      "This confirmation expired before a decision. The tool was not run — ask again to try once more.",
     confirmTraceAllowedOnce: "Allowed {{tool}} once",
     confirmTraceAllowedDomain: "Allowed {{tool}} for domain {{host}}",
     confirmTraceAllowedConversation: "Allowed {{tool}} for this conversation",
