@@ -2,11 +2,14 @@
 
 Covers parse_structured_response_json behaviour on empty and
 whitespace-only inputs, which previously raised JSONDecodeError and
-crashed the client.
+crashed the client, and parse_final_only_response_json handling of a
+stray suggestions block inside the answer.
 """
 
+import pytest
 from backend.llm.structured_response import (
     StructuredAssistantContent,
+    parse_final_only_response_json,
     parse_structured_response_json,
 )
 
@@ -73,3 +76,85 @@ class TestParseStructuredResponseJsonEmptyGuard:
             "Check config",
             "Restart service",
         ]
+
+
+class TestParseFinalOnlyResponseJsonSuggestionsBlock:
+    """A stray suggestions block in the answer is stripped, never shown twice."""
+
+    def test_block_with_empty_field_moves_into_suggestions(self):
+        """A block in the answer becomes suggestions; the answer stays clean."""
+        result = parse_final_only_response_json(
+            "\n".join(
+                [
+                    "{",
+                    (
+                        '  "answer": "На связи. Что дальше?\\n\\n```suggestions\\n'
+                        'Покажи статус\\nПокажи каталоги\\nНайди ошибки\\n```",'
+                    ),
+                    '  "suggestions": []',
+                    "}",
+                ]
+            )
+        )
+        assert result.answer == "На связи. Что дальше?"
+        assert result.suggestions == [
+            "Покажи статус",
+            "Покажи каталоги",
+            "Найди ошибки",
+        ]
+
+    def test_block_merges_with_field_items_without_duplicates(self):
+        """Block lines already present in the field are not repeated."""
+        result = parse_final_only_response_json(
+            "\n".join(
+                [
+                    "{",
+                    (
+                        '  "answer": "Main answer.\\n\\n```suggestions\\n'
+                        'Open logs\\nCheck config\\n```",'
+                    ),
+                    '  "suggestions": ["Open logs", "Restart service"]',
+                    "}",
+                ]
+            )
+        )
+        assert result.answer == "Main answer."
+        assert result.suggestions == ["Open logs", "Restart service", "Check config"]
+
+    def test_language_mismatched_block_yields_no_suggestions(self):
+        """A block in a different script than the answer is dropped."""
+        result = parse_final_only_response_json(
+            "\n".join(
+                [
+                    "{",
+                    '  "answer": "Привет! Я на связи.\\n\\n```suggestions\\n'
+                    'Show git status\\nShow workspace dirs\\n```",'
+                    '  "suggestions": []',
+                    "}",
+                ]
+            )
+        )
+        assert result.answer == "Привет! Я на связи."
+        assert result.suggestions == []
+
+    def test_block_only_answer_is_rejected(self):
+        """An answer consisting only of a suggestions block has no visible text."""
+        with pytest.raises(ValueError, match="final answer is empty"):
+            parse_final_only_response_json(
+                "\n".join(
+                    [
+                        "{",
+                        '  "answer": "```suggestions\\nOpen logs\\n```",',
+                        '  "suggestions": []',
+                        "}",
+                    ]
+                )
+            )
+
+    def test_plain_answer_passes_through_unchanged(self):
+        """Without a block, answer and field suggestions are kept as-is."""
+        result = parse_final_only_response_json(
+            '{"answer": "Done.", "suggestions": ["Next step"]}'
+        )
+        assert result.answer == "Done."
+        assert result.suggestions == ["Next step"]

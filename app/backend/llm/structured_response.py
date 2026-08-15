@@ -263,6 +263,34 @@ def _split_suggestions_block(text: str) -> tuple[str, list[str]]:
     return answer, trimmed_suggestions
 
 
+def _resolve_suggestions(
+    answer: str,
+    field_suggestions: list[str],
+) -> tuple[str, list[str]]:
+    """Strip a legacy suggestions block and resolve the final suggestions.
+
+    A model may emit a ``suggestions`` fenced block inside the answer text
+    even when the response contract puts suggestions in a JSON field. The
+    block is removed from the answer and its lines are merged with the
+    field items, so the same suggestions are never rendered twice.
+
+    Args:
+        answer: Raw answer text from the model response.
+        field_suggestions: Suggestions taken from the JSON field.
+
+    Returns:
+        Tuple of the cleaned answer text and the final suggestions list.
+    """
+    answer_text, extracted_suggestions = _split_suggestions_block(answer)
+    combined = field_suggestions + [
+        item for item in extracted_suggestions if item not in field_suggestions
+    ]
+    trimmed = _trim_suggestions(combined)
+    if not _suggestions_match_content_language(answer_text, trimmed):
+        trimmed = []
+    return answer_text, trimmed
+
+
 def normalize_legacy_response_text(text: str) -> StructuredAssistantContent:
     """Normalize one markdown-style assistant answer into typed sections."""
     answer, suggestions = _split_suggestions_block(text)
@@ -331,7 +359,6 @@ def parse_structured_response_json(
     if not isinstance(raw_data, dict):
         raise ValueError("Structured response must be a JSON object")
     raw_answer = str(raw_data.get("answer", ""))
-    answer, extracted_suggestions = _split_suggestions_block(raw_answer)
     raw_suggestions = raw_data.get("suggestions", [])
     if not isinstance(raw_suggestions, list):
         raise ValueError("Structured response suggestions must be a list")
@@ -340,14 +367,7 @@ def parse_structured_response_json(
         for suggestion in raw_suggestions
         if str(suggestion).strip()
     ]
-    combined_suggestions = suggestions + [
-        suggestion
-        for suggestion in extracted_suggestions
-        if suggestion not in suggestions
-    ]
-    trimmed_suggestions = _trim_suggestions(combined_suggestions)
-    if not _suggestions_match_content_language(answer, trimmed_suggestions):
-        trimmed_suggestions = []
+    answer, trimmed_suggestions = _resolve_suggestions(raw_answer, suggestions)
     raw_tool_plan = raw_data.get("tool_plan")
     tool_plan = raw_tool_plan if isinstance(raw_tool_plan, dict) else None
     return StructuredAssistantContent(
@@ -414,9 +434,10 @@ def parse_final_only_response_json(
 ) -> StructuredAssistantContent:
     """Parse a final-only JSON response with strict validation.
 
-    All structural checks (duplicate keys, trailing content, extra fields,
-    type constraints, cardinality, UTF-8 size) run before any normalization.
-    No ``tool_plan`` is accepted or returned.
+    Structural checks (duplicate keys, trailing content, extra fields, type
+    constraints, cardinality, UTF-8 size) run before any normalization.
+    A stray ``suggestions`` block inside the answer is stripped and merged
+    into the suggestions field. No ``tool_plan`` is accepted or returned.
     """
     if not text or not text.strip():
         raise ValueError("final answer is empty")
@@ -463,10 +484,12 @@ def parse_final_only_response_json(
 
     # Normalization — only after all validation passes.
     suggestions = [item.strip() for item in raw_suggestions if item.strip()]
-    trimmed = _trim_suggestions(suggestions)
+    answer, trimmed = _resolve_suggestions(raw_answer, suggestions)
+    if not answer:
+        raise ValueError("final answer is empty")
 
     return StructuredAssistantContent(
-        answer=raw_answer.strip(),
+        answer=answer,
         thinking=thinking.strip() if thinking else None,
         suggestions=trimmed,
     )
