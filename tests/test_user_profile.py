@@ -157,11 +157,12 @@ class TestSystemPromptUserProfile:
     """Tests for User Profile injection in _build_system_prompt."""
 
     def test_prompt_requires_three_follow_up_suggestions(self):
-        """System prompt requires a 3-question suggestions block on every answer."""
+        """System prompt asks for 3 suggestions in the JSON field, not in the answer."""
         orchestrator = _make_orchestrator(user_profile={})
         prompt = orchestrator._build_system_prompt()
-        assert "```suggestions" in prompt
-        assert "End every answer with exactly this format" in prompt
+        assert "exactly 3 follow-up suggestions" in prompt
+        assert 'in the "suggestions" field of your JSON response' in prompt
+        assert "Never include a suggestions block, markdown fence" in prompt
         assert "the same language as the user's latest message" in prompt
         assert "Never write suggestions addressed to the user" in prompt
 

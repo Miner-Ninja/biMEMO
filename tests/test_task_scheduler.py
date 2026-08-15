@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from backend.processes.db_proxy.handlers.scheduler import (
     ToolRevisionAuthority,
     make_advance_task_next_run_handler,
@@ -1130,39 +1129,40 @@ class TestScheduledTaskSystemPrompt:
 
         builder = PromptBuilder("test-model", {}, MagicMock(), None)
         prompt = builder.build_system_prompt()
-        assert "```suggestions" in prompt
+        assert "exactly 3 follow-up suggestions" in prompt
         assert "[SILENT]" not in prompt
 
     def test_scheduled_mode_omits_suggestions_when_disabled(self):
-        """A scheduled task with suggestions disabled omits the block."""
+        """A scheduled task with suggestions disabled omits the suggestion rules."""
         from backend.agent.prompt_builder import PromptBuilder
 
         builder = PromptBuilder("test-model", {}, MagicMock(), None)
         builder.scheduled_task_mode = True
         builder.suggestions_enabled = False
         prompt = builder.build_system_prompt()
-        assert "```suggestions" not in prompt
+        assert "Do NOT include follow-up suggestions" in prompt
+        assert "exactly 3 follow-up suggestions" not in prompt
         assert "scheduled background task" in prompt
 
     def test_scheduled_mode_includes_suggestions_when_enabled(self):
-        """A scheduled task with suggestions enabled includes the block."""
+        """A scheduled task with suggestions enabled includes the suggestion rules."""
         from backend.agent.prompt_builder import PromptBuilder
 
         builder = PromptBuilder("test-model", {}, MagicMock(), None)
         builder.scheduled_task_mode = True
         builder.suggestions_enabled = True
         prompt = builder.build_system_prompt()
-        assert "```suggestions" in prompt
+        assert "exactly 3 follow-up suggestions" in prompt
         assert "scheduled background task" in prompt
 
     def test_normal_mode_omits_suggestions_when_disabled(self):
-        """An interactive chat with suggestions disabled omits the block."""
+        """An interactive chat with suggestions disabled omits the suggestion rules."""
         from backend.agent.prompt_builder import PromptBuilder
 
         builder = PromptBuilder("test-model", {}, MagicMock(), None)
         builder.suggestions_enabled = False
         prompt = builder.build_system_prompt()
-        assert "```suggestions" not in prompt
+        assert "exactly 3 follow-up suggestions" not in prompt
 
     def test_scheduled_mode_includes_silent_marker(self):
         """In scheduled_task_mode the [SILENT] marker is documented."""

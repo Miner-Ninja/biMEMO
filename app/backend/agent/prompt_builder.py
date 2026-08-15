@@ -100,10 +100,10 @@ class PromptBuilder:
         self.active_skill_context: str | None = None
         self.allowed_tool_names: set[str] | None = None
         self.scheduled_task_mode: bool = False
-        # Whether the model is asked to end its answer with a suggestions block.
-        # Set per turn from the conversation's show_suggestions setting; when
-        # False the suggestions instructions are omitted from the prompt so the
-        # model never generates them (and finalization strips any it volunteers).
+        # Whether the model is asked to produce follow-up suggestions. Set
+        # per turn from the conversation's show_suggestions setting; when
+        # False the suggestions instructions are omitted from the prompt so
+        # the model never generates them (finalization strips any it volunteers).
         self.suggestions_enabled: bool = True
 
     def build_system_prompt(self) -> str:
@@ -176,15 +176,12 @@ class PromptBuilder:
         return prompt
 
     def _suggestions_rules(self) -> str:
-        """Return the rules asking the model to end its answer with suggestions."""
+        """Return the rules that make the model produce follow-up suggestions."""
         return (
-            "- End every answer with exactly this format (three backticks, "
-            "the word suggestions, newline, 3 lines, three backticks):\n"
-            "```suggestions\n"
-            "First action prompt\n"
-            "Second action prompt\n"
-            "Third action prompt\n"
-            "```\n"
+            "- End every final answer with exactly 3 follow-up suggestions "
+            'in the "suggestions" field of your JSON response\n'
+            "- Never include a suggestions block, markdown fence, or the word "
+            '"suggestions" in the visible answer text\n'
             "- Each suggestion must be written as if the user is typing it — "
             "a direct request from user to assistant, e.g. "
             "'Find the weekly exchange-rate forecast', "
@@ -199,7 +196,6 @@ class PromptBuilder:
             "opening websites, installing apps, or downloading files\n"
             "- Each suggestion must be specific to the current topic, "
             "and written in the same language as the user's latest message\n"
-            "- Do not mention the suggestions block in the main answer body\n"
         )
 
     def _build_scheduled_task_system_prompt(self) -> str:
@@ -218,7 +214,7 @@ class PromptBuilder:
         if self.suggestions_enabled:
             prompt += self._suggestions_rules()
         else:
-            prompt += "- Do NOT include a suggestions block in your response\n"
+            prompt += "- Do NOT include follow-up suggestions in your response\n"
         prompt += (
             "- Do NOT address the user directly with greetings or "
             "follow-up questions\n"
@@ -264,7 +260,7 @@ class PromptBuilder:
         if tz_name:
             try:
                 tz = ZoneInfo(tz_name)
-            except (KeyError, ValueError):
+            except KeyError, ValueError:
                 logger.warning(
                     "Invalid timezone in user profile: %r, using UTC",
                     tz_name,
