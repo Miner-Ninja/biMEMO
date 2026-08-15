@@ -662,7 +662,8 @@ def make_list_agent_runs_handler(db: DatabaseManager) -> OperationHandler:
         values.extend([p.limit, p.offset])
         rows = db.execute(
             "SELECT id, conversation_id, session_id, channel, status, current_step, "
-            "request_id, resume_payload, created_at, updated_at, completed_at "
+            "request_id, resume_payload, tool_policy_version, created_at, "
+            "updated_at, completed_at "
             f"FROM agent_runs {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             tuple(values),
         ).fetchall()
