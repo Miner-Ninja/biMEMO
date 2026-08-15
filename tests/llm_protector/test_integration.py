@@ -18,6 +18,7 @@ import inspect
 from pathlib import Path
 
 import pytest
+
 from backend.ipc.models import (
     ChatRequest,
     ChatResponse,
@@ -703,8 +704,14 @@ class TestDockerNetworkIsolationArchitecture:
         assert "internal" not in networks
         assert "search" not in networks
 
+    # The orchestrator container is the deliberate mediator between the
+    # two isolation networks: it receives requests on the ingress network
+    # (bm-caddy) and reaches SearXNG on the egress network (bm-searxng).
+    # Every OTHER service must stay on exactly one side.
+    _NETWORK_MEDIATOR = "bimemo"
+
     def test_no_service_on_all_networks(self):
-        """No single service connects to all active networks."""
+        """Only the designated mediator may span both isolation networks."""
         yaml = pytest.importorskip("yaml")
 
         compose_path = (
@@ -715,7 +722,30 @@ class TestDockerNetworkIsolationArchitecture:
         compose = yaml.safe_load(compose_path.read_text())
         all_networks = set(compose["networks"].keys())
         for service_name, service in compose["services"].items():
+            if service_name == self._NETWORK_MEDIATOR:
+                continue
             service_networks = set(service.get("networks", []))
             assert service_networks != all_networks, (
-                f"Service {service_name} should not connect to all networks"
+                f"Service {service_name} bridges every isolation network; only "
+                f"'{self._NETWORK_MEDIATOR}' may."
             )
+
+    def test_mediator_is_the_only_bridge(self):
+        """The mediator spans both networks and nothing else does."""
+        yaml = pytest.importorskip("yaml")
+
+        compose_path = (
+            Path(__file__).resolve().parents[2] / "docker" / "docker-compose.yml"
+        )
+        if not compose_path.exists():
+            pytest.skip("docker-compose.yml not available (running inside container)")
+        compose = yaml.safe_load(compose_path.read_text())
+        all_networks = set(compose["networks"].keys())
+        bridges = {
+            name
+            for name, service in compose["services"].items()
+            if set(service.get("networks", [])) == all_networks
+        }
+        assert bridges == {self._NETWORK_MEDIATOR}, (
+            f"Exactly the mediator must bridge all networks; found {bridges}"
+        )

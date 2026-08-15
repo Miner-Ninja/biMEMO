@@ -3399,56 +3399,20 @@ class TestFileReplacement:
         assert response.json()["detail"] == "Discord bridge server mismatch"
 
     def test_chat_returns_usage_stats_from_orchestrator(self) -> None:
-        """Chat should pass usage statistics through to the HTTP response."""
-        app, token, session_manager, signing_client, _ = _build_test_app()
-        app.state.admin_client = FakeAdminClient()
+        """Orchestrator usage stats reach the HTTP chat response body.
 
-        async def send_chat(request: object, session_id: str) -> IPCChatResponse:
-            """Return one stubbed response that includes usage statistics."""
-            return MagicMock(
-                text="ready",
-                input_filtered=False,
-                output_filtered=False,
-                pending_confirmations=[],
-                retrieved_memories=[],
-                retrieved_messages=[],
-                transcription=None,
-                stats={
-                    "prompt_tokens": 321,
-                    "completion_tokens": 54,
-                    "total_tokens": 375,
-                    "context": {
-                        "total": 32768,
-                        "used": 4096,
-                        "free": 28672,
-                        "used_percent": 12.5,
-                    },
-                    "timing": {
-                        "prompt_ms": 450.0,
-                        "generation_ms": 1600.0,
-                        "total_ms": 2200.0,
-                    },
-                    "model": "qwen3.5:35b",
-                    "iterations": 2,
-                },
-            )
+        The default /chat path streams and delivers the final answer over
+        SSE, so this asserts the synchronous response builder that the
+        non-streaming path and the SSE final event both source their stats
+        from — usage must survive the IPC -> HTTP hop unchanged.
+        """
+        from unittest.mock import MagicMock
 
-        app.state.orchestrator_client.send_chat = send_chat
-        client, csrf = _authed_client_with_csrf(
-            app,
-            token,
-            session_manager,
-            signing_client,
+        from backend.processes.fastapi_app.routes.chat_helpers import (
+            build_http_chat_response,
         )
 
-        response = client.post(
-            "/chat",
-            json={"message": "show stats"},
-            headers={"X-CSRF-Token": csrf},
-        )
-
-        assert response.status_code == 200, response.text
-        assert response.json()["stats"] == {
+        stats = {
             "prompt_tokens": 321,
             "completion_tokens": 54,
             "total_tokens": 375,
@@ -3463,10 +3427,39 @@ class TestFileReplacement:
                 "generation_ms": 1600.0,
                 "total_ms": 2200.0,
             },
-            "memory_zones": None,
             "model": "qwen3.5:35b",
             "iterations": 2,
         }
+        ipc_response = MagicMock(
+            input_filtered=False,
+            output_filtered=False,
+            pending_confirmations=[],
+            pause_reason=None,
+            pending_input=None,
+            used_tools=[],
+            retrieved_memories=[],
+            retrieved_messages=[],
+            transcription=None,
+            structured_content=None,
+            stream_enabled=False,
+            outcome_kind=None,
+            run_id="run-1",
+            finalization_id=None,
+            error=None,
+            stats=stats,
+        )
+
+        response = build_http_chat_response(
+            conversation_id="conv-1",
+            ipc_response=ipc_response,
+        )
+        dumped = response.model_dump()["stats"]
+        assert dumped["prompt_tokens"] == 321
+        assert dumped["total_tokens"] == 375
+        assert dumped["iterations"] == 2
+        assert dumped["context"]["used_percent"] == 12.5
+        assert dumped["timing"]["total_ms"] == 2200.0
+        assert dumped["model"] == "qwen3.5:35b"
 
 
 class TestProfileContract:
@@ -3608,7 +3601,11 @@ class TestMemoryTimeline:
         resp = client.get("/chat/conversations")
 
         assert resp.status_code == 200, resp.text
-        default_settings = {"show_thinking": False}
+        default_settings = {
+            "show_thinking": False,
+            "show_suggestions": True,
+            "thinking_enabled": True,
+        }
         assert resp.json() == [
             {
                 "id": "conversation-2",
@@ -3713,7 +3710,11 @@ class TestMemoryTimeline:
             "id": "conversation-1",
             "title": "Renamed chat",
             "bridge_provider": None,
-            "settings": {"show_thinking": False},
+            "settings": {
+                "show_thinking": False,
+                "show_suggestions": True,
+                "thinking_enabled": True,
+            },
             "processing_status": "idle",
             "processing_stage": "",
             "processing_started_at": None,

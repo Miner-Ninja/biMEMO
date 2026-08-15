@@ -12,6 +12,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.concurrency import AgentConcurrency
 from backend.llm.call_factory import LLMResponse
@@ -54,11 +55,13 @@ class TestSkillExtractionCallsLLMWithOptions:
         create_skill_fn = AsyncMock(return_value={"status": "saved"})
         orch = _make_orchestrator(create_skill_fn=create_skill_fn)
 
-        captured: dict = {}
+        # Skill generation makes several LLM calls (extraction, then an
+        # optional quality appraisal); record every one and assert the
+        # extraction call carries the schema, regardless of call order.
+        calls: list[LLMCallOptions] = []
 
         async def llm_call(prompt, *, options=None):
-            captured["prompt"] = prompt
-            captured["options"] = options
+            calls.append(options)
             return _llm_response_for_skill(
                 {
                     "title": "t",
@@ -76,11 +79,15 @@ class TestSkillExtractionCallsLLMWithOptions:
             llm_call=llm_call,
         )
 
-        options = captured["options"]
-        assert isinstance(options, LLMCallOptions)
-        assert options.response_format is LlmResponseFormat.JSON_SCHEMA
-        assert options.response_schema is SKILL_EXTRACTION_SCHEMA
-        assert options.tools == []
+        extraction = next(
+            options
+            for options in calls
+            if options is not None
+            and options.response_schema is SKILL_EXTRACTION_SCHEMA
+        )
+        assert isinstance(extraction, LLMCallOptions)
+        assert extraction.response_format is LlmResponseFormat.JSON_SCHEMA
+        assert extraction.tools == []
 
 
 class TestSkillExtractionConformingResponse:
