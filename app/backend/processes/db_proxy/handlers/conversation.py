@@ -113,6 +113,24 @@ def make_delete_conversation_handler(db: DatabaseManager) -> OperationHandler:
                 "(SELECT id FROM records WHERE conversation_id = ?)",
                 (p.conversation_id,),
             )
+        if table_exists(db, "agent_turn_finalizations"):
+            # Finalization claims carry RESTRICT foreign keys on agent_turns,
+            # messages, and record_queue; remove them first so the
+            # conversation cascade can delete the turns they reference.
+            db.execute(
+                "DELETE FROM agent_turn_finalizations WHERE turn_id IN "
+                "(SELECT id FROM agent_turns WHERE conversation_id = ?)",
+                (p.conversation_id,),
+            )
+        if table_exists(db, "agent_obligation_binds"):
+            # Obligation binds carry a RESTRICT foreign key on
+            # agent_tool_invocations; remove them before the cascades run.
+            db.execute(
+                "DELETE FROM agent_obligation_binds WHERE invocation_id IN "
+                "(SELECT id FROM agent_tool_invocations WHERE turn_id IN "
+                "(SELECT id FROM agent_turns WHERE conversation_id = ?))",
+                (p.conversation_id,),
+            )
         db.execute("DELETE FROM conversations WHERE id = ?", (p.conversation_id,))
         db.commit()
         db.execute("VACUUM")

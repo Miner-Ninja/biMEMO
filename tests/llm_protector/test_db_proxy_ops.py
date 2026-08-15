@@ -8,8 +8,6 @@ database as a stand-in for the encrypted database.
 import sqlite3
 
 import pytest
-from pydantic import ValidationError
-
 from backend.ipc.models import DBOperation
 from backend.processes.db_proxy import (
     CHANNEL_A,
@@ -48,6 +46,15 @@ from backend.processes.db_proxy import (
     make_verify_chain_handler,
     make_write_audit_handler,
 )
+from backend.security.schema import (
+    CREATE_AGENT_OBLIGATION_BINDS_TABLE,
+    CREATE_AGENT_TOOL_BATCHES_TABLE,
+    CREATE_AGENT_TOOL_INVOCATIONS_TABLE,
+    CREATE_AGENT_TOOL_OBLIGATIONS_TABLE,
+    CREATE_AGENT_TURNS_TABLE,
+    CREATE_AGENT_TURN_FINALIZATIONS_TABLE,
+)
+from pydantic import ValidationError
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 125
@@ -204,6 +211,12 @@ class FakeDB:
             """CREATE TABLE record_embeddings (
                 record_id TEXT PRIMARY KEY
             )""",
+            CREATE_AGENT_TURNS_TABLE,
+            CREATE_AGENT_TOOL_OBLIGATIONS_TABLE,
+            CREATE_AGENT_TOOL_BATCHES_TABLE,
+            CREATE_AGENT_TOOL_INVOCATIONS_TABLE,
+            CREATE_AGENT_OBLIGATION_BINDS_TABLE,
+            CREATE_AGENT_TURN_FINALIZATIONS_TABLE,
             """CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
                USING fts5(content, content_rowid='rowid')""",
             """CREATE VIRTUAL TABLE IF NOT EXISTS records_fts
@@ -903,6 +916,65 @@ class TestConversationOperations:
             (conversation_id,),
         ).fetchone()
         assert row[0] == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_conversation_with_finalized_tool_turn(
+        self,
+        db: FakeDB,
+    ) -> None:
+        """Deletes a conversation whose turn holds finalization claims and
+        obligation binds, both of which RESTRICT the cascading deletes."""
+        create_conversation = make_create_conversation_handler(db)
+        result = await create_conversation({"title": "finalized turn"})
+        conversation_id = result["conversation_id"]
+
+        db.execute(
+            "INSERT INTO agent_turns (id, conversation_id, session_id, channel,"
+            " architecture_version, authority_store, finalization_id)"
+            " VALUES ('turn-1', ?, 'session-1', 'web', 'structured_v1', 'core',"
+            " 'final-1')",
+            (conversation_id,),
+        )
+        db.execute(
+            "INSERT INTO agent_tool_obligations (id, turn_id, required_tool,"
+            " source) VALUES ('obl-1', 'turn-1', 'http_fetch', 'model')"
+        )
+        db.execute(
+            "INSERT INTO agent_tool_batches (id, turn_id, assistant_message)"
+            " VALUES ('batch-1', 'turn-1', '')"
+        )
+        db.execute(
+            "INSERT INTO agent_tool_invocations (id, turn_id, batch_id,"
+            " tool_call_id, tool_name, canonical_arguments, canonical_args_hash)"
+            " VALUES ('inv-1', 'turn-1', 'batch-1', 'call-1', 'http_fetch',"
+            " '{}', 'h1')"
+        )
+        db.execute(
+            "INSERT INTO agent_obligation_binds (obligation_id, invocation_id)"
+            " VALUES ('obl-1', 'inv-1')"
+        )
+        db.execute(
+            "INSERT INTO agent_turn_finalizations (id, turn_id, outcome_kind,"
+            " canonical_payload) VALUES ('final-1', 'turn-1', 'final', '{}')"
+        )
+        db.commit()
+
+        delete_conversation = make_delete_conversation_handler(db)
+        await delete_conversation({"conversation_id": conversation_id})
+
+        row = db.execute(
+            "SELECT count(*) FROM conversations WHERE id = ?",
+            (conversation_id,),
+        ).fetchone()
+        assert row[0] == 0
+        for table in (
+            "agent_turns",
+            "agent_tool_invocations",
+            "agent_obligation_binds",
+            "agent_turn_finalizations",
+        ):
+            row = db.execute(f"SELECT count(*) FROM {table}").fetchone()
+            assert row[0] == 0, f"leftover rows in {table}"
 
     @pytest.mark.asyncio
     async def test_delete_conversation_skips_missing_embedding_table(
