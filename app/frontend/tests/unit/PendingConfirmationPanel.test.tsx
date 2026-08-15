@@ -105,4 +105,22 @@ describe("PendingConfirmationPanel", () => {
       expect(button).toBeDisabled();
     }
   });
+
+  it("renders the card inside the centered chat column frame", () => {
+    const { container } = render(
+      <PendingConfirmationPanel
+        confirmation={confirmation()}
+        onDecide={() => {}}
+        busy={false}
+      />
+    );
+    const frame = container.firstElementChild as HTMLElement;
+    const card = container.querySelector(
+      '[data-testid="pending-confirmation-panel"]'
+    ) as HTMLElement;
+    expect(frame.className).toContain("mx-auto");
+    expect(frame.className).toContain("max-w-[1920px]");
+    expect(card.className).toContain("max-w-3xl");
+    expect(card.className).toContain("mx-auto");
+  });
 });

@@ -44,55 +44,57 @@ export function PendingConfirmationPanel({
   const urlHost = confirmation.url_host ?? null;
 
   return (
-    <div
-      className={cn(
-        "mx-4 mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3",
-        className
-      )}
-      data-testid="pending-confirmation-panel"
-    >
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <Icon className="h-4 w-4 shrink-0" />
-        <span>{t("common.confirmPanelTitle")}</span>
-        <span className="text-muted-foreground">{toolLabel}</span>
-      </div>
-      {preview && (
-        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-          {preview}
-        </p>
-      )}
-      <div className="mt-2 flex flex-wrap justify-end gap-2">
-        <Button size="sm" disabled={busy} onClick={() => onDecide("approve", "once")}>
-          {t("common.confirmBtnOnce")}
-        </Button>
-        {grantCapable && urlHost && (
+    <div className="mx-auto w-full max-w-[1920px] shrink-0 px-1.5 sm:px-0 2xl:px-[10%]">
+      <div
+        className={cn(
+          "mx-auto mb-2 w-full max-w-3xl rounded-lg border border-amber-500/40 bg-amber-500/5 p-3",
+          className
+        )}
+        data-testid="pending-confirmation-panel"
+      >
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Icon className="h-4 w-4 shrink-0" />
+          <span>{t("common.confirmPanelTitle")}</span>
+          <span className="text-muted-foreground">{toolLabel}</span>
+        </div>
+        {preview && (
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+            {preview}
+          </p>
+        )}
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
+          <Button size="sm" disabled={busy} onClick={() => onDecide("approve", "once")}>
+            {t("common.confirmBtnOnce")}
+          </Button>
+          {grantCapable && urlHost && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onDecide("approve", "domain")}
+            >
+              {t("common.confirmBtnDomain", { host: urlHost })}
+            </Button>
+          )}
+          {grantCapable && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onDecide("approve", "conversation")}
+            >
+              {t("common.confirmBtnConversation")}
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="secondary"
+            variant="outline"
             disabled={busy}
-            onClick={() => onDecide("approve", "domain")}
+            onClick={() => onDecide("deny", "once")}
           >
-            {t("common.confirmBtnDomain", { host: urlHost })}
+            {t("common.confirmBtnDeny")}
           </Button>
-        )}
-        {grantCapable && (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => onDecide("approve", "conversation")}
-          >
-            {t("common.confirmBtnConversation")}
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => onDecide("deny", "once")}
-        >
-          {t("common.confirmBtnDeny")}
-        </Button>
+        </div>
       </div>
     </div>
   );
