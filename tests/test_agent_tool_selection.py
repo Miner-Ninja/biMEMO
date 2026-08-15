@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.prompt_builder import (
     FILE_READ_TOOL_NAMES,

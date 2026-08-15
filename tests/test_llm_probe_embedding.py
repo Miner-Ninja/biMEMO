@@ -5,7 +5,6 @@ embedding request, not a chat probe against the chat host.
 """
 
 import pytest
-
 from backend.processes.fastapi_app.routes.llm_providers import (
     _probe_embedding,
     _probe_llm_provider,

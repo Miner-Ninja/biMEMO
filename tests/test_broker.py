@@ -8,8 +8,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic import BaseModel, ValidationError
-
 from backend.tools.broker import (
     AuthorizationContext,
     ToolBroker,
@@ -24,6 +22,7 @@ from backend.tools.registry import (
     ToolDefinition,
     ToolRegistry,
 )
+from pydantic import BaseModel, ValidationError
 
 
 class _EchoInput(BaseModel, extra="forbid", frozen=True):

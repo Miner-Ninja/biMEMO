@@ -6,7 +6,6 @@ import types
 
 import httpx
 import pytest
-
 from backend.chat_bridge.models import (
     BridgeDeliveryMode,
     BridgeMessageDirection,

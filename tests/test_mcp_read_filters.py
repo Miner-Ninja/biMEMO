@@ -9,7 +9,6 @@ set must never leave the database through the MCP surface.
 import os
 
 import pytest
-
 from backend.memory.retrieval.fulltext import create_fts_tables
 from backend.processes.db_proxy.handlers.admin import (
     make_mcp_memory_get_handler,

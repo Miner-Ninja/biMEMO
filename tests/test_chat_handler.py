@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import (
     ChatRequest,

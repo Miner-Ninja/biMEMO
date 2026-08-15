@@ -8,7 +8,6 @@ always unsubscribed when the generator finishes.
 import asyncio
 
 import pytest
-
 from backend.processes.fastapi_app.routes.admin_memory import stream_memory_events
 
 

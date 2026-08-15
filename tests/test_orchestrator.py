@@ -12,7 +12,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,

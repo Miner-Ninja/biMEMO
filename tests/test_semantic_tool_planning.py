@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from backend.agent.agent_loop import AgentOrchestrator, _semantic_tool_choice
 from backend.agent.agent_loop_models import PreparedContext, TurnPreparation
 from backend.agent.concurrency import AgentConcurrency

@@ -10,7 +10,6 @@ so a missing client method fails loudly.
 from unittest.mock import AsyncMock
 
 import pytest
-
 from backend.memory.storage.pruning import (
     RECORD_PRUNE_AGE_DAYS,
     run_pruning_cycle,

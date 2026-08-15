@@ -10,7 +10,6 @@ import hashlib
 from typing import TYPE_CHECKING, Any
 
 import pytest
-
 from backend.config import reset_settings
 
 
@@ -230,10 +229,9 @@ class TestHashBasedValidation:
         cred = FakeCredentialClient()
         # No tokens stored — all requests should fail auth
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -275,10 +273,9 @@ class TestCapabilityEnforcement:
             },
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -315,10 +312,9 @@ class TestCapabilityEnforcement:
             },
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -367,10 +363,9 @@ class TestIssueAndAuth:
             },
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -663,10 +658,9 @@ class TestBoundaries:
             },
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1070,12 +1064,11 @@ class TestRevokeAgentToken:
     @pytest.mark.asyncio
     async def test_revoke_without_reauth_is_rejected(self) -> None:
         """Missing reauth token -> 403 and nothing deleted."""
-        from fastapi import HTTPException
-
         from backend.channels.endpoints import ReauthManager
         from backend.processes.fastapi_app.routes.agents import (
             revoke_agent_token,
         )
+        from fastapi import HTTPException
 
         cred = FakeCredentialClient()
         await self._seed_agent(cred, "claude")
@@ -1089,12 +1082,11 @@ class TestRevokeAgentToken:
     @pytest.mark.asyncio
     async def test_revoke_with_invalid_reauth_is_rejected(self) -> None:
         """A bogus reauth token -> 403."""
-        from fastapi import HTTPException
-
         from backend.channels.endpoints import ReauthManager
         from backend.processes.fastapi_app.routes.agents import (
             revoke_agent_token,
         )
+        from fastapi import HTTPException
 
         cred = FakeCredentialClient()
         await self._seed_agent(cred, "claude")
@@ -1109,12 +1101,11 @@ class TestRevokeAgentToken:
     @pytest.mark.asyncio
     async def test_revoke_does_not_delete_non_agent_integration(self) -> None:
         """Revoking a label owned by a non-agent integration -> 404, kept."""
-        from fastapi import HTTPException
-
         from backend.channels.endpoints import ReauthManager
         from backend.processes.fastapi_app.routes.agents import (
             revoke_agent_token,
         )
+        from fastapi import HTTPException
 
         cred = FakeCredentialClient()
         await cred.create_integration(
@@ -1158,12 +1149,11 @@ class TestIssueAgentToken:
     @pytest.mark.asyncio
     async def test_issue_without_reauth_is_rejected(self) -> None:
         """Missing reauth token -> 403 and nothing is stored."""
-        from fastapi import HTTPException
-
         from backend.channels.endpoints import ReauthManager
         from backend.processes.fastapi_app.routes.agents import (
             issue_agent_token,
         )
+        from fastapi import HTTPException
 
         cred = FakeCredentialClient()
         mgr = ReauthManager()
@@ -1248,10 +1238,9 @@ class TestSearchMemoryEdgeCases:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1278,10 +1267,9 @@ class TestSearchMemoryEdgeCases:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1311,10 +1299,9 @@ class TestSearchMemoryEdgeCases:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1347,10 +1334,9 @@ class TestRecentMemory:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1377,10 +1363,9 @@ class TestRecentMemory:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1415,10 +1400,9 @@ class TestGetMemory:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1445,10 +1429,9 @@ class TestGetMemory:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1482,10 +1465,9 @@ class TestMemoryStats:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1535,10 +1517,9 @@ class TestRememberAppendOnly:
             config={"token_hash": _hash_token("tok"), "capability": "read-write"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1567,10 +1548,9 @@ class TestRememberAppendOnly:
             config={"token_hash": _hash_token("tok"), "capability": "read-write"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")
@@ -1849,10 +1829,9 @@ class TestConversationMemory:
             config={"token_hash": _hash_token("tok"), "capability": "read"},
         )
 
+        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
         from starlette.applications import Starlette
         from starlette.testclient import TestClient
-
-        from backend.processes.fastapi_app.routes.mcp import build_mcp_server
 
         mcp_server = build_mcp_server(admin, orch, cred)
         mcp_app = mcp_server.http_app(path="/")

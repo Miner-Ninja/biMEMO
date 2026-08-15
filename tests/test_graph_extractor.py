@@ -7,7 +7,6 @@ Asserts the graph-memory-extractor contract: R1 (S1.1-S1.2), R3
 import os
 
 import pytest
-
 from backend.memory.graph_extractor import (
     normalize_relation,
     parse_graph_extraction,

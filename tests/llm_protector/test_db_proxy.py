@@ -8,7 +8,6 @@ import asyncio
 import sqlite3
 
 import pytest
-
 from backend.ipc.db_proxy import (
     ChannelAllowlist,
     OperationNotAllowedError,

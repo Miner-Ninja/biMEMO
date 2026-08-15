@@ -4,14 +4,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import ValidationError
-
 from backend.agent.tool_executor import ToolExecutor
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.models.requests import ConfirmRequest as HTTPConfirmRequest
 from backend.permissions import ActionDecision, DecisionKind, domain_scope, scope_hash
 from backend.tools.handlers.registration import confirmation_button_extras
 from backend.trust.confirmation import ConfirmationManager
+from pydantic import ValidationError
 
 
 class TestScopeWire:
@@ -218,8 +217,6 @@ class TestDomainRedirectContainment:
     @pytest.mark.asyncio
     async def test_cross_host_redirect_refused_before_request(self):
         """A 302 to another host fails BEFORE any request reaches it."""
-        import httpx
-
         from backend.tools.validation import ValidationError
         from backend.workers import net_worker
 

@@ -12,7 +12,6 @@ import asyncio
 import time
 
 import pytest
-
 from backend.llm.capabilities import ContextDetectionError, ModelCapabilities
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 

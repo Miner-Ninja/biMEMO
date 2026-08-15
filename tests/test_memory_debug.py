@@ -6,7 +6,6 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-
 from backend.memory.dialog_recorder import trace as dialog_recorder_trace
 from backend.memory.runtime.event_bus import MemoryEventBus
 from backend.processes.db_proxy.handlers.admin import (

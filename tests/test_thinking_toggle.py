@@ -8,7 +8,6 @@ holder resets, and reading a missing setting yields the default (on).
 from unittest.mock import AsyncMock
 
 import pytest
-
 from backend.agent.conversation_settings import read_thinking_enabled
 from backend.llm.call_factory import (
     current_thinking_enabled,

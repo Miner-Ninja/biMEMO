@@ -3,7 +3,6 @@
 Covers in-memory fallback, save/get/clear operations.
 """
 
-import pytest
 from backend.workspace.history_store import WorkspaceHistoryStore
 from backend.workspace.history_tracker import WorkspaceHistoryEntry
 

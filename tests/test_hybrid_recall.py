@@ -5,7 +5,6 @@ embedding callable is registered, and stays FTS+graph-only when not.
 """
 
 import pytest
-
 from backend.tools.handlers import registration
 from backend.tools.handlers.registration import (
     _build_fast_recall_result,

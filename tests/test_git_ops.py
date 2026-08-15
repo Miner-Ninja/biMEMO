@@ -15,7 +15,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from backend.tools.handlers.code_search import code_search
 from backend.tools.handlers.git_ops import (
     git_commit,

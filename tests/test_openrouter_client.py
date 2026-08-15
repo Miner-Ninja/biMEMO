@@ -9,7 +9,6 @@ import json
 
 import httpx
 import pytest
-
 from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.custom_provider.client import SOURCE_CUSTOM_MODELS, CustomLLMClient

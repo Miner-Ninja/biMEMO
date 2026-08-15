@@ -7,7 +7,6 @@ summary deletion, and VACUUM execution.
 import secrets
 
 import pytest
-
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
 )

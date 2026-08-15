@@ -1,7 +1,6 @@
 """Contract tests for buffered final-only structured synthesis."""
 
 import pytest
-
 from backend.agent.structured_finalization import (
     StructuredFinalizationError,
     StructuredFinalizer,

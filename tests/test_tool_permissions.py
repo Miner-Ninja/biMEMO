@@ -4,7 +4,6 @@ import json
 import os
 
 import pytest
-
 from backend.permissions import ActionContext, ActionDecisionService
 from backend.processes.db_proxy.handlers.agent_turn import (
     make_create_agent_turn_handler,

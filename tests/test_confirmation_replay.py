@@ -2,10 +2,9 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 import backend.agent.llm_caller as llm_caller_module
 import backend.processes.orchestrator.chat_handler as chat_handler_module
+import pytest
 from backend.ipc.models import ChatRequest, ChatResponse, TurnOutcomeKind
 from backend.processes.orchestrator.chat_handler import (
     _maybe_handle_permission_reply,

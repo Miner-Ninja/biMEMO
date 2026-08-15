@@ -8,7 +8,6 @@ socket gains no graph write operation.
 from typing import Any
 
 import pytest
-
 from backend.channels.endpoints import ReauthManager
 from backend.ipc.models import (
     MemoryInvalidateRequest,
@@ -158,7 +157,8 @@ class TestOrchestratorSide:
 
     def test_response_type_dispatchable_on_web_side(self) -> None:
         """The web-tier reader must know the response type, or the route
-        would hang until timeout even though the write succeeded."""
+        would hang until timeout even though the write succeeded.
+        """
         from backend.processes.fastapi_app.orchestrator_client import (
             ORCHESTRATOR_RESPONSE_TYPES,
         )

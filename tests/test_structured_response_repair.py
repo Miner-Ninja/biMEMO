@@ -10,7 +10,6 @@ truly broken replies keep their existing behaviour.
 import json
 
 import pytest
-
 from backend.llm.structured_response import parse_structured_response_json
 
 

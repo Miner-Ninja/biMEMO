@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from backend.agent.agent_loop import AgentOrchestrator
 
 

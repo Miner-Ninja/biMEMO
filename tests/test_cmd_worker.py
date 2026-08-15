@@ -5,7 +5,6 @@ and error cases.
 """
 
 import pytest
-
 from backend.workers.cmd_worker import (
     ALLOWED_COMMANDS,
     BLOCKED_COMMANDS,

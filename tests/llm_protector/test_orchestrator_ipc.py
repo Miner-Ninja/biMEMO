@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
 from backend.ipc.models import (
     BridgeInboundSyncRequest,

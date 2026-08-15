@@ -5,7 +5,6 @@ import json
 import os
 
 import pytest
-
 from backend.processes.db_proxy.handlers.admin import (
     make_record_rate_limit_call_handler,
 )

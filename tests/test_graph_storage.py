@@ -8,8 +8,6 @@ import os
 
 import pytest
 import sqlcipher3
-from pydantic import ValidationError
-
 from backend.memory.retrieval.fulltext import create_fts_tables
 from backend.processes.db_proxy.handlers.graph import (
     make_find_entities_handler,
@@ -22,6 +20,7 @@ from backend.processes.db_proxy.handlers.graph import (
 )
 from backend.security.database import DatabaseManager
 from backend.security.schema import SCHEMA_VERSION, initialize_schema
+from pydantic import ValidationError
 
 
 def _open_db(tmp_path):

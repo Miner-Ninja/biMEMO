@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from backend.agent.agent_loop_models import ToolCall
 from backend.agent.tool_executor import ToolExecutor
 from backend.permissions import ActionDecision, DecisionKind

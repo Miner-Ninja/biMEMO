@@ -8,7 +8,6 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from backend.tools.builtin import (
     SystemStatusInput,
 )

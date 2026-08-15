@@ -11,7 +11,6 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from backend.agent.agent_loop import (
     SKILL_QUALITY_AXIS_MAX,
     SKILL_QUALITY_MIN_PER_AXIS,

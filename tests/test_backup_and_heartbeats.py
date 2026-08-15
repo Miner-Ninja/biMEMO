@@ -8,7 +8,6 @@ import os
 import secrets
 
 import pytest
-
 from backend.processes.db_proxy.handlers.admin import (
     make_get_loop_heartbeats_handler,
     make_record_loop_heartbeat_handler,

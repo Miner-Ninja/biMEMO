@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import (
     ComputeConfig,
