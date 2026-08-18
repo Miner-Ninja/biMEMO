@@ -6,6 +6,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, WebSocket
+from fastapi.responses import JSONResponse, Response
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.ipc.models import StopRequest as IPCStopRequest
@@ -24,9 +25,6 @@ from backend.models.responses import ChatSettingsResponse
 from backend.models.responses import ChatStartResponse as HTTPChatStartResponse
 from backend.models.responses import (
     ConversationCreateResponse as HTTPConversationCreateResponse,
-)
-from backend.models.responses import (
-    ConversationDeleteResponse as HTTPConversationDeleteResponse,
 )
 from backend.models.responses import ConversationItem as HTTPConversationItem
 from backend.models.responses import (
@@ -132,8 +130,11 @@ async def create_conversation(
     chat_bridge_service: ChatBridgeService | None = Depends(
         _get_optional_chat_bridge_service
     ),
-) -> HTTPConversationCreateResponse:
-    """Create one empty persisted conversation."""
+) -> JSONResponse:
+    """Create one empty persisted conversation.
+
+    Returns 201 with the created conversation path in Location.
+    """
     conversation = await create_persisted_conversation(
         title=body.title,
         admin_client=admin_client,
@@ -143,7 +144,13 @@ async def create_conversation(
         event_type=StreamEventType.CONVERSATION_CREATED,
         data=conversation_created_event_data(conversation),
     )
-    return HTTPConversationCreateResponse(conversation_id=conversation.id)
+    return JSONResponse(
+        status_code=201,
+        headers={"Location": f"/chat/conversations/{conversation.id}"},
+        content=HTTPConversationCreateResponse(
+            conversation_id=conversation.id
+        ).model_dump(),
+    )
 
 
 @chat_router.get("/chat/conversations")
@@ -247,9 +254,9 @@ async def delete_conversation(
     _claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
     orchestrator_client: OrchestratorClient = Depends(_get_orchestrator_client),
-) -> HTTPConversationDeleteResponse:
+) -> Response:
     """Delete one persisted conversation and related data."""
-    response = await delete_conversation_item(
+    await delete_conversation_item(
         admin_client=admin_client,
         conversation_id=conversation_id,
     )
@@ -258,7 +265,7 @@ async def delete_conversation(
         event_type=StreamEventType.CONVERSATION_DELETED,
         data=conversation_deleted_event_data(conversation_id),
     )
-    return response
+    return Response(status_code=204)
 
 
 @chat_router.websocket("/ws")

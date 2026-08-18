@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isBrowserNetworkFetchError,
   shouldKeepStreamedAssistantResponseAfterRequestError,
 } from "@/lib/chat-request-errors";
+import { apiRequest } from "@/lib/bimemo-api";
 
 describe("isBrowserNetworkFetchError", () => {
   it("matches Firefox fetch failures", () => {
@@ -61,5 +62,29 @@ describe("shouldKeepStreamedAssistantResponseAfterRequestError", () => {
         ""
       )
     ).toBe(false);
+  });
+});
+
+describe("apiRequest 204 handling", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves to null on 204 without parsing the empty body", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url === "/csrf-token") {
+        return new Response(JSON.stringify({ token: "csrf-token" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 204 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await apiRequest("/files/file-1", { method: "DELETE" });
+
+    expect(result).toBeNull();
   });
 });

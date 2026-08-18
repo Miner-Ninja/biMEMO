@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, Response
 
 from backend.models.requests import (  # noqa: TC001
     ScheduledTaskCreateRequest,
@@ -71,7 +72,7 @@ async def create_scheduled_task(
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
     orchestrator: OrchestratorClient = Depends(_get_orchestrator_client),
-) -> dict:
+) -> JSONResponse:
     """Create a new scheduled task.
 
     Args:
@@ -124,10 +125,15 @@ async def create_scheduled_task(
             "repeat_limit": body.repeat_limit,
         }
     )
-    return {
-        "task_id": result.get("task_id", ""),
-        "next_run_at": result.get("next_run_at", next_run),
-    }
+    task_id = result.get("task_id", "")
+    return JSONResponse(
+        status_code=201,
+        headers={"Location": f"/admin/scheduled-tasks/{task_id}"},
+        content={
+            "task_id": task_id,
+            "next_run_at": result.get("next_run_at", next_run),
+        },
+    )
 
 
 @scheduled_tasks_router.patch("/{task_id}")
@@ -212,20 +218,17 @@ async def delete_scheduled_task(
     task_id: str,
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> dict:
+) -> Response:
     """Delete a scheduled task.
 
     Args:
         task_id: Task identifier.
         claims: Authenticated token claims.
         admin: DB Proxy Socket B client.
-
-    Returns:
-        Dict with success indicator.
     """
     del claims
     await admin.delete_scheduled_task(task_id)
-    return {"ok": True}
+    return Response(status_code=204)
 
 
 @scheduled_tasks_router.get("/{task_id}/runs")

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from backend.llm.ollama.capabilities import (
@@ -374,7 +375,7 @@ async def get_llm_config(
     return await cred.get_llm_config_meta()
 
 
-@llm_router.post("/config")
+@llm_router.put("/config")
 async def save_llm_config(
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
@@ -479,24 +480,36 @@ async def create_llm_config(
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
     cred: CredentialClient = Depends(_get_credential_client),
-) -> dict:
-    """Create a new LLM configuration (inactive by default)."""
+) -> JSONResponse:
+    """Create a new LLM configuration (inactive by default).
+
+    Returns 201 with the created configuration path in Location.
+    """
     del claims
     body = await request.json()
     service_type = _require_supported_service_type(str(body.get("service_type", "")))
     credentials = _credential_fields(body)
     result = await cred.create_llm_config(service_type, credentials)
-    return {"id": result.get("id"), "detail": "Configuration created"}
+    config_id = result.get("id")
+    return JSONResponse(
+        status_code=201,
+        headers={"Location": f"/admin/llm/configs/{config_id}"},
+        content={"id": config_id, "detail": "Configuration created"},
+    )
 
 
-@llm_router.put("/configs/{config_id}")
+@llm_router.patch("/configs/{config_id}")
 async def update_llm_config(
     config_id: str,
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
     cred: CredentialClient = Depends(_get_credential_client),
 ) -> dict:
-    """Update an existing LLM configuration (merge credentials)."""
+    """Update an existing LLM configuration.
+
+    Merge semantics: absent fields keep their stored value; validation
+    applies to the provided fields.
+    """
     del claims
     body = await request.json()
     credentials = _credential_fields(body)
@@ -521,20 +534,15 @@ async def delete_llm_config(
     request: Request,
     claims: TokenClaims = Depends(_require_auth),
     cred: CredentialClient = Depends(_get_credential_client),
-) -> dict:
-    """Delete an LLM configuration and its credentials."""
+) -> Response:
+    """Delete an LLM configuration and its credentials.
+
+    Returns 204 without a body; the runtime reload still runs as a side effect.
+    """
     del claims
     _require_config_operation_result(await cred.delete_llm_config(config_id))
-    reload_result = await _reload_llm_runtime(request)
-    return {
-        "detail": _reload_detail(
-            applied_detail="Configuration deleted and runtime reloaded.",
-            restart_detail="Configuration deleted. Restart to apply.",
-            failed_detail="Configuration deleted. Reload failed.",
-            reload_result=reload_result,
-        ),
-        "reload": reload_result,
-    }
+    await _reload_llm_runtime(request)
+    return Response(status_code=204)
 
 
 @llm_router.post("/configs/{config_id}/activate")

@@ -55,14 +55,18 @@ class TestStartupGateStatus:
         assert response.json()["authenticated"] is False
 
     def test_health_reports_not_ready(self) -> None:
-        """Verify startup-gate health is explicit about not being ready."""
+        """Verify startup-gate health answers 503 with the full body until unlock."""
         client, _ = _make_client(StartupState.AUTO_UNLOCK_FAILED)
 
         response = client.get("/health")
 
-        assert response.status_code == 200
+        assert response.status_code == 503
         assert response.json()["status"] == "auto_unlock_failed"
         assert response.json()["ready"] is False
+        assert (
+            response.json()["detail"]
+            == "Automatic unlock failed; manual password is required"
+        )
 
 
 class TestStartupGatePasswordSubmission:

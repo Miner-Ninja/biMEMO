@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.files import FileContextManager
 from backend.files.paths import UPLOADED_FILES_DIR
@@ -112,16 +112,15 @@ async def upload_file(
     file: UploadFile,
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> dict:
+) -> JSONResponse:
     """Upload a file with type and size validation.
+
+    Returns 201 with the stored file path in Location.
 
     Args:
         file: Uploaded file.
         _claims: Authenticated user.
         admin: DB Proxy client.
-
-    Returns:
-        File metadata dict.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -209,11 +208,15 @@ async def upload_file(
                 )
         raise
 
-    return _uploaded_file_response(
-        file_id=file_id,
-        file_name=file.filename,
-        size_bytes=len(content),
-        mime_type=mime_type,
+    return JSONResponse(
+        status_code=201,
+        headers={"Location": f"/files/{file_id}"},
+        content=_uploaded_file_response(
+            file_id=file_id,
+            file_name=file.filename,
+            size_bytes=len(content),
+            mime_type=mime_type,
+        ),
     )
 
 
@@ -239,7 +242,7 @@ async def delete_file(
     file_id: uuid.UUID,
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> None:
+) -> Response:
     """Delete a file from disk and database.
 
     Args:
@@ -253,6 +256,7 @@ async def delete_file(
     file_path.unlink(missing_ok=True)
 
     await admin.send_operation("delete_file_metadata", {"file_id": file_id_str})
+    return Response(status_code=204)
 
 
 @files_router.get("/{file_id}/content")

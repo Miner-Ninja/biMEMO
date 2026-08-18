@@ -16,7 +16,7 @@ export async function getProfile(): Promise<UserProfile> {
 
 export async function saveProfile(profile: UserProfile): Promise<void> {
   await apiRequest("/admin/profile", {
-    method: "POST",
+    method: "PUT",
     body: JSON.stringify(profile),
   });
 }
@@ -28,7 +28,7 @@ export async function uploadAvatar(
   const form = new FormData();
   form.append("file", file);
   return apiRequest<{ url: string }>(`/admin/avatars/${type}`, {
-    method: "POST",
+    method: "PUT",
     body: form,
   });
 }

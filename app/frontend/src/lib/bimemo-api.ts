@@ -131,6 +131,7 @@ export async function waitForApplicationReady(): Promise<void> {
  *
  * - Injects X-CSRF-Token header on state-changing methods.
  * - On 401, attempts token refresh and retries once.
+ * - On 204 (no body), resolves to null instead of parsing JSON.
  * - Skips Content-Type for FormData bodies (browser sets multipart boundary).
  */
 export async function apiRequest<T>(
@@ -199,6 +200,9 @@ export async function apiRequest<T>(
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiError(response.status, problemDetail(body, response.statusText));
+  }
+  if (response.status === 204) {
+    return null as T;
   }
 
   return response.json();
@@ -301,10 +305,6 @@ export interface StoredConversationMessage {
 
 export interface ConversationCreateResponse {
   conversation_id: string;
-}
-
-export interface ConversationDeleteResponse {
-  ok: boolean;
 }
 
 export interface ChatBridgeProviderItem {
@@ -419,13 +419,10 @@ export async function updateConversationTitle(
 }
 
 /** Delete one persisted conversation on the server. */
-export async function deleteConversation(
-  conversationId: string
-): Promise<ConversationDeleteResponse> {
-  return apiRequest<ConversationDeleteResponse>(
-    `/chat/conversations/${encodePathSegment(conversationId)}`,
-    { method: "DELETE" }
-  );
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await apiRequest(`/chat/conversations/${encodePathSegment(conversationId)}`, {
+    method: "DELETE",
+  });
 }
 
 /** Update per-conversation display settings. */
@@ -566,7 +563,7 @@ export async function updateChatBridgeLinkSettings(
   const response = await apiRequest<ChatBridgeLink | { chat_bridge_link: null }>(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/settings`,
     {
-      method: "POST",
+      method: "PUT",
       headers: { "X-Reauth-Token": options.reauthToken },
       body: JSON.stringify({
         delivery_mode: options.deliveryMode,

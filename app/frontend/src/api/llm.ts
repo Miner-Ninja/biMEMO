@@ -57,7 +57,7 @@ export async function getLLMConfig(): Promise<LLMConfigMeta> {
 
 export async function saveLLMConfig(params: SaveLLMConfigParams): Promise<void> {
   await apiRequest("/admin/llm/config", {
-    method: "POST",
+    method: "PUT",
     body: JSON.stringify(params),
   });
 }
@@ -132,7 +132,7 @@ export async function updateLLMConfig(
   params: Partial<SaveLLMConfigParams>
 ): Promise<void> {
   await apiRequest(`/admin/llm/configs/${encodePathSegment(id)}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify(params),
   });
 }

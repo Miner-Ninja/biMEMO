@@ -676,7 +676,7 @@ async def invalidate_memory_assertion(
         )
     if reason not in MEMORY_INVALIDATE_REASONS:
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail="Reason must be one of: forget, incorrect.",
         )
     response = await orchestrator.memory_invalidate(

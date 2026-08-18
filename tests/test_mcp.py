@@ -1139,7 +1139,7 @@ class TestRevokeAgentToken:
         result = await revoke_agent_token(
             _FakeAuthRequest(), "claude", token, cred, mgr
         )
-        assert "revoked" in result["detail"]
+        assert result.status_code == 204
         assert "claude" not in {i["name"] for i in await cred.list_integrations()}
 
 
@@ -1186,6 +1186,26 @@ class TestIssueAgentToken:
         stored = (await cred.list_integrations())[0]
         assert stored["config"]["token_hash"]
         assert "token" not in stored["config"]
+
+    @pytest.mark.asyncio
+    async def test_issue_invalid_capability_rejected_with_422(self) -> None:
+        """An unknown capability is client-input validation -> 422, nothing stored."""
+        from backend.channels.endpoints import ReauthManager
+        from backend.processes.fastapi_app.routes.agents import (
+            issue_agent_token,
+        )
+        from fastapi import HTTPException
+
+        cred = FakeCredentialClient()
+        mgr = ReauthManager()
+
+        with pytest.raises(HTTPException) as exc:
+            await issue_agent_token(
+                _FakeAuthRequest(), "claude", "admin", mgr.issue_token(), cred, mgr
+            )
+        assert exc.value.status_code == 422
+        assert "Invalid capability" in exc.value.detail
+        assert await cred.list_integrations() == []
 
 
 # ──────────────────────────────────────────────────────────────────────

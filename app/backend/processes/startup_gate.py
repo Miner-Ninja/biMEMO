@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from backend.models.requests import PasswordAuthRequest  # noqa: TC001
 from backend.security.startup_state import StartupState
@@ -106,9 +107,9 @@ def create_startup_gate_app(
     app = FastAPI(title="biMEMO Startup Gate", docs_url=None, redoc_url=None)
 
     @app.get("/health")
-    async def health() -> dict[str, object]:
-        """Return startup-gate health without opening the database."""
-        return _health_payload(state)
+    async def health() -> JSONResponse:
+        """Return startup-gate health as 503 until unlock is complete."""
+        return JSONResponse(content=_health_payload(state), status_code=503)
 
     @app.get("/auth/status")
     async def auth_status() -> dict[str, object]:

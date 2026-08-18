@@ -1481,7 +1481,11 @@ class TestLLMConfigCRUD:
             },
             headers=headers,
         )
-        assert create_resp.status_code == 200, create_resp.text
+        assert create_resp.status_code == 201, create_resp.text
+        assert (
+            create_resp.headers["location"]
+            == f"/admin/llm/configs/{create_resp.json()['id']}"
+        )
         config_id = create_resp.json()["id"]
         assert config_id is not None
 
@@ -1545,7 +1549,7 @@ class TestLLMConfigCRUD:
         )
         config_id = create_resp.json()["id"]
 
-        update_resp = client.put(
+        update_resp = client.patch(
             f"/admin/llm/configs/{config_id}",
             json={"model": "new-model"},
             headers=headers,
@@ -1559,9 +1563,9 @@ class TestLLMConfigCRUD:
         assert cred._configs[config_id]["credentials"]["model"] == "new-model"
 
     def test_update_nonexistent_returns_404(self) -> None:
-        """PUT on nonexistent config returns 404."""
+        """PATCH on nonexistent config returns 404."""
         client, csrf, _ = self._setup()
-        resp = client.put(
+        resp = client.patch(
             "/admin/llm/configs/nonexistent-id",
             json={"model": "x"},
             headers={"X-CSRF-Token": csrf},
@@ -1593,12 +1597,8 @@ class TestLLMConfigCRUD:
             f"/admin/llm/configs/{config_id}",
             headers=headers,
         )
-        assert delete_resp.status_code == 200
-        assert (
-            delete_resp.json()["detail"]
-            == "Configuration deleted and runtime reloaded."
-        )
-        assert delete_resp.json()["reload"]["success"] is True
+        assert delete_resp.status_code == 204
+        assert delete_resp.content == b""
         assert client.app.state.orchestrator_client.send_reload_llm.await_count == 1
 
         list_resp = client.get("/admin/llm/configs")
@@ -1683,14 +1683,14 @@ class TestLLMConfigCRUD:
             },
             headers=headers,
         )
-        assert create_resp.status_code == 200
+        assert create_resp.status_code == 201
         config_id = create_resp.json()["id"]
 
         # Activate
         client.post(f"/admin/llm/configs/{config_id}/activate", headers=headers)
 
         # Update model
-        client.put(
+        client.patch(
             f"/admin/llm/configs/{config_id}",
             json={"model": "gpt-4o-mini"},
             headers=headers,
@@ -1798,7 +1798,8 @@ class TestLLMConfigCRUD:
             "/admin/integrations/demo",
             headers={"X-Reauth-Token": reauth_token, "X-CSRF-Token": csrf},
         )
-        assert ok_resp.status_code == 200, ok_resp.text
+        assert ok_resp.status_code == 204
+        assert ok_resp.content == b""
 
     def test_list_chat_bridge_links_returns_admin_payload(self) -> None:
         """GET /admin/chat-bridges should return stored bridge links."""
@@ -2006,7 +2007,7 @@ class TestLLMConfigCRUD:
     def test_update_chat_bridge_link_settings_requires_reauth_and_saves_mode(
         self,
     ) -> None:
-        """POST /admin/chat-bridges/{id}/settings should store bridge send mode."""
+        """PUT /admin/chat-bridges/{id}/settings should store bridge send mode."""
         app, token, session_manager, signing_client, _ = _build_test_app()
         admin_client = FakeAdminClient()
         admin_client._chat_bridge_links["bridge-1"] = {
@@ -2036,7 +2037,7 @@ class TestLLMConfigCRUD:
         )
         reauth_token = app.state.reauth_manager.issue_token()
 
-        response = client.post(
+        response = client.put(
             "/admin/chat-bridges/bridge-1/settings",
             json={
                 "delivery_mode": "persona_user_and_bot_assistant",
@@ -2599,7 +2600,7 @@ class TestFileReplacement:
                     files={"file": ("records.txt", b"first version", "text/plain")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert first_resp.status_code == 200, first_resp.text
+                assert first_resp.status_code == 201, first_resp.text
                 first_id = first_resp.json()["id"]
 
                 second_resp = client.post(
@@ -2607,7 +2608,7 @@ class TestFileReplacement:
                     files={"file": ("records.txt", b"second version", "text/plain")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert second_resp.status_code == 200, second_resp.text
+                assert second_resp.status_code == 201, second_resp.text
                 second_id = second_resp.json()["id"]
 
                 files_resp = client.get("/files")
@@ -2663,7 +2664,7 @@ class TestFileReplacement:
                     files={"file": ("context.txt", b"context body", "text/plain")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
 
                 chat_resp = client.post(
@@ -2730,7 +2731,7 @@ class TestFileReplacement:
                     files={"file": ("rollout.md", large_content, "text/markdown")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
 
                 chat_resp = client.post(
@@ -2805,7 +2806,7 @@ class TestFileReplacement:
                     files={"file": ("incident.md", large_content, "text/markdown")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
                 stored_path = Path(tmp_dir) / f"{file_id}.md"
                 stored_path.unlink()
@@ -2879,7 +2880,7 @@ class TestFileReplacement:
                     },
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
                 stored_path = Path(tmp_dir) / f"{file_id}.txt"
                 stored_path.unlink()
@@ -2935,7 +2936,7 @@ class TestFileReplacement:
                     files={"file": ("runbook.md", large_content, "text/markdown")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
 
                 files_resp = client.get("/admin/memory/files")
@@ -3008,7 +3009,7 @@ class TestFileReplacement:
                     files={"file": ("deploy.conf", large_content, "text/plain")},
                     headers={"X-CSRF-Token": csrf},
                 )
-                assert upload_resp.status_code == 200, upload_resp.text
+                assert upload_resp.status_code == 201, upload_resp.text
                 file_id = upload_resp.json()["id"]
 
                 chat_resp = client.post(
@@ -3215,7 +3216,7 @@ class TestFileReplacement:
             headers={"X-CSRF-Token": csrf},
         )
 
-        assert response.status_code == 200, response.text
+        assert response.status_code == 201, response.text
         assert response.json() == {"conversation_id": "conversation-3"}
         assert chat_bridge_service.created_conversation_ids == []
         assert chat_bridge_service.created_bridge_titles == []
@@ -3247,7 +3248,7 @@ class TestFileReplacement:
             headers={"X-CSRF-Token": csrf},
         )
 
-        assert response.status_code == 200, response.text
+        assert response.status_code == 201, response.text
         assert response.json() == {"conversation_id": "conversation-3"}
         assert chat_bridge_service.created_conversation_ids == []
 
@@ -3296,7 +3297,7 @@ class TestFileReplacement:
             json={"title": ""},
             headers={"X-CSRF-Token": csrf},
         )
-        assert create_response.status_code == 200, create_response.text
+        assert create_response.status_code == 201, create_response.text
         conversation_id = create_response.json()["conversation_id"]
         assert conversation_id == "conversation-3"
         assert chat_bridge_service.created_conversation_ids == []
@@ -3378,7 +3379,7 @@ class TestFileReplacement:
             json={"title": ""},
             headers={"X-CSRF-Token": csrf},
         )
-        assert create_response.status_code == 200, create_response.text
+        assert create_response.status_code == 201, create_response.text
         conversation_id = create_response.json()["conversation_id"]
 
         response = client.post(
@@ -3719,13 +3720,13 @@ class TestProfileContract:
         }
 
     def test_profile_save_persists_updated_fields(self) -> None:
-        """POST /admin/profile should persist the raw profile payload."""
+        """PUT /admin/profile should persist the raw profile payload."""
         app, token, sm, sc, _ = _build_test_app()
         admin = FakeAdminClient()
         app.state.admin_client = admin
         client, csrf = _authed_client_with_csrf(app, token, sm, sc)
 
-        save_resp = client.post(
+        save_resp = client.put(
             "/admin/profile",
             json={
                 "display_name": "Grace",
@@ -3913,7 +3914,7 @@ class TestMemoryTimeline:
             json={"title": "Server chat"},
         )
 
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201, resp.text
         assert resp.json() == {"conversation_id": "conversation-3"}
         app.state.orchestrator_client.publish_conversation_event.assert_awaited_once()
         publish_kwargs = (
@@ -3983,8 +3984,8 @@ class TestMemoryTimeline:
             headers={"X-CSRF-Token": csrf_token},
         )
 
-        assert resp.status_code == 200, resp.text
-        assert resp.json() == {"ok": True}
+        assert resp.status_code == 204
+        assert resp.content == b""
         app.state.orchestrator_client.publish_conversation_event.assert_awaited_once()
         publish_kwargs = (
             app.state.orchestrator_client.publish_conversation_event.await_args.kwargs

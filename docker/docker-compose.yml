@@ -40,7 +40,7 @@ services:
       whisper:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import http.client; c=http.client.HTTPConnection('localhost',8000,timeout=5); c.request('GET','/health'); c.getresponse().read()"]
       interval: 30s
       timeout: 10s
       retries: 3

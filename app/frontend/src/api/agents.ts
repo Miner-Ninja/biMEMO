@@ -43,12 +43,12 @@ export async function issueAgentToken(
 export async function revokeAgentToken(
   label: string,
   reauthToken?: string
-): Promise<{ detail: string }> {
+): Promise<void> {
   const headers: Record<string, string> = {};
   if (reauthToken) {
     headers["X-Reauth-Token"] = reauthToken;
   }
-  return apiRequest<{ detail: string }>(`/admin/agents/revoke/${label}`, {
+  await apiRequest(`/admin/agents/revoke/${label}`, {
     method: "DELETE",
     headers,
   });

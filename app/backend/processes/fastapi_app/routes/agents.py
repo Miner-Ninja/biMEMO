@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import Response
 
 from backend.security.token_hash import hash_token as _hash_token
 
@@ -102,7 +103,7 @@ async def issue_agent_token(
         Dict with "label" and "token" (plaintext, shown once).
 
     Raises:
-        HTTPException: 403 without a valid reauth token, 400 on invalid
+        HTTPException: 403 without a valid reauth token, 422 on invalid
             capability, 409 if the label already exists.
     """
     _require_auth(request)
@@ -117,7 +118,7 @@ async def issue_agent_token(
 
     if capability not in ("read", "read-write"):
         raise HTTPException(
-            status_code=400,
+            status_code=422,
             detail=(
                 f"Invalid capability '{capability}'. Must be 'read' or 'read-write'."
             ),
@@ -152,7 +153,7 @@ async def revoke_agent_token(
     reauth_token: str | None = Header(None, alias="X-Reauth-Token"),
     cred: CredentialClient = Depends(_get_credential_client),
     reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
-) -> dict[str, str]:
+) -> Response:
     """Revoke an MCP agent token by label.
 
     Deletes the corresponding ``mcp_agent`` integration so the token no longer
@@ -168,7 +169,7 @@ async def revoke_agent_token(
         reauth_mgr: Re-authentication manager.
 
     Returns:
-        Dict with confirmation message.
+        204 without a body.
 
     Raises:
         HTTPException: 403 without a valid reauth token, 404 if no agent token
@@ -198,7 +199,7 @@ async def revoke_agent_token(
         )
 
     await cred.delete_integration(label)
-    return {"detail": f"Agent token '{label}' revoked."}
+    return Response(status_code=204)
 
 
 @agents_router.get("/ca-root")

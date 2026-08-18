@@ -88,7 +88,7 @@ class TestInvalidateRoute:
 
     @pytest.mark.asyncio
     async def test_bad_reason_rejected(self) -> None:
-        """R4 — unknown reason -> 400 even with a valid token."""
+        """R4 — unknown reason -> 422 (validation error) even with a valid token."""
         from fastapi import HTTPException
 
         mgr = ReauthManager()
@@ -97,7 +97,7 @@ class TestInvalidateRoute:
             await invalidate_memory_assertion(
                 "a1", "purge", _FakeAuthRequest(), mgr.issue_token(), mgr, orch
             )
-        assert exc.value.status_code == 400
+        assert exc.value.status_code == 422
         assert orch.calls == []
 
     @pytest.mark.asyncio
@@ -156,8 +156,9 @@ class TestOrchestratorSide:
         )
 
     def test_response_type_dispatchable_on_web_side(self) -> None:
-        """The web-tier reader must know the response type, or the route
-        would hang until timeout even though the write succeeded.
+        """The web-tier reader must know the response type.
+
+        Without it the route hangs until timeout even though the write succeeded.
         """
         from backend.processes.fastapi_app.orchestrator_client import (
             ORCHESTRATOR_RESPONSE_TYPES,

@@ -17,7 +17,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from backend.channels.endpoints import BackupRateLimiter
 from backend.chat_bridge import BridgeProvider, ChatBridgeService
@@ -332,7 +332,7 @@ async def delete_integration(
     claims: TokenClaims = Depends(_require_auth),
     reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
     cred: CredentialClient = Depends(_get_credential_client),
-) -> dict:
+) -> Response:
     """Delete an integration via Credential Proxy.
 
     Requires a valid re-authentication token.
@@ -344,14 +344,11 @@ async def delete_integration(
         claims: Authenticated token claims.
         reauth_mgr: Re-authentication manager.
         cred: Credential Proxy client.
-
-    Returns:
-        Success message.
     """
     del claims
     _require_valid_reauth(reauth_mgr, reauth_token)
     await cred.delete_integration(name)
-    return _detail_response("Integration deleted")
+    return Response(status_code=204)
 
 
 @admin_router.delete("/conversations/{conversation_id}")
@@ -361,7 +358,7 @@ async def delete_conversation_endpoint(
     claims: TokenClaims = Depends(_require_auth),
     reauth_mgr: ReauthManager = Depends(_get_reauth_manager),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> dict:
+) -> Response:
     """Delete a conversation via DB Proxy Socket B.
 
     Requires a valid re-authentication token.
@@ -373,14 +370,11 @@ async def delete_conversation_endpoint(
         claims: Authenticated token claims.
         reauth_mgr: Re-authentication manager.
         admin: DB Proxy Socket B client.
-
-    Returns:
-        Success message.
     """
     del claims
     _require_valid_reauth(reauth_mgr, reauth_token)
     await admin.delete_conversation(conversation_id)
-    return _detail_response("Conversation deleted")
+    return Response(status_code=204)
 
 
 @admin_router.get("/chat-bridges")
@@ -544,7 +538,7 @@ async def enable_chat_bridge_link(
     }
 
 
-@admin_router.post("/chat-bridges/{bridge_link_id}/settings")
+@admin_router.put("/chat-bridges/{bridge_link_id}/settings")
 async def update_chat_bridge_link_settings(
     bridge_link_id: str,
     body: ChatBridgeUpdateRequest,
@@ -592,7 +586,7 @@ async def get_user_profile(
     return await admin.get_user_profile()
 
 
-@admin_router.post("/profile")
+@admin_router.put("/profile")
 async def store_user_profile(
     body: UserProfileRequest,
     claims: TokenClaims = Depends(_require_auth),
@@ -619,7 +613,7 @@ ALLOWED_AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 2 MB
 
 
-@admin_router.post("/avatars/{avatar_type}")
+@admin_router.put("/avatars/{avatar_type}")
 async def upload_avatar(
     avatar_type: str,
     file: UploadFile,
@@ -673,22 +667,19 @@ async def delete_avatar(
     avatar_type: str,
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> dict:
+) -> Response:
     """Delete an avatar image.
 
     Args:
         avatar_type: Avatar type ("user" or "ai").
-        claims: Authenticated token claims.
-        admin: DB Proxy Socket B client.
-
-    Returns:
-        Success message.
+        claims: Authenticated user.
+        admin: DB Proxy client.
     """
     del claims
     if avatar_type not in {"user", "ai"}:
         raise HTTPException(status_code=422, detail="Invalid avatar type")
     await admin.delete_avatar(avatar_type)
-    return _detail_response("Avatar deleted")
+    return Response(status_code=204)
 
 
 def _avatar_file_extension(filename: str) -> str:
@@ -733,20 +724,17 @@ async def delete_skill(
     name: str,
     claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> dict[str, str]:
+) -> Response:
     """Delete a skill by name.
 
     Args:
         name: Skill name to delete.
-        claims: Authenticated token claims.
-        admin: DB Proxy Socket B client.
-
-    Returns:
-        Confirmation message.
+        claims: Authenticated user.
+        admin: DB Proxy client.
     """
     del claims
     await admin.delete_skill(name)
-    return _detail_response(f"Skill '{name}' deleted")
+    return Response(status_code=204)
 
 
 @admin_router.put("/skills/{name}")
