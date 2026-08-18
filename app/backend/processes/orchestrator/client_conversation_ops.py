@@ -25,6 +25,7 @@ async def save_message(
     content: str,
     channel: str | None = None,
     meta: str | None = None,
+    client_message_id: str | None = None,
 ) -> str:
     """Save a message to the database.
 
@@ -35,9 +36,10 @@ async def save_message(
         content: Message text.
         channel: Optional channel identifier.
         meta: Optional JSON-encoded metadata.
+        client_message_id: Optional client-stable id for idempotent saves.
 
     Returns:
-        Generated message ID.
+        Generated (or, on a duplicate id, existing) message ID.
     """
     return await client._send_identifier_operation(
         "save_message",
@@ -48,6 +50,7 @@ async def save_message(
             "content": content,
             "channel": channel,
             "meta": meta,
+            "client_message_id": client_message_id,
         },
     )
 

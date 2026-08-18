@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -189,8 +190,18 @@ def make_save_message_handler(db: DatabaseManager) -> OperationHandler:
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         """Save a message to the database."""
         p = _validate_params(params, SaveMessageParams)
-        message_id = str(uuid.uuid4())
         db_content, text_for_index = _serialize_message_content(p.content)
+        # Idempotent save (R6): a repeated client_message_id in the same
+        # conversation resolves to the existing row instead of a duplicate.
+        if p.client_message_id:
+            existing = db.execute(
+                "SELECT id FROM messages "
+                "WHERE conversation_id = ? AND client_message_id = ?",
+                (p.conversation_id, p.client_message_id),
+            ).fetchone()
+            if existing is not None:
+                return {"message_id": str(existing[0])}
+        message_id = str(uuid.uuid4())
         next_title = _resolve_next_conversation_title(
             db=db,
             conversation_id=p.conversation_id,
@@ -201,11 +212,35 @@ def make_save_message_handler(db: DatabaseManager) -> OperationHandler:
             "INSERT OR IGNORE INTO conversations (id, title) VALUES (?, ?)",
             (p.conversation_id, next_title),
         )
-        cursor = db.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, channel, meta) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (message_id, p.conversation_id, p.role, db_content, p.channel, p.meta),
-        )
+        try:
+            cursor = db.execute(
+                "INSERT INTO messages "
+                "(id, conversation_id, role, content, channel, meta, "
+                "client_message_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    message_id,
+                    p.conversation_id,
+                    p.role,
+                    db_content,
+                    p.channel,
+                    p.meta,
+                    p.client_message_id,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            # A concurrent save claimed the same client_message_id first;
+            # the partial unique index made the INSERT the last gate.
+            if not p.client_message_id:
+                raise
+            existing = db.execute(
+                "SELECT id FROM messages "
+                "WHERE conversation_id = ? AND client_message_id = ?",
+                (p.conversation_id, p.client_message_id),
+            ).fetchone()
+            if existing is None:
+                raise
+            return {"message_id": str(existing[0])}
         db.execute(
             "UPDATE conversations "
             "SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "

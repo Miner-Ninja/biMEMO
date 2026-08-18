@@ -110,6 +110,7 @@ class SaveMessageParams(ForbidExtraParams):
     content: str | list[dict[str, Any]]
     channel: str | None = None
     meta: str | None = None
+    client_message_id: str | None = None
 
 
 class LoadRecentMessagesParams(ForbidExtraParams):
@@ -720,6 +721,14 @@ class ListMessagesParams(LimitOffsetParams):
     limit: int = 50
     offset: int = 0
     conversation_id: str | None = None
+
+
+class ListMessagePageParams(ForbidExtraParams):
+    """Parameters for list_message_page operation (cursor pagination)."""
+
+    conversation_id: str
+    limit: int = Field(default=200, ge=1, le=500)
+    cursor: str | None = None
 
 
 class ListAuditLogParams(LimitOffsetParams):

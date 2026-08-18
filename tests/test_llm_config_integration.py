@@ -1292,6 +1292,33 @@ class FakeAdminClient:
             ]
         return messages[offset : offset + limit]
 
+    async def list_message_page(
+        self,
+        *,
+        conversation_id: str | None = None,
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> dict:
+        """Return one newest-first cursor page of fake chat messages."""
+        del cursor
+        messages = self._messages
+        if conversation_id:
+            messages = [
+                message
+                for message in messages
+                if message["conversation_id"] == conversation_id
+            ]
+        ordered = sorted(
+            messages,
+            key=lambda message: str(message.get("created_at", "")),
+            reverse=True,
+        )
+        return {
+            "messages": ordered[:limit],
+            "next_cursor": None,
+            "has_more": False,
+        }
+
     async def list_pending_actions(
         self,
         status: str | None = None,
@@ -2343,6 +2370,22 @@ class TestProblemContract:
             list(entry["loc"]) == ["body", "model"] for entry in body["errors"]
         )
 
+    def test_malformed_message_page_cursor_is_422_validation_problem(self) -> None:
+        """A malformed message page cursor is a 422 validation-error problem."""
+        app, token, sm, sc, _ = _build_test_app()
+        app.state.admin_client = FakeAdminClient()
+        client, _ = _authed_client_with_csrf(app, token, sm, sc)
+
+        resp = client.get(
+            "/chat/conversations/conversation-1/messages?cursor=not-a-cursor"
+        )
+
+        assert resp.status_code == 422
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:validation-error"
+        assert "cursor" in body["detail"].lower()
+
     def test_unhandled_exception_is_internal_error_problem(self) -> None:
         """An unhandled exception is a 500 internal-error problem."""
         app, token, _, _, _ = _build_test_app()
@@ -3080,6 +3123,49 @@ class TestFileReplacement:
         assert response.status_code == 200, response.text
         assert len(sent_requests) == 1
         assert sent_requests[0].conversation_id == "chat-123"
+
+    def test_chat_forwards_client_message_id_to_orchestrator(self) -> None:
+        """Chat should forward the client-stable message identifier (R6)."""
+        app, token, session_manager, signing_client, _ = _build_test_app()
+        sent_requests: list[object] = []
+
+        async def send_chat(request: object, session_id: str) -> IPCChatResponse:
+            """Capture one outgoing chat request with the client message id."""
+            sent_requests.append(request)
+            return MagicMock(
+                text="ok",
+                input_filtered=False,
+                output_filtered=False,
+                pending_confirmations=[],
+                retrieved_memories=[],
+                retrieved_messages=[],
+                transcription=None,
+                stats=None,
+            )
+
+        app.state.orchestrator_client.send_chat = send_chat
+        client, csrf = _authed_client_with_csrf(
+            app,
+            token,
+            session_manager,
+            signing_client,
+        )
+
+        response = client.post(
+            "/chat",
+            json={
+                "message": "hello",
+                "conversation_id": "chat-123",
+                "run_id": "run-abc",
+                "client_message_id": "cm-abc",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 200, response.text
+        assert len(sent_requests) == 1
+        assert sent_requests[0].run_id == "run-abc"
+        assert sent_requests[0].client_message_id == "cm-abc"
 
     def test_chat_route_creates_persisted_conversation_when_id_is_missing(self) -> None:
         """Chat should create a persisted conversation instead of using session id."""
@@ -3883,19 +3969,23 @@ class TestMemoryTimeline:
         resp = client.get("/chat/conversations/conversation-1/messages")
 
         assert resp.status_code == 200, resp.text
-        assert resp.json() == [
-            {
-                "id": "m1",
-                "content": "message-1",
-                "created_at": "2026-03-12T10:00:03Z",
-                "role": "user",
-                "meta": "",
-                "conversation_id": "conversation-1",
-                "structured_content": None,
-                "used_tools": [],
-                "pending_confirmations": [],
-            }
-        ]
+        assert resp.json() == {
+            "messages": [
+                {
+                    "id": "m1",
+                    "content": "message-1",
+                    "created_at": "2026-03-12T10:00:03Z",
+                    "role": "user",
+                    "meta": "",
+                    "conversation_id": "conversation-1",
+                    "structured_content": None,
+                    "used_tools": [],
+                    "pending_confirmations": [],
+                }
+            ],
+            "next_cursor": None,
+            "has_more": False,
+        }
 
     def test_chat_create_conversation_route_persists_server_side_chat(self) -> None:
         """Chat create conversation route should create one persisted conversation."""

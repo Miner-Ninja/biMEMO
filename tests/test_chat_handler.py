@@ -22,7 +22,7 @@ from backend.models.responses import StructuredAssistantContent
 from backend.processes.fastapi_app.routes.chat_helpers import (
     build_conversation_message_item,
     build_http_chat_response,
-    list_conversation_message_items,
+    list_conversation_message_page,
 )
 from backend.processes.orchestrator.chat_handler import (
     _build_chat_response,
@@ -39,10 +39,9 @@ from backend.processes.orchestrator.chat_handler import (
 from backend.trust.confirmation import PendingAction
 
 
-def _core_chat_db() -> SimpleNamespace:
+def _core_chat_db(*, preseed_run: str | None = None) -> SimpleNamespace:
     """Build a stateful core-authority DB stand-in for chat lifecycle tests."""
-    turn = {
-        "turn_id": "run-1",
+    template = {
         "conversation_id": "conv-1",
         "session_id": "session-1",
         "channel": "web",
@@ -53,19 +52,33 @@ def _core_chat_db() -> SimpleNamespace:
         "confirmations": [],
         "pending_inputs": [],
     }
+    turns: dict[str, dict] = {}
 
-    async def get_agent_turn(_turn_id: str):
-        return turn if _turn_id == "run-1" else None
+    def _materialize(turn_id: str) -> dict:
+        if turn_id not in turns:
+            turn = dict(template)
+            turn["turn_id"] = turn_id
+            turns[turn_id] = turn
+        return turns[turn_id]
 
-    async def create_agent_turn(**_kwargs):
-        return {"turn": turn}
+    if preseed_run:
+        _materialize(preseed_run)
+
+    async def get_agent_turn(turn_id: str):
+        return turns.get(turn_id)
+
+    async def create_agent_turn(**kwargs):
+        turn_id = kwargs.get("turn_id") or f"generated-{len(turns) + 1}"
+        return {"turn": _materialize(turn_id)}
 
     async def commit_agent_turn_finalization(**kwargs):
+        turn = _materialize(kwargs["turn_id"])
         turn["terminal_outcome"] = kwargs["outcome_kind"]
         turn["outcome_payload"] = kwargs["outcome_payload"]
         return {"turn": turn}
 
-    async def cancel_agent_turn(_turn_id: str, **_kwargs):
+    async def cancel_agent_turn(turn_id: str, **_kwargs):
+        turn = _materialize(turn_id)
         turn["terminal_outcome"] = "cancelled"
         return {"turn": turn}
 
@@ -904,6 +917,149 @@ def test_chat_request_cancellation_records_stopped_runtime_event() -> None:
     )
 
 
+def _dead_turn_db() -> SimpleNamespace:
+    """A core-turn stand-in whose orphaned run restarts as a fresh turn."""
+    old_turn = {
+        "turn_id": "run-1",
+        "conversation_id": "conv-1",
+        "session_id": "session-1",
+        "channel": "web",
+        "tool_policy_version": "registry-v1",
+        "finalization_id": "final-1",
+        "terminal_outcome": None,
+        "outcome_payload": None,
+        "confirmations": [],
+        "pending_inputs": [],
+    }
+    new_turn = {
+        "turn_id": "run-2",
+        "conversation_id": "conv-1",
+        "session_id": "session-1",
+        "channel": "web",
+        "tool_policy_version": "registry-v1",
+        "finalization_id": "final-2",
+        "terminal_outcome": None,
+        "outcome_payload": None,
+        "confirmations": [],
+        "pending_inputs": [],
+    }
+
+    async def get_agent_turn(turn_id: str):
+        return old_turn if turn_id == "run-1" else new_turn
+
+    async def create_agent_turn(**kwargs):
+        assert kwargs["turn_id"] is None
+        return {"turn": new_turn}
+
+    async def commit_agent_turn_finalization(**kwargs):
+        assert kwargs["turn_id"] == "run-1"
+        old_turn["terminal_outcome"] = kwargs["outcome_kind"]
+        old_turn["outcome_payload"] = kwargs["outcome_payload"]
+        return {"turn": old_turn}
+
+    return SimpleNamespace(
+        get_agent_turn=AsyncMock(side_effect=get_agent_turn),
+        create_agent_turn=AsyncMock(side_effect=create_agent_turn),
+        commit_agent_turn_finalization=AsyncMock(
+            side_effect=commit_agent_turn_finalization
+        ),
+        cancel_agent_turn=AsyncMock(),
+        append_agent_turn_event=AsyncMock(return_value={"event_id": "event-1"}),
+        list_pending_agent_confirmations=AsyncMock(return_value=[]),
+        update_conversation_processing_state=AsyncMock(),
+        send_operation=AsyncMock(return_value={}),
+    )
+
+
+def test_in_flight_duplicate_run_replays_without_new_turn() -> None:
+    """The same run_id on a live turn answers without starting a new one."""
+    ipc_server = _FakeIPCServer()
+    orch = SimpleNamespace(
+        sse_queue=None,
+        current_run_id="run-1",
+        process_message=AsyncMock(),
+        pending_red_calls=[],
+    )
+    db_client = _core_chat_db(preseed_run="run-1")
+
+    response = asyncio.run(
+        _run_chat_request(
+            request=ChatRequest(
+                request_id="req-dup",
+                run_id="run-1",
+                message="hello",
+                channel="web",
+                session_id="session-1",
+                conversation_id="conv-1",
+                client_message_id="cm-1",
+            ),
+            orch=orch,
+            ipc_server=ipc_server,
+            db_client=db_client,
+            broker=SimpleNamespace(),
+            llm_call=AsyncMock(),
+            stt_client=None,
+        )
+    )
+
+    assert response.request_id == "req-dup"
+    assert response.run_id == "run-1"
+    assert response.outcome_kind is None
+    orch.process_message.assert_not_awaited()
+    db_client.create_agent_turn.assert_not_awaited()
+    db_client.commit_agent_turn_finalization.assert_not_awaited()
+
+
+def test_dead_duplicate_run_terminalizes_and_restarts() -> None:
+    """The same run_id on a dead turn closes it and delivers a fresh turn."""
+    ipc_server = _FakeIPCServer()
+    orch = SimpleNamespace(
+        sse_queue=None,
+        current_run_id="",
+        process_message=AsyncMock(
+            return_value=AgentResponse(
+                structured_content=normalize_legacy_response_text("Retry done."),
+                loop_result=object(),
+            )
+        ),
+        pending_red_calls=[],
+    )
+    db_client = _dead_turn_db()
+
+    response = asyncio.run(
+        _run_chat_request(
+            request=ChatRequest(
+                request_id="req-dead",
+                run_id="run-1",
+                message="hello",
+                channel="web",
+                session_id="session-1",
+                conversation_id="conv-1",
+                client_message_id="cm-1",
+            ),
+            orch=orch,
+            ipc_server=ipc_server,
+            db_client=db_client,
+            broker=SimpleNamespace(),
+            llm_call=AsyncMock(),
+            stt_client=None,
+        )
+    )
+
+    db_client.commit_agent_turn_finalization.assert_awaited_once()
+    assert (
+        db_client.commit_agent_turn_finalization.await_args.kwargs["outcome_kind"]
+        == "failed"
+    )
+    db_client.create_agent_turn.assert_awaited_once()
+    assert db_client.create_agent_turn.await_args.kwargs["turn_id"] is None
+    orch.process_message.assert_awaited_once()
+    process_kwargs = orch.process_message.await_args.kwargs
+    assert process_kwargs["agent_run_id"] == "run-2"
+    assert process_kwargs["client_message_id"] == "cm-1"
+    assert response.structured_content.answer == "Retry done."
+
+
 def test_forwarder_skips_unknown_event_types() -> None:
     """Unknown event types do not abort the forwarder loop."""
     queue: asyncio.Queue = asyncio.Queue()
@@ -943,6 +1099,25 @@ class _FakePendingAdminClient:
         self, limit: int = 50, offset: int = 0, conversation_id: str | None = None
     ) -> list[dict]:
         return self._messages
+
+    async def list_message_page(
+        self,
+        *,
+        conversation_id: str | None = None,
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> dict:
+        del conversation_id, cursor
+        ordered = sorted(
+            self._messages,
+            key=lambda message: str(message.get("created_at", "")),
+            reverse=True,
+        )
+        return {
+            "messages": ordered[:limit],
+            "next_cursor": None,
+            "has_more": False,
+        }
 
     async def list_agent_runs(
         self,
@@ -1009,14 +1184,15 @@ def test_waiting_confirmation_attaches_to_last_assistant_message() -> None:
         },
     )
 
-    items = asyncio.run(
-        list_conversation_message_items(
+    page = asyncio.run(
+        list_conversation_message_page(
             admin_client=admin_client,
             conversation_id="conv-1",
             limit=50,
-            offset=0,
+            cursor=None,
         )
     )
+    items = page.messages
 
     assistant = next(item for item in items if item.id == "assistant-1")
     assert assistant.pending_confirmations
@@ -1065,14 +1241,15 @@ def test_waiting_confirmation_from_other_conversation_is_not_attached() -> None:
         },
     )
 
-    items = asyncio.run(
-        list_conversation_message_items(
+    page = asyncio.run(
+        list_conversation_message_page(
             admin_client=admin_client,
             conversation_id="conv-1",
             limit=50,
-            offset=0,
+            cursor=None,
         )
     )
+    items = page.messages
 
     assistant = next(item for item in items if item.id == "assistant-1")
     assert not assistant.pending_confirmations

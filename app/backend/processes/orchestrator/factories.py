@@ -351,6 +351,7 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
         role: str,
         content: str,
         meta: dict | None = None,
+        client_message_id: str | None = None,
     ) -> str:
         """Save a message via DB Proxy IPC.
 
@@ -359,12 +360,14 @@ def make_save_fn(db_client: DBProxyClient) -> Callable:
             role: Message role.
             content: Message text.
             meta: Optional metadata dict (JSON-serialized before storage).
+            client_message_id: Optional client-stable id for idempotent saves.
         """
         return await db_client.save_message(
             conversation_id,
             role,
             content,
             meta=_meta_json(meta),
+            client_message_id=client_message_id,
         )
 
     return save_fn

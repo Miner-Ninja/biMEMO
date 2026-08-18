@@ -66,6 +66,7 @@ class MessagePersistence:
         *,
         meta: dict[str, object] | None = None,
         used_tools: list[dict] | None = None,
+        client_message_id: str | None = None,
     ) -> str | None:
         """Persist one conversation message when storage is available."""
         if self.save_fn is None:
@@ -80,12 +81,14 @@ class MessagePersistence:
                 role,
                 content,
                 meta=message_meta,
+                client_message_id=client_message_id,
             )
         return self.save_fn(
             conversation_id,
             role,
             content,
             meta=message_meta,
+            client_message_id=client_message_id,
         )
 
     async def save_user_message(
@@ -96,6 +99,7 @@ class MessagePersistence:
         attached_files: list[str],
         uploaded_images: list[str],
         meta: dict | None,
+        client_message_id: str | None = None,
     ) -> str | None:
         """Persist the incoming user message with optional metadata."""
         message_meta = self.build_user_message_meta(
@@ -108,6 +112,7 @@ class MessagePersistence:
             "user",
             user_content,
             meta=message_meta,
+            client_message_id=client_message_id,
         )
 
     def build_user_message_meta(

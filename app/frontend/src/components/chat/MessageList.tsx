@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, memo } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +7,23 @@ import type { Message } from "@/types/chat";
 import { cn } from "@/lib/utils";
 
 const AUTO_SCROLL_THRESHOLD_PX = 80;
+// Scrolling the viewport within this distance from the top of the history
+// triggers loading the older page (cursor pagination).
+const LOAD_OLDER_THRESHOLD_PX = 80;
+interface MessageListProps {
+  conversationKey?: string | null;
+  autoScrollRequest?: number;
+  messages: Message[];
+  isLoading?: boolean;
+  className?: string;
+  assistantName?: string;
+  onCommandClick?: (command: string) => void;
+  showThinking?: boolean;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  ttsAvailable?: boolean;
+  onReachTop?: () => void;
+  prependSignal?: { conversationId: string; seq: number } | null;
+}
 
 function scrollViewportToBottom(
   viewport: HTMLElement | null,
@@ -33,19 +50,6 @@ function isNearBottom(viewport: HTMLElement): boolean {
   return distanceFromBottom(viewport) <= AUTO_SCROLL_THRESHOLD_PX;
 }
 
-interface MessageListProps {
-  conversationKey?: string | null;
-  autoScrollRequest?: number;
-  messages: Message[];
-  isLoading?: boolean;
-  className?: string;
-  assistantName?: string;
-  onCommandClick?: (command: string) => void;
-  showThinking?: boolean;
-  onEditMessage?: (messageId: string, newContent: string) => void;
-  ttsAvailable?: boolean;
-}
-
 /**
  * Scrollable list of chat messages.
  * Memoized to prevent unnecessary re-renders during streaming.
@@ -61,6 +65,8 @@ export const MessageList = memo(function MessageList({
   showThinking = true,
   onEditMessage,
   ttsAvailable = false,
+  onReachTop,
+  prependSignal = null,
 }: MessageListProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -74,6 +80,55 @@ export const MessageList = memo(function MessageList({
   const getViewport = () =>
     rootRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ??
     null;
+  // Latest onReachTop callback; the scroll listener keeps a stable identity.
+  const onReachTopRef = useRef(onReachTop);
+  useEffect(() => {
+    onReachTopRef.current = onReachTop;
+  }, [onReachTop]);
+
+  // Scroll bookkeeping for prepend compensation: the last measured viewport
+  // height and the last consumed prepend signal. Both reset on a
+  // conversation switch — a previous conversation's height must never be
+  // compensated inside a new one.
+  const scrollMetaRef = useRef<{
+    conversationKey: string | null;
+    lastScrollHeight: number;
+    lastConsumedPrependSeq: number;
+  }>({
+    conversationKey: null,
+    lastScrollHeight: 0,
+    lastConsumedPrependSeq: 0,
+  });
+
+  // When an older page is PREPENDed above the visible content, the existing
+  // content shifts down by exactly the prepended block's height. Compensate
+  // the scroll position before the browser paints, so the viewport stays
+  // anchored on the same message instead of jumping.
+  useLayoutEffect(() => {
+    const viewport = getViewport();
+    const meta = scrollMetaRef.current;
+    const key = conversationKey ?? null;
+    if (key !== meta.conversationKey) {
+      meta.conversationKey = key;
+      meta.lastScrollHeight = 0;
+      meta.lastConsumedPrependSeq = 0;
+    }
+    if (
+      viewport !== null &&
+      prependSignal !== null &&
+      prependSignal.conversationId === (conversationKey ?? "") &&
+      prependSignal.seq > meta.lastConsumedPrependSeq
+    ) {
+      const heightDelta = viewport.scrollHeight - meta.lastScrollHeight;
+      if (heightDelta !== 0) {
+        viewport.scrollTop = viewport.scrollTop + heightDelta;
+      }
+      meta.lastConsumedPrependSeq = prependSignal.seq;
+    }
+    if (viewport) {
+      meta.lastScrollHeight = viewport.scrollHeight;
+    }
+  }, [conversationKey, messages, prependSignal]);
 
   // Find the last user message ID (for edit button visibility)
   const lastUserMessageId = useMemo(() => {
@@ -110,6 +165,12 @@ export const MessageList = memo(function MessageList({
     // (this also fires from our own programmatic scroll, which is fine).
     const handleScroll = () => {
       shouldStickToBottomRef.current = isNearBottom(nextViewport);
+      // The viewport reached the top of the loaded history: ask the page
+      // for the older page. The page-side guard (one load at a time, no
+      // more pages) makes repeated events at the top harmless.
+      if (nextViewport.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
+        onReachTopRef.current?.();
+      }
     };
 
     // Intent-based: a wheel-up, an upward touch drag, or an up/page/home key is

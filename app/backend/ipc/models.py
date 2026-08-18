@@ -9,6 +9,8 @@ models from protocol.py with chat, streaming, and database operation types.
 
 # ruff: noqa: S105
 
+import base64
+import json
 from enum import StrEnum
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
@@ -53,6 +55,7 @@ class ChatRequest(IPCModel):
     pending_input_id: str = ""
     pending_input_version: int | None = None
     pending_input_value: Any | None = None
+    client_message_id: str = ""
 
     @model_validator(mode="after")
     def validate_pending_input_reply(self) -> ChatRequest:
@@ -620,3 +623,42 @@ ChatResponse.model_rebuild(
         "ExtendedUsage": import_module("backend.models.chat_stats").ExtendedUsage
     }
 )
+
+
+# --- Message history page cursor (R11) ---
+#
+# A cursor is an opaque base64url-encoded JSON pair (created_at, rowid)
+# of the page boundary row. Clients echo it back unmodified; the REST
+# layer and the DB proxy both decode it with these functions.
+
+
+def encode_message_page_cursor(created_at: str, rowid: int) -> str:
+    """Encode one message-page boundary into an opaque cursor string."""
+    payload = json.dumps(
+        {"t": created_at, "r": int(rowid)},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+
+def decode_message_page_cursor(cursor: str) -> tuple[str, int]:
+    """Decode one message-page cursor into its (created_at, rowid) pair.
+
+    Raises:
+        ValueError: When the cursor is not in the message-page format.
+    """
+    try:
+        decoded = base64.urlsafe_b64decode(cursor.encode("ascii"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ValueError("malformed message page cursor") from error
+    if not isinstance(payload, dict) or set(payload) != {"t", "r"}:
+        raise ValueError("malformed message page cursor")
+    created_at = payload["t"]
+    rowid = payload["r"]
+    if not isinstance(created_at, str) or not created_at:
+        raise ValueError("malformed message page cursor")
+    if not isinstance(rowid, int) or isinstance(rowid, bool) or rowid < 1:
+        raise ValueError("malformed message page cursor")
+    return created_at, rowid

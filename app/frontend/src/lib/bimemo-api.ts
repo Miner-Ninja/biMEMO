@@ -389,17 +389,31 @@ export async function getTurnTrace(runId: string): Promise<TurnTrace> {
   return apiRequest<TurnTrace>(`/admin/trace/${encodePathSegment(runId)}`);
 }
 
-/** Load one persisted conversation history from the server. */
+/**
+ * One page of a persisted conversation history, newest messages first.
+ *
+ * `next_cursor` is an opaque pagination token: the client echoes it back
+ * verbatim on the next request to load the older page, without parsing it.
+ */
+export interface ConversationMessagePage {
+  messages: StoredConversationMessage[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+/** Load one page of a persisted conversation history from the server. */
 export async function fetchConversationMessages(
   conversationId: string,
   limit = 200,
-  offset = 0
-): Promise<StoredConversationMessage[]> {
+  cursor?: string | null
+): Promise<ConversationMessagePage> {
   const params = new URLSearchParams({
     limit: String(limit),
-    offset: String(offset),
   });
-  return apiRequest<StoredConversationMessage[]>(
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return apiRequest<ConversationMessagePage>(
     `/chat/conversations/${encodePathSegment(conversationId)}/messages?${params.toString()}`
   );
 }

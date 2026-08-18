@@ -6,6 +6,11 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from backend.ipc.models import (
+    decode_message_page_cursor,
+    encode_message_page_cursor,
+)
+
 from ..common import (
     JWT_CONTEXT_LABEL,
     OperationHandler,
@@ -22,6 +27,7 @@ from ..params import (
     GetUiSettingsParams,
     LimitOffsetParams,
     ListAuditLogParams,
+    ListMessagePageParams,
     ListMessagesParams,
     ListRecordsParams,
     RecordLoopHeartbeatParams,
@@ -654,6 +660,58 @@ def make_list_messages_handler(db: DatabaseManager) -> OperationHandler:
         query, base_params = _messages_query(p.conversation_id)
         rows = db.execute(query, (*base_params, p.limit, p.offset)).fetchall()
         return {"messages": [_message_entry(row) for row in rows]}
+
+    return handle
+
+
+def make_list_message_page_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for list_message_page operation.
+
+    Returns one cursor page of a conversation's messages, newest first at
+    the DB level: without a cursor the newest ``limit`` rows; with a
+    cursor only rows strictly older than the (created_at, rowid)
+    boundary. Fetches ``limit + 1`` rows to detect ``has_more``; the
+    ``next_cursor`` encodes the oldest row of the returned page.
+    """
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Return one cursor page of messages for one conversation."""
+        p = validate_params(params, ListMessagePageParams)
+        if p.cursor is None:
+            query = (
+                "SELECT id, role, content, conversation_id, created_at, meta, "
+                "rowid FROM messages WHERE conversation_id = ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?"
+            )
+            query_params: tuple[object, ...] = (p.conversation_id, p.limit + 1)
+        else:
+            created_at, rowid = decode_message_page_cursor(p.cursor)
+            query = (
+                "SELECT id, role, content, conversation_id, created_at, meta, "
+                "rowid FROM messages WHERE conversation_id = ? "
+                "AND (created_at < ? OR (created_at = ? AND rowid < ?)) "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?"
+            )
+            query_params = (
+                p.conversation_id,
+                created_at,
+                created_at,
+                rowid,
+                p.limit + 1,
+            )
+        rows = db.execute(query, query_params).fetchall()
+        has_more = len(rows) > p.limit
+        page_rows = rows[: p.limit]
+        next_cursor = (
+            encode_message_page_cursor(str(page_rows[-1][4]), int(page_rows[-1][6]))
+            if has_more
+            else None
+        )
+        return {
+            "messages": [_message_entry(row) for row in page_rows],
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
 
     return handle
 

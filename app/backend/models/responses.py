@@ -299,6 +299,19 @@ class ConversationMessageItem(StrictResponseModel):
     pending_confirmations: list[ConfirmationItem] = []
 
 
+class ConversationMessagePage(StrictResponseModel):
+    """One cursor page of persisted conversation messages.
+
+    Items are ordered oldest to newest. ``next_cursor`` is an opaque
+    string (present only when ``has_more`` is true) that the client
+    echoes back unmodified to fetch the next older page.
+    """
+
+    messages: list[ConversationMessageItem]
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
 class ChatBridgeLinkItem(StrictResponseModel):
     """External chat bridge link returned by admin routes.
 

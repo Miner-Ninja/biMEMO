@@ -611,6 +611,52 @@ class TestChatBridgeService:
         assert len(admin_client.saved_messages) == 1
 
     @pytest.mark.asyncio
+    async def test_same_text_from_web_and_provider_persists_two_rows(self) -> None:
+        """Client-side idempotency never collapses a matching provider pair."""
+        admin_client = FakeAdminClient()
+        provider = FakeProvider()
+        service = ChatBridgeService(
+            admin_client=admin_client,
+            providers={BridgeProvider.DISCORD: provider},
+        )
+        await service.create_bridge(
+            conversation_id="conversation-1",
+            provider=BridgeProvider.DISCORD,
+            created_by="admin-user",
+        )
+
+        await admin_client.send_operation(
+            "save_message",
+            {
+                "conversation_id": "conversation-1",
+                "role": "user",
+                "content": "Please check the latest deploy logs.",
+                "channel": "web",
+                "client_message_id": "cm-web-1",
+            },
+        )
+        saved_id = await service.sync_inbound_message(
+            message=ExternalBridgeMessage(
+                provider=BridgeProvider.DISCORD,
+                external_space_id="guild-1",
+                external_channel_id="channel-1",
+                external_message_id="discord-message-200",
+                author_id="discord-user-9",
+                author_name="Ops Admin",
+                content="Please check the latest deploy logs.",
+            )
+        )
+
+        assert saved_id.message_id == "internal-message-1"
+        assert len(admin_client.saved_messages) == 2
+        web_saved = admin_client.saved_messages[0]
+        assert web_saved["channel"] == "web"
+        assert web_saved["client_message_id"] == "cm-web-1"
+        bridge_saved = admin_client.saved_messages[1]
+        assert bridge_saved["channel"] == "bridge:discord"
+        assert bridge_saved.get("client_message_id") is None
+
+    @pytest.mark.asyncio
     async def test_sync_inbound_message_runs_processor_and_syncs_reply(
         self,
     ) -> None:

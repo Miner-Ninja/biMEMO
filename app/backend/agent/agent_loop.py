@@ -292,6 +292,7 @@ class AgentOrchestrator:
     turn_store: object | None = None
     run_event_recorder: object | None = None
     scheduled_task_run: dict[str, object] | None = None
+    _current_run_id: str = field(default="")
 
     def __post_init__(self) -> None:
         """Initialize delegate objects after dataclass construction."""
@@ -335,6 +336,11 @@ class AgentOrchestrator:
         )
         self.tool_executor.sse_queue = self.sse_queue
         self.llm_caller.sse_queue = self.sse_queue
+
+    @property
+    def current_run_id(self) -> str:
+        """Return the run id of the turn this process is executing now."""
+        return self._current_run_id
 
     def __setattr__(self, name: str, value: object) -> None:
         """Sync delegate state when mutable attributes change post-init."""
@@ -1042,6 +1048,7 @@ class AgentOrchestrator:
         uploaded_images: list[str],
         attached_files: list[str] | None,
         meta: dict | None,
+        client_message_id: str | None = None,
     ) -> tuple[object, str | None, list[dict[str, object]]]:
         """Load memory context, save the user message, and build prompt messages."""
         recall_started_at = perf_counter()
@@ -1065,6 +1072,7 @@ class AgentOrchestrator:
                 attached_files=attached_files or [],
                 uploaded_images=uploaded_images,
                 meta=meta,
+                client_message_id=client_message_id,
             )
         context_started_at = perf_counter()
         messages = self.prompt_builder.build_prompt_messages(
@@ -1095,6 +1103,7 @@ class AgentOrchestrator:
         attached_files: list[str] | None,
         meta: dict | None,
         agent_run_id: str = "",
+        client_message_id: str | None = None,
     ) -> TurnPreparation | AgentResponse:
         """Prepare one user turn before entering the model loop."""
         turn_input = await self._prepare_turn_input(
@@ -1116,6 +1125,7 @@ class AgentOrchestrator:
             uploaded_images=turn_input.uploaded_images,
             attached_files=attached_files or [],
             meta=meta,
+            client_message_id=client_message_id,
         )
         pending_input_resume = (
             meta.get("pending_input_resume") if isinstance(meta, dict) else None
@@ -1296,6 +1306,7 @@ class AgentOrchestrator:
         meta: dict | None = None,
         agent_run_id: str = "",
         forced_tools: list[str] | None = None,
+        client_message_id: str | None = None,
     ) -> AgentResponse:
         """Process a user message through the agentic loop.
 
@@ -1311,6 +1322,7 @@ class AgentOrchestrator:
             meta: Extra metadata to store with the message.
             agent_run_id: Optional persisted run identifier for action prompts.
             forced_tools: Tool names the user selected to force for this turn.
+            client_message_id: Optional client-stable id for the user message.
 
         Returns:
             AgentResponse with final text.
@@ -1327,6 +1339,7 @@ class AgentOrchestrator:
             if unknown_tools:
                 raise ValueError(f"Unknown forced tool(s): {', '.join(unknown_tools)}")
         await self.concurrency.acquire()
+        self._current_run_id = agent_run_id
         try:
             return await self._process_turn(
                 message,
@@ -1339,9 +1352,11 @@ class AgentOrchestrator:
                 attached_files=attached_files,
                 meta=meta,
                 agent_run_id=agent_run_id,
+                client_message_id=client_message_id,
             )
         finally:
             self.concurrency.release()
+            self._current_run_id = ""
 
     async def resume_structured_confirmation(
         self,
@@ -1379,6 +1394,7 @@ class AgentOrchestrator:
             return replay
 
         await self.concurrency.acquire()
+        self._current_run_id = turn_id
         try:
             self._provider_attempt_tasks = []
             self.tool_executor.clear_pending()
@@ -1835,6 +1851,7 @@ class AgentOrchestrator:
             except Exception:
                 logger.exception("Failed to persist confirmation resume active time")
             self.concurrency.release()
+            self._current_run_id = ""
 
     def _record_provider_attempt(self, record: AttemptRecord) -> None:
         """Queue one durable provider-attempt event from a sync callback."""
@@ -2103,6 +2120,7 @@ class AgentOrchestrator:
         attached_files: list[str] | None = None,
         meta: dict | None = None,
         agent_run_id: str = "",
+        client_message_id: str | None = None,
     ) -> AgentResponse:
         """Process one fully handled user turn through the agent loop.
 
@@ -2117,6 +2135,7 @@ class AgentOrchestrator:
             attached_files: File names attached to this message.
             meta: Extra metadata to store with the message.
             agent_run_id: Runtime agent run identifier for resumable actions.
+            client_message_id: Optional client-stable id for the user message.
 
         Returns:
             AgentResponse with results.
@@ -2172,6 +2191,7 @@ class AgentOrchestrator:
                 attached_files=attached_files,
                 meta=meta,
                 agent_run_id=agent_run_id,
+                client_message_id=client_message_id,
             )
 
             # Background skill generation after processing
@@ -2237,6 +2257,7 @@ class AgentOrchestrator:
         attached_files: list[str] | None,
         meta: dict | None,
         agent_run_id: str = "",
+        client_message_id: str | None = None,
     ) -> AgentResponse:
         """Run one turn after the primary-start notification is already sent."""
         loop = AgenticLoop(injection_flag=injection_flag)
@@ -2253,6 +2274,7 @@ class AgentOrchestrator:
             attached_files=attached_files,
             meta=meta,
             agent_run_id=agent_run_id,
+            client_message_id=client_message_id,
         )
         if isinstance(prepared_turn, AgentResponse):
             canonical = (

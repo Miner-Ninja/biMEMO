@@ -1574,9 +1574,11 @@ class TestAgentOrchestrator:
         """Verify save_fn called with user message before and assistant after."""
         save_calls: list[tuple] = []
         orchestrator = _make_orchestrator()
-        orchestrator.save_fn = lambda cid, role, content, meta=None: save_calls.append(
-            (cid, role, content, meta)
-        )
+
+        def _save(cid, role, content, meta=None, client_message_id=None):
+            save_calls.append((cid, role, content, meta, client_message_id))
+
+        orchestrator.save_fn = _save
 
         async def mock_llm(messages):
             return LLMResponse(
@@ -1599,6 +1601,7 @@ class TestAgentOrchestrator:
             llm_call=mock_llm,
             session_id="s1",
             conversation_id="test-conv",
+            client_message_id="cm-1",
         )
         assert len(save_calls) == 2
         assert save_calls[0][1] == "user"
@@ -1609,14 +1612,18 @@ class TestAgentOrchestrator:
         assert save_calls[1][3] is not None
         assert save_calls[1][3]["stats"]["prompt_tokens"] == 10
         assert save_calls[1][3]["stats"]["completion_tokens"] == 5
+        assert save_calls[0][4] == "cm-1"
+        assert save_calls[1][4] is None
 
     async def test_save_fn_uses_conversation_id(self):
         """Verify save_fn receives conversation_id."""
         save_calls: list[tuple] = []
         orchestrator = _make_orchestrator()
-        orchestrator.save_fn = lambda cid, role, content, meta=None: save_calls.append(
-            (cid, role, content, meta)
-        )
+
+        def _save(cid, role, content, meta=None, client_message_id=None):
+            save_calls.append((cid, role, content, meta, client_message_id))
+
+        orchestrator.save_fn = _save
 
         async def mock_llm(messages):
             return _text_response("ok")
@@ -1659,7 +1666,9 @@ class TestAgentOrchestrator:
             role: str,
             content: str,
             meta: object = None,
+            client_message_id: object = None,
         ) -> str:
+            del client_message_id
             saved_messages.append((conversation_id, role, content, meta))
             return next(next_message_id)
 
@@ -1973,9 +1982,10 @@ class TestAgentOrchestrator:
             role: str,
             content: str,
             meta: object = None,
+            client_message_id: object = None,
         ) -> str:
             """Save message into in-memory store."""
-            del conversation_id, meta
+            del conversation_id, meta, client_message_id
             text = content if isinstance(content, str) else str(content)
             stored_messages.append((role, text))
             return f"msg-{len(stored_messages)}"
@@ -2153,9 +2163,10 @@ class TestAgentOrchestrator:
             role: str,
             content: str,
             meta: object = None,
+            client_message_id: object = None,
         ) -> str:
             """Save message into in-memory store."""
-            del conversation_id, meta
+            del conversation_id, meta, client_message_id
             text = content if isinstance(content, str) else str(content)
             stored_messages.append((role, text))
             return f"msg-{len(stored_messages)}"

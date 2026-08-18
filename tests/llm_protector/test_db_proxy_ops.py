@@ -34,6 +34,7 @@ from backend.processes.db_proxy import (
     make_get_stats_handler,
     make_list_conversations_handler,
     make_list_integrations_handler,
+    make_list_message_page_handler,
     make_list_queued_records_handler,
     make_load_context_handler,
     make_load_recent_messages_handler,
@@ -51,15 +52,15 @@ from backend.security.schema import (
     CREATE_AGENT_TOOL_BATCHES_TABLE,
     CREATE_AGENT_TOOL_INVOCATIONS_TABLE,
     CREATE_AGENT_TOOL_OBLIGATIONS_TABLE,
-    CREATE_AGENT_TURNS_TABLE,
     CREATE_AGENT_TURN_FINALIZATIONS_TABLE,
+    CREATE_AGENT_TURNS_TABLE,
 )
 from pydantic import ValidationError
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 125
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 60
-EXPECTED_SOCKET_B_OPERATION_COUNT = 97
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 61
+EXPECTED_SOCKET_B_OPERATION_COUNT = 98
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -109,10 +110,15 @@ class FakeDB:
                 content TEXT NOT NULL,
                 channel TEXT,
                 meta TEXT,
+                client_message_id TEXT,
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
                 FOREIGN KEY (conversation_id)
                     REFERENCES conversations(id) ON DELETE CASCADE
             )""",
+            """CREATE UNIQUE INDEX IF NOT EXISTS
+               idx_messages_conversation_client_id ON messages
+               (conversation_id, client_message_id)
+               WHERE client_message_id IS NOT NULL""",
             """CREATE TABLE records (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
@@ -334,6 +340,80 @@ class TestMessageOperations:
         result = await handler({"conversation_id": "nonexistent"})
         assert result["messages"] == []
 
+
+class TestMessagePageOperations:
+    """Verify cursor paging of messages (R11)."""
+
+    @pytest.mark.asyncio
+    async def test_page_without_cursor_returns_newest_batch(self, db: FakeDB) -> None:
+        """A page without a cursor returns the newest batch newest-first."""
+        save = make_save_message_handler(db)
+        for text in ("m1", "m2", "m3"):
+            await save({"conversation_id": "c1", "role": "user", "content": text})
+        handler = make_list_message_page_handler(db)
+        result = await handler({"conversation_id": "c1", "limit": 2})
+        assert [m["content"] for m in result["messages"]] == ["m3", "m2"]
+        assert result["has_more"] is True
+        assert result["next_cursor"] is not None
+
+    @pytest.mark.asyncio
+    async def test_page_exact_batch_has_no_cursor(self, db: FakeDB) -> None:
+        """An exactly sized page reports no next cursor."""
+        save = make_save_message_handler(db)
+        await save({"conversation_id": "c1", "role": "user", "content": "m1"})
+        await save({"conversation_id": "c1", "role": "user", "content": "m2"})
+        handler = make_list_message_page_handler(db)
+        result = await handler({"conversation_id": "c1", "limit": 2})
+        assert [m["content"] for m in result["messages"]] == ["m2", "m1"]
+        assert result["has_more"] is False
+        assert result["next_cursor"] is None
+
+    @pytest.mark.asyncio
+    async def test_page_walk_has_no_gaps_or_duplicates_with_equal_timestamps(
+        self, db: FakeDB
+    ) -> None:
+        """Walking pages over equal timestamps loses no rows and repeats none."""
+        db.execute("INSERT INTO conversations (id) VALUES ('c1')")
+        db.execute(
+            "INSERT INTO messages "
+            "(id, conversation_id, role, content, created_at) VALUES "
+            "('a1', 'c1', 'user', 't0-first', '2026-01-01T00:00:00.000'), "
+            "('a2', 'c1', 'user', 't0-second', '2026-01-01T00:00:00.000'), "
+            "('a3', 'c1', 'user', 't1', '2026-01-01T00:00:01.000'), "
+            "('a4', 'c1', 'user', 't2', '2026-01-01T00:00:02.000')"
+        )
+        handler = make_list_message_page_handler(db)
+        seen: list[str] = []
+        cursor: str | None = None
+        for _ in range(5):
+            params: dict[str, object] = {"conversation_id": "c1", "limit": 1}
+            if cursor is not None:
+                params["cursor"] = cursor
+            result = await handler(params)
+            seen.extend(str(m["id"]) for m in result["messages"])
+            cursor = result["next_cursor"]
+            if cursor is None:
+                break
+        # Newest to oldest; rowid breaks the equal-created_at tie (a2 after a1).
+        assert seen == ["a4", "a3", "a2", "a1"]
+
+    @pytest.mark.asyncio
+    async def test_page_malformed_cursor_rejected(self, db: FakeDB) -> None:
+        """A malformed cursor is rejected as a validation error."""
+        handler = make_list_message_page_handler(db)
+        with pytest.raises(ValueError, match="malformed"):
+            await handler(
+                {"conversation_id": "c1", "limit": 5, "cursor": "not-a-cursor"}
+            )
+
+    def test_page_limit_bounds(self) -> None:
+        """Page limits stay within their validated bounds."""
+        from backend.processes.db_proxy.params import ListMessagePageParams
+
+        with pytest.raises(ValidationError):
+            ListMessagePageParams(conversation_id="c1", limit=0)
+        with pytest.raises(ValidationError):
+            ListMessagePageParams(conversation_id="c1", limit=501)
 
 class TestContextOperation:
     """Verify baseline context loading (graph era)."""
@@ -922,8 +1002,10 @@ class TestConversationOperations:
         self,
         db: FakeDB,
     ) -> None:
-        """Deletes a conversation whose turn holds finalization claims and
-        obligation binds, both of which RESTRICT the cascading deletes."""
+        """Deletes a conversation whose turn holds finalization claims.
+
+        Obligation binds both RESTRICT the cascading deletes.
+        """
         create_conversation = make_create_conversation_handler(db)
         result = await create_conversation({"title": "finalized turn"})
         conversation_id = result["conversation_id"]
@@ -973,7 +1055,7 @@ class TestConversationOperations:
             "agent_obligation_binds",
             "agent_turn_finalizations",
         ):
-            row = db.execute(f"SELECT count(*) FROM {table}").fetchone()
+            row = db.execute(f"SELECT count(*) FROM {table}").fetchone()  # noqa: S608
             assert row[0] == 0, f"leftover rows in {table}"
 
     @pytest.mark.asyncio

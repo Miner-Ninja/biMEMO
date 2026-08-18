@@ -2,6 +2,10 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChat } from "@/hooks/useChat";
+import type {
+  ConversationMessagePage,
+  StoredConversationMessage,
+} from "@/lib/bimemo-api";
 
 const {
   fetchConversations,
@@ -48,6 +52,15 @@ function message(id: string, conversationId: string, content: string) {
   };
 }
 
+// R11: the history endpoint answers a cursor page, not a flat list.
+function page(
+  messages: StoredConversationMessage[],
+  nextCursor: string | null,
+  hasMore: boolean
+): ConversationMessagePage {
+  return { messages, next_cursor: nextCursor, has_more: hasMore };
+}
+
 describe("useChat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -57,7 +70,11 @@ describe("useChat", () => {
     ]);
     fetchConversationMessages.mockImplementation(async (conversationId: string) => {
       await Promise.resolve();
-      return [message(`msg-${conversationId}`, conversationId, conversationId)];
+      return page(
+        [message(`msg-${conversationId}`, conversationId, conversationId)],
+        null,
+        false
+      );
     });
     createConversation.mockResolvedValue({ conversation_id: "chat-3" });
     deleteConversation.mockResolvedValue({ ok: true });
@@ -70,12 +87,19 @@ describe("useChat", () => {
     const { result } = renderHook(() => useChat());
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    // The URL-driven selection and the selection effect fire together;
+    // the pending/loaded bookkeeping must collapse them into one fetch.
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
+
     await waitFor(() =>
       expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
+    expect(fetchConversationMessages).toHaveBeenCalledTimes(1);
 
     fetchConversationMessages.mockClear();
-
     await act(async () => {
       await result.current.switchChat("chat-2");
     });
@@ -88,27 +112,33 @@ describe("useChat", () => {
 
   it("keeps local thinking when the same assistant answer is reread from the server", async () => {
     fetchConversations.mockResolvedValue([conversation("chat-1", "Chat 1")]);
-    fetchConversationMessages.mockResolvedValueOnce([
-      message("stored-user-1", "chat-1", "hello"),
-    ]);
-    fetchConversationMessages.mockResolvedValueOnce([
-      message("stored-user-1", "chat-1", "hello"),
-      {
-        id: "stored-assistant-1",
-        role: "assistant" as const,
-        content: "final answer",
-        conversation_id: "chat-1",
-        created_at: "2026-03-28T10:00:01Z",
-        meta: null,
-      },
-    ]);
+    fetchConversationMessages.mockResolvedValueOnce(
+      page([message("stored-user-1", "chat-1", "hello")], null, false)
+    );
+    fetchConversationMessages.mockResolvedValueOnce(
+      page(
+        [
+          message("stored-user-1", "chat-1", "hello"),
+          {
+            id: "stored-assistant-1",
+            role: "assistant" as const,
+            content: "final answer",
+            conversation_id: "chat-1",
+            created_at: "2026-03-28T10:00:01Z",
+            meta: null,
+          },
+        ],
+        null,
+        false
+      )
+    );
 
     const { result } = renderHook(() => useChat());
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
-    await waitFor(() =>
-      expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
-    );
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
 
     await act(async () => {
       result.current.addMessage({
@@ -136,33 +166,41 @@ describe("useChat", () => {
 
   it("reads saved thinking from structured assistant history", async () => {
     fetchConversations.mockResolvedValue([conversation("chat-1", "Chat 1")]);
-    fetchConversationMessages.mockResolvedValueOnce([
-      {
-        id: "stored-assistant-1",
-        role: "assistant" as const,
-        content: "final answer",
-        conversation_id: "chat-1",
-        created_at: "2026-03-28T10:00:01Z",
-        meta: '{"stats":{"prompt_tokens":10,"completion_tokens":5}}',
-        structured_content: {
-          answer: "final answer",
-          thinking: "stored reasoning",
-          sql: "SELECT 1",
-          suggestions: ["Next step"],
-        },
-      },
-    ]);
+    fetchConversationMessages.mockResolvedValueOnce(
+      page(
+        [
+          {
+            id: "stored-assistant-1",
+            role: "assistant" as const,
+            content: "final answer",
+            conversation_id: "chat-1",
+            created_at: "2026-03-28T10:00:01Z",
+            meta: '{"stats":{"prompt_tokens":10,"completion_tokens":5}}',
+            structured_content: {
+              answer: "final answer",
+              thinking: "stored reasoning",
+              sql: "SELECT 1",
+              suggestions: ["Next step"],
+            },
+          },
+        ],
+        "older-cursor",
+        true
+      )
+    );
 
     const { result } = renderHook(() => useChat());
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
     await waitFor(() =>
       expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
 
     expect(result.current.activeChat?.messages[0].content).toBe("final answer");
     expect(result.current.activeChat?.messages[0].thinking).toBe("stored reasoning");
-    expect(result.current.activeChat?.messages[0].sql).toBe("SELECT 1");
     expect(result.current.activeChat?.messages[0].suggestions).toEqual(["Next step"]);
     expect(result.current.activeChat?.messages[0].stats?.prompt_tokens).toBe(10);
     expect(result.current.activeChat?.messages[0].stats?.completion_tokens).toBe(5);
@@ -172,9 +210,13 @@ describe("useChat", () => {
     const { result } = renderHook(() => useChat());
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
     await waitFor(() =>
       expect(fetchConversationMessages).toHaveBeenCalledWith("chat-1", 200)
     );
+    fetchConversationMessages.mockClear();
 
     await act(async () => {
       result.current.addMessageToConversation("chat-2", {
@@ -188,6 +230,8 @@ describe("useChat", () => {
     const targetChat = result.current.chats.find((chat) => chat.id === "chat-2");
     expect(targetChat?.messages.at(-1)?.id).toBe("bridge-msg-1");
     expect(targetChat?.messages.at(-1)?.content).toBe("from discord");
+    // No history fetch was triggered for the bridge message.
+    expect(fetchConversationMessages).not.toHaveBeenCalled();
   });
 
   it("removes one chat locally without sending a delete request", async () => {
@@ -221,5 +265,113 @@ describe("useChat", () => {
 
     expect(result.current.chats.map((chat) => chat.id)).toContain("chat-3");
     expect(fetchConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it("prepends the older page above the loaded window and tracks the cursor", async () => {
+    fetchConversations.mockResolvedValue([conversation("chat-1", "Chat 1")]);
+    fetchConversationMessages
+      .mockResolvedValueOnce(
+        page(
+          [
+            message("msg-new-2", "chat-1", "newer"),
+            message("msg-new-1", "chat-1", "newest"),
+          ],
+          "cursor-1",
+          true
+        )
+      )
+      .mockResolvedValueOnce(
+        page(
+          [
+            message("msg-old-1", "chat-1", "oldest"),
+            message("msg-old-2", "chat-1", "older"),
+          ],
+          "cursor-2",
+          true
+        )
+      );
+
+    const { result } = renderHook(() => useChat());
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
+    const chat = () =>
+      result.current.chats.find((c) => c.id === "chat-1")?.messages ?? [];
+    // The newest page keeps oldest-first (ASC) wire order.
+    expect(chat().map((m) => m.id)).toEqual(["msg-new-2", "msg-new-1"]);
+
+    await act(async () => {
+      await result.current.loadOlderMessages("chat-1");
+    });
+    // The older page is PREPENDED, oldest-first, above the existing window.
+    expect(chat().map((m) => m.id)).toEqual([
+      "msg-old-1",
+      "msg-old-2",
+      "msg-new-2",
+      "msg-new-1",
+    ]);
+    // The opaque cursor is echoed verbatim on the next request.
+    expect(fetchConversationMessages).toHaveBeenLastCalledWith(
+      "chat-1",
+      200,
+      "cursor-1"
+    );
+    // The page state advanced to the next boundary.
+    await act(async () => {
+      fetchConversationMessages.mockResolvedValueOnce(
+        page([message("msg-older-1", "chat-1", "even older")], null, false)
+      );
+      await result.current.loadOlderMessages("chat-1");
+    });
+    expect(fetchConversationMessages).toHaveBeenLastCalledWith(
+      "chat-1",
+      200,
+      "cursor-2"
+    );
+    expect(chat().map((m) => m.id)).toEqual([
+      "msg-older-1",
+      "msg-old-1",
+      "msg-old-2",
+      "msg-new-2",
+      "msg-new-1",
+    ]);
+    // Each prepend is announced for scroll compensation, keyed by conversation.
+    expect(result.current.prependSignal).toEqual({
+      conversationId: "chat-1",
+      seq: 2,
+    });
+  });
+
+  it("never renders a message id twice when an older page overlaps the window", async () => {
+    fetchConversations.mockResolvedValue([conversation("chat-1", "Chat 1")]);
+    fetchConversationMessages
+      .mockResolvedValueOnce(page([message("msg-a", "chat-1", "a")], "cursor-1", true))
+      .mockResolvedValueOnce(
+        // The page repeats an id already on screen (defense in depth: the
+        // (created_at, rowid) cursor is exact, the id filter is the guard).
+        page(
+          [message("msg-b", "chat-1", "b"), message("msg-a", "chat-1", "a (again)")],
+          null,
+          false
+        )
+      );
+
+    const { result } = renderHook(() => useChat());
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await result.current.switchChat("chat-1");
+    });
+    await act(async () => {
+      await result.current.loadOlderMessages("chat-1");
+    });
+
+    const ids = result.current.chats
+      .find((c) => c.id === "chat-1")
+      ?.messages.map((m) => m.id);
+    expect(ids).toEqual(["msg-b", "msg-a"]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

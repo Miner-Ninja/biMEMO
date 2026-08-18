@@ -223,6 +223,20 @@ export function useChat() {
   const pendingConversationLoadsRef = useRef<Map<string, Promise<Message[]>>>(
     new Map()
   );
+  // Per-conversation cursor-paging state: where the loaded window ends
+  // (oldest page boundary) and whether an older page still exists.
+  const messagePageStateRef = useRef<
+    Map<string, { cursor: string | null; hasMore: boolean }>
+  >(new Map());
+  // One older-page load per conversation at a time.
+  const loadOlderInFlightRef = useRef<Set<string>>(new Set());
+  const prependSeqRef = useRef(0);
+  // Set when older messages were prepended; MessageList compensates the
+  // scroll position so the viewport stays anchored on the same message.
+  const [prependSignal, setPrependSignal] = useState<{
+    conversationId: string;
+    seq: number;
+  } | null>(null);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -264,11 +278,17 @@ export function useChat() {
       }
 
       const loadPromise = (async (): Promise<Message[]> => {
-        const storedMessages = await fetchConversationMessages(
+        // A (re)load always restarts the window at the newest page; the
+        // cursor for older pages is re-derived from it.
+        const page = await fetchConversationMessages(
           conversationId,
           DEFAULT_MESSAGES_LIMIT
         );
-        let messages = storedMessages.map(mapMessage);
+        messagePageStateRef.current.set(conversationId, {
+          cursor: page.next_cursor,
+          hasMore: page.has_more,
+        });
+        let messages = page.messages.map(mapMessage);
         setChats((previousChats) =>
           previousChats.map((chat) => {
             if (chat.id !== conversationId) {
@@ -291,6 +311,55 @@ export function useChat() {
     },
     []
   );
+
+  // Load the older page above the currently loaded window (cursor paging)
+  // and PREPEND it. Guarded: one load per conversation at a time, and no
+  // fetch once the server says the history is exhausted (has_more=false).
+  // Repeated reach-top events while a load is in flight are ignored.
+  const loadOlderMessages = useCallback(async (conversationId: string) => {
+    const pageState = messagePageStateRef.current.get(conversationId);
+    if (!pageState || !pageState.hasMore) {
+      return;
+    }
+    if (loadOlderInFlightRef.current.has(conversationId)) {
+      return;
+    }
+    loadOlderInFlightRef.current.add(conversationId);
+    try {
+      const page = await fetchConversationMessages(
+        conversationId,
+        DEFAULT_MESSAGES_LIMIT,
+        pageState.cursor
+      );
+      messagePageStateRef.current.set(conversationId, {
+        cursor: page.next_cursor,
+        hasMore: page.has_more,
+      });
+      const incoming = page.messages.map(mapMessage);
+      if (incoming.length === 0) {
+        return;
+      }
+      setChats((previousChats) =>
+        previousChats.map((chat) => {
+          if (chat.id !== conversationId) {
+            return chat;
+          }
+          // Defense in depth: the (created_at, rowid) cursor is exact, but
+          // never render the same message id twice.
+          const knownIds = new Set(chat.messages.map((message) => message.id));
+          const fresh = incoming.filter((message) => !knownIds.has(message.id));
+          if (fresh.length === 0) {
+            return chat;
+          }
+          return { ...chat, messages: [...fresh, ...chat.messages] };
+        })
+      );
+      prependSeqRef.current += 1;
+      setPrependSignal({ conversationId, seq: prependSeqRef.current });
+    } finally {
+      loadOlderInFlightRef.current.delete(conversationId);
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -377,15 +446,22 @@ export function useChat() {
     const targetChatId = activeChatIdRef.current;
     if (!targetChatId) return;
     setChats((previousChats) =>
-      previousChats.map((chat) =>
-        chat.id === targetChatId
-          ? {
-              ...chat,
-              messages: [...chat.messages, message],
-              updatedAt: new Date(),
-            }
-          : chat
-      )
+      previousChats.map((chat) => {
+        if (chat.id !== targetChatId) {
+          return chat;
+        }
+        // An incoming message whose id is already rendered (e.g. a replayed
+        // turn answer) is not a second copy: skip it and leave the list,
+        // state and scroll position untouched.
+        if (chat.messages.some((existing) => existing.id === message.id)) {
+          return chat;
+        }
+        return {
+          ...chat,
+          messages: [...chat.messages, message],
+          updatedAt: new Date(),
+        };
+      })
     );
   }, []);
 
@@ -503,6 +579,7 @@ export function useChat() {
     await deleteConversation(chatId);
     loadedConversationIdsRef.current.delete(chatId);
     pendingConversationLoadsRef.current.delete(chatId);
+    messagePageStateRef.current.delete(chatId);
     setChats((prev) => prev.filter((chat) => chat.id !== chatId));
     if (activeChatIdRef.current === chatId) {
       setActiveChatId(null);
@@ -513,6 +590,7 @@ export function useChat() {
   const removeConversation = useCallback((chatId: string) => {
     loadedConversationIdsRef.current.delete(chatId);
     pendingConversationLoadsRef.current.delete(chatId);
+    messagePageStateRef.current.delete(chatId);
     setChats((prev) => prev.filter((chat) => chat.id !== chatId));
     if (activeChatIdRef.current === chatId) {
       setActiveChatId(null);
@@ -628,6 +706,8 @@ export function useChat() {
     updateConversation,
     updateConversationActivity,
     truncateAfterMessage,
+    loadOlderMessages,
+    prependSignal,
     ensureActiveChat,
     refreshConversations,
     refreshConversationMessages,

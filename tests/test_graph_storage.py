@@ -65,7 +65,7 @@ class TestEntitiesSchema:
     def test_fresh_schema_has_entities_and_current_version(self, tmp_path):
         """S1.1 — fresh database gets entities at the current version."""
         db = _open_db(tmp_path)
-        assert SCHEMA_VERSION == 23
+        assert SCHEMA_VERSION == 24
         row = db.execute("SELECT version FROM schema_version").fetchone()
         assert row[0] == SCHEMA_VERSION
         db.execute("SELECT id FROM entities").fetchall()
@@ -84,6 +84,15 @@ class TestEntitiesSchema:
         db.execute("SELECT id FROM entities").fetchall()
         row = db.execute("SELECT id FROM conversations").fetchone()
         assert row[0] == "keep"
+        db.close()
+
+    def test_reinitialize_on_current_version_is_noop(self, tmp_path):
+        """Re-initializing an up-to-date database does not change the version."""
+        db = _open_db(tmp_path)
+        before = db.execute("SELECT version FROM schema_version").fetchone()[0]
+        initialize_schema(db)
+        after = db.execute("SELECT version FROM schema_version").fetchone()[0]
+        assert before == after == SCHEMA_VERSION
         db.close()
 
     def test_duplicate_type_name_rejected(self, tmp_path):

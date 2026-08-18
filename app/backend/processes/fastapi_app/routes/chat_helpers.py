@@ -36,6 +36,9 @@ from backend.models.responses import (
     ConversationMessageItem as HTTPConversationMessageItem,
 )
 from backend.models.responses import (
+    ConversationMessagePage as HTTPConversationMessagePage,
+)
+from backend.models.responses import (
     StructuredAssistantContent as HTTPStructuredAssistantContent,
 )
 
@@ -212,6 +215,7 @@ def build_ipc_chat_request(
         pending_input_id=body.pending_input_id,
         pending_input_version=body.pending_input_version,
         pending_input_value=body.pending_input_value,
+        client_message_id=body.client_message_id,
     )
 
 
@@ -631,23 +635,25 @@ async def list_conversation_items(
     ]
 
 
-async def list_conversation_message_items(
+async def list_conversation_message_page(
     *,
     admin_client: AdminDBClient,
     conversation_id: str,
     limit: int,
-    offset: int,
-) -> list[HTTPConversationMessageItem]:
-    """Load, sort, and convert persisted messages for one conversation."""
-    messages = await admin_client.list_messages(
-        limit=limit,
-        offset=offset,
+    cursor: str | None,
+) -> HTTPConversationMessagePage:
+    """Load one cursor page of persisted messages for one conversation.
+
+    The DB layer returns the page newest-first (cursor arithmetic runs on
+    that ordering); the wire page is reversed to oldest-first so clients
+    can prepend older pages and keep a chronological message list.
+    """
+    page = await admin_client.list_message_page(
         conversation_id=conversation_id,
+        limit=limit,
+        cursor=cursor,
     )
-    ordered_messages = sorted(
-        messages,
-        key=lambda message: str(message.get("created_at", "")),
-    )
+    ordered_messages = list(reversed(page["messages"]))
     # A pending confirmation always hangs off the latest assistant message, so
     # only pay the pending-actions lookup when there is one to attach it to.
     target_message_id = last_assistant_message_id(ordered_messages)
@@ -659,7 +665,7 @@ async def list_conversation_message_items(
         if target_message_id
         else []
     )
-    return [
+    messages = [
         build_conversation_message_item(
             message,
             pending_confirmations=(
@@ -670,6 +676,11 @@ async def list_conversation_message_items(
         )
         for message in ordered_messages
     ]
+    return HTTPConversationMessagePage(
+        messages=messages,
+        next_cursor=page.get("next_cursor"),
+        has_more=bool(page.get("has_more")),
+    )
 
 
 def last_assistant_message_id(ordered_messages: list[dict[str, object]]) -> str:

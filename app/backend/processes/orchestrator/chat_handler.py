@@ -681,6 +681,7 @@ async def _run_prepared_chat_request(
         attached_files=request.attached_files or None,
         meta=request_meta or None,
         agent_run_id=agent_run_id,
+        client_message_id=request.client_message_id or None,
     )
     return _build_chat_response(
         request_id=request.request_id,
@@ -875,6 +876,44 @@ async def _run_chat_request_with_prepared_message(
                 retryable=False,
             ),
         )
+    if (
+        existing_core is not None
+        and not request.pending_input_id
+        and not turn.get("terminal_outcome")
+    ):
+        # A pre-existing non-terminal turn: either this process is still
+        # executing it (in-flight duplicate) or its execution is gone
+        # (the process restarted mid-turn — a dead/orphaned turn).
+        if getattr(orch, "current_run_id", "") == agent_run_id:
+            # In-flight replay: the original execution continues; answer
+            # the duplicate with the live state of the same run — no new
+            # turn, no duplicate message row.
+            return ChatResponse(
+                request_id=request.request_id,
+                run_id=agent_run_id,
+            )
+        # Dead turn: terminalize it as a failure, then process the
+        # message as a fresh turn so the retry is delivered end-to-end.
+        await _commit_core_request_failure(
+            db_client=db_client,
+            request=request,
+            turn_id=agent_run_id,
+            code="turn_orphaned",
+            message=(
+                "The previous turn did not complete and was closed as a "
+                "failure."
+            ),
+        )
+        created = await create_agent_turn(
+            conversation_id=request.conversation_id,
+            turn_id=None,
+            session_id=request.session_id,
+            channel=request.channel,
+        )
+        raw_turn = created.get("turn")
+        turn = raw_turn if isinstance(raw_turn, dict) else {}
+        agent_run_id = str(turn.get("turn_id", ""))
+
     terminal_replay = _build_replayed_core_response(
         request_id=request.request_id,
         turn=turn,
@@ -1141,6 +1180,7 @@ async def _run_orchestrator_message(
     attached_files: list[str] | None = None,
     meta: dict | None = None,
     agent_run_id: str = "",
+    client_message_id: str | None = None,
 ) -> AgentResponse:
     """Run one message through the shared orchestrator chat path."""
     return await orch.process_message(
@@ -1154,6 +1194,7 @@ async def _run_orchestrator_message(
         attached_files=attached_files,
         meta=meta,
         agent_run_id=agent_run_id,
+        client_message_id=client_message_id,
     )
 
 

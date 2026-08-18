@@ -380,6 +380,19 @@ class AdminDBClient(_BaseIPCClient):
             parameters=params,
         )
 
+    async def list_message_page(
+        self,
+        *,
+        conversation_id: str,
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch one cursor page of messages for one conversation."""
+        params: dict[str, Any] = {"conversation_id": conversation_id, "limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return await self.send_operation("list_message_page", params)
+
     async def list_pending_actions(
         self,
         status: str | None = None,

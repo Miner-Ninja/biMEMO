@@ -46,6 +46,7 @@ class ChatRequest(StrictRequestModel):
     voice: str | None = None
     forced_tools: list[str] = Field(default_factory=list, max_length=32)
     run_id: str = Field(default="", max_length=200)
+    client_message_id: str = Field(default="", max_length=200)
     pending_input_id: str = Field(default="", max_length=200)
     pending_input_version: int | None = Field(default=None, ge=1)
     pending_input_value: Any | None = None

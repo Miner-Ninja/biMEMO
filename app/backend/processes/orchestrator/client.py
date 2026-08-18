@@ -251,6 +251,7 @@ class DBProxyClient:
         content: str,
         channel: str | None = None,
         meta: str | None = None,
+        client_message_id: str | None = None,
     ) -> str:
         """Save a message to the database."""
         return await conv_ops.save_message(
@@ -260,6 +261,7 @@ class DBProxyClient:
             content,
             channel,
             meta,
+            client_message_id=client_message_id,
         )
 
     async def save_conversation_summary(

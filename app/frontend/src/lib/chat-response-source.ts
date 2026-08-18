@@ -1,3 +1,5 @@
+import { generateId as generateUuid } from "@/lib/utils";
+
 export const DEFAULT_STREAM_ERROR_MESSAGE =
   "Internal error while processing the request";
 
@@ -38,7 +40,8 @@ export type PendingInputBinding = {
 export function bindPendingInputReply(
   body: Record<string, unknown>,
   pendingInput: PendingInputBinding,
-  value: unknown
+  value: unknown,
+  clientMessageId: string
 ): Record<string, unknown> {
   return {
     ...body,
@@ -46,7 +49,94 @@ export function bindPendingInputReply(
     pending_input_id: pendingInput.pending_input_id,
     pending_input_version: pendingInput.cas_version,
     pending_input_value: value,
+    client_message_id: clientMessageId,
   };
+}
+
+/**
+ * Client-generated identifiers for one POST /chat send.
+ *
+ * A regular message uses ONE pre-generated UUID as both `run_id` (the turn
+ * identity) and `client_message_id` (the stored message row identity).
+ * A retry after a network failure resends the same pair: the server
+ * dedups by (conversation, client_message_id) and replays the turn by
+ * run_id, so the retry never creates a duplicate row.
+ * A pending-input answer keeps the turn's run_id but takes a fresh
+ * client_message_id — each answer is its own message row.
+ */
+export type ChatSendIds = {
+  runId: string;
+  clientMessageId: string;
+};
+
+export type ChatSendIdSource = "new" | "retry" | "pending-input";
+
+export type ResolvedChatSendIds = ChatSendIds & { source: ChatSendIdSource };
+
+/**
+ * A send that failed on the wire. Resending the same text in the same
+ * conversation retries the stored id pair instead of generating new ones.
+ */
+export type FailedChatSend = {
+  conversationId: string;
+  content: string;
+  runId: string;
+  clientMessageId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+};
+
+/** Fresh identifiers for a regular message: one UUID serves both fields. */
+export function newChatSendIds(generateId: () => string = generateUuid): ChatSendIds {
+  const runId = generateId();
+  return { runId, clientMessageId: runId };
+}
+
+/** Bind a regular (non pending-input) send to its identifiers. */
+export function bindSendIds(
+  body: Record<string, unknown>,
+  ids: ChatSendIds
+): Record<string, unknown> {
+  return {
+    ...body,
+    run_id: ids.runId,
+    client_message_id: ids.clientMessageId,
+  };
+}
+
+/**
+ * Decide the identifiers for the next send:
+ * - pending-input answer: the turn's run_id + a fresh client_message_id;
+ * - same text in the same conversation as a failed send: that send's ids
+ *   (retry after failure — the server dedups, no duplicate row);
+ * - otherwise: a fresh id pair (reworded or brand-new message).
+ */
+export function resolveChatSendIds(
+  previousFailure: FailedChatSend | null,
+  current: { conversationId: string; content: string },
+  pendingInput: { run_id: string } | null,
+  generateId: () => string = generateUuid
+): ResolvedChatSendIds {
+  if (pendingInput?.run_id) {
+    return {
+      runId: pendingInput.run_id,
+      clientMessageId: generateId(),
+      source: "pending-input",
+    };
+  }
+  if (
+    previousFailure !== null &&
+    previousFailure.conversationId === current.conversationId &&
+    previousFailure.content === current.content
+  ) {
+    return {
+      runId: previousFailure.runId,
+      clientMessageId: previousFailure.clientMessageId,
+      source: "retry",
+    };
+  }
+  const runId = generateId();
+  return { runId, clientMessageId: runId, source: "new" };
 }
 
 export const TERMINAL_RUNTIME_EVENT_TYPES = new Set([

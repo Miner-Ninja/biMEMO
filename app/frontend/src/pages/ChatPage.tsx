@@ -56,14 +56,19 @@ import {
   chatInputIsDisabled,
   classifyPausedResumeEvent,
   bindPendingInputReply,
+  bindSendIds,
   markStreamTerminalError,
+  newChatSendIds,
+  resolveChatSendIds,
   resolveStreamErrorMessage,
   runtimeBootstrapHasTerminalEvent,
   runtimeBootstrapPausedEvent,
   shouldApplyHttpChatResponse,
   shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
+  type FailedChatSend,
   type PausedRunBinding,
+  type ResolvedChatSendIds,
   type RuntimeBootstrapPayload,
 } from "@/lib/chat-response-source";
 import { COMMAND_HISTORY_LIMIT, getUiSetting, setUiSetting } from "@/lib/ui-settings";
@@ -84,6 +89,7 @@ type ChatResponsePayload = {
   conversation_id?: string;
   request_id?: string;
   run_id?: string;
+  message_id?: string | null;
   stream_started?: boolean;
   retrieved_memories?: { summary: string; date: string }[];
   transcription?: string;
@@ -418,6 +424,8 @@ export function ChatPage() {
     ensureActiveChat,
     refreshConversations,
     refreshConversationMessages,
+    loadOlderMessages,
+    prependSignal,
   } = useChat();
 
   const { logout } = useAuth();
@@ -461,6 +469,10 @@ export function ChatPage() {
   // current assistant turn; accumulated so multiple RED tools each get a card.
   const pendingConfirmationsRef = useRef<PendingConfirmation[]>([]);
   const pendingInputRef = useRef<PendingInput | null>(null);
+  // The last send that failed on the wire, with the identifiers it used.
+  // Resending the same text in the same conversation retries these ids so
+  // the server dedups the row instead of duplicating it (R6).
+  const failedSendRef = useRef<FailedChatSend | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const processedFinalizationIdsRef = useRef<Set<string>>(new Set());
   const pseudoStreamRunIdRef = useRef(0);
@@ -667,6 +679,28 @@ export function ChatPage() {
       assistantMessageId,
       response,
     }: ApplyAssistantResponseInput): Promise<string> => {
+      // Replay dedup (R6): an incoming final (WS or an HTTP-replayed POST)
+      // carries the server message id. If that id is already rendered as
+      // another message of this conversation, this payload is a replay of
+      // a turn already on screen — skip it entirely: no duplicate message,
+      // no state or scroll change.
+      const serverMessageId = response.message_id ?? "";
+      if (serverMessageId && serverMessageId !== assistantMessageId) {
+        const streamConversationId = activeAssistantStreamRef.current.conversationId;
+        const renderedIds = new Set(
+          (streamConversationId
+            ? (chats.find((chat) => chat.id === streamConversationId)?.messages ?? [])
+            : []
+          ).map((message) => message.id)
+        );
+        if (renderedIds.has(serverMessageId)) {
+          return "";
+        }
+        // Bind the local placeholder to the server id so a later replay or
+        // history reload matches by id instead of creating a second copy.
+        updateMessage(assistantMessageId, { id: serverMessageId });
+      }
+      const targetMessageId = serverMessageId || assistantMessageId;
       const structuredContent = response.structured_content;
       const finalConfirmations = (response.pending_confirmations ?? []).map((c) => ({
         ...c,
@@ -705,7 +739,7 @@ export function ChatPage() {
       );
       const finalText = structuredContentForPseudoStream
         ? await playStructuredAssistantResponse({
-            assistantMessageId,
+            assistantMessageId: targetMessageId,
             stats: response.stats,
             sections: {
               thinking: structuredContentForPseudoStream.thinking || "",
@@ -726,7 +760,7 @@ export function ChatPage() {
           stats: response.stats,
         });
         updateMessage(
-          assistantMessageId,
+          targetMessageId,
           buildAssistantMessageUpdate(
             {
               ...assistantMessageFields,
@@ -744,7 +778,7 @@ export function ChatPage() {
       }
       return finalText;
     },
-    [playStructuredAssistantResponse, updateMessage]
+    [chats, playStructuredAssistantResponse, updateMessage]
   );
 
   // Load available file names for @mention autocomplete
@@ -1412,6 +1446,15 @@ export function ChatPage() {
     chatInputRef.current?.focus();
   }, []);
 
+  // The viewport reached the top of the loaded history: load the older
+  // page (cursor). useChat guards this: one load per conversation at a
+  // time, and none once the history is exhausted.
+  const handleReachTop = useCallback(() => {
+    if (activeChatId) {
+      void loadOlderMessages(activeChatId);
+    }
+  }, [activeChatId, loadOlderMessages]);
+
   const requestAutoScrollToBottom = useCallback(() => {
     setAutoScrollRequest((value) => value + 1);
   }, []);
@@ -1529,18 +1572,34 @@ export function ChatPage() {
   const sendAndStream = async (
     messageContent: string,
     conversationId: string,
-    images?: string[],
-    forcedTools?: string[],
-    pendingInput?: PendingInput | null
+    options?: {
+      images?: string[];
+      forcedTools?: string[];
+      pendingInput?: PendingInput | null;
+      sendIds?: ResolvedChatSendIds;
+      userMessageId?: string | null;
+      assistantMessageId?: string | null;
+    }
   ) => {
-    const assistantMessageId = generateId();
-    const assistantMessage: Message = {
-      id: assistantMessageId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-    };
-    addMessage(assistantMessage);
+    const {
+      images,
+      forcedTools,
+      pendingInput,
+      sendIds,
+      userMessageId = null,
+      assistantMessageId: reusedAssistantMessageId = null,
+    } = options ?? {};
+    // A retry of a failed send reuses the original assistant message already
+    // on screen; any other send creates a fresh optimistic placeholder.
+    const assistantMessageId = reusedAssistantMessageId ?? generateId();
+    if (!reusedAssistantMessageId) {
+      addMessage({
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+      });
+    }
     beginAssistantStream(assistantMessageId, { conversationId });
 
     setIsLoading(true);
@@ -1561,12 +1620,24 @@ export function ChatPage() {
       }
       if (forcedTools && forcedTools.length > 0) body.forced_tools = forcedTools;
       if (pendingInput) {
-        body = bindPendingInputReply(body, pendingInput, messageContent);
+        // A pending-input answer keeps the turn's run_id (bound by
+        // bindPendingInputReply) and carries its own fresh client_message_id.
+        body = bindPendingInputReply(
+          body,
+          pendingInput,
+          messageContent,
+          sendIds?.clientMessageId ?? generateId()
+        );
+      } else if (sendIds) {
+        body = bindSendIds(body, sendIds);
       }
       const response = await apiRequest<ChatResponsePayload>("/chat", {
         method: "POST",
         body: JSON.stringify(body),
       });
+      // The turn was accepted (or replayed) server-side: any stale
+      // failed-send retry slot is spent.
+      failedSendRef.current = null;
       // A new turn supersedes any pending resume of an earlier turn.
       pausedRunRef.current = null;
       if (response.outcome_kind !== "paused") {
@@ -1650,6 +1721,20 @@ export function ChatPage() {
       } else {
         clearAssistantStream();
       }
+      // Remember the failed send: resending the same text in the same
+      // conversation retries the same ids, so the server dedups the row
+      // instead of duplicating it. A pending-input answer is not recorded:
+      // its CAS version can change on expiry, so it is never blind-retried.
+      if (!pendingInput && sendIds) {
+        failedSendRef.current = {
+          conversationId,
+          content: messageContent,
+          runId: sendIds.runId,
+          clientMessageId: sendIds.clientMessageId,
+          userMessageId: userMessageId ?? "",
+          assistantMessageId,
+        };
+      }
       updateConversation(conversationId, {
         processingStatus: "idle",
         processingStage: "",
@@ -1693,8 +1778,24 @@ export function ChatPage() {
       messageContent = await uploadDocumentFiles(documentFiles, content);
     }
 
-    // Add user message
-    const userMessage: Message = {
+    // Resolve the send identifiers: a regular message takes one fresh UUID
+    // as both run_id and client_message_id; a retry after a failure takes
+    // the failed send's ids (the server dedups); a pending-input answer
+    // keeps the turn's run_id with a fresh client_message_id.
+    const pendingInput = pendingInputRef.current;
+    const sendIds = resolveChatSendIds(
+      failedSendRef.current,
+      { conversationId: currentChat.id, content: messageContent },
+      pendingInput
+    );
+    // A retry of a failed send reuses the original local messages instead of
+    // adding new ones, so a replayed answer can never appear twice on screen.
+    const failedSend = failedSendRef.current;
+    const retriedUserMessage =
+      sendIds.source === "retry" && failedSend
+        ? (currentChat.messages.find((m) => m.id === failedSend.userMessageId) ?? null)
+        : null;
+    const userMessage: Message = retriedUserMessage ?? {
       id: generateId(),
       role: "user",
       content: messageContent,
@@ -1708,17 +1809,29 @@ export function ChatPage() {
       processingStartedAt: userMessage.timestamp,
       updatedAt: userMessage.timestamp,
     });
-    requestAutoScrollToBottom();
-    addMessage(userMessage);
-
-    const pendingInput = pendingInputRef.current;
-    await sendAndStream(
-      messageContent,
-      currentChat.id,
-      imageDataUrls.length > 0 ? imageDataUrls : undefined,
+    if (!retriedUserMessage) {
+      requestAutoScrollToBottom();
+      addMessage(userMessage);
+    }
+    // A non-retry send supersedes a stale failure record; a pending-input
+    // answer does not consume it (that failed regular message is still
+    // retryable afterwards).
+    if (sendIds.source !== "retry") {
+      failedSendRef.current = null;
+    }
+    const retriedAssistantMessage =
+      sendIds.source === "retry" && failedSend
+        ? (currentChat.messages.find((m) => m.id === failedSend.assistantMessageId) ??
+          null)
+        : null;
+    await sendAndStream(messageContent, currentChat.id, {
+      images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
       forcedTools,
-      pendingInput
-    );
+      pendingInput,
+      sendIds,
+      userMessageId: userMessage.id,
+      assistantMessageId: retriedAssistantMessage?.id ?? null,
+    });
   };
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
@@ -1728,13 +1841,28 @@ export function ChatPage() {
     const ensuredChat = await ensureActiveChat();
     const conversationId = activeChatId ?? ensuredChat?.id;
     if (!conversationId) return;
+    // Editing is a new message: fresh ids — unless the edited text matches
+    // a previously failed send, in which case it retries those ids.
+    const sendIds = resolveChatSendIds(
+      failedSendRef.current,
+      { conversationId, content: newContent },
+      null
+    );
+    if (sendIds.source !== "retry") {
+      failedSendRef.current = null;
+    }
     updateConversation(conversationId, {
       processingStatus: "active",
       processingStage: t("chat.processing"),
       processingStartedAt: new Date(),
       updatedAt: new Date(),
     });
-    await sendAndStream(newContent, conversationId);
+    // The edit truncated the messages after the user message, so the
+    // assistant placeholder is always a fresh one here.
+    await sendAndStream(newContent, conversationId, {
+      sendIds,
+      userMessageId: messageId,
+    });
   };
 
   const handleSendVoice = async (voiceDataUrl: string) => {
@@ -1779,10 +1907,16 @@ export function ChatPage() {
     let streamStarted = false;
 
     try {
-      const body: Record<string, unknown> = {
-        voice: voiceDataUrl,
-        conversation_id: currentChat.id,
-      };
+      // A voice message is always a fresh message (its audio cannot be
+      // re-typed): one new UUID serves as run_id and client_message_id.
+      const voiceSendIds = newChatSendIds();
+      const body: Record<string, unknown> = bindSendIds(
+        {
+          voice: voiceDataUrl,
+          conversation_id: currentChat.id,
+        },
+        voiceSendIds
+      );
       if (activeFiles.length > 0) {
         body.file_ids = activeFiles;
       }
@@ -1790,6 +1924,8 @@ export function ChatPage() {
         method: "POST",
         body: JSON.stringify(body),
       });
+      // A successful send supersedes any stale failed-send retry slot.
+      failedSendRef.current = null;
       // A new turn supersedes any pending resume of an earlier turn.
       pausedRunRef.current = null;
 
@@ -2413,6 +2549,8 @@ export function ChatPage() {
         onEditMessage={handleEditMessage}
         showThinking={showThinking}
         ttsAvailable={ttsAvailable}
+        onReachTop={handleReachTop}
+        prependSignal={prependSignal}
       />
       {activePendingConfirmation && (
         <PendingConfirmationPanel

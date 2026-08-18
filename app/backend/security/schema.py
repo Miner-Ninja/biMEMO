@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
 # --- Schema version ---
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # --- Table creation SQL ---
 CREATE_METADATA_TABLE = """
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     channel TEXT,
     meta TEXT,
+    client_message_id TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 )
@@ -412,6 +413,14 @@ ON messages(conversation_id)
 CREATE_MESSAGES_CREATED_AT_IDX = """
 CREATE INDEX IF NOT EXISTS idx_messages_created_at
 ON messages(created_at)
+"""
+
+# Partial unique index: one row per (conversation_id, client_message_id) for
+# non-NULL identifiers, so a retried save resolves to the existing row.
+CREATE_MESSAGES_CLIENT_ID_IDX = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_conversation_client_id
+ON messages(conversation_id, client_message_id)
+WHERE client_message_id IS NOT NULL
 """
 
 CREATE_NOTES_CONVERSATION_IDX = """
@@ -821,10 +830,15 @@ def _ensure_schema_version(
 def _ensure_messages_schema(
     db: DatabaseManager,
 ) -> None:
-    """Add missing columns required by the current messages schema."""
+    """Add missing columns and the client-message unique index."""
     columns = _table_columns(db, "messages")
     if "meta" not in columns:
         db.execute("ALTER TABLE messages ADD COLUMN meta TEXT")
+    if "client_message_id" not in columns:
+        db.execute("ALTER TABLE messages ADD COLUMN client_message_id TEXT")
+    # The index requires the column to exist first, so it is created here
+    # (after the ALTER) rather than in the table-creation statement list.
+    db.execute(CREATE_MESSAGES_CLIENT_ID_IDX)
 
 
 def _ensure_conversations_schema(

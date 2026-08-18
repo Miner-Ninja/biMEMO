@@ -5,12 +5,12 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, WebSocket
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, WebSocket
 from fastapi.responses import JSONResponse, Response
 
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.ipc.models import StopRequest as IPCStopRequest
-from backend.ipc.models import StreamEventType
+from backend.ipc.models import StreamEventType, decode_message_page_cursor
 from backend.models.requests import ChatRequest as HTTPChatRequest  # noqa: TC001
 from backend.models.requests import ChatSettingsUpdateRequest  # noqa: TC001
 from backend.models.requests import ConfirmRequest as HTTPConfirmRequest  # noqa: TC001
@@ -28,7 +28,7 @@ from backend.models.responses import (
 )
 from backend.models.responses import ConversationItem as HTTPConversationItem
 from backend.models.responses import (
-    ConversationMessageItem as HTTPConversationMessageItem,
+    ConversationMessagePage as HTTPConversationMessagePage,
 )
 from backend.models.responses import StopResponse as HTTPStopResponse
 
@@ -38,6 +38,7 @@ from ..deps import (
     _get_orchestrator_client,
     _require_auth,
 )
+from ..problem import SLUG_VALIDATION_ERROR, typed_http_exception
 from .chat_event_payloads import (
     conversation_created_event_data,
     conversation_deleted_event_data,
@@ -52,7 +53,7 @@ from .chat_helpers import (
     create_persisted_conversation,
     delete_conversation_item,
     list_conversation_items,
-    list_conversation_message_items,
+    list_conversation_message_page,
     send_ipc_control_request,
     start_web_chat_request,
     update_conversation_item,
@@ -173,15 +174,24 @@ async def list_conversation_messages(
     conversation_id: str,
     _claims: TokenClaims = Depends(_require_auth),
     admin_client: AdminDBClient = Depends(_get_admin_client),
-    limit: int = DEFAULT_CONVERSATION_MESSAGES_LIMIT,
-    offset: int = 0,
-) -> list[HTTPConversationMessageItem]:
-    """List persisted messages for one conversation."""
-    return await list_conversation_message_items(
+    limit: int = Query(default=DEFAULT_CONVERSATION_MESSAGES_LIMIT, ge=1, le=500),
+    cursor: str | None = Query(default=None),
+) -> HTTPConversationMessagePage:
+    """Return one cursor page of persisted messages (oldest to newest)."""
+    if cursor is not None:
+        try:
+            decode_message_page_cursor(cursor)
+        except ValueError as exc:
+            raise typed_http_exception(
+                slug=SLUG_VALIDATION_ERROR,
+                status_code=422,
+                detail="Malformed message page cursor",
+            ) from exc
+    return await list_conversation_message_page(
         admin_client=admin_client,
         conversation_id=conversation_id,
         limit=limit,
-        offset=offset,
+        cursor=cursor,
     )
 
 
