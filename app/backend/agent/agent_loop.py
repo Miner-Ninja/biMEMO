@@ -51,7 +51,7 @@ from backend.agent.semantic_planning import (
     parse_semantic_decision,
     with_semantic_controls,
 )
-from backend.agent.stage_timings import StageTimings
+from backend.agent.stage_timings import StageTimings, humanize_stage_label
 from backend.agent.structured_finalization import (
     StructuredFinalizationError,
     StructuredFinalizer,
@@ -140,6 +140,46 @@ __all__ = [
 SKILL_QUALITY_AXIS_MAX = 25
 SKILL_QUALITY_MIN_TOTAL = 68
 SKILL_QUALITY_MIN_PER_AXIS = 8
+
+
+def _executed_tools_from_canonical_invocations(
+    canonical: dict[str, object],
+) -> list[dict]:
+    """Rebuild the executed-tools trace from durable turn invocations.
+
+    A confirmation batch with more than one card resolves across several
+    separate ``resume_structured_confirmation`` calls, each a fresh
+    ``ToolExecutor`` with no memory of what an earlier call already ran. The
+    canonical turn record is the only thing that survives all of them, so
+    finished invocations are replayed from there instead of starting empty.
+    """
+    invocations = canonical.get("invocations", [])
+    if not isinstance(invocations, list):
+        return []
+    executed: list[dict] = []
+    for item in invocations:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status", ""))
+        if status not in ("succeeded", "failed"):
+            continue
+        raw_result = item.get("result")
+        result: dict = raw_result if isinstance(raw_result, dict) else {}
+        executed.append(
+            {
+                "id": str(item.get("tool_call_id", "")),
+                "name": str(item.get("tool_name", "")),
+                "parameters": item.get("arguments", {}),
+                "permission_mode": str(result.get("permission_mode", "unknown")),
+                "authorization_source": str(
+                    result.get("authorization_source", item.get("source", ""))
+                ),
+                "duration_ms": result.get("duration_ms"),
+                "status": status,
+                "success": status == "succeeded",
+            }
+        )
+    return executed
 
 
 def _require_structured_content(
@@ -1342,9 +1382,12 @@ class AgentOrchestrator:
         try:
             self._provider_attempt_tasks = []
             self.tool_executor.clear_pending()
-            self.tool_executor.tool_call_count = 0
-            self.tool_executor.tool_names_used = []
-            self.tool_executor.executed_tools = []
+            already_executed = _executed_tools_from_canonical_invocations(canonical)
+            self.tool_executor.tool_call_count = len(already_executed)
+            self.tool_executor.tool_names_used = [
+                str(item["name"]) for item in already_executed
+            ]
+            self.tool_executor.executed_tools = already_executed
             self.tool_executor.current_context = {
                 "conversation_id": str(canonical.get("conversation_id", "")),
                 "session_id": str(canonical.get("session_id", "")),
@@ -1634,6 +1677,7 @@ class AgentOrchestrator:
                 source="user_confirmation",
                 authorization_id=confirmation_id,
             )
+            resume_execution_started_at = perf_counter()
             try:
                 result = await self.broker.execute_prepared(
                     prepared_invocation,
@@ -1644,11 +1688,34 @@ class AgentOrchestrator:
                     },
                 )
             except Exception as exc:
+                # No ToolResult was returned, so there is no result.duration_ms
+                # to record — measure the wall clock locally, same as the
+                # non-confirmed execution path in ToolExecutor.
+                duration_ms = (perf_counter() - resume_execution_started_at) * 1000
+                self._stage_timings.record(
+                    humanize_stage_label(invocation_tool), duration_ms
+                )
+                self.tool_executor.executed_tools.append(
+                    {
+                        "id": invocation_id,
+                        "name": invocation_tool,
+                        "parameters": invocation_arguments,
+                        "permission_mode": str(
+                            permission.details.get("permission_mode", "")
+                        ),
+                        "authorization_source": "user_confirmation",
+                        "duration_ms": duration_ms,
+                        "status": "failed",
+                        "success": False,
+                        "error": str(exc),
+                    }
+                )
                 await self.turn_store.complete_agent_invocation(
                     turn_id=turn_id,
                     invocation_id=invocation_id,
                     claim_generation=generation,
                     status="failed",
+                    result={"duration_ms": duration_ms},
                     error=str(exc),
                 )
                 return await self._commit_structured_failure(
@@ -1673,31 +1740,48 @@ class AgentOrchestrator:
             if success and envelope["truncated"]:
                 success = False
                 result_data = None
+            resume_permission_mode = str(
+                getattr(
+                    getattr(result, "authorization", None),
+                    "permission_mode",
+                    "unspecified",
+                )
+            )
+            resume_authorization_source = str(
+                getattr(
+                    getattr(result, "authorization", None),
+                    "source",
+                    "unspecified",
+                )
+            )
+            resume_duration_ms = float(getattr(result, "duration_ms", 0))
+            self._stage_timings.record(
+                humanize_stage_label(str(invocation.get("tool_name", ""))),
+                resume_duration_ms,
+            )
+            self.tool_executor.executed_tools.append(
+                {
+                    "id": invocation_id,
+                    "name": str(invocation.get("tool_name", "")),
+                    "parameters": invocation_arguments,
+                    "permission_mode": resume_permission_mode,
+                    "authorization_source": resume_authorization_source,
+                    "duration_ms": resume_duration_ms,
+                    "status": "succeeded" if success else "failed",
+                    "success": success,
+                }
+            )
             await self.turn_store.complete_agent_invocation(
                 turn_id=turn_id,
                 invocation_id=invocation_id,
                 claim_generation=generation,
                 status="succeeded" if success else "failed",
                 result={
-                    "data": result_data,
-                    "duration_ms": float(getattr(result, "duration_ms", 0)),
-                    "permission_mode": str(
-                        getattr(
-                            getattr(result, "authorization", None),
-                            "permission_mode",
-                            "unspecified",
-                        )
-                    ),
-                    "authorization_source": str(
-                        getattr(
-                            getattr(result, "authorization", None),
-                            "source",
-                            "unspecified",
-                        )
-                    ),
-                }
-                if success
-                else None,
+                    "data": result_data if success else None,
+                    "duration_ms": resume_duration_ms,
+                    "permission_mode": resume_permission_mode,
+                    "authorization_source": resume_authorization_source,
+                },
                 error=None
                 if success
                 else (
@@ -1986,12 +2070,15 @@ class AgentOrchestrator:
             else None
         )
         kind = TurnOutcomeKind(terminal)
+        raw_used_tools = data.get("used_tools")
+        used_tools = raw_used_tools if isinstance(raw_used_tools, list) else []
         outcome = TurnOutcome(
             kind=kind,
             run_id=str(canonical.get("turn_id", "")),
             finalization_id=str(canonical.get("finalization_id", "")),
             structured_content=structured,
             error=error,
+            metadata={"used_tools": used_tools},
         )
         loop = AgenticLoop(injection_flag=False)
         loop.start()
@@ -2001,6 +2088,7 @@ class AgentOrchestrator:
             outcome=outcome,
             run_id=outcome.run_id,
             finalization_id=outcome.finalization_id,
+            used_tools=used_tools,
         )
 
     async def _process_turn(
@@ -3007,6 +3095,7 @@ class AgentOrchestrator:
             "input_filtered": prepared_turn.input_filtered,
             "output_filtered": output_filtered,
             "stats": stats.model_dump(mode="json") if stats is not None else None,
+            "used_tools": self.used_tools,
         }
         if error is not None:
             outcome_payload["error"] = {
@@ -3041,7 +3130,9 @@ class AgentOrchestrator:
             conversation_id=conversation_id,
             session_id=session_id,
             assistant_content=structured_content.answer,
-            assistant_meta=build_assistant_message_meta(stats, structured_content),
+            assistant_meta=build_assistant_message_meta(
+                stats, structured_content, self.used_tools
+            ),
             dialog_content=build_dialog_step_record_input(
                 prepared_turn.filtered_message,
                 structured_content.answer,
@@ -3063,6 +3154,7 @@ class AgentOrchestrator:
             structured_content=structured_content,
             error=error,
             assistant_message_id=assistant_message_id,
+            metadata={"used_tools": self.used_tools},
         )
         return AgentResponse(
             structured_content=structured_content,

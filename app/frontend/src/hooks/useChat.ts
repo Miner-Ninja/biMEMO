@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import type { Chat, ChatSettings, Message } from "@/types/chat";
+import type { Chat, ChatSettings, Message, PendingConfirmation } from "@/types/chat";
 import { DEFAULT_CHAT_SETTINGS } from "@/types/chat";
 import type { ExtendedUsage } from "@/types/stats";
 import {
@@ -449,6 +449,55 @@ export function useChat() {
     []
   );
 
+  // A reconnect can replay the SAME run's pause journal entry more than
+  // once (e.g. a second card in the original batch, still pending). Unlike
+  // addMessageToConversation, this updates the message in place when the id
+  // already exists instead of silently skipping it, and keeps any locally
+  // known non-pending status (the journal snapshot always marks every item
+  // "pending", so a blind overwrite would resurrect an already-decided card).
+  const upsertPausedConfirmationsMessage = useCallback(
+    (
+      conversationId: string,
+      messageId: string,
+      confirmations: PendingConfirmation[]
+    ) => {
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id !== conversationId) return chat;
+          const existing = chat.messages.find((msg) => msg.id === messageId);
+          if (!existing) {
+            const message: Message = {
+              id: messageId,
+              role: "assistant",
+              content: "",
+              pendingConfirmations: confirmations,
+              timestamp: new Date(),
+            };
+            return {
+              ...chat,
+              messages: [...chat.messages, message],
+              updatedAt: message.timestamp,
+            };
+          }
+          const knownById = new Map(
+            (existing.pendingConfirmations ?? []).map((item) => [item.action_id, item])
+          );
+          const merged = confirmations.map((item) => {
+            const known = knownById.get(item.action_id);
+            return known && known.status !== "pending" ? known : item;
+          });
+          return {
+            ...chat,
+            messages: chat.messages.map((msg) =>
+              msg.id === messageId ? { ...msg, pendingConfirmations: merged } : msg
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   // Delete a chat
   const deleteChat = useCallback(async (chatId: string) => {
     await deleteConversation(chatId);
@@ -571,6 +620,7 @@ export function useChat() {
     addMessage,
     addMessageToConversation,
     updateMessageInConversation,
+    upsertPausedConfirmationsMessage,
     updateMessage,
     deleteChat,
     removeConversation,

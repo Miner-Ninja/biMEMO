@@ -183,7 +183,8 @@ async def test_confirmed_oversized_result_fails_before_success_bind() -> None:
     assert response is failure
     completed = turn_store.complete_agent_invocation.await_args.kwargs
     assert completed["status"] == "failed"
-    assert completed["result"] is None
+    assert completed["result"]["data"] is None
+    assert completed["result"]["duration_ms"] is not None
     assert "exceeded" in completed["error"]
     orchestrator._commit_structured_failure.assert_awaited_once()
 

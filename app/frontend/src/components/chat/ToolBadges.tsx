@@ -6,6 +6,7 @@ import type { UsedTool } from "@/types/chat";
 interface CollapsedTool {
   tool: UsedTool;
   count: number;
+  totalDurationMs: number | null;
 }
 
 /** Collapse consecutive identical executions into a compact count. */
@@ -15,11 +16,22 @@ function collapse(tools: UsedTool[]): CollapsedTool[] {
     const last = out[out.length - 1];
     if (last && last.tool.name === tool.name && last.tool.success === tool.success) {
       last.count += 1;
+      if (tool.duration_ms != null) {
+        last.totalDurationMs = (last.totalDurationMs ?? 0) + tool.duration_ms;
+      }
     } else {
-      out.push({ tool, count: 1 });
+      out.push({ tool, count: 1, totalDurationMs: tool.duration_ms ?? null });
     }
   }
   return out;
+}
+
+/** Format a millisecond duration for the badge tooltip (ms below 1s, s above). */
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)}ms`;
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`;
 }
 
 interface ToolBadgesProps {
@@ -37,10 +49,13 @@ export function ToolBadges({ usedTools, className }: ToolBadgesProps) {
 
   return (
     <div className={cn("flex flex-wrap justify-end gap-1", className)}>
-      {collapse(usedTools).map(({ tool, count }, index) => {
+      {collapse(usedTools).map(({ tool, count, totalDurationMs }, index) => {
         const Icon = getToolMeta(tool.name).icon;
         const variant = tool.success ? "secondary" : "danger";
-        const title = tool.success ? tool.name : `${tool.name} (failed)`;
+        const durationLabel =
+          totalDurationMs != null ? ` · ${formatDuration(totalDurationMs)}` : "";
+        const title =
+          (tool.success ? tool.name : `${tool.name} (failed)`) + durationLabel;
 
         return (
           <Badge

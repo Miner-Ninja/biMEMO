@@ -57,12 +57,14 @@ class UsedToolItem(StrictResponseModel):
     Attributes:
         name: Tool name that was executed.
         permission_mode: Registry permission mode used for execution.
+        duration_ms: Wall-clock execution time, when known.
         success: Whether the tool executed successfully.
     """
 
     name: str
     permission_mode: str = ""
     authorization_source: str = ""
+    duration_ms: float | None = None
     success: bool
 
 

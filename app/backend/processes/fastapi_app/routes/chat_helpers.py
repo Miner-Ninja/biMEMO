@@ -269,6 +269,7 @@ def build_used_tool_items(
             name=tool_data.get("name", ""),
             permission_mode=str(tool_data.get("permission_mode", "")),
             authorization_source=str(tool_data.get("authorization_source", "")),
+            duration_ms=tool_data.get("duration_ms"),
             success=bool(tool_data.get("success", True)),
         )
         for tool_data in used_tools

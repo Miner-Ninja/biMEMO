@@ -408,6 +408,7 @@ export function ChatPage() {
     addMessageToConversation,
     updateMessage,
     updateMessageInConversation,
+    upsertPausedConfirmationsMessage,
     deleteChat,
     removeConversation,
     renameChat,
@@ -989,13 +990,11 @@ export function ChatPage() {
                 .filter((item) => item.action_id)
             : [];
           if (confirmations.length > 0) {
-            addMessageToConversation(conversationId, {
-              id: `paused-${pausedEvent.run_id || "turn"}`,
-              role: "assistant",
-              content: "",
-              pendingConfirmations: confirmations,
-              timestamp: new Date(),
-            });
+            upsertPausedConfirmationsMessage(
+              conversationId,
+              `paused-${pausedEvent.run_id || "turn"}`,
+              confirmations
+            );
           } else {
             const rawInput = pausedEvent.payload?.pending_input;
             if (rawInput && typeof rawInput === "object") {
@@ -1372,6 +1371,7 @@ export function ChatPage() {
     [
       addOrUpdateConversation,
       addMessageToConversation,
+      upsertPausedConfirmationsMessage,
       addToast,
       t,
       applyBridgeLink,
@@ -1976,6 +1976,13 @@ export function ChatPage() {
           }),
           timestamp: new Date(),
         });
+        if (response.status === "paused") {
+          // The next confirmation card in this batch has no HTTP carrier —
+          // it only ever ships over the realtime socket, which can miss
+          // the delivery window. Re-sync from the stored turn so the card
+          // still appears even if that push never lands.
+          void refreshConversationMessages(conversationId);
+        }
       } catch {
         // Transient transport failure: the server-side confirmation is
         // still valid — keep it pending so the user can simply retry.
@@ -1991,6 +1998,7 @@ export function ChatPage() {
       addMessageToConversation,
       addToast,
       confirmBusy,
+      refreshConversationMessages,
       t,
       updateMessageInConversation,
     ]

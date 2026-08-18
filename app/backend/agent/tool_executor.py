@@ -14,6 +14,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
@@ -304,6 +305,7 @@ class ToolExecutor:
                 else ""
             ),
         )
+        execution_started_at = perf_counter()
         try:
             result = await self.broker.execute_prepared(
                 prepared,
@@ -311,18 +313,28 @@ class ToolExecutor:
                 correlation=execution_context,
             )
         except Exception as exc:
+            # The broker raised before returning a ToolResult, so there is no
+            # result.duration_ms to record — measure the wall clock locally
+            # so a crashed call still gets an accurate duration.
+            duration_ms = (perf_counter() - execution_started_at) * 1000
             if self.sse_queue is not None:
                 await self.sse_queue.put(
                     {"type": "tool_status", "name": tool_call.name, "status": "error"}
                 )
             self.executed_tools[-1]["status"] = "failed"
             self.executed_tools[-1]["error"] = str(exc)
+            self.executed_tools[-1]["duration_ms"] = duration_ms
+            if self.stage_timings is not None:
+                self.stage_timings.record(
+                    humanize_stage_label(tool_call.name), duration_ms
+                )
             if claim_generation is not None and self.turn_store is not None:
                 await self.turn_store.complete_agent_invocation(
                     turn_id=self._core_turn_id,
                     invocation_id=invocation_id,
                     claim_generation=claim_generation,
                     status="failed",
+                    result={"duration_ms": duration_ms},
                     error=str(exc),
                 )
             raise
@@ -357,6 +369,7 @@ class ToolExecutor:
             result.authorization.permission_mode
         )
         self.executed_tools[-1]["authorization_source"] = result.authorization.source
+        self.executed_tools[-1]["duration_ms"] = result.duration_ms
         self.executed_tools[-1]["success"] = effective_success
         self.executed_tools[-1]["status"] = (
             "succeeded" if effective_success else "failed"
@@ -370,13 +383,11 @@ class ToolExecutor:
                 claim_generation=claim_generation,
                 status="succeeded" if effective_success else "failed",
                 result={
-                    "data": result.result,
+                    "data": result.result if effective_success else None,
                     "duration_ms": result.duration_ms,
                     "permission_mode": result.authorization.permission_mode,
                     "authorization_source": result.authorization.source,
-                }
-                if effective_success
-                else None,
+                },
                 error=(
                     None
                     if effective_success

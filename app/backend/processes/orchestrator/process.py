@@ -410,6 +410,9 @@ async def _push_core_confirmation_outcome(
             "thinking": structured.thinking,
             "suggestions": structured.suggestions,
         }
+    used_tools = outcome.metadata.get("used_tools")
+    if used_tools:
+        data["used_tools"] = used_tools
     if outcome.confirmations:
         data["pending_confirmations"] = [
             {

@@ -1162,6 +1162,20 @@ class DBProxyClient:
         events = result.get("events", [])
         return events if isinstance(events, list) else []
 
+    async def list_agent_confirmations(
+        self,
+        turn_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return every confirmation of one turn, any status, current first."""
+        result = await self.send_operation(
+            "list_agent_confirmations",
+            {"turn_id": turn_id, "limit": limit},
+        )
+        confirmations = result.get("confirmations", [])
+        return confirmations if isinstance(confirmations, list) else []
+
     async def list_pending_actions(
         self,
         *,

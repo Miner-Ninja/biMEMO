@@ -153,11 +153,13 @@ MISSING_SUGGESTIONS_RECOVERY_PROMPT = (
 )
 MESSAGE_META_STATS_KEY = "stats"
 MESSAGE_META_STRUCTURED_CONTENT_KEY = "structured_content"
+MESSAGE_META_USED_TOOLS_KEY = "used_tools"
 
 
 def build_assistant_message_meta(
     stats: object | None,
     structured_content: StructuredAssistantContent | None,
+    used_tools: list[dict] | None = None,
 ) -> dict[str, object] | None:
     """Build persisted metadata for one saved assistant message.
 
@@ -172,6 +174,8 @@ def build_assistant_message_meta(
             "thinking": structured_content.thinking,
             "suggestions": structured_content.suggestions,
         }
+    if used_tools:
+        message_meta[MESSAGE_META_USED_TOOLS_KEY] = used_tools
     if not message_meta:
         return None
     return message_meta

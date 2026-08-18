@@ -88,6 +88,7 @@ class TestToolExecutorActionDecisions:
                 "parameters": {},
                 "permission_mode": "implicit",
                 "authorization_source": "unspecified",
+                "duration_ms": 1.0,
                 "status": "succeeded",
                 "success": True,
             }

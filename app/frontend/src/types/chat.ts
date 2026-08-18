@@ -86,6 +86,7 @@ export interface UsedTool {
   name: string;
   permission_mode: string;
   authorization_source: string;
+  duration_ms?: number | null;
   success: boolean;
 }
 
