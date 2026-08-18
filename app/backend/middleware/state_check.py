@@ -5,12 +5,16 @@ in READY state. SETUP state allows /health and /setup only.
 LOCKED state allows /health and /unlock only.
 """
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 from backend.app_state import AppState, AppStateManager
 from backend.middleware.responses import send_json_error
+from backend.processes.fastapi_app.problem import (
+    SLUG_LOCKED,
+    SLUG_NOT_CONFIGURED,
+    problem_body,
+)
 
 
 if TYPE_CHECKING:
@@ -24,8 +28,16 @@ _STATIC_PREFIXES = ("/assets/",)
 SETUP_ALLOWED = frozenset({"/health", "/setup"})
 LOCKED_ALLOWED = frozenset({"/health", "/unlock"})
 
-SETUP_BODY = json.dumps({"detail": "System not configured"}).encode()
-LOCKED_BODY = json.dumps({"detail": "System locked"}).encode()
+SETUP_BODY = problem_body(
+    status=503,
+    type_slug=SLUG_NOT_CONFIGURED,
+    detail="System not configured",
+)
+LOCKED_BODY = problem_body(
+    status=503,
+    type_slug=SLUG_LOCKED,
+    detail="System locked",
+)
 
 
 def _is_http_scope(scope: Scope) -> bool:

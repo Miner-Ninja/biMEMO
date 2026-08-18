@@ -39,6 +39,7 @@ from backend.middleware.csrf import CsrfMiddleware
 from backend.middleware.jwt_auth import JwtAuthMiddleware
 from backend.middleware.rate_limit import RateLimitMiddleware
 from backend.processes.fastapi_app.deps import _csrf_tokens
+from backend.processes.fastapi_app.problem import register_problem_handlers
 from backend.processes.fastapi_app.routes import (
     admin_router,
     auth_router,
@@ -140,6 +141,7 @@ def _build_test_app() -> tuple[FastAPI, str, SessionManager, FakeSigningClient, 
     rate_limiter = EndpointRateLimiter()
 
     app = FastAPI()
+    register_problem_handlers(app)
 
     # Shared audit log (in-memory list) to capture all audit events
     audit_log: list[dict] = []
@@ -216,6 +218,13 @@ def _build_test_app() -> tuple[FastAPI, str, SessionManager, FakeSigningClient, 
     app.include_router(llm_router)
     app.include_router(files_router)
     app.include_router(memory_router)
+
+    # Route that raises an unhandled exception: exercises the production
+    # 500 problem+json handler registered above in the test app.
+    @app.get("/test/unhandled-error")
+    def _unhandled_error() -> None:
+        """Raise an unhandled exception to exercise the 500 handler."""
+        raise RuntimeError("unhandled test error")
 
     # Middleware (reverse order: last added = outermost)
     app.add_middleware(
@@ -1558,6 +1567,11 @@ class TestLLMConfigCRUD:
             headers={"X-CSRF-Token": csrf},
         )
         assert resp.status_code == 404
+        # R2: a 404 raised by a known route keeps its own detail text.
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:not-found"
+        assert body["detail"] == "Configuration not found"
 
     def test_delete_config(self) -> None:
         """Delete a config, reload runtime, and verify it disappears from list."""
@@ -2300,6 +2314,227 @@ class TestLLMConfigCRUD:
             "estimated_runtime_kv_bytes": 10737418240,
             "estimated_runtime_kv_gib": 10.0,
         }
+
+
+class TestProblemContract:
+    """RFC 9457 problem+json contract via the production handlers.
+
+    The test app registers the same exception handlers as the production
+    app, so these cases exercise the real handler code (parity).
+    """
+
+    def test_422_is_validation_problem_with_errors_extension(self) -> None:
+        """A request validation error is a validation-error problem."""
+        app, token, sm, sc, _ = _build_test_app()
+        client, csrf = _authed_client_with_csrf(app, token, sm, sc)
+
+        resp = client.post(
+            "/admin/llm/capabilities",
+            json={"service_type": "ollama", "model": 123},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert resp.status_code == 422
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:validation-error"
+        assert any(
+            list(entry["loc"]) == ["body", "model"] for entry in body["errors"]
+        )
+
+    def test_unhandled_exception_is_internal_error_problem(self) -> None:
+        """An unhandled exception is a 500 internal-error problem."""
+        app, token, _, _, _ = _build_test_app()
+        client = TestClient(
+            app,
+            cookies={"access_token": token},
+            raise_server_exceptions=False,
+        )
+
+        resp = client.get("/test/unhandled-error")
+
+        assert resp.status_code == 500
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:internal-error"
+        assert body["status"] == 500
+        assert body["detail"] == "Internal Server Error"
+
+    def test_models_returns_502_on_transport_failure(self) -> None:
+        """A provider connection failure is a 502 bad-gateway problem."""
+        app, token, sm, sc, _ = _build_test_app()
+        client, csrf = _authed_client_with_csrf(app, token, sm, sc)
+
+        def _raise_client(*args: object, **kwargs: object) -> object:
+            raise httpx.ConnectError("connection refused")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("httpx.AsyncClient", _raise_client)
+            resp = client.post(
+                "/admin/llm/models",
+                json={
+                    "service_type": "openrouter",
+                    "api_key": "sk-test-key",
+                    "base_url": "https://openrouter.ai",
+                },
+                headers={"X-CSRF-Token": csrf},
+            )
+
+        assert resp.status_code == 502
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:bad-gateway"
+        assert "connection refused" in body["detail"]
+
+    @pytest.mark.parametrize("upstream_status", [401, 403])
+    def test_models_maps_upstream_4xx_to_400(self, upstream_status: int) -> None:
+        """An upstream 4xx is a 400 upstream-error, never the upstream code."""
+        app, token, sm, sc, _ = _build_test_app()
+        client, csrf = _authed_client_with_csrf(app, token, sm, sc)
+
+        response = MagicMock(status_code=upstream_status)
+
+        def _raise_for_status() -> None:
+            raise httpx.HTTPStatusError(
+                f"{upstream_status} error",
+                request=MagicMock(),
+                response=response,
+            )
+
+        response.raise_for_status = _raise_for_status
+
+        async_client = AsyncMock()
+        async_client.__aenter__.return_value = async_client
+        async_client.__aexit__.return_value = False
+        async_client.get.return_value = response
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("httpx.AsyncClient", lambda *args, **kwargs: async_client)
+            resp = client.post(
+                "/admin/llm/models",
+                json={
+                    "service_type": "openrouter",
+                    "api_key": "sk-bad-key",
+                    "base_url": "https://openrouter.ai",
+                },
+                headers={"X-CSRF-Token": csrf},
+            )
+
+        assert resp.status_code == 400
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:upstream-error"
+        assert str(upstream_status) in body["detail"]
+
+    def test_capabilities_returns_502_on_provider_failure(self) -> None:
+        """A provider failure during capability detection is a 502."""
+        app, token, sm, sc, _ = _build_test_app()
+        client, csrf = _authed_client_with_csrf(app, token, sm, sc)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/show":
+                return httpx.Response(404, json={"error": "model not found"})
+            if request.url.path == "/api/ps":
+                return httpx.Response(500, json={"error": "internal error"})
+            raise AssertionError(f"Unexpected path: {request.url.path}")
+
+        real_async_client = httpx.AsyncClient
+
+        with pytest.MonkeyPatch.context() as mp:
+
+            def _mock_async_client(
+                *args: object, **kwargs: object
+            ) -> httpx.AsyncClient:
+                return real_async_client(
+                    transport=httpx.MockTransport(handler),
+                    base_url=kwargs.get("base_url", "http://ollama:11434"),
+                    timeout=kwargs.get("timeout", 20.0),
+                )
+
+            mp.setattr("httpx.AsyncClient", _mock_async_client)
+            resp = client.post(
+                "/admin/llm/capabilities",
+                json={
+                    "service_type": "ollama",
+                    "model": "qwen3.5:9b",
+                    "base_url": "https://ollama.example.test",
+                },
+                headers={"X-CSRF-Token": csrf},
+            )
+
+        assert resp.status_code == 502
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:bad-gateway"
+        assert "/api/ps" in body["detail"]
+
+    def test_capabilities_returns_404_for_unknown_model(self) -> None:
+        """A model the host does not know is a 404 not-found problem."""
+        app, token, sm, sc, _ = _build_test_app()
+        client, csrf = _authed_client_with_csrf(app, token, sm, sc)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/show":
+                return httpx.Response(404, json={"error": "model not found"})
+            if request.url.path == "/api/ps":
+                return httpx.Response(200, json={"models": []})
+            if request.url.path == "/api/generate":
+                return httpx.Response(
+                    404,
+                    json={
+                        "error": (
+                            "model 'ghost' not found, try 'ollama pull ghost' first"
+                        )
+                    },
+                )
+            raise AssertionError(f"Unexpected path: {request.url.path}")
+
+        real_async_client = httpx.AsyncClient
+
+        with pytest.MonkeyPatch.context() as mp:
+
+            def _mock_async_client(
+                *args: object, **kwargs: object
+            ) -> httpx.AsyncClient:
+                return real_async_client(
+                    transport=httpx.MockTransport(handler),
+                    base_url=kwargs.get("base_url", "http://ollama:11434"),
+                    timeout=kwargs.get("timeout", 20.0),
+                )
+
+            mp.setattr("httpx.AsyncClient", _mock_async_client)
+            resp = client.post(
+                "/admin/llm/capabilities",
+                json={
+                    "service_type": "ollama",
+                    "model": "ghost",
+                    "base_url": "https://ollama.example.test",
+                },
+                headers={"X-CSRF-Token": csrf},
+            )
+
+        assert resp.status_code == 404
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:not-found"
+        assert body["detail"] == (
+            "model 'ghost' not found, try 'ollama pull ghost' first"
+        )
+
+    def test_unknown_path_is_not_found_problem(self) -> None:
+        """An unknown path is a 404 not-found problem with 'Not Found' detail."""
+        app, token, _, _, _ = _build_test_app()
+        client = TestClient(
+            app,
+            cookies={"access_token": token},
+            raise_server_exceptions=False,
+        )
+        resp = client.get("/definitely-not-a-route")
+        assert resp.status_code == 404
+        assert resp.headers["content-type"] == "application/problem+json"
+        body = resp.json()
+        assert body["type"] == "urn:bimemo:problem:not-found"
+        assert body["detail"] == "Not Found"
 
 
 class TestRefreshRouteActiveStack:

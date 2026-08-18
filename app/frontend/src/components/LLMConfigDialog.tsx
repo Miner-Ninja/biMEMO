@@ -120,10 +120,6 @@ export function LLMConfigDialog({
         api_key: opts?.api_key ?? (apiKey || undefined),
         base_url: opts?.base_url ?? (urlForTab(target) || undefined),
       });
-      if (result.error) {
-        setLoad(target, { status: "error", detail: result.error });
-        return;
-      }
       setTabModels((prev) => ({ ...prev, [target]: result.models }));
       setLoad(
         target,

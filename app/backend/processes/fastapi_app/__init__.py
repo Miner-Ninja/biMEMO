@@ -22,11 +22,11 @@ from .deps import (
     _get_signing_client,
     _require_auth,
 )
-from .main import (
-    FRONTEND_DIST,
-    create_app,
-    fastapi_main,
-)
+
+# ``main`` is NOT imported here (see ``__getattr__`` below): it imports
+# the ASGI middleware package, which in turn imports ``problem`` from
+# this package. Importing it eagerly would create a circular import
+# whenever the middleware is imported first.
 from .middleware import (
     _cookie_secure,
     _set_auth_cookies,
@@ -38,6 +38,23 @@ from .routes import (
     health_router,
     llm_router,
 )
+
+
+_MAIN_EXPORTS = ("FRONTEND_DIST", "create_app", "fastapi_main")
+
+
+def __getattr__(name: str) -> object:
+    """Import ``main`` lazily for its re-exported symbols.
+
+    Keeps ``from backend.processes.fastapi_app import create_app``
+    working while keeping the package import lightweight enough for
+    the middleware package to import ``problem`` from this package.
+    """
+    if name in _MAIN_EXPORTS:
+        from . import main
+
+        return getattr(main, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

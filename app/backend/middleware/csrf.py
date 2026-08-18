@@ -5,12 +5,15 @@ Validates X-CSRF-Token header on state-changing requests
 paths.
 """
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 from backend.channels.jwt_auth import verify_csrf
 from backend.middleware.responses import send_json_error
+from backend.processes.fastapi_app.problem import (
+    SLUG_CSRF_FAILED,
+    problem_body,
+)
 
 
 if TYPE_CHECKING:
@@ -32,7 +35,11 @@ EXEMPT_PATHS = frozenset(
 )
 SAFE_METHODS = frozenset({b"GET", b"HEAD", b"OPTIONS"})
 
-FORBIDDEN_BODY = json.dumps({"detail": "CSRF validation failed"}).encode()
+FORBIDDEN_BODY = problem_body(
+    status=403,
+    type_slug=SLUG_CSRF_FAILED,
+    detail="CSRF validation failed",
+)
 
 
 def _is_http_scope(scope: Scope) -> bool:

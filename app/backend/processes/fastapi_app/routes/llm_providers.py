@@ -15,6 +15,7 @@ from backend.llm.ollama.capabilities import (
 from backend.llm.openrouter.client import _build_auth_headers
 
 from ..deps import _get_credential_client, _require_auth
+from ..problem import SLUG_UPSTREAM_ERROR, typed_http_exception
 
 
 if TYPE_CHECKING:
@@ -262,7 +263,13 @@ async def _list_provider_models(
     api_key: str,
     base_url: str,
 ) -> dict:
-    """List available models for one provider."""
+    """List available models for one provider.
+
+    Raises:
+        HTTPException: 502 on transport or upstream-5xx failure; 400
+            (upstream-error) when the provider rejects the request with
+            a 4xx status — the upstream status is never passed through.
+    """
     import httpx
 
     try:
@@ -299,10 +306,23 @@ async def _list_provider_models(
         data = resp.json()
         return {"models": sorted(str(model["id"]) for model in data.get("data", []))}
 
-    except httpx.TimeoutException:
-        return {"models": [], "error": "Connection timed out"}
-    except Exception as exc:
-        return {"models": [], "error": str(exc)}
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Connection timed out",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code < 500:
+            raise typed_http_exception(
+                slug=SLUG_UPSTREAM_ERROR,
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 async def _detect_ollama_runtime_capabilities(
@@ -325,6 +345,19 @@ async def _detect_ollama_runtime_capabilities(
         "estimated_runtime_kv_bytes": detected.estimated_runtime_kv_bytes,
         "estimated_runtime_kv_gib": detected.estimated_runtime_kv_gib,
     }
+
+
+def _model_not_found_detail(exc: httpx.HTTPStatusError, model: str) -> str:
+    """Extract the upstream not-found message for one requested model."""
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        message = payload.get("error")
+        if isinstance(message, str) and message:
+            return message
+    return f"Model '{model}' not found on host"
 
 
 @llm_router.get("/config")
@@ -383,7 +416,9 @@ async def list_llm_models(
     """Return available models from the LLM provider.
 
     Accepts credentials in the request body (never stored).
-    Always returns HTTP 200; failures surface as {"models": [], "error": "..."}.
+    Failures surface as RFC 9457 problem responses: 502 on transport or
+    upstream-5xx failure, 400 (upstream-error) on an upstream 4xx response;
+    a custom provider without a model list returns 200 with a record.
     """
     del claims
     return await _list_provider_models(
@@ -398,7 +433,11 @@ async def detect_llm_capabilities(
     body: OllamaCapabilitiesRequest,
     claims: TokenClaims = Depends(_require_auth),
 ) -> dict[str, object]:
-    """Return runtime capabilities for an Ollama model."""
+    """Return runtime capabilities for an Ollama model.
+
+    Provider and network failures surface as a 502 problem response; a
+    model the host does not know surfaces as a 404 problem response.
+    """
     del claims
     if body.service_type != "ollama":
         raise HTTPException(
@@ -412,8 +451,17 @@ async def detect_llm_capabilities(
             base_url=body.base_url,
             model=body.model,
         )
-    except (OllamaCapabilityError, httpx.HTTPError) as exc:
-        return {"error": str(exc), "model": body.model}
+    except OllamaCapabilityError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=_model_not_found_detail(exc, body.model),
+            ) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @llm_router.get("/configs")

@@ -5,11 +5,14 @@ allowed requests and returns 429 with Retry-After header when
 rate limit is exceeded.
 """
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 from backend.middleware.responses import send_json_error
+from backend.processes.fastapi_app.problem import (
+    SLUG_RATE_LIMITED,
+    problem_body,
+)
 
 
 if TYPE_CHECKING:
@@ -20,7 +23,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-RATE_LIMITED_BODY = json.dumps({"detail": "Rate limit exceeded"}).encode()
+RATE_LIMITED_BODY = problem_body(
+    status=429,
+    type_slug=SLUG_RATE_LIMITED,
+    detail="Rate limit exceeded",
+)
 
 
 def _is_http_scope(scope: Scope) -> bool:

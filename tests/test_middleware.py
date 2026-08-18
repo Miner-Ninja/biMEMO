@@ -73,6 +73,8 @@ class TestStateCheckMiddleware:
         resp = client.post("/chat")
         assert resp.status_code == 503
         assert "not configured" in resp.json()["detail"]
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:not-configured"
 
     def test_setup_blocks_unlock(self):
         """Verify /unlock blocked in SETUP state."""
@@ -98,6 +100,8 @@ class TestStateCheckMiddleware:
         resp = client.post("/chat")
         assert resp.status_code == 503
         assert "locked" in resp.json()["detail"]
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:locked"
 
     def test_locked_blocks_admin(self):
         """Verify /admin blocked in LOCKED state."""
@@ -156,6 +160,9 @@ class TestJwtAuthMiddleware:
         client = TestClient(app)
         resp = client.post("/chat")
         assert resp.status_code == 401
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:authentication-required"
+        assert resp.json()["detail"] == "Authentication required"
 
     def test_invalid_token_returns_401(self):
         """Verify invalid token returns 401."""
@@ -163,6 +170,7 @@ class TestJwtAuthMiddleware:
         client = TestClient(app, cookies={"access_token": "garbage"})
         resp = client.post("/chat")
         assert resp.status_code == 401
+        assert resp.json()["type"] == "urn:bimemo:problem:authentication-required"
 
     def test_valid_token_passes(self):
         """Verify valid token allows request."""
@@ -250,6 +258,9 @@ class TestCsrfMiddleware:
         client = TestClient(app)
         resp = client.post("/chat")
         assert resp.status_code == 403
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:csrf-failed"
+        assert resp.json()["detail"] == "CSRF validation failed"
 
     def test_invalid_csrf_returns_403(self):
         """Verify wrong CSRF token returns 403."""
@@ -269,6 +280,7 @@ class TestCsrfMiddleware:
             headers={"X-CSRF-Token": "wrong-token"},
         )
         assert resp.status_code == 403
+        assert resp.json()["type"] == "urn:bimemo:problem:csrf-failed"
 
 
 class TestBodySizeMiddleware:
@@ -299,6 +311,9 @@ class TestBodySizeMiddleware:
             headers={"Content-Length": "20"},
         )
         assert resp.status_code == 413
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:payload-too-large"
+        assert resp.json()["detail"] == "Request body too large"
 
     def test_exact_limit_passes(self):
         """Verify request at exact limit passes."""
@@ -347,6 +362,9 @@ class TestRateLimitMiddleware:
         resp = client.post("/stop")
         assert resp.status_code == 429
         assert "retry-after" in resp.headers
+        assert resp.headers["content-type"] == "application/problem+json"
+        assert resp.json()["type"] == "urn:bimemo:problem:rate-limited"
+        assert resp.json()["detail"] == "Rate limit exceeded"
 
     def test_retry_after_header_present(self):
         """Verify Retry-After header value is positive."""

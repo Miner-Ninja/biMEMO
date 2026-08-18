@@ -4,7 +4,8 @@
  */
 
 let csrfToken: string | null = null;
-const CSRF_FAILURE_DETAIL = "CSRF validation failed";
+const CSRF_PROBLEM_TYPE = "urn:bimemo:problem:csrf-failed";
+const VALIDATION_PROBLEM_TYPE = "urn:bimemo:problem:validation-error";
 const STARTUP_READY_POLL_MS = 1000;
 const STARTUP_READY_TIMEOUT_MS = 60000;
 
@@ -178,10 +179,8 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 403 && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    const detail =
-      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    if (detail === CSRF_FAILURE_DETAIL) {
+    const body = await response.json().catch(() => ({}));
+    if (body.type === CSRF_PROBLEM_TYPE) {
       clearCsrfToken();
       await fetchCsrfToken();
       if (csrfToken) {
@@ -193,15 +192,13 @@ export async function apiRequest<T>(
         credentials: "include",
       });
     } else {
-      throw new ApiError(response.status, detail || response.statusText);
+      throw new ApiError(response.status, problemDetail(body, response.statusText));
     }
   }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    const detail =
-      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    throw new ApiError(response.status, detail || response.statusText);
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, problemDetail(body, response.statusText));
   }
 
   return response.json();
@@ -217,6 +214,39 @@ export class ApiError extends Error {
     this.status = status;
     this.retryAfter = null;
   }
+}
+
+/**
+ * Extract the user-facing message from one error response body.
+ *
+ * Problem+json bodies carry the human-readable text in `detail`;
+ * validation errors (type urn:bimemo:problem:validation-error) carry
+ * the per-field messages in the `errors` extension, which reads
+ * better than the summary line.
+ */
+function problemDetail(body: unknown, statusText: string): string {
+  if (body !== null && typeof body === "object") {
+    const record = body as {
+      type?: unknown;
+      detail?: unknown;
+      errors?: unknown;
+    };
+    if (record.type === VALIDATION_PROBLEM_TYPE && Array.isArray(record.errors)) {
+      const messages = (record.errors as Array<{ msg?: unknown }>)
+        .map((entry) => (typeof entry?.msg === "string" ? entry.msg : ""))
+        .filter(Boolean);
+      if (messages.length > 0) {
+        return messages.join("; ");
+      }
+    }
+    if (typeof record.detail === "string" && record.detail.length > 0) {
+      return record.detail;
+    }
+    if (record.detail !== undefined && record.detail !== null) {
+      return JSON.stringify(record.detail);
+    }
+  }
+  return statusText;
 }
 
 export interface StoredChatSettings {
@@ -691,10 +721,8 @@ export async function synthesizeSpeech(text: string): Promise<string> {
   }
 
   if (response.status === 403) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    const detail =
-      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    if (detail === CSRF_FAILURE_DETAIL) {
+    const body = await response.json().catch(() => ({}));
+    if (body.type === CSRF_PROBLEM_TYPE) {
       clearCsrfToken();
       await fetchCsrfToken();
       if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
@@ -705,13 +733,13 @@ export async function synthesizeSpeech(text: string): Promise<string> {
         body: JSON.stringify({ text }),
       });
     } else {
-      throw new ApiError(response.status, detail || response.statusText);
+      throw new ApiError(response.status, problemDetail(body, response.statusText));
     }
   }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(response.status, body.detail || response.statusText);
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, problemDetail(body, response.statusText));
   }
 
   const blob = await response.blob();

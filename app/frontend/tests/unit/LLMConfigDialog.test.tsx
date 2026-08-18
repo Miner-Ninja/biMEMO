@@ -75,10 +75,7 @@ describe("LLMConfigDialog load-failure indication", () => {
   });
 
   it("S1.1 — a failed load shows a red message and a tab marker", async () => {
-    vi.mocked(getModelList).mockResolvedValue({
-      models: [],
-      error: "400 Bad Request",
-    });
+    vi.mocked(getModelList).mockRejectedValue(new Error("400 Bad Request"));
     const user = userEvent.setup();
     render(<LLMConfigDialog open onClose={vi.fn()} onSave={vi.fn()} />);
 

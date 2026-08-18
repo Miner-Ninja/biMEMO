@@ -49,7 +49,6 @@ export interface OllamaCapabilitiesResponse {
   kv_bytes_per_token?: number | null;
   estimated_runtime_kv_bytes?: number | null;
   estimated_runtime_kv_gib?: number | null;
-  error?: string;
 }
 
 export async function getLLMConfig(): Promise<LLMConfigMeta> {
@@ -67,7 +66,7 @@ export async function getModelList(params: {
   service_type: "openrouter" | "ollama" | "custom";
   api_key?: string;
   base_url?: string;
-}): Promise<{ models: string[]; error?: string; record?: string }> {
+}): Promise<{ models: string[]; record?: string }> {
   return apiRequest("/admin/llm/models", {
     method: "POST",
     body: JSON.stringify(params),

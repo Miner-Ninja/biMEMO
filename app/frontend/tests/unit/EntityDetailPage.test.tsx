@@ -38,11 +38,20 @@ window.matchMedia = vi.fn().mockImplementation((query: string) => ({
 
 vi.mock("@/lib/bimemo-api", () => ({
   apiRequest: vi.fn(),
-  ApiError: class ApiError extends Error {},
+  ApiError: class ApiError extends Error {
+    status: number;
+    retryAfter: string | null;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.retryAfter = null;
+    }
+  },
 }));
 
 import { EntityDetailPage } from "@/pages/admin/EntityDetailPage";
-import { apiRequest } from "@/lib/bimemo-api";
+import { apiRequest, ApiError } from "@/lib/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 
@@ -111,7 +120,7 @@ describe("EntityDetailPage", () => {
   });
 
   it("shows a not-found state on 404", async () => {
-    apiRequestMock.mockRejectedValue(new Error("404 Not Found"));
+    apiRequestMock.mockRejectedValue(new ApiError(404, "Entity not found"));
     render(
       <AuthContext.Provider value={AUTH}>
         <MemoryRouter initialEntries={["/admin/memory-debug/entity/missing"]}>

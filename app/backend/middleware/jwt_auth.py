@@ -6,12 +6,15 @@ scope. Returns 401 for missing or invalid tokens on protected
 routes.
 """
 
-import json
 import logging
 from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING
 
 from backend.middleware.responses import send_json_error
+from backend.processes.fastapi_app.problem import (
+    SLUG_AUTHENTICATION_REQUIRED,
+    problem_body,
+)
 
 
 if TYPE_CHECKING:
@@ -38,7 +41,11 @@ EXEMPT_PATHS = frozenset(
 )
 EXEMPT_PREFIXES = ("/assets/", "/mcp/")
 
-UNAUTHORIZED_BODY = json.dumps({"detail": "Authentication required"}).encode()
+UNAUTHORIZED_BODY = problem_body(
+    status=401,
+    type_slug=SLUG_AUTHENTICATION_REQUIRED,
+    detail="Authentication required",
+)
 
 
 def _accepts_html(scope: Scope) -> bool:

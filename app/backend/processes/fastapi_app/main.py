@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.routing import Mount
 
@@ -35,6 +34,11 @@ from .clients import (
     SigningClient,
 )
 from .deps import _csrf_tokens, _get_csrf_token_for_jti
+from .problem import (
+    SLUG_NOT_FOUND,
+    problem_response,
+    register_problem_handlers,
+)
 from .routes import (
     admin_router,
     agents_router,
@@ -339,6 +343,7 @@ def create_app(
         redoc_url=None,
         lifespan=_lifespan,
     )
+    register_problem_handlers(application)
 
     # Store managers on app.state
     application.state.session_manager = session_manager
@@ -396,9 +401,19 @@ def create_app(
                     index_html,
                     headers={"Cache-Control": "no-cache"},
                 )
-            return JSONResponse(
-                {"detail": "Not Found"},
-                status_code=404,
+            # Only the static mount carries a "path" path parameter, so
+            # its presence tells an unknown path apart from a 404 raised
+            # by a real route (which keeps its own detail text).
+            path_params = request.scope.get("path_params") or {}
+            if "path" in path_params:
+                detail = "Not Found"
+            else:
+                route_detail = getattr(exc, "detail", None)
+                detail = route_detail if isinstance(route_detail, str) else "Not Found"
+            return problem_response(
+                status=404,
+                type_slug=SLUG_NOT_FOUND,
+                detail=detail,
             )
 
     return application

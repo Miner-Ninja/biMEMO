@@ -5,11 +5,14 @@ maximum (1MB). Returns HTTP 413 Payload Too Large for oversized
 requests.
 """
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 from backend.middleware.responses import send_json_error
+from backend.processes.fastapi_app.problem import (
+    SLUG_PAYLOAD_TOO_LARGE,
+    problem_body,
+)
 
 
 if TYPE_CHECKING:
@@ -24,7 +27,11 @@ MAX_BODY_SIZE_UPLOAD = 56_623_104  # ~54 MB (4 x 10MB images in base64 + text)
 # Routes that accept large payloads (image uploads)
 _LARGE_BODY_PATHS = {"/chat"}
 
-TOO_LARGE_BODY = json.dumps({"detail": "Request body too large"}).encode()
+TOO_LARGE_BODY = problem_body(
+    status=413,
+    type_slug=SLUG_PAYLOAD_TOO_LARGE,
+    detail="Request body too large",
+)
 
 
 class BodySizeMiddleware:

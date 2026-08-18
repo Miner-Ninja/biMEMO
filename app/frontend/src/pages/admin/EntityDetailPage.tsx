@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { PanelSkeleton } from "@/components/ui/skeletons";
-import { apiRequest } from "@/lib/bimemo-api";
+import { ApiError, apiRequest } from "@/lib/bimemo-api";
 import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -84,7 +84,7 @@ export function EntityDetailPage() {
     )
       .then((detail) => settle({ detail, notFound: false, error: "" }))
       .catch((requestError) => {
-        if (requestError instanceof Error && /404/.test(requestError.message)) {
+        if (requestError instanceof ApiError && requestError.status === 404) {
           settle({ detail: null, notFound: true, error: "" });
         } else {
           settle({ detail: null, notFound: false, error: String(requestError) });
