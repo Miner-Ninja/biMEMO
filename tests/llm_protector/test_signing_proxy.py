@@ -4,13 +4,14 @@ Covers sign/verify round-trip, disallowed operation rejection,
 and allowlist enforcement. Uses direct function calls, not IPC.
 """
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+)
+
 from backend.processes.signing_proxy import (
     SIGNING_OPERATIONS,
     _decode_jwt,
     _encode_jwt,
-)
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
 )
 
 

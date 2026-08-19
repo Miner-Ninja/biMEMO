@@ -7,7 +7,7 @@ or Net Worker via its dispatch handle.
 import asyncio
 import logging
 import uuid
-from typing import Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from backend.ipc.protocol import ToolRequest, ToolResponse
 

@@ -8,6 +8,7 @@ exit quickly for testability.
 import time
 
 import pytest
+
 from backend.ipc.supervisor import (
     ProcessSpec,
     ProcessSupervisor,

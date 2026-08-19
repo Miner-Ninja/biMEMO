@@ -943,9 +943,7 @@ def _register_misc_db_operations(
     registry.register("get_stats", make_get_stats_handler(db))
     registry.register("list_records", make_list_records_handler(db))
     registry.register("list_messages", make_list_messages_handler(db))
-    registry.register(
-        "list_message_page", make_list_message_page_handler(db)
-    )
+    registry.register("list_message_page", make_list_message_page_handler(db))
     registry.register("count_memory_entries", make_count_memory_entries_handler(db))
     registry.register("mcp_memory_recent", make_mcp_memory_recent_handler(db))
     registry.register("mcp_memory_get", make_mcp_memory_get_handler(db))

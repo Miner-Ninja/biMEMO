@@ -7,6 +7,7 @@ tamper detection via GCM tag, and atomic file write behavior.
 import os
 
 import pytest
+
 from backend.security.encrypted_key_file import (
     KeyFileError,
     WrongPasswordError,

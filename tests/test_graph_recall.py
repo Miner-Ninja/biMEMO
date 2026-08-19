@@ -60,9 +60,7 @@ class _GraphReadClient:
             }
         )
 
-    async def list_assertions_for_entity(
-        self, entity_id, valid_only=False, limit=100
-    ):
+    async def list_assertions_for_entity(self, entity_id, valid_only=False, limit=100):
         result = await self._list(
             {"entity_id": entity_id, "valid_only": valid_only, "limit": limit}
         )
@@ -261,9 +259,7 @@ class TestGraphEvidence:
             "INSERT INTO messages (id, conversation_id, role, content) "
             "VALUES ('m1', 'c1', 'user', 'я предпочитаю vim')"
         )
-        row = db.execute(
-            "SELECT rowid FROM messages WHERE id = 'm1'"
-        ).fetchone()
+        row = db.execute("SELECT rowid FROM messages WHERE id = 'm1'").fetchone()
         index_message(db, row[0], "я предпочитаю vim")
         db.execute(
             "INSERT INTO records "
@@ -318,4 +314,3 @@ class TestRecallToolIntegration:
         assert "summaries" not in searched_tables
         assert searched_tables == ["records", "messages"]
         db.close()
-

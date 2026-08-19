@@ -144,7 +144,7 @@ def _parse_json_list(raw: str) -> list | None:
     """Parse one JSON list string or return None."""
     try:
         parsed = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     if isinstance(parsed, list):
         return parsed

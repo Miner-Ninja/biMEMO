@@ -11,6 +11,7 @@ from backend.workspace.history_tracker import (
 
 
 def test_entry_to_dict_roundtrip():
+    """to_dict and from_dict round-trip an entry without losing any field."""
     entry = WorkspaceHistoryEntry(
         turn=3,
         timestamp="2024-01-01T00:00:00",
@@ -34,6 +35,7 @@ def test_entry_to_dict_roundtrip():
 
 
 def test_entry_defaults():
+    """A fresh entry defaults its list fields to empty and git to None."""
     entry = WorkspaceHistoryEntry(turn=0, timestamp="")
     assert entry.files_read == []
     assert entry.files_written == []
@@ -47,6 +49,7 @@ def test_entry_defaults():
 
 
 def test_tracker_reset_turn():
+    """reset_turn advances the turn but keeps level-2 fields like user_intent."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.add_note(user_intent="start")
@@ -59,6 +62,7 @@ def test_tracker_reset_turn():
 
 
 def test_tracker_add_note():
+    """add_note stores semantic fields; a second call extends decisions."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.add_note(
@@ -78,6 +82,7 @@ def test_tracker_add_note():
 
 
 def test_tracker_load_file_read_actions():
+    """file_read paths are deduplicated; failed attempts keep their error entry."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.load_actions_from_broker(
@@ -104,6 +109,7 @@ def test_tracker_load_file_read_actions():
 
 
 def test_tracker_load_file_write_actions():
+    """file_write actions are recorded with a status; failures add an error."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.load_actions_from_broker(
@@ -124,6 +130,7 @@ def test_tracker_load_file_write_actions():
 
 
 def test_tracker_load_command_actions():
+    """execute_command and stream variants populate the commands-run list."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.load_actions_from_broker(
@@ -144,6 +151,7 @@ def test_tracker_load_command_actions():
 
 
 def test_tracker_load_git_actions():
+    """git_status and git_commit set the corresponding git info flags."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.load_actions_from_broker(
@@ -158,6 +166,7 @@ def test_tracker_load_git_actions():
 
 
 def test_tracker_build_entry():
+    """build_entry assembles an entry from the buffered turn, notes, and actions."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(5)
     tracker.add_note(user_intent="refactor", progress="done")
@@ -176,6 +185,7 @@ def test_tracker_build_entry():
 
 
 def test_tracker_has_actions():
+    """has_actions is False before any action is loaded, True after one."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     assert not tracker.has_actions()
@@ -188,6 +198,7 @@ def test_tracker_has_actions():
 
 
 def test_tracker_clears_buffers_on_reset():
+    """reset_turn clears the files, commands, errors, and git info buffers."""
     tracker = WorkspaceHistoryTracker()
     tracker.reset_turn(1)
     tracker.load_actions_from_broker(

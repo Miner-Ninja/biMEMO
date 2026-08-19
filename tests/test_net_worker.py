@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+
 from backend.ipc.protocol import ToolRequest
 from backend.security.content_filter import FilterResult
 from backend.tools.validation import ValidationError

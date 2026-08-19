@@ -61,6 +61,7 @@ async def run_backup_loop(
             await asyncio.sleep(delay)
             delay = interval_seconds
             try:
+
                 def backup_pass() -> tuple[dict[str, str], int]:
                     paths = perform_backup(databases, database_path)
                     deleted = prune_old_backups(

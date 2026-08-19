@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+
 from backend.llm.ollama.capabilities import (
     SOURCE_RUNTIME,
     detect_ollama_model_capabilities,

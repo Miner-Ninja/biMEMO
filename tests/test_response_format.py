@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from backend.config import reset_settings
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.response_format import (

@@ -9,6 +9,7 @@ set must never leave the database through the MCP surface.
 import os
 
 import pytest
+
 from backend.memory.retrieval.fulltext import create_fts_tables
 from backend.processes.db_proxy.handlers.admin import (
     make_mcp_memory_get_handler,
@@ -93,8 +94,7 @@ class TestRecentMemoryFilters:
         await _save_record(db, "poisoned note", tainted=True)
         result = await make_mcp_memory_recent_handler(db)({"limit": 50, "offset": 0})
         record_ids = [
-            entry["id"] for entry in result["entries"]
-            if entry["table"] == "record"
+            entry["id"] for entry in result["entries"] if entry["table"] == "record"
         ]
         assert record_ids == [clean]
         db.close()
@@ -107,8 +107,7 @@ class TestRecentMemoryFilters:
         await _invalidate(db, old, new)
         result = await make_mcp_memory_recent_handler(db)({"limit": 50, "offset": 0})
         assertion_ids = [
-            entry["id"] for entry in result["entries"]
-            if entry["table"] == "assertion"
+            entry["id"] for entry in result["entries"] if entry["table"] == "assertion"
         ]
         assert assertion_ids == [new]
         db.close()
@@ -168,8 +167,7 @@ class TestEntryPointFilters:
             {"query": "prefers", "limit": 10}
         )
         assertion_ids = [
-            hit["id"] for hit in result["entry_points"]
-            if hit["kind"] == "assertion"
+            hit["id"] for hit in result["entry_points"] if hit["kind"] == "assertion"
         ]
         assert assertion_ids == [new]
         db.close()

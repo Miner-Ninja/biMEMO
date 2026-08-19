@@ -8,6 +8,7 @@ import sqlite3
 import uuid
 
 import pytest
+
 from backend.memory.storage.messages import load_recent_messages, save_message
 
 

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.agent_loop_helpers import (
     build_dialog_step_record_input,
@@ -750,20 +751,22 @@ def _make_orchestrator(
     )
     if not hasattr(broker, "finalized") or isinstance(broker, MagicMock):
         orchestrator.tool_executor.action_decisions.decide = MagicMock(
-            side_effect=lambda context: ActionDecision(
-                DecisionKind.ASK_ONCE,
-                details={
-                    "permission_mode": "per_invocation",
-                    "policy_revision": "registry-v1",
-                },
-            )
-            if context.tool_name == "email_send"
-            else ActionDecision(
-                DecisionKind.ALLOW,
-                details={
-                    "permission_mode": "implicit",
-                    "policy_revision": "registry-v1",
-                },
+            side_effect=lambda context: (
+                ActionDecision(
+                    DecisionKind.ASK_ONCE,
+                    details={
+                        "permission_mode": "per_invocation",
+                        "policy_revision": "registry-v1",
+                    },
+                )
+                if context.tool_name == "email_send"
+                else ActionDecision(
+                    DecisionKind.ALLOW,
+                    details={
+                        "permission_mode": "implicit",
+                        "policy_revision": "registry-v1",
+                    },
+                )
             )
         )
     return orchestrator
@@ -996,17 +999,16 @@ class TestAgentOrchestrator:
                 assert options.response_format is LlmResponseFormat.TEXT
                 assert options.thinking_enabled is None
                 assert options.tool_choice == "auto"
-                assert {
-                    item["function"]["name"] for item in options.tools
-                } >= {"bimemo_ask_user"}
+                assert {item["function"]["name"] for item in options.tools} >= {
+                    "bimemo_ask_user"
+                }
                 return LLMResponse(text="Hello draft")
             assert phase_override == "Stage 2"
             assert options.response_format is LlmResponseFormat.JSON_SCHEMA
             assert options.tools == []
             return LLMResponse(
                 text=(
-                    '{"answer":"Hello in JSON","suggestions":'
-                    '["Ask another question"]}'
+                    '{"answer":"Hello in JSON","suggestions":["Ask another question"]}'
                 )
             )
 
@@ -2305,6 +2307,7 @@ class TestAgentOrchestrator:
 
         # System stability: no crashes, all 16 turns completed
         assert len(zone_history) == 16, f"Expected 16 turns, got {len(zone_history)}"
+
     async def test_provider_attempt_serializes_dataclass_usage(self):
         """Provider usage is durable even though LLMCallUsage is not Pydantic."""
         orchestrator = _make_orchestrator()

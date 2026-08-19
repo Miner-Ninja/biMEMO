@@ -8,6 +8,7 @@ from backend.workspace.history_tracker import WorkspaceHistoryEntry
 
 
 def test_store_in_memory_save_and_get():
+    """Saving an entry and reading it back returns the same turn and intent."""
     store = WorkspaceHistoryStore()
     entry = WorkspaceHistoryEntry(
         turn=1,
@@ -25,6 +26,7 @@ def test_store_in_memory_save_and_get():
 
 
 def test_store_in_memory_multiple_entries():
+    """Saves are listed by get_all and the newest N are returned by get_latest."""
     store = WorkspaceHistoryStore()
 
     async def run():
@@ -50,6 +52,7 @@ def test_store_in_memory_multiple_entries():
 
 
 def test_store_in_memory_clear():
+    """Clearing a conversation removes all of its stored entries."""
     store = WorkspaceHistoryStore()
 
     async def run():
@@ -66,6 +69,7 @@ def test_store_in_memory_clear():
 
 
 def test_store_empty_conversation():
+    """Unsaved conversations return empty lists from get_all and get_latest."""
     store = WorkspaceHistoryStore()
 
     async def run():
@@ -81,6 +85,7 @@ def test_store_empty_conversation():
 
 
 def test_store_multiple_conversations():
+    """Entries saved to different conversation ids are kept isolated from each other."""
     store = WorkspaceHistoryStore()
 
     async def run():

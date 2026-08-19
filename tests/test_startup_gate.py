@@ -2,9 +2,10 @@
 
 import asyncio
 
+from starlette.testclient import TestClient
+
 from backend.processes.startup_gate import create_startup_gate_app
 from backend.security.startup_state import StartupState
-from starlette.testclient import TestClient
 
 
 class DummyServer:

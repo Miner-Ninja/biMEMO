@@ -4,6 +4,8 @@ Covers field validation, truncation, and structured output.
 """
 
 import pytest
+from pydantic import ValidationError
+
 from backend.memory.models import (
     MAX_ITEM_LEN,
     MAX_LIST_ITEMS,
@@ -14,7 +16,6 @@ from backend.memory.models import (
     SummaryScope,
     TrustLevel,
 )
-from pydantic import ValidationError
 
 
 class TestRecord:

@@ -5,6 +5,8 @@ field rejection for all request models.
 """
 
 import pytest
+from pydantic import ValidationError
+
 from backend.models.requests import (
     ChatRequest,
     ConfirmRequest,
@@ -13,7 +15,6 @@ from backend.models.requests import (
     ReauthRequest,
     UserProfileRequest,
 )
-from pydantic import ValidationError
 
 
 class TestChatRequest:

@@ -5,6 +5,7 @@ from receiving malicious input and prevent data leakage.
 """
 
 import pytest
+
 from backend.security.content_filter import ContentFilter, FilterResult
 
 

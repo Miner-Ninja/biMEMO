@@ -6,7 +6,11 @@ into the agent's context (especially after compression).
 
 from __future__ import annotations
 
-from .history_tracker import WorkspaceHistoryEntry
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from .history_tracker import WorkspaceHistoryEntry
 
 
 def format_history_entry(entry: WorkspaceHistoryEntry) -> str:

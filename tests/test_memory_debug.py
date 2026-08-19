@@ -6,6 +6,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
+
 from backend.memory.dialog_recorder import trace as dialog_recorder_trace
 from backend.memory.runtime.event_bus import MemoryEventBus
 from backend.processes.db_proxy.handlers.admin import (
@@ -117,8 +118,6 @@ async def test_list_records_with_data(db: FakeDB) -> None:
 
 
 @pytest.mark.asyncio
-
-
 async def test_list_messages_empty(db: FakeDB) -> None:
     """Message listing should return an empty result by default."""
     handler = make_list_messages_handler(db)
@@ -183,9 +182,6 @@ async def test_count_memory_entries(db: FakeDB) -> None:
     assert result["messages"] == 1
     assert result["records"] == 1
     assert result["assertions"] == 0
-
-
-
 
 
 def test_dialog_recorder_trace_roundtrip_reads_newest_first(
@@ -261,8 +257,6 @@ def test_dialog_recorder_trace_filters_by_decision(
 
     assert len(entries) == 1
     assert entries[0]["decision"] == "record_stored_by_llm_memory_judgment"
-
-
 
 
 async def test_event_bus_publish_subscribe() -> None:

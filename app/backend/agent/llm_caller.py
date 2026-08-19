@@ -79,6 +79,7 @@ CLARIFICATION_APPROVAL_PROMPT = (
     "unrelated, conditional, or negative replies are NO. Do not explain."
 )
 
+
 def _tool_to_reask(
     *,
     decision: FinalAnswerDecision,
@@ -302,7 +303,6 @@ class LLMCaller:
         if response.usage is not None:
             call_usages.append(response.usage)
         return response.text.strip().casefold() == "yes"
-
 
     async def run_model_loop(
         self,

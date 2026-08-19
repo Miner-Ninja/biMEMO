@@ -17,6 +17,7 @@ import sqlite3
 from unittest.mock import MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.concurrency import AgentConcurrency
 from backend.processes.db_proxy import (

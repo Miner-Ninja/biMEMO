@@ -7,6 +7,7 @@ key file creation, and setup completion behavior.
 import os
 
 import pytest
+
 from backend.security.encrypted_key_file import decrypt_master_key
 from backend.security.setup import SetupError, SetupManager
 

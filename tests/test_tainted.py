@@ -82,8 +82,6 @@ class TestSearchExcludesTainted:
         db.close()
 
 
-
-
 class TestSummariesTableGone:
     """S6.3 — the summaries search table no longer exists."""
 

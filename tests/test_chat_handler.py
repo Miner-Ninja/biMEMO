@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.agent.agent_loop_models import AgentResponse
 from backend.ipc.models import (
     ChatRequest,
@@ -1132,9 +1133,7 @@ class _FakePendingAdminClient:
     ) -> list[dict]:
         return list(self._confirmations.get(turn_id, []))[:limit]
 
-    async def list_agent_run_events(
-        self, run_id: str, limit: int = 500
-    ) -> list[dict]:
+    async def list_agent_run_events(self, run_id: str, limit: int = 500) -> list[dict]:
         return list(self._events.get(run_id, []))[:limit]
 
 
@@ -1253,5 +1252,3 @@ def test_waiting_confirmation_from_other_conversation_is_not_attached() -> None:
 
     assistant = next(item for item in items if item.id == "assistant-1")
     assert not assistant.pending_confirmations
-
-

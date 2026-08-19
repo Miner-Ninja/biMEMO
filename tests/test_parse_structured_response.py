@@ -7,6 +7,7 @@ stray suggestions block inside the answer.
 """
 
 import pytest
+
 from backend.llm.structured_response import (
     StructuredAssistantContent,
     parse_final_only_response_json,
@@ -88,15 +89,15 @@ class TestParseFinalOnlyResponseJsonSuggestionsBlock:
                 [
                     "{",
                     (
-                        '  "answer": "На связи. Что дальше?\\n\\n```suggestions\\n'
-                        'Покажи статус\\nПокажи каталоги\\nНайди ошибки\\n```",'
+                        '  "answer": "На связи. Что дальше?\\n\\n```suggestions\\n'  # noqa: RUF001
+                        'Покажи статус\\nПокажи каталоги\\nНайди ошибки\\n```",'  # noqa: RUF001
                     ),
                     '  "suggestions": []',
                     "}",
                 ]
             )
         )
-        assert result.answer == "На связи. Что дальше?"
+        assert result.answer == "На связи. Что дальше?"  # noqa: RUF001
         assert result.suggestions == [
             "Покажи статус",
             "Покажи каталоги",

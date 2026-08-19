@@ -35,7 +35,7 @@ def _resolve_timezone(timezone: str | None) -> ZoneInfo:
         return UTC
     try:
         return ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         logger.warning("Invalid timezone %r — falling back to UTC", timezone)
         return UTC
 

@@ -7,6 +7,7 @@ and SIGTERM handler registration.
 import signal
 
 import pytest
+
 from backend.security.master_key import MASTER_KEY_LENGTH, MasterKeyHolder
 
 

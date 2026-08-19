@@ -1,6 +1,7 @@
 """Tests for ``ContentFilter`` and ``FilterResult``."""
 
 import pytest
+
 from backend.security.content_filter import ContentFilter, FilterResult
 
 

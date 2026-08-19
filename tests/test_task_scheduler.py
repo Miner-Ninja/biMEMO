@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from backend.processes.db_proxy.handlers.scheduler import (
     ToolRevisionAuthority,
     make_advance_task_next_run_handler,

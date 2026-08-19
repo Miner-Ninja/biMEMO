@@ -571,7 +571,7 @@ def make_prune_unlinked_records_handler(db: DatabaseManager) -> OperationHandler
                 continue
             try:
                 ids = json.loads(src_ids)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
             if isinstance(ids, list):
                 referenced_ids.update(str(record_id) for record_id in ids)

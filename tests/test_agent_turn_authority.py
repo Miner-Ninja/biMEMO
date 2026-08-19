@@ -5,6 +5,7 @@ import json
 import os
 
 import pytest
+
 from backend.processes.db_proxy.handlers.admin import (
     make_record_rate_limit_call_handler,
 )
@@ -132,9 +133,7 @@ async def test_success_binds_only_after_durable_execution_claim(tmp_path):
                     "tool_call_id": "call-1",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
-                    "canonical_args_hash": _args_hash(
-                        {"url": "https://example.test"}
-                    ),
+                    "canonical_args_hash": _args_hash({"url": "https://example.test"}),
                     "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
@@ -237,10 +236,13 @@ async def test_processed_dialog_queue_does_not_poison_next_tool_transaction(tmp_
     await make_delete_queued_records_handler(db)({"queue_ids": [queue_id]})
 
     assert db.execute("SELECT COUNT(*) FROM record_queue").fetchone()[0] == 0
-    assert db.execute(
-        "SELECT record_queue_id FROM agent_turn_finalizations WHERE id = ?",
-        (finalization_id,),
-    ).fetchone()[0] is None
+    assert (
+        db.execute(
+            "SELECT record_queue_id FROM agent_turn_finalizations WHERE id = ?",
+            (finalization_id,),
+        ).fetchone()[0]
+        is None
+    )
     db.execute("BEGIN IMMEDIATE")
     db.execute("ROLLBACK")
     assert obligation_id
@@ -401,9 +403,7 @@ async def test_batch_replay_rejects_changed_arguments(tmp_path):
                 "tool_call_id": "call-1",
                 "tool_name": "http_fetch",
                 "arguments": {"url": "https://example.test"},
-                "canonical_args_hash": _args_hash(
-                    {"url": "https://example.test"}
-                ),
+                "canonical_args_hash": _args_hash({"url": "https://example.test"}),
                 "policy_revision": "registry-v1",
                 "candidate_obligation_ids": [obligation_id],
             }
@@ -416,9 +416,7 @@ async def test_batch_replay_rejects_changed_arguments(tmp_path):
             {
                 **base["invocations"][0],
                 "arguments": {"url": "https://other.test"},
-                "canonical_args_hash": _args_hash(
-                    {"url": "https://other.test"}
-                ),
+                "canonical_args_hash": _args_hash({"url": "https://other.test"}),
             }
         ],
     }
@@ -444,9 +442,7 @@ async def test_late_callback_after_cancel_is_audited_without_binding(tmp_path):
                     "tool_call_id": "call-late",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
-                    "canonical_args_hash": _args_hash(
-                        {"url": "https://example.test"}
-                    ),
+                    "canonical_args_hash": _args_hash({"url": "https://example.test"}),
                     "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
@@ -498,9 +494,7 @@ async def test_restart_fences_abandoned_execution_claim(tmp_path):
                     "tool_call_id": "call-crash",
                     "tool_name": "http_fetch",
                     "arguments": {"url": "https://example.test"},
-                    "canonical_args_hash": _args_hash(
-                        {"url": "https://example.test"}
-                    ),
+                    "canonical_args_hash": _args_hash({"url": "https://example.test"}),
                     "policy_revision": "registry-v1",
                     "candidate_obligation_ids": [obligation_id],
                 }
@@ -745,9 +739,7 @@ def _confirmation_batch_params(turn_id: str) -> dict:
                 "tool_call_id": "call-red",
                 "tool_name": "execute_command",
                 "arguments": {"command": "ls", "cwd": "/tmp"},
-                "canonical_args_hash": _args_hash(
-                    {"command": "ls", "cwd": "/tmp"}
-                ),
+                "canonical_args_hash": _args_hash({"command": "ls", "cwd": "/tmp"}),
                 "policy_revision": "registry-v1",
                 "confirmation_id": "confirm-replay",
                 "confirmation_title": "Run ls?",
@@ -762,9 +754,7 @@ async def _count_run_paused(db, turn_id: str) -> int:
     events = await make_list_agent_turn_events_handler(db)(
         {"turn_id": turn_id, "limit": 100}
     )
-    return sum(
-        1 for event in events["events"] if event["event_type"] == "run_paused"
-    )
+    return sum(1 for event in events["events"] if event["event_type"] == "run_paused")
 
 
 async def test_batch_replay_does_not_duplicate_run_paused(tmp_path):
@@ -800,9 +790,7 @@ async def test_batch_replay_does_not_repause_advanced_turn(tmp_path):
         (turn_id,),
     )
     db.commit()
-    advanced = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))[
-        "turn"
-    ]
+    advanced = (await make_get_agent_turn_handler(db)({"turn_id": turn_id}))["turn"]
     assert advanced["terminal_outcome"] is None
 
     await upsert(_confirmation_batch_params(turn_id))
@@ -841,9 +829,7 @@ async def test_list_agent_confirmations_returns_all_statuses(tmp_path):
     """The trace read exposes decided cards too, not only pending ones."""
     db = _open_db(tmp_path)
     turn_id, _finalization_id, _obligation_id = await _prepared_turn(db)
-    await make_upsert_agent_tool_batch_handler(db)(
-        _confirmation_batch_params(turn_id)
-    )
+    await make_upsert_agent_tool_batch_handler(db)(_confirmation_batch_params(turn_id))
     from backend.processes.db_proxy.handlers.agent_turn import (
         make_decide_agent_confirmation_handler,
         make_list_agent_confirmations_handler,
@@ -852,9 +838,7 @@ async def test_list_agent_confirmations_returns_all_statuses(tmp_path):
     await make_decide_agent_confirmation_handler(db)(
         {"confirmation_id": "confirm-replay", "decision": "denied"}
     )
-    listed = await make_list_agent_confirmations_handler(db)(
-        {"turn_id": turn_id}
-    )
+    listed = await make_list_agent_confirmations_handler(db)({"turn_id": turn_id})
     assert len(listed["confirmations"]) == 1
     row = listed["confirmations"][0]
     assert row["confirmation_id"] == "confirm-replay"

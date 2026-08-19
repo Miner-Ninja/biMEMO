@@ -8,6 +8,7 @@ and behavior on lost connections. Uses mock IPC to avoid actual sockets.
 import asyncio
 
 import pytest
+
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ChatRequest as IPCChatRequest,
@@ -618,9 +619,7 @@ class TestAdminDBClient:
                 request_id="r1",
                 status="success",
                 data={
-                    "confirmations": [
-                        {"confirmation_id": "c1", "status": "approved"}
-                    ]
+                    "confirmations": [{"confirmation_id": "c1", "status": "approved"}]
                 },
             )
         )

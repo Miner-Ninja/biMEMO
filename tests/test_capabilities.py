@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
+
 from backend.llm.capabilities import (
     DETECTION_ERROR_TEMPLATE,
     ContextDetectionError,

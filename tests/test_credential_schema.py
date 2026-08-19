@@ -7,6 +7,7 @@ foreign key cascade behavior.
 import secrets
 
 import pytest
+
 from backend.security.credential_schema import initialize_credential_schema
 from backend.security.database import DatabaseManager
 

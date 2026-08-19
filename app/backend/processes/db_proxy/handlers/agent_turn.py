@@ -60,7 +60,7 @@ def _load_json(value: str | None, fallback: object) -> object:
         return fallback
     try:
         return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return fallback
 
 

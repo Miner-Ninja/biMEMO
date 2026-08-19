@@ -899,10 +899,7 @@ async def _run_chat_request_with_prepared_message(
             request=request,
             turn_id=agent_run_id,
             code="turn_orphaned",
-            message=(
-                "The previous turn did not complete and was closed as a "
-                "failure."
-            ),
+            message=("The previous turn did not complete and was closed as a failure."),
         )
         created = await create_agent_turn(
             conversation_id=request.conversation_id,

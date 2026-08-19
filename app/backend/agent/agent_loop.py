@@ -587,7 +587,7 @@ class AgentOrchestrator:
                                             age,
                                         )
                                         return
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     pass
                         # Existing skill is old — will be updated via upsert
                         logger.info("Updating existing skill (older than 24h)")
@@ -1622,9 +1622,7 @@ class AgentOrchestrator:
                 )
             domain_host: str | None = None
             if scope == "domain":
-                domain_host = self.tool_executor.canonical_url_host(
-                    prepared_invocation
-                )
+                domain_host = self.tool_executor.canonical_url_host(prepared_invocation)
                 if domain_host is None:
                     return await self._commit_structured_failure(
                         prepared_turn=prepared,
@@ -1676,11 +1674,7 @@ class AgentOrchestrator:
                     "invocation_id": invocation_id,
                     # The fetch that MINTS a domain grant must obey the same
                     # host containment as later reuses of that grant.
-                    **(
-                        {"domain_grant_host": domain_host}
-                        if domain_host
-                        else {}
-                    ),
+                    **({"domain_grant_host": domain_host} if domain_host else {}),
                 }
             )
             authorization = AuthorizationContext(

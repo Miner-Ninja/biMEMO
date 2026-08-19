@@ -8,6 +8,7 @@ always unsubscribed when the generator finishes.
 import asyncio
 
 import pytest
+
 from backend.processes.fastapi_app.routes.admin_memory import stream_memory_events
 
 
@@ -41,6 +42,8 @@ class _FakeOrchestrator:
 
 
 class TestMemorySseRoute:
+    """End-to-end behaviour of the memory-event SSE route."""
+
     @pytest.mark.asyncio
     async def test_delivers_event_and_unsubscribes(self) -> None:
         """S1.1 + S1.2 — event arrives as a data frame; queue is freed."""

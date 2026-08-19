@@ -429,7 +429,9 @@ class TestRunDistillerLoop:
         provider = MagicMock()
         db_client = AsyncMock()
 
-        task = asyncio.create_task(run_graph_extractor_loop(provider, db_client, scheduler))
+        task = asyncio.create_task(
+            run_graph_extractor_loop(provider, db_client, scheduler)
+        )
         await asyncio.sleep(0.01)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

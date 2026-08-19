@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator
 
 
@@ -55,8 +56,7 @@ class TestOutcomePreservingFlush:
             await AgentOrchestrator._flush_provider_attempts_logged(stub)
         assert stub._provider_attempt_tasks == []
         assert any(
-            "provider-attempt telemetry" in record.message
-            for record in caplog.records
+            "provider-attempt telemetry" in record.message for record in caplog.records
         )
 
     @pytest.mark.asyncio

@@ -7,6 +7,7 @@ and registration of all 9 handlers and tool definitions.
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.ipc.protocol import ToolResponse
 from backend.tools.broker import ToolBroker
 from backend.tools.builtin import (

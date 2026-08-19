@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from backend.tools.handlers.code_search import code_search
 from backend.tools.handlers.git_ops import (
     git_commit,
@@ -66,6 +67,7 @@ def _commit(repo: str, message: str) -> None:
 
 @pytest.mark.asyncio
 async def test_git_status_clean():
+    """Ensure git_status reports a clean main-branch repo with no error."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "README.md", "# Hello")
@@ -81,6 +83,7 @@ async def test_git_status_clean():
 
 @pytest.mark.asyncio
 async def test_git_status_with_changes():
+    """Ensure git_status reports a repo with a modified file as not clean."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "README.md", "# Hello")
@@ -103,6 +106,7 @@ async def test_git_status_with_changes():
 
 @pytest.mark.asyncio
 async def test_git_diff_no_changes():
+    """Ensure git_diff reports no changes for a clean repo."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "README.md", "# Hello")
@@ -117,6 +121,7 @@ async def test_git_diff_no_changes():
 
 @pytest.mark.asyncio
 async def test_git_diff_with_changes():
+    """Ensure git_diff reports changes and includes the diff text."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "test.py", "print('hello')")
@@ -140,6 +145,7 @@ async def test_git_diff_with_changes():
 
 @pytest.mark.asyncio
 async def test_git_log():
+    """Ensure git_log returns commits newest-first with correct messages."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "a.txt", "a")
@@ -164,6 +170,7 @@ async def test_git_log():
 
 @pytest.mark.asyncio
 async def test_git_commit():
+    """Ensure git_commit stages and commits a file and returns the new commit hash."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "test.txt", "content")
@@ -178,6 +185,7 @@ async def test_git_commit():
 
 @pytest.mark.asyncio
 async def test_git_commit_nothing_to_commit():
+    """Ensure git_commit handles a clean repo with nothing to commit gracefully."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "README.md", "# Hello")
@@ -197,6 +205,7 @@ async def test_git_commit_nothing_to_commit():
 
 @pytest.mark.asyncio
 async def test_git_push_no_remote():
+    """Ensure git_push fails gracefully on a repo with no remote configured."""
     repo = _setup_git_repo()
     try:
         result = await git_push(cwd=repo)
@@ -213,6 +222,7 @@ async def test_git_push_no_remote():
 
 @pytest.mark.asyncio
 async def test_code_search_text():
+    """Ensure code_search finds a plain-text pattern in a committed file."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "hello.py", "def hello():\n    print('world')")
@@ -229,6 +239,7 @@ async def test_code_search_text():
 
 @pytest.mark.asyncio
 async def test_code_search_no_match():
+    """Ensure code_search returns zero matches for a pattern absent from the repo."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "test.txt", "some content")
@@ -243,12 +254,14 @@ async def test_code_search_no_match():
 
 @pytest.mark.asyncio
 async def test_code_search_empty_pattern():
+    """Ensure code_search rejects an empty search pattern with an error."""
     result = await code_search(pattern="")
     assert "error" in result
 
 
 @pytest.mark.asyncio
 async def test_code_search_regex():
+    """Ensure code_search with use_regex matches lines via a POSIX ERE pattern."""
     repo = _setup_git_repo()
     try:
         _add_file(repo, "nums.txt", "123\n456\n789")
@@ -296,7 +309,7 @@ async def test_code_search_rejects_root_symlink_swap(tmp_path):
     root.rmdir()
     root.symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(OSError, match="symbolic link|Too many levels|Not a directory"):
+    with pytest.raises(OSError, match=r"symbolic link|Too many levels|Not a directory"):
         await code_search(pattern="needle", cwd=str(root))
 
 

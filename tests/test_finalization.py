@@ -1,6 +1,5 @@
 """Tool-use-reask requirement/decision tests (R1-R3)."""
 
-
 from backend.agent.finalization import (
     FinalAnswerDecision,
     RequirementSatisfaction,

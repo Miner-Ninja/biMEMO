@@ -33,7 +33,6 @@ from backend.security.schema import initialize_schema
 class TestPerformance:
     """Performance benchmarks."""
 
-
     def test_context_build_latency(self):
         """Verify context building is fast."""
         fn = MagicMock(
@@ -60,7 +59,6 @@ def _open_test_db(tmp_path):
 
 class TestRetrievedMemoriesPipeline:
     """End-to-end tests for retrieved memories from search through context building."""
-
 
     async def test_orchestrator_threads_retrieved_memories(self):
         """Verify AgentOrchestrator passes retrieved_memories in response."""

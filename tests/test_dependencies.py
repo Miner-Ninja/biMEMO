@@ -7,6 +7,8 @@ FastAPI application.
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
+
 from backend.processes.fastapi_app.deps import (
     _get_admin_client,
     _get_audit_fn,
@@ -19,7 +21,6 @@ from backend.processes.fastapi_app.deps import (
     _get_signing_client,
     _require_auth,
 )
-from fastapi import HTTPException
 
 
 def _make_request(state_attrs: dict) -> MagicMock:

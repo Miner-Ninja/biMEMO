@@ -6,6 +6,8 @@ rejects unknown fields and required fields are enforced.
 """
 
 import pytest
+from pydantic import ValidationError
+
 from backend.ipc.models import (
     ChatRequest,
     ChatResponse,
@@ -19,7 +21,6 @@ from backend.ipc.models import (
     StreamEventType,
     StructuredAssistantContent,
 )
-from pydantic import ValidationError
 
 
 class TestChatRequest:

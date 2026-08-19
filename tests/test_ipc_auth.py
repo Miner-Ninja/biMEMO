@@ -7,6 +7,7 @@ frame size validation, and tamper detection.
 import os
 
 import pytest
+
 from backend.ipc.protocol import (
     HMAC_TAG_LEN,
     AuthenticationError,

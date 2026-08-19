@@ -10,6 +10,7 @@ import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.bot.telegram_bot import TelegramBot
 from backend.channels.telegram import TelegramConfig
 

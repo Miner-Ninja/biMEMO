@@ -11,12 +11,14 @@ from backend.workspace.history_tracker import WorkspaceHistoryEntry
 
 
 def test_format_empty_entry():
+    """An entry with no actions at all formats to an empty string."""
     entry = WorkspaceHistoryEntry(turn=1, timestamp="")
     result = format_history_entry(entry)
     assert result == ""
 
 
 def test_format_files_read():
+    """Files read are listed under a section header that includes their count."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -29,6 +31,7 @@ def test_format_files_read():
 
 
 def test_format_files_read_truncated():
+    """Long file-read lists are truncated with an 'and N more' suffix."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -40,6 +43,7 @@ def test_format_files_read_truncated():
 
 
 def test_format_files_written():
+    """Files written are listed with their success or error status in brackets."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -55,6 +59,7 @@ def test_format_files_written():
 
 
 def test_format_commands():
+    """Commands run are listed, with any error appended after the command text."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -70,6 +75,7 @@ def test_format_commands():
 
 
 def test_format_errors():
+    """Errors are listed as 'source: issue' pairs under an Errors section."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -84,6 +90,7 @@ def test_format_errors():
 
 
 def test_format_semantic_fields():
+    """Intent, progress, decisions, and blockers are rendered as labelled lines."""
     entry = WorkspaceHistoryEntry(
         turn=1,
         timestamp="",
@@ -100,10 +107,12 @@ def test_format_semantic_fields():
 
 
 def test_build_context_empty():
+    """An empty list of entries produces an empty context string."""
     assert build_history_context([]) == ""
 
 
 def test_build_context_single_entry():
+    """A single entry renders the header, turn line, and file details."""
     entries = [
         WorkspaceHistoryEntry(
             turn=5,
@@ -119,6 +128,7 @@ def test_build_context_single_entry():
 
 
 def test_build_context_multiple_entries():
+    """With max_entries=2, only the two most recent turns are kept."""
     entries = [
         WorkspaceHistoryEntry(turn=1, timestamp="", files_read=["a.py"]),
         WorkspaceHistoryEntry(turn=2, timestamp="", files_read=["b.py"]),
@@ -131,6 +141,7 @@ def test_build_context_multiple_entries():
 
 
 def test_build_context_separator():
+    """Consecutive entries are separated by a '---' line in the rendered context."""
     entries = [
         WorkspaceHistoryEntry(turn=1, timestamp="", files_read=["a.py"]),
         WorkspaceHistoryEntry(turn=2, timestamp="", files_read=["b.py"]),
@@ -140,6 +151,7 @@ def test_build_context_separator():
 
 
 def test_build_context_empty_entries_filtered():
+    """Entries with no actions and no semantic fields are left out."""
     # Entries with no actions should be filtered out
     entries = [
         WorkspaceHistoryEntry(turn=1, timestamp=""),

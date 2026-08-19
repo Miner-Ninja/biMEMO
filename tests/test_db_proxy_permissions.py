@@ -3,6 +3,7 @@
 import secrets
 
 import pytest
+
 from backend.processes.db_proxy.handlers.permissions import (
     make_list_agent_runs_handler,
 )

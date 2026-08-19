@@ -8,6 +8,11 @@ and allowlist enforcement.
 import sqlite3
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+)
+from pydantic import ValidationError
+
 from backend.processes.db_proxy import (
     SOCKET_B_ONLY_OPERATIONS,
     StorePasswordHashParams,
@@ -23,10 +28,6 @@ from backend.processes.signing_proxy import (
     _issue_tokens,
     _ph,
 )
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-)
-from pydantic import ValidationError
 
 
 class FakeDB:

@@ -7,6 +7,7 @@ frozen dataclass declared in backend/llm/call_options.py.
 import asyncio
 
 import pytest
+
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import LlmResponseFormat
 

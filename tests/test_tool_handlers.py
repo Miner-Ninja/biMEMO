@@ -8,6 +8,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from backend.tools.builtin import (
     SystemStatusInput,
 )
@@ -224,7 +225,6 @@ class _FakeMemoryRecallDBClient:
         """Return fixed message rows."""
         self.message_calls.append((limit, offset, conversation_id))
         return self.messages[offset : offset + limit]
-
 
 
 class TestFormatHelpers:

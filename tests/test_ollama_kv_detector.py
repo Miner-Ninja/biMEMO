@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
+
 from backend.llm.ollama.kv_detector import (
     GENERATE_ENDPOINT,
     OLLAMA_DETECTOR,

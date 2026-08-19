@@ -359,7 +359,7 @@ def llm_accepts_sse_queue(llm_call: object) -> bool:
     """Check whether the LLM callable accepts an SSE queue argument."""
     try:
         parameters = inspect.signature(llm_call).parameters
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     if "sse_queue_override" in parameters:
         return True
@@ -373,7 +373,7 @@ def llm_accepts_tools_override(llm_call: object) -> bool:
     """Check whether the LLM callable accepts a tools override keyword."""
     try:
         parameters = inspect.signature(llm_call).parameters
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
 
     if "tools_override" in parameters:
@@ -388,7 +388,7 @@ def llm_accepts_call_options(llm_call: object) -> bool:
     """Check whether the LLM callable accepts typed per-call options."""
     try:
         parameters = inspect.signature(llm_call).parameters
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return "options" in parameters
 

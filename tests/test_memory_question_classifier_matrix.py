@@ -1,6 +1,7 @@
 """Matrix tests for equivalent memory-question intents across languages."""
 
 import pytest
+
 from backend.memory.classification.models import (
     ClassificationConfidence,
     MemoryQuestionIntent,

@@ -706,7 +706,6 @@ class OpenAICompatibleClient:
                 return _empty_warning_response(response, llm_response_format)
         return response
 
-
     async def _execute_chat_once(
         self,
         payload: dict[str, object],

@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import httpx
 import pytest
+
 from backend.bot.discord_bot import DiscordBot
 from backend.channels.discord import DiscordConfig
 

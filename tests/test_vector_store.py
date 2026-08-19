@@ -7,6 +7,7 @@ and similarity search operations.
 import secrets
 
 import pytest
+
 from backend.memory.retrieval.vector_store import (
     create_vector_table,
     enable_vector_extension,

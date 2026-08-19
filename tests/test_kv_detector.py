@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import pytest
+
 from backend.llm.capabilities import ContextDetectionError
 from backend.llm.kv_detector import (
     WARMUP_SUFFIX,

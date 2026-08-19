@@ -365,9 +365,7 @@ class OrchestratorClient:
         try:
             response_future = self._register_response_future(request.request_id)
             await self._ipc.send(request)
-            self._chat_send_events.setdefault(
-                request.request_id, asyncio.Event()
-            ).set()
+            self._chat_send_events.setdefault(request.request_id, asyncio.Event()).set()
             return await asyncio.wait_for(response_future, timeout=timeout)
         except TimeoutError:
             self._response_futures.pop(request.request_id, None)

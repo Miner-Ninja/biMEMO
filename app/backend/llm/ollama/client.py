@@ -684,7 +684,7 @@ class OllamaClient:
                 text,
                 thinking=thinking,
             )
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             if use_final_only_parser:
                 logger.warning(
                     "Ollama final-only response failed strict parsing",
@@ -806,7 +806,6 @@ class OllamaClient:
         )
         text = self._final_visible_text(full_text)
         return text, tool_calls, final_usage, None
-
 
     async def chat(
         self,

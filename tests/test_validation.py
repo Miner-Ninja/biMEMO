@@ -7,6 +7,7 @@ allowlist, numeric IP detection, and SSRF prevention.
 from unittest.mock import patch
 
 import pytest
+
 from backend.tools.validation import (
     ValidationError,
     _dns_lookup,

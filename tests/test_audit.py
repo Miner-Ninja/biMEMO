@@ -7,6 +7,7 @@ logging, and tamper detection.
 import secrets
 
 import pytest
+
 from backend.security.audit import (
     append_audit_entry,
     initialize_audit_schema,

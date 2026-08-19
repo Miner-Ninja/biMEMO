@@ -48,14 +48,10 @@ def _services(orch):
             {"obligation_id": "required-http-fetch", "required_tool": "http_fetch"}
         ],
         "binds": (
-            [{"obligation_id": "required-http-fetch"}]
-            if "http_fetch" in used
-            else []
+            [{"obligation_id": "required-http-fetch"}] if "http_fetch" in used else []
         ),
     }
-    definition = SimpleNamespace(
-        permission=SimpleNamespace(revision="registry-v1")
-    )
+    definition = SimpleNamespace(permission=SimpleNamespace(revision="registry-v1"))
     broker = SimpleNamespace(
         registry=SimpleNamespace(
             get=lambda name: definition if name == "http_fetch" else None
@@ -72,10 +68,7 @@ def _services(orch):
 
 
 def _task(
-    allowed=(
-        '[{"tool_name":"http_fetch",'
-        '"approved_policy_revision":"registry-v1"}]'
-    ),
+    allowed=('[{"tool_name":"http_fetch","approved_policy_revision":"registry-v1"}]'),
 ):
     """Build an agent_task dict targeting the given allowlist."""
     return {

@@ -8,6 +8,7 @@ import os
 import secrets
 
 import pytest
+
 from backend.security.keysource import (
     FileKeySource,
     KeySourceError,

@@ -1077,6 +1077,7 @@ def register_all_handlers(
     # Code search
     broker.bind_handler("code_search", _make_code_search_handler())
 
+
 _GRANT_CAPABLE_MODES = frozenset(
     {PermissionMode.CONVERSATION_CAPABILITY, PermissionMode.SCOPED}
 )
@@ -1099,8 +1100,7 @@ def confirmation_button_extras(
         None,
     )
     grant_capable = bool(
-        definition is not None
-        and definition.permission.mode in _GRANT_CAPABLE_MODES
+        definition is not None and definition.permission.mode in _GRANT_CAPABLE_MODES
     )
     return {
         "grant_capable": grant_capable,

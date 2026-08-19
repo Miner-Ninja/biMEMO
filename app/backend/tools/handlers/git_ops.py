@@ -28,7 +28,7 @@ class GitResult:
 async def _run_git(
     *args: str,
     cwd: str | None = None,
-    timeout: float = 30.0,
+    timeout_seconds: float = 30.0,
 ) -> GitResult:
     """Run a git command and return structured result."""
     import shlex
@@ -37,7 +37,7 @@ async def _run_git(
     result = await execute_command(
         command=command,
         cwd=cwd,
-        timeout=timeout,
+        timeout=timeout_seconds,
     )
     return GitResult(
         output=result.stdout,
@@ -244,7 +244,7 @@ async def git_push(
     if branch:
         args.append(branch)
 
-    result = await _run_git(*args, cwd=cwd, timeout=60.0)
+    result = await _run_git(*args, cwd=cwd, timeout_seconds=60.0)
     if result.exit_code != 0:
         return {"error": result.error or "git push failed"}
 

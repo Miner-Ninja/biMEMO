@@ -8,6 +8,8 @@ database as a stand-in for the encrypted database.
 import sqlite3
 
 import pytest
+from pydantic import ValidationError
+
 from backend.ipc.models import DBOperation
 from backend.processes.db_proxy import (
     CHANNEL_A,
@@ -55,7 +57,6 @@ from backend.security.schema import (
     CREATE_AGENT_TURN_FINALIZATIONS_TABLE,
     CREATE_AGENT_TURNS_TABLE,
 )
-from pydantic import ValidationError
 
 
 EXPECTED_SOCKET_A_OPERATION_COUNT = 125
@@ -414,6 +415,7 @@ class TestMessagePageOperations:
             ListMessagePageParams(conversation_id="c1", limit=0)
         with pytest.raises(ValidationError):
             ListMessagePageParams(conversation_id="c1", limit=501)
+
 
 class TestContextOperation:
     """Verify baseline context loading (graph era)."""

@@ -71,6 +71,7 @@ class WorkspaceHistoryTracker:
     """
 
     def __init__(self) -> None:
+        """Initialize a fresh, empty per-turn state."""
         self._turn: int = 0
         self._files_read: list[str] = []
         self._files_written: list[dict] = []
@@ -85,6 +86,7 @@ class WorkspaceHistoryTracker:
 
     @property
     def turn(self) -> int:
+        """Current turn number."""
         return self._turn
 
     def reset_turn(self, turn: int) -> None:

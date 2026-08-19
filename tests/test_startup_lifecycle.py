@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import pytest
+
 from backend.ipc.supervisor import SupervisorError
 from backend.processes import supervisor as supervisor_module
 from backend.security.startup_state import StartupState

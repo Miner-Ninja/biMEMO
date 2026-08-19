@@ -8,6 +8,7 @@ import base64
 import json
 
 import pytest
+
 from backend.ipc.models import (
     build_multimodal_content,
     extract_image_urls,

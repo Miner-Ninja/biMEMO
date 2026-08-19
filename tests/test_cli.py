@@ -8,6 +8,7 @@ parameter upgrade.
 import secrets
 
 import pytest
+
 from backend.security.cli import change_password, rotate_key
 from backend.security.database import DatabaseManager
 from backend.security.encrypted_key_file import (

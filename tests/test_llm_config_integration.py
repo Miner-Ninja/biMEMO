@@ -15,6 +15,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from starlette.testclient import TestClient
+
 from backend.channels.endpoints import EndpointRateLimiter, ReauthManager
 from backend.channels.jwt_auth import SessionManager
 from backend.channels.realtime import RealtimeConnectionManager
@@ -50,8 +53,6 @@ from backend.processes.fastapi_app.routes import (
     memory_router,
 )
 from backend.processes.fastapi_app.routes.chat import chat_router
-from fastapi import FastAPI
-from starlette.testclient import TestClient
 
 
 # ---------------------------------------------------------------------------
@@ -2366,9 +2367,7 @@ class TestProblemContract:
         assert resp.headers["content-type"] == "application/problem+json"
         body = resp.json()
         assert body["type"] == "urn:bimemo:problem:validation-error"
-        assert any(
-            list(entry["loc"]) == ["body", "model"] for entry in body["errors"]
-        )
+        assert any(list(entry["loc"]) == ["body", "model"] for entry in body["errors"])
 
     def test_malformed_message_page_cursor_is_422_validation_problem(self) -> None:
         """A malformed message page cursor is a 422 validation-error problem."""
@@ -4112,7 +4111,6 @@ class TestMemoryTimeline:
                 }
             ]
         }
-
 
     def test_route_diagnostics_route_returns_structured_records(self) -> None:
         """Route diagnostics route should expose stored routing decisions."""

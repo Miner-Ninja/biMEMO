@@ -1,6 +1,7 @@
 """Tests for Signing Proxy initial password seeding."""
 
 import pytest
+
 from backend.ipc.models import DBResult
 from backend.processes.signing_proxy import main as signing_main
 from backend.processes.signing_proxy.main import _seed_initial_password

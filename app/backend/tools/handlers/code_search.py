@@ -133,12 +133,10 @@ async def code_search(
                                 return matches, files_seen
                             if len(content) > _MAX_FILE_BYTES:
                                 continue
-                            lines = (
-                                content
-                                .decode("utf-8", errors="replace")
-                                .splitlines()
-                            )
-                    except (OSError, UnicodeError):
+                            lines = content.decode(
+                                "utf-8", errors="replace"
+                            ).splitlines()
+                    except OSError, UnicodeError:
                         continue
                     if time.monotonic() >= deadline:
                         return matches, files_seen

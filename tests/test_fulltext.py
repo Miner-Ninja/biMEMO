@@ -7,6 +7,7 @@ and morphological matching for messages, records, and summaries.
 import secrets
 
 import pytest
+
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
     delete_message_index,
@@ -193,8 +194,6 @@ class TestRecordIndexing:
 
 class TestSummaryIndexing:
     """Tests for summary FTS5 indexing and search."""
-
-
 
 
 class TestSanitizeFtsQuery:

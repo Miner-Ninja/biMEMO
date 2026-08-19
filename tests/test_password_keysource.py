@@ -3,6 +3,7 @@
 import os
 
 import pytest
+
 from backend.security.encrypted_key_file import (
     decrypt_master_key,
     encrypt_master_key,

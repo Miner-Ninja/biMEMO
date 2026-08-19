@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 import pytest
+
 from backend.processes.targets import _ensure_parent_directory, _load_master_key
 from backend.security.encrypted_key_file import encrypt_master_key
 from backend.security.keysource import KeySourceError

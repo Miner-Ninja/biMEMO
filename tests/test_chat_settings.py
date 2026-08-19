@@ -8,6 +8,7 @@ import asyncio
 import secrets
 
 import pytest
+
 from backend.processes.db_proxy.handlers.chat_settings import (
     make_list_chat_settings_handler,
     make_upsert_chat_settings_handler,

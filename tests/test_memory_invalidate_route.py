@@ -8,6 +8,7 @@ socket gains no graph write operation.
 from typing import Any
 
 import pytest
+
 from backend.channels.endpoints import ReauthManager
 from backend.ipc.models import (
     MemoryInvalidateRequest,
@@ -151,9 +152,7 @@ class TestOrchestratorSide:
         """
         registered = FRONTEND_TYPE_MAP["MemoryInvalidateRequest"]
         assert registered.__name__ == "MemoryInvalidateRequest"
-        assert set(MemoryInvalidateRequest.model_fields) <= set(
-            registered.model_fields
-        )
+        assert set(MemoryInvalidateRequest.model_fields) <= set(registered.model_fields)
 
     def test_response_type_dispatchable_on_web_side(self) -> None:
         """The web-tier reader must know the response type.
@@ -187,9 +186,7 @@ class TestOrchestratorSide:
         db_client = _FakeDBClient()
         fn = make_memory_invalidate_fn(db_client)
         response = await fn(
-            MemoryInvalidateRequest(
-                request_id="r1", assertion_id="a1", reason="forget"
-            )
+            MemoryInvalidateRequest(request_id="r1", assertion_id="a1", reason="forget")
         )
         assert response.invalidated is True
         assert db_client.calls == ["a1"]

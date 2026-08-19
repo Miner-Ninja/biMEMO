@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+
 from backend.llm.capabilities import ContextDetectionError, LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import ComputeConfig, ComputeMode

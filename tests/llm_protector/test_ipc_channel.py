@@ -8,12 +8,13 @@ import asyncio
 import secrets
 
 import pytest
+from pydantic import BaseModel, ConfigDict
+
 from backend.ipc.ipc_channel import (
     IPCChannelError,
     IPCSocketClient,
     IPCSocketServer,
 )
-from pydantic import BaseModel, ConfigDict
 
 
 class PingRequest(BaseModel):

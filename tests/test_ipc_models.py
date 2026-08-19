@@ -5,8 +5,9 @@ and field type validation.
 """
 
 import pytest
-from backend.ipc.protocol import ToolRequest, ToolResponse
 from pydantic import ValidationError
+
+from backend.ipc.protocol import ToolRequest, ToolResponse
 
 
 class TestToolRequest:

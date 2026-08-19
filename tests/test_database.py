@@ -8,6 +8,7 @@ import os
 import secrets
 
 import pytest
+
 from backend.security.database import (
     DatabaseError,
     DatabaseKeyError,

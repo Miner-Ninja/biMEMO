@@ -22,9 +22,7 @@ class TestTlsCertSan:
     def test_generate_dev_tls_creates_ca_and_cert(self) -> None:
         """scripts/generate_dev_tls.sh creates a CA and a CA-signed cert."""
         script = (
-            Path(__file__).resolve().parent.parent
-            / "scripts"
-            / "generate_dev_tls.sh"
+            Path(__file__).resolve().parent.parent / "scripts" / "generate_dev_tls.sh"
         )
 
         if not script.exists():
@@ -99,8 +97,10 @@ class TestTlsCertSan:
                 # Verify it was signed by the CA (not self-signed)
                 verify_result = subprocess.run(
                     [
-                        "openssl", "verify",
-                        "-CAfile", str(ca_dir / "ca-cert.pem"),
+                        "openssl",
+                        "verify",
+                        "-CAfile",
+                        str(ca_dir / "ca-cert.pem"),
                         str(cert_path),
                     ],
                     capture_output=True,
@@ -162,6 +162,4 @@ class TestCaddyDevConfig:
                     break
 
         # :80 block should only contain redirect, no /mcp routing
-        assert "/mcp" not in port80_block, (
-            "Plain-HTTP :80 block must not serve /mcp"
-        )
+        assert "/mcp" not in port80_block, "Plain-HTTP :80 block must not serve /mcp"

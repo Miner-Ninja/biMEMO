@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator, _semantic_tool_choice
 from backend.agent.agent_loop_models import PreparedContext, TurnPreparation
 from backend.agent.concurrency import AgentConcurrency
@@ -108,14 +109,17 @@ def test_semantic_choice_bounds_optional_tool_collection() -> None:
         max_rounds=8,
     )
     assert choice == "none"
-    assert _semantic_tool_choice(
-        target=None,
-        canonical={
-            "tool_rounds": 1,
-            "invocations": [{"tool_name": "web_search", "status": "succeeded"}],
-        },
-        max_rounds=8,
-    ) == "auto"
+    assert (
+        _semantic_tool_choice(
+            target=None,
+            canonical={
+                "tool_rounds": 1,
+                "invocations": [{"tool_name": "web_search", "status": "succeeded"}],
+            },
+            max_rounds=8,
+        )
+        == "auto"
+    )
 
 
 @pytest.mark.parametrize(
@@ -259,9 +263,9 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
         "conversation_id": "conversation-1",
         "session_id": "session-1",
         "channel": "scheduler",
-            "agent_run_id": "turn-1",
-            "tool_policy_version": "registry-v1",
-        }
+        "agent_run_id": "turn-1",
+        "tool_policy_version": "registry-v1",
+    }
     orchestrator._capabilities_resolver = lambda: SimpleNamespace(
         native_tools=SimpleNamespace(value="supported"),
         required_native_decision=SimpleNamespace(value="supported"),
@@ -298,7 +302,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
                     LLMToolCall(
                         "fetch",
                         "http_fetch",
-                            {"url": "https://1.1.1.1/btc"},
+                        {"url": "https://1.1.1.1/btc"},
                     )
                 ],
             ),
@@ -368,8 +372,7 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
     assert inherited_thinking == [True, True, True]
     assert all(options.thinking_enabled is None for _, options in captured)
     assert all(
-        options.response_format is LlmResponseFormat.TEXT
-        for _, options in captured
+        options.response_format is LlmResponseFormat.TEXT for _, options in captured
     )
 
     # A URL already present in context must go straight to fetch without search.
@@ -484,9 +487,7 @@ async def test_finish_guarantee_boundary() -> None:
     )
     orchestrator._require_structured_capabilities = AsyncMock()
     expected_failure = MagicMock()
-    orchestrator._commit_structured_failure = AsyncMock(
-        return_value=expected_failure
-    )
+    orchestrator._commit_structured_failure = AsyncMock(return_value=expected_failure)
     obligation = ToolObligation(
         run_id="turn-1",
         obligation_id="obligation-web",
@@ -542,6 +543,7 @@ async def test_finish_guarantee_boundary() -> None:
     )
     assert result is expected_failure
     assert "finish_rejected" in events
-    assert orchestrator._commit_structured_failure.await_args.kwargs[
-        "code"
-    ] == "finish_with_open_obligation"
+    assert (
+        orchestrator._commit_structured_failure.await_args.kwargs["code"]
+        == "finish_with_open_obligation"
+    )

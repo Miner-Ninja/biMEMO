@@ -1,6 +1,7 @@
 """Tests for the semantic fallback memory-question classifier."""
 
 import pytest
+
 from backend.memory.classification.fallback_classifier import (
     build_fallback_classifier_messages,
     parse_fallback_classification,

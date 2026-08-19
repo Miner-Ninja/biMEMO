@@ -5,8 +5,9 @@ required variable detection, and settings singleton behavior.
 """
 
 import pytest
-from backend.config import Settings, get_settings, reset_settings
 from pydantic import ValidationError
+
+from backend.config import Settings, get_settings, reset_settings
 
 
 class TestSettings:

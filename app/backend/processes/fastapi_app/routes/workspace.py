@@ -39,11 +39,12 @@ def _get_workspace_dirs() -> list[str]:
 async def get_workspace_tree(
     request: Request,
     path: str = "",
-):
+) -> dict[str, Any]:
     """List files and directories in the workspace.
 
     Args:
         path: Relative path within workspace (empty = root).
+        request: Authenticated request (validated by _require_auth).
 
     Returns:
         List of items with name, type (file/dir), size, and path.
@@ -106,11 +107,11 @@ async def get_workspace_tree(
                 except OSError:
                     entry["size"] = 0
             items.append(entry)
-    except PermissionError:
+    except PermissionError as err:
         raise HTTPException(
             status_code=403,
             detail=f"Permission denied: {path}",
-        )
+        ) from err
 
     # Build parent path
     parent = None
@@ -126,7 +127,7 @@ async def get_workspace_tree(
 
 
 @workspace_router.get("/dirs")
-async def get_workspace_dirs_endpoint(request: Request):
+async def get_workspace_dirs_endpoint(request: Request) -> dict[str, list[str]]:
     """List configured workspace directories."""
     _require_auth(request)
     return {"directories": _get_workspace_dirs()}

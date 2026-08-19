@@ -222,7 +222,7 @@ class ToolBroker:
         filtered = filter_output(json.dumps(_bounded_value(parameters))).text
         try:
             safe_parameters = json.loads(filtered)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             safe_parameters = {"redacted": True}
         action: dict = {
             "tool": tool_name,

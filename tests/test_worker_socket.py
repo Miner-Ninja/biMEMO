@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
 from backend.ipc.protocol import (
     LENGTH_PREFIX_LEN,
     MAX_MESSAGE_SIZE,

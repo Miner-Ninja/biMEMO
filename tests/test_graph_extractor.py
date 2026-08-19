@@ -7,6 +7,7 @@ Asserts the graph-memory-extractor contract: R1 (S1.1-S1.2), R3
 import os
 
 import pytest
+
 from backend.memory.graph_extractor import (
     normalize_relation,
     parse_graph_extraction,
@@ -58,9 +59,7 @@ class _GraphClient:
         )
         return result["invalidated"]
 
-    async def list_assertions_for_entity(
-        self, entity_id, valid_only=False, limit=100
-    ):
+    async def list_assertions_for_entity(self, entity_id, valid_only=False, limit=100):
         result = await self._list(
             {"entity_id": entity_id, "valid_only": valid_only, "limit": limit}
         )
@@ -170,8 +169,7 @@ class TestExtractionPipeline:
         """S3.2 — assertion without its ENTITY line stores nothing."""
         db = _open_db(tmp_path)
         output = (
-            'ASSERTION: ghost | uses | value="x" | ghost uses x | '
-            "long_term | high\n"
+            'ASSERTION: ghost | uses | value="x" | ghost uses x | long_term | high\n'
         )
         stored = await process_graph_extraction(
             _FakeProvider(output),
@@ -187,9 +185,7 @@ class TestExtractionPipeline:
         """S4.1 — case/space variants of a name yield one entity."""
         db = _open_db(tmp_path)
         client = _GraphClient(db)
-        await process_graph_extraction(
-            _FakeProvider(_OUTPUT_VIM), client, _records()
-        )
+        await process_graph_extraction(_FakeProvider(_OUTPUT_VIM), client, _records())
         second = _OUTPUT_VIM.replace("| user", "|  USER ", 1).replace(
             "ENTITY: person |  USER ", "ENTITY: person |  USER "
         )
@@ -208,9 +204,7 @@ class TestExtractionPipeline:
         """S5.1 — confident different object supersedes the old one."""
         db = _open_db(tmp_path)
         client = _GraphClient(db)
-        await process_graph_extraction(
-            _FakeProvider(_OUTPUT_VIM), client, _records()
-        )
+        await process_graph_extraction(_FakeProvider(_OUTPUT_VIM), client, _records())
         emacs = _OUTPUT_VIM.replace('value="vim"', 'value="emacs"').replace(
             "user prefers vim", "user prefers emacs"
         )
@@ -234,9 +228,7 @@ class TestExtractionPipeline:
         """S5.2 — identical triple creates no second row."""
         db = _open_db(tmp_path)
         client = _GraphClient(db)
-        await process_graph_extraction(
-            _FakeProvider(_OUTPUT_VIM), client, _records()
-        )
+        await process_graph_extraction(_FakeProvider(_OUTPUT_VIM), client, _records())
         await process_graph_extraction(
             _FakeProvider(_OUTPUT_VIM),
             client,
@@ -250,9 +242,7 @@ class TestExtractionPipeline:
         """S5.3 — low-trust conflict leaves both assertions valid."""
         db = _open_db(tmp_path)
         client = _GraphClient(db)
-        await process_graph_extraction(
-            _FakeProvider(_OUTPUT_VIM), client, _records()
-        )
+        await process_graph_extraction(_FakeProvider(_OUTPUT_VIM), client, _records())
         weak = (
             "ENTITY: person | user\n"
             'ASSERTION: user | prefers | value="nano" | maybe nano | '
@@ -288,5 +278,3 @@ class TestExtractionPipeline:
         result = await fetch({})
         assert [r["id"] for r in result["records"]] == ["rec-1"]
         db.close()
-
-

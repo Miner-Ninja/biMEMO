@@ -1,6 +1,7 @@
 """Tests for startup password source loading."""
 
 import pytest
+
 from backend.security.startup_password import (
     STARTUP_ENV_SOURCE,
     STARTUP_FILE_SOURCE,

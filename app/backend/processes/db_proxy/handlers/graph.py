@@ -461,7 +461,7 @@ def make_fetch_unextracted_records_handler(
         ).fetchall():
             try:
                 cited.update(json.loads(source_ids_json))
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
         rows = db.execute(
             "SELECT id, summary, key_facts, action_items, "
@@ -577,7 +577,7 @@ def make_get_graph_stats_handler(db: DatabaseManager) -> OperationHandler:
         ).fetchall():
             try:
                 cited = json.loads(source_ids_json)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 continue
             if any(str(record_id) not in known_record_ids for record_id in cited):
                 missing_evidence += 1

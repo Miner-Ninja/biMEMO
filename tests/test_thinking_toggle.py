@@ -8,6 +8,7 @@ holder resets, and reading a missing setting yields the default (on).
 from unittest.mock import AsyncMock
 
 import pytest
+
 from backend.agent.conversation_settings import read_thinking_enabled
 from backend.llm.call_factory import (
     current_thinking_enabled,
@@ -56,9 +57,7 @@ class TestChatPayloadInjection:
 
     def test_off_on_custom_prefix_injects_kwargs(self) -> None:
         """S1.1 — custom (vLLM) + off => chat_template_kwargs sent."""
-        payload = self._payload(
-            thinking_enabled=False, api_prefix=CUSTOM_API_PREFIX
-        )
+        payload = self._payload(thinking_enabled=False, api_prefix=CUSTOM_API_PREFIX)
         assert payload["chat_template_kwargs"] == {"enable_thinking": False}
 
     def test_off_on_hosted_prefix_sends_nothing(self) -> None:
@@ -70,9 +69,7 @@ class TestChatPayloadInjection:
 
     def test_default_none_sends_nothing(self) -> None:
         """S1.4 — no switch set => today's behaviour."""
-        payload = self._payload(
-            thinking_enabled=None, api_prefix=CUSTOM_API_PREFIX
-        )
+        payload = self._payload(thinking_enabled=None, api_prefix=CUSTOM_API_PREFIX)
         assert "chat_template_kwargs" not in payload
 
 

@@ -311,9 +311,7 @@ def _build_llm_client(
             capabilities_registry=capabilities_registry,
         )
     client.structured_capability_declarations = {
-        "native_tools": CapabilitySupport(
-            settings.llm_native_tools_support
-        ),
+        "native_tools": CapabilitySupport(settings.llm_native_tools_support),
         "exact_named_choice": CapabilitySupport(
             settings.llm_exact_named_choice_support
         ),

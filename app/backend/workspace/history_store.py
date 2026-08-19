@@ -15,13 +15,28 @@ from .history_tracker import WorkspaceHistoryEntry
 
 
 if TYPE_CHECKING:
-
     from backend.processes.orchestrator.client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)
 
-HISTORY_TABLE = "workspace_history"
+_CREATE_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS workspace_history (
+        conversation_id TEXT NOT NULL,
+        turn INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, turn)
+    )
+    """
+_INSERT_SQL = """
+    INSERT OR REPLACE INTO workspace_history
+        (conversation_id, turn, data)
+    VALUES (?, ?, ?)
+    """
+_SELECT_SQL = (
+    "SELECT data FROM workspace_history WHERE conversation_id = ? ORDER BY turn"
+)
+_DELETE_SQL = "DELETE FROM workspace_history WHERE conversation_id = ?"
 
 
 @dataclass
@@ -36,6 +51,7 @@ class WorkspaceHistoryStore:
     _memory_store: dict[str, list[WorkspaceHistoryEntry]] = None
 
     def __post_init__(self) -> None:
+        """Initialize the in-memory fallback store."""
         if self._memory_store is None:
             self._memory_store = {}
 
@@ -44,16 +60,7 @@ class WorkspaceHistoryStore:
         if self.db_client is None:
             return
         try:
-            await self.db_client.execute_sql(
-                f"""
-                CREATE TABLE IF NOT EXISTS {HISTORY_TABLE} (
-                    conversation_id TEXT NOT NULL,
-                    turn INTEGER NOT NULL,
-                    data TEXT NOT NULL,
-                    PRIMARY KEY (conversation_id, turn)
-                )
-                """
-            )
+            await self.db_client.execute_sql(_CREATE_TABLE_SQL)
         except Exception:
             logger.debug("Failed to create workspace_history table", exc_info=True)
 
@@ -71,11 +78,7 @@ class WorkspaceHistoryStore:
         data_json = json.dumps(entry.to_dict(), ensure_ascii=False)
         try:
             await self.db_client.execute_sql(
-                f"""
-                INSERT OR REPLACE INTO {HISTORY_TABLE}
-                    (conversation_id, turn, data)
-                VALUES (?, ?, ?)
-                """,
+                _INSERT_SQL,
                 (conversation_id, entry.turn, data_json),
             )
         except Exception:
@@ -87,8 +90,7 @@ class WorkspaceHistoryStore:
         if self.db_client is not None:
             try:
                 rows = await self.db_client.query_sql(
-                    f"SELECT data FROM {HISTORY_TABLE} "
-                    f"WHERE conversation_id = ? ORDER BY turn",
+                    _SELECT_SQL,
                     (conversation_id,),
                 )
                 if rows:
@@ -116,7 +118,7 @@ class WorkspaceHistoryStore:
         if self.db_client is not None:
             try:
                 await self.db_client.execute_sql(
-                    f"DELETE FROM {HISTORY_TABLE} WHERE conversation_id = ?",
+                    _DELETE_SQL,
                     (conversation_id,),
                 )
             except Exception:

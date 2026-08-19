@@ -275,6 +275,7 @@ async def delete_file(
     await admin.send_operation("delete_file_metadata", {"file_id": file_id_str})
     return Response(status_code=204)
 
+
 @files_router.get("/{file_id}/content", response_model=None)
 async def get_file_content(
     file_id: uuid.UUID,

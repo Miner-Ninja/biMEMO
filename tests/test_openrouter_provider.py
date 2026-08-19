@@ -8,6 +8,7 @@ import json
 
 import httpx
 import pytest
+
 from backend.llm.ollama.models import ChatMessage, ChatResponse
 from backend.llm.openrouter.provider import (
     OpenRouterError,

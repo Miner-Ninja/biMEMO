@@ -71,20 +71,19 @@ def _backdate_entity(db, entity_id, hours):
 class TestGraphPrune:
     """R1 — assertion retention and orphan-entity cleanup."""
 
-    async def test_old_invalidated_deleted_and_references_cleared(
-        self, tmp_path
-    ):
+    async def test_old_invalidated_deleted_and_references_cleared(self, tmp_path):
         """S1.1 — retention removal clears superseder references."""
         db = _open_db(tmp_path)
         subject = await _entity(db)
         old = await _assertion(db, subject)
         new = await _assertion(
-            db, subject, assertion_text="user prefers emacs",
+            db,
+            subject,
+            assertion_text="user prefers emacs",
             object_value="emacs",
         )
         db.execute(
-            "UPDATE assertions SET invalidated_by_assertion_id = ? "
-            "WHERE id = ?",
+            "UPDATE assertions SET invalidated_by_assertion_id = ? WHERE id = ?",
             (old, new),
         )
         _backdate_invalidation(db, old, 120)
@@ -123,9 +122,7 @@ class TestGraphPrune:
         assert result["entities_deleted"] == 1
         names = {
             row[0]
-            for row in db.execute(
-                "SELECT canonical_name FROM entities"
-            ).fetchall()
+            for row in db.execute("SELECT canonical_name FROM entities").fetchall()
         }
         assert names == {"young-orphan"}
         db.close()
@@ -138,7 +135,10 @@ class TestGraphPrune:
         _backdate_entity(db, subject, 48)
         _backdate_entity(db, target, 48)
         await _assertion(
-            db, subject, object_entity_id=target, object_value=None,
+            db,
+            subject,
+            object_entity_id=target,
+            object_value=None,
         )
         prune = make_prune_graph_handler(db)
         result = await prune({})
@@ -179,9 +179,7 @@ class TestRecordProtection:
         await _assertion(db, subject, source_record_ids=["rec-cited"])
         prune = make_prune_unlinked_records_handler(db)
         await prune({"age_days": 60})
-        row = db.execute(
-            "SELECT id FROM records WHERE id = 'rec-cited'"
-        ).fetchone()
+        row = db.execute("SELECT id FROM records WHERE id = 'rec-cited'").fetchone()
         assert row is not None
         db.close()
 
@@ -191,9 +189,7 @@ class TestRecordProtection:
         await self._seed_old_record(db, "rec-loose")
         prune = make_prune_unlinked_records_handler(db)
         await prune({"age_days": 60})
-        row = db.execute(
-            "SELECT id FROM records WHERE id = 'rec-loose'"
-        ).fetchone()
+        row = db.execute("SELECT id FROM records WHERE id = 'rec-loose'").fetchone()
         assert row is None
         db.close()
 
@@ -207,10 +203,14 @@ class TestGraphStats:
         subject = await _entity(db, name="user", entity_type="person")
         await _entity(db, name="stray-topic", entity_type="topic")
         kept = await _assertion(
-            db, subject, source_record_ids=["missing-record"],
+            db,
+            subject,
+            source_record_ids=["missing-record"],
         )
         dead = await _assertion(
-            db, subject, assertion_text="user prefers nano",
+            db,
+            subject,
+            assertion_text="user prefers nano",
             object_value="nano",
         )
         _backdate_invalidation(db, dead, 1)

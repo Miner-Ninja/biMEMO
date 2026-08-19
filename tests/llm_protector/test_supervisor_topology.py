@@ -8,6 +8,7 @@ Does not spawn actual processes.
 import asyncio
 
 import pytest
+
 from backend.processes.supervisor import build_topology
 from backend.processes.targets import (
     CREDENTIAL_PROXY_SOCKET,

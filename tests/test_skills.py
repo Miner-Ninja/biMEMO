@@ -8,10 +8,11 @@ import json
 import secrets
 
 import pytest
+from pydantic import ValidationError
+
 from backend.security.database import DatabaseManager
 from backend.security.schema import SCHEMA_VERSION, initialize_schema
 from backend.tools.builtin import SkillCreateInput
-from pydantic import ValidationError
 
 
 @pytest.fixture

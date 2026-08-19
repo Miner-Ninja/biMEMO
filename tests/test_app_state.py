@@ -5,6 +5,7 @@ and state query properties.
 """
 
 import pytest
+
 from backend.app_state import (
     AppState,
     AppStateManager,

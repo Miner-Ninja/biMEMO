@@ -4,6 +4,7 @@ import asyncio
 import secrets
 
 import pytest
+
 from backend.processes.db_proxy.handlers.chat_bridge import (
     make_create_chat_bridge_link_handler,
     make_create_chat_bridge_message_link_handler,

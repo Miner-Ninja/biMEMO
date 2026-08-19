@@ -60,6 +60,7 @@ def _with_rate_limit_headers(
     message["headers"] = headers
     return message
 
+
 async def _audit_rate_limit(scope: Scope, audit_fn: object, endpoint: str) -> None:
     """Schedule one audit event for a blocked request."""
     if audit_fn is None:

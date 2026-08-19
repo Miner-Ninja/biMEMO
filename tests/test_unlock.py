@@ -8,6 +8,7 @@ import os
 import time
 
 import pytest
+
 from backend.security.encrypted_key_file import (
     WrongPasswordError,
     encrypt_master_key,

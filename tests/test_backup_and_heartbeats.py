@@ -8,6 +8,7 @@ import os
 import secrets
 
 import pytest
+
 from backend.processes.db_proxy.handlers.admin import (
     make_get_loop_heartbeats_handler,
     make_record_loop_heartbeat_handler,
@@ -45,9 +46,7 @@ class TestBackupRotation:
         names = [f"backup_core_2026010{i}_000000.db" for i in range(1, 6)]
         for name in names:
             (backup_dir / name).write_bytes(b"x")
-        deleted = prune_old_backups(
-            {"core": db}, str(tmp_path / "core.db"), keep=2
-        )
+        deleted = prune_old_backups({"core": db}, str(tmp_path / "core.db"), keep=2)
         assert deleted == 3
         remaining = sorted(os.listdir(backup_dir))
         assert remaining == names[-2:]
@@ -59,9 +58,7 @@ class TestBackupRotation:
         backup_dir = tmp_path / "backups"
         backup_dir.mkdir(mode=0o700)
         (backup_dir / "backup_runtime_20260101_000000.db").write_bytes(b"x")
-        deleted = prune_old_backups(
-            {"core": db}, str(tmp_path / "core.db"), keep=0
-        )
+        deleted = prune_old_backups({"core": db}, str(tmp_path / "core.db"), keep=0)
         assert deleted == 0
         db.close()
 
@@ -89,8 +86,6 @@ class TestLoopHeartbeats:
         record = make_record_loop_heartbeat_handler(db)
         result = await record({"loop_name": "evil"})
         assert result["ok"] is False
-        heartbeats = (
-            await make_get_loop_heartbeats_handler(db)({})
-        )["heartbeats"]
+        heartbeats = (await make_get_loop_heartbeats_handler(db)({}))["heartbeats"]
         assert heartbeats == {}
         db.close()

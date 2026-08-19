@@ -109,9 +109,7 @@ def slug_for_status(status: int) -> str:
 
 def _encode(body: dict[str, Any]) -> bytes:
     """Encode one problem body compactly as UTF-8 JSON."""
-    return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    return json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def build_problem(

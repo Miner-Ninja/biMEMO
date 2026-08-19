@@ -7,6 +7,8 @@ and duplicate detection.
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import BaseModel, ValidationError
+
 from backend.tools.broker import ToolBroker
 from backend.tools.builtin import CodeSearchInput, SkillCreateInput, WorkspaceNoteInput
 from backend.tools.handlers.registration import TOOL_DEFINITIONS
@@ -17,7 +19,6 @@ from backend.tools.registry import (
     ToolRegistry,
 )
 from backend.workers.fs_worker import WorkspaceDirs
-from pydantic import BaseModel, ValidationError
 
 
 class _DummyInput(BaseModel, extra="forbid", frozen=True):

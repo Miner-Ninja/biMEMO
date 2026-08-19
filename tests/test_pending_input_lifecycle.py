@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from backend.agent.agent_loop import AgentOrchestrator
 from backend.agent.agent_loop_models import PreparedContext, TurnPreparation
 from backend.agent.finalization import RequirementSatisfaction, ResponseRequirements
@@ -137,19 +138,17 @@ async def test_tool_control_migration(tmp_path) -> None:
 
     reply = make_reply_agent_pending_input_handler(db)
     invalid = await reply(
-            {
-                "turn_id": "turn-1",
-                "pending_input_id": "input-1",
-                "conversation_id": "conversation-1",
-                "cas_version": 1,
-                "value": "not-a-number",
-            }
-        )
+        {
+            "turn_id": "turn-1",
+            "pending_input_id": "input-1",
+            "conversation_id": "conversation-1",
+            "cas_version": 1,
+            "value": "not-a-number",
+        }
+    )
     assert invalid["validation_error"] == "pending input requires an integer"
     pending = (
-        await make_get_agent_pending_input_handler(db)(
-            {"pending_input_id": "input-1"}
-        )
+        await make_get_agent_pending_input_handler(db)({"pending_input_id": "input-1"})
     )["pending_input"]
     assert pending["status"] == "pending"
     assert pending["cas_version"] == 1
@@ -157,13 +156,13 @@ async def test_tool_control_migration(tmp_path) -> None:
 
     answered = (
         await reply(
-        {
-            "turn_id": "turn-1",
-            "pending_input_id": "input-1",
-            "conversation_id": "conversation-1",
-            "cas_version": 1,
-            "value": "7",
-        }
+            {
+                "turn_id": "turn-1",
+                "pending_input_id": "input-1",
+                "conversation_id": "conversation-1",
+                "cas_version": 1,
+                "value": "7",
+            }
         )
     )["pending_input"]
     assert answered["status"] == "answered"
@@ -218,21 +217,25 @@ async def test_pending_input_is_conversation_bound_and_expiry_is_terminal(
             }
         )
 
-    turn = (
-        await make_get_agent_turn_handler(db)({"turn_id": "turn-expired"})
-    )["turn"]
+    turn = (await make_get_agent_turn_handler(db)({"turn_id": "turn-expired"}))["turn"]
     assert turn["terminal_outcome"] == "failed"
     assert turn["outcome_payload"]["error"]["code"] == "pending_input_expired"
     assert turn["pending_inputs"][0]["status"] == "expired"
-    assert db.execute(
-        "SELECT COUNT(*) FROM agent_turn_finalizations WHERE turn_id = ?",
-        ("turn-expired",),
-    ).fetchone()[0] == 1
-    assert db.execute(
-        "SELECT COUNT(*) FROM messages WHERE conversation_id = ? "
-        "AND role = 'assistant'",
-        ("conversation-1",),
-    ).fetchone()[0] == 1
+    assert (
+        db.execute(
+            "SELECT COUNT(*) FROM agent_turn_finalizations WHERE turn_id = ?",
+            ("turn-expired",),
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        db.execute(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = ? "
+            "AND role = 'assistant'",
+            ("conversation-1",),
+        ).fetchone()[0]
+        == 1
+    )
     db.close()
 
 
@@ -413,9 +416,7 @@ async def test_durable_semantic_round_budget(tmp_path) -> None:
     orchestrator.tool_executor = MagicMock()
     orchestrator._require_structured_capabilities = AsyncMock()
     expected_failure = MagicMock()
-    orchestrator._commit_structured_failure = AsyncMock(
-        return_value=expected_failure
-    )
+    orchestrator._commit_structured_failure = AsyncMock(return_value=expected_failure)
     obligation = ToolObligation(
         run_id="turn-budget",
         obligation_id="obligation-web",
@@ -459,6 +460,7 @@ async def test_durable_semantic_round_budget(tmp_path) -> None:
     )
     assert result is expected_failure
     llm_call.assert_not_awaited()
-    assert orchestrator._commit_structured_failure.await_args.kwargs[
-        "code"
-    ] == "evidence_budget_exhausted"
+    assert (
+        orchestrator._commit_structured_failure.await_args.kwargs["code"]
+        == "evidence_budget_exhausted"
+    )

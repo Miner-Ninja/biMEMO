@@ -24,12 +24,14 @@ deleting the seeded conversation afterwards is the test's job.
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 
 sys.path.insert(0, "/app")
 
 from backend.security.database import DatabaseManager
 from backend.security.encrypted_key_file import decrypt_master_key, read_key_file
+
 
 # Child tables: rows keyed by a conversation_id column.
 CONVERSATION_TABLES = (
@@ -43,6 +45,7 @@ CONVERSATION_TABLES = (
 
 
 def open_db() -> DatabaseManager:
+    """Decrypt the master key and open the configured E2E database."""
     key = decrypt_master_key(
         read_key_file(os.environ["BIMEMO_ENCRYPTED_KEY_FILE_PATH"]),
         os.environ["BIMEMO_UNLOCK_PASSWORD"],
@@ -59,11 +62,12 @@ def timestamp_at(base: datetime, offset_seconds: int) -> str:
 
 
 def seed(message_count: int, title: str) -> str:
+    """Create a conversation with the given messages, verify it, and return its id."""
     db = open_db()
     try:
         conversation_id = str(uuid.uuid4())
         # All timestamps in the past and strictly increasing per message.
-        base = datetime.now(timezone.utc) - timedelta(seconds=message_count)
+        base = datetime.now(UTC) - timedelta(seconds=message_count)
 
         db.execute(
             "INSERT INTO conversations "
@@ -111,7 +115,7 @@ def seed(message_count: int, title: str) -> str:
 
 def _delete_conversation_rows(db: DatabaseManager, conversation_id: str) -> None:
     for table in CONVERSATION_TABLES:
-        db.execute(f"DELETE FROM {table} WHERE conversation_id = ?", (conversation_id,))
+        db.execute(f"DELETE FROM {table} WHERE conversation_id = ?", (conversation_id,))  # noqa: S608  # table from trusted constant tuple
     db.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
     db.commit()
 
@@ -120,7 +124,7 @@ def _count_conversation_rows(db: DatabaseManager, conversation_id: str) -> int:
     leftover = 0
     for table in CONVERSATION_TABLES:
         leftover += db.execute(
-            f"SELECT COUNT(*) FROM {table} WHERE conversation_id = ?",
+            f"SELECT COUNT(*) FROM {table} WHERE conversation_id = ?",  # noqa: S608  # table from trusted constant tuple
             (conversation_id,),
         ).fetchone()[0]
     leftover += db.execute(
@@ -131,6 +135,7 @@ def _count_conversation_rows(db: DatabaseManager, conversation_id: str) -> int:
 
 
 def remove(conversation_id: str) -> None:
+    """Delete a conversation's rows from the child and conversations tables."""
     db = open_db()
     try:
         _delete_conversation_rows(db, conversation_id)
@@ -140,6 +145,7 @@ def remove(conversation_id: str) -> None:
 
 
 def verify_gone(conversation_id: str) -> None:
+    """Count leftover rows of a conversation and report whether it is gone."""
     db = open_db()
     try:
         leftover = _count_conversation_rows(db, conversation_id)
@@ -149,6 +155,7 @@ def verify_gone(conversation_id: str) -> None:
 
 
 def main() -> None:
+    """CLI entry point: seed, or delete / verify-gone a conversation by id."""
     args = sys.argv[1:]
     if args and args[0] == "--delete":
         if len(args) != 2:

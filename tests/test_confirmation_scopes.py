@@ -4,13 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import ValidationError
+
 from backend.agent.tool_executor import ToolExecutor
 from backend.ipc.models import ConfirmRequest as IPCConfirmRequest
 from backend.models.requests import ConfirmRequest as HTTPConfirmRequest
 from backend.permissions import ActionDecision, DecisionKind, domain_scope, scope_hash
 from backend.tools.handlers.registration import confirmation_button_extras
 from backend.trust.confirmation import ConfirmationManager
-from pydantic import ValidationError
 
 
 class TestScopeWire:
@@ -19,9 +20,7 @@ class TestScopeWire:
     def test_http_scope_accepts_the_three_values(self):
         """S3.1: every panel button value validates on the HTTP model."""
         for scope in ("once", "domain", "conversation"):
-            body = HTTPConfirmRequest(
-                action_id="a1", decision="approve", scope=scope
-            )
+            body = HTTPConfirmRequest(action_id="a1", decision="approve", scope=scope)
             assert body.scope == scope
 
     def test_http_scope_defaults_to_once(self):
@@ -99,6 +98,7 @@ class TestDomainGrantCoordinates:
     """R6 — the domain grant binds conversation and host, hashed centrally."""
 
     def test_domain_coordinates_bind_host(self):
+        """Domain grant coordinates bind the conversation and the call's host."""
         executor = _executor_with_context()
         coords = executor._grant_coordinates(
             _http_fetch_decision(), domain_host="example.com"
@@ -112,6 +112,7 @@ class TestDomainGrantCoordinates:
         assert coords["scope_hash"] == expected
 
     def test_without_host_policy_coordinates_are_kept(self):
+        """Without a host, coordinates stay at the conversation-capability scope."""
         executor = _executor_with_context()
         coords = executor._grant_coordinates(_http_fetch_decision())
         assert coords["scope_type"] == "conversation_capability"
@@ -126,9 +127,7 @@ class TestDomainGrantReuse:
         executor = _executor_with_context()
 
         async def lookup_capability_grant(**kwargs):
-            return lookup_results.get(
-                (kwargs["scope_type"], kwargs["scope_value"])
-            )
+            return lookup_results.get((kwargs["scope_type"], kwargs["scope_value"]))
 
         executor.turn_store = SimpleNamespace(
             lookup_capability_grant=AsyncMock(side_effect=lookup_capability_grant)
@@ -168,9 +167,7 @@ class TestDomainGrantReuse:
         executor = self._executor_with_store(
             {("domain", "conv-1:example.com"): {"decision": "allow", "id": "g1"}}
         )
-        immediate, confirmation = await self._partition(
-            executor, "https://other.org/"
-        )
+        immediate, confirmation = await self._partition(executor, "https://other.org/")
         assert immediate == []
         assert [call.name for call in confirmation] == ["http_fetch"]
 
@@ -180,9 +177,7 @@ class TestDomainGrantReuse:
         executor = self._executor_with_store(
             {("domain", "conv-1:example.com"): {"decision": "allow", "id": "g1"}}
         )
-        executor._prepared_calls = {
-            "c1": SimpleNamespace(canonical_parameters={})
-        }
+        executor._prepared_calls = {"c1": SimpleNamespace(canonical_parameters={})}
         from backend.agent.agent_loop_models import ToolCall
 
         call = ToolCall(id="c1", name="http_fetch", parameters={})
@@ -197,16 +192,19 @@ class TestButtonExtrasPayload:
     """R2/S2.4 — the panel's facts are computed server-side only."""
 
     def test_url_grant_capable_tool(self):
+        """An http_fetch with a URL is grant-capable and reports the host."""
         extras = confirmation_button_extras(
             "http_fetch", {"url": "https://Example.COM/x"}
         )
         assert extras == {"grant_capable": True, "url_host": "example.com"}
 
     def test_per_invocation_tool(self):
+        """execute_command has no domain grant and is reported as not grant-capable."""
         extras = confirmation_button_extras("execute_command", {"command": "ls"})
         assert extras == {"grant_capable": False, "url_host": None}
 
     def test_unknown_tool_fails_closed(self):
+        """An unknown tool name fails closed: not grant-capable, no host."""
         extras = confirmation_button_extras("no_such_tool", {})
         assert extras == {"grant_capable": False, "url_host": None}
 
@@ -224,9 +222,11 @@ class TestDomainRedirectContainment:
 
         class _Resp:
             status_code = 302
-            headers = {"location": "https://evil.com/steal"}
             content = b""
             text = ""
+
+            def __init__(self) -> None:
+                self.headers = {"location": "https://evil.com/steal"}
 
         class _Client:
             def __init__(self, *args, **kwargs):

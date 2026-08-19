@@ -2,9 +2,10 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 import backend.agent.llm_caller as llm_caller_module
 import backend.processes.orchestrator.chat_handler as chat_handler_module
-import pytest
 from backend.ipc.models import ChatRequest, ChatResponse, TurnOutcomeKind
 from backend.processes.orchestrator.chat_handler import (
     _maybe_handle_permission_reply,
@@ -64,7 +65,7 @@ class TestTypedTextResolvesNothing:
 
     @pytest.mark.parametrize(
         "message",
-        ["да", "yes", "1", "/approve", "нет", "no", "/deny", "хм, а это надо?"],
+        ["да", "yes", "1", "/approve", "нет", "no", "/deny", "хм, а это надо?"],  # noqa: RUF001
     )
     @pytest.mark.asyncio
     async def test_any_message_replays_the_paused_card(self, message):
@@ -108,6 +109,7 @@ class TestClassifierRemoved:
     """R13/S13.1 — the LLM permission classifier does not exist."""
 
     def test_classifier_symbols_absent(self):
+        """The removed permission-classifier symbols no longer exist."""
         for symbol in (
             "classify_permission_reply",
             "_parse_permission_reply",
@@ -118,4 +120,5 @@ class TestClassifierRemoved:
             assert not hasattr(llm_caller_module.LLMCaller, symbol), symbol
 
     def test_vocabulary_parser_absent(self):
+        """The removed vocabulary parser is absent from the chat handler."""
         assert not hasattr(chat_handler_module, "_parse_confirmation_command")

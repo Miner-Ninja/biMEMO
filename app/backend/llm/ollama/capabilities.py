@@ -180,7 +180,7 @@ async def _fetch_show_payload(
         response = await client.post(SHOW_ENDPOINT, json={"model": model})
         response.raise_for_status()
         payload = response.json()
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPError, ValueError:
         return None
     return payload if isinstance(payload, dict) else None
 
