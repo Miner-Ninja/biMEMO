@@ -35,6 +35,7 @@
 		path /confirm
 		path /admin /admin/*
 		path /files /files/*
+	path /avatars /avatars/*
 		path /bridge /bridge/*
 		path /security /security/*
 		path /workspace /workspace/*
