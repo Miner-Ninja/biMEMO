@@ -9,7 +9,12 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
   },
-  globalSetup: "./tests/e2e/global-setup.ts",
+  // The manual-gated setup-first-run scenario needs a stack whose password
+  // is not set yet, so the shared login cannot be pre-established: allow
+  // skipping the global setup for that manual run.
+  globalSetup: process.env.E2E_SKIP_GLOBAL_SETUP
+    ? undefined
+    : "./tests/e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
