@@ -57,7 +57,7 @@ jobs:
       - name: Install bandit
         run: pip install bandit==1.8.3
       - name: Run bandit
-        run: bandit -r app/backend/ -ll --exclude app/backend/tests
+        run: bandit -r app/backend/ -ll --exclude tests
 
   ruff:
     name: Linting

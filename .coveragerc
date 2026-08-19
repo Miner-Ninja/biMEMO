@@ -4,7 +4,6 @@ branch = True
 omit =
     */backend/agent/*
     */backend/bot/*
-    */backend/bus/*
     */backend/channels/*
     */backend/chat_bridge/*
     */backend/config.py
@@ -21,7 +20,6 @@ omit =
     */backend/security/deletion.py
     */backend/security/diagnostics_schema.py
     */backend/security/keysource/protocol.py
-    */backend/security/migrate.py
     */backend/security/schema.py
     */backend/tools/broker.py
     */backend/tools/handlers/registration.py
