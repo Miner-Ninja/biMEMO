@@ -1,13 +1,13 @@
 """Worker proxy handler factory.
 
 Creates async handlers that route tool calls to FS Worker
-or Net Worker via WorkerManager IPC.
+or Net Worker via its dispatch handle.
 """
 
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING
+from typing import Protocol, TYPE_CHECKING
 
 from backend.ipc.protocol import ToolRequest, ToolResponse
 
@@ -15,7 +15,16 @@ from backend.ipc.protocol import ToolRequest, ToolResponse
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    from backend.bus.worker_manager import WorkerManager
+
+class WorkerHandle(Protocol):
+    """Minimal worker dispatch interface used by tool handlers.
+
+    Implemented by the orchestrator's in-process worker adapter
+    (processes/orchestrator/tool_setup).
+    """
+
+    async def send_request(self, request: ToolRequest) -> ToolResponse:
+        """Send one tool request and return the worker response."""
 
 
 logger = logging.getLogger(__name__)
@@ -58,7 +67,7 @@ def _tool_request(
 
 
 async def _run_worker_request(
-    worker_manager: WorkerManager,
+    worker_manager: WorkerHandle,
     tool_name: str,
     parameters: dict,
 ) -> ToolResponse:
@@ -94,14 +103,14 @@ def _email_parameters(params: object, smtp_config: dict) -> dict:
 
 
 def make_worker_proxy(
-    worker_manager: WorkerManager,
+    worker_manager: WorkerHandle,
     tool_name: str,
     context_fn: Callable[[], Mapping[str, str]] | None = None,
 ) -> callable:
     """Create an async proxy handler for a worker-routed tool.
 
     Args:
-        worker_manager: Worker manager for sending requests.
+        worker_manager: Worker dispatch handle for sending requests.
         tool_name: Name of the tool being proxied.
         context_fn: Optional broker execution-context reader; when the
             context carries ``domain_grant_host`` (the invocation runs
@@ -140,7 +149,7 @@ def make_worker_proxy(
 
 
 def make_email_proxy(
-    worker_manager: WorkerManager,
+    worker_manager: WorkerHandle,
     smtp_config: dict | None,
 ) -> callable:
     """Create a proxy handler for email_send that injects SMTP config.

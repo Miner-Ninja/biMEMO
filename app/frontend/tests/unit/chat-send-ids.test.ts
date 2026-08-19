@@ -6,7 +6,7 @@ import {
   newChatSendIds,
   resolveChatSendIds,
   type FailedChatSend,
-} from "../src/lib/chat-response-source";
+} from "@/lib/chat-response-source";
 
 describe("bindPendingInputReply", () => {
   it("resumes the exact run and CAS version with a fresh message id", () => {

@@ -47,6 +47,7 @@ from backend.tools.handlers.system_status import (
     make_system_status_handler,
 )
 from backend.tools.handlers.worker_proxy import (
+    WorkerHandle,
     make_email_proxy,
     make_worker_proxy,
 )
@@ -61,7 +62,6 @@ from backend.tools.registry import (
 
 
 if TYPE_CHECKING:
-    from backend.bus.worker_manager import WorkerManager
     from backend.tools.broker import ToolBroker
 
 
@@ -947,7 +947,7 @@ def _make_code_search_handler() -> callable:
 
 def _register_worker_proxy_group(
     broker: ToolBroker,
-    worker: WorkerManager,
+    worker: WorkerHandle,
     tool_names: tuple[str, ...],
 ) -> None:
     """Register one group of worker-proxy handlers."""
@@ -980,8 +980,8 @@ def _worker_proxy_tools() -> tuple[tuple[str, ...], tuple[str, ...]]:
 def register_all_handlers(
     broker: ToolBroker,
     db_client: object,
-    fs_worker: WorkerManager,
-    net_worker: WorkerManager,
+    fs_worker: WorkerHandle,
+    net_worker: WorkerHandle,
     workspace: object,
     history_tracker: object,
     history_store: object,
@@ -998,8 +998,8 @@ def register_all_handlers(
     Args:
         broker: Tool broker to register handlers with.
         db_client: DBProxyClient for core handlers (IPC-based).
-        fs_worker: FS Worker manager for file operations.
-        net_worker: Net Worker manager for network operations.
+        fs_worker: FS Worker dispatch handle for file operations.
+        net_worker: Net Worker dispatch handle for network operations.
         workspace: Mutable workspace dirs container.
         history_tracker: Workspace history tracker.
         history_store: Workspace history store.

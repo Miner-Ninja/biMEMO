@@ -19,6 +19,7 @@ secrets/
 # --- IDE / Editors ---
 .claude/
 .codex/
+.omp/
 .agents/
 .idea/
 .vscode/

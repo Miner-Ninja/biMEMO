@@ -31,7 +31,7 @@ class _RequestWithId(Protocol):
 
 
 class _InProcessWorker:
-    """Adapter with WorkerManager interface for in-process dispatch.
+    """Adapter exposing the WorkerHandle interface for in-process dispatch.
 
     The orchestrator is a daemon process and cannot spawn children,
     so we use this lightweight adapter that runs dispatch handlers
