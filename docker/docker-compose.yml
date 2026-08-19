@@ -24,6 +24,9 @@ services:
       # Public CA root (read-only) so the admin connection page can offer it
       # for download. The CA PRIVATE key stays on the host, never mounted here.
       - ./caddy/ca/ca-cert.pem:/etc/bimemo/ca-root.pem:ro
+      # Caddy config dir (read-only) so in-container tests can read
+      # Caddyfile.dev via /app/docker/caddy.
+      - ./caddy:/app/docker/caddy:ro
     command: python -m backend.processes.supervisor
     environment:
       - BIMEMO_DEBUG=true
