@@ -17,7 +17,6 @@ services:
       - files-data:/data/files
       - ../app/backend:/app/backend
       - ../pyproject.toml:/app/pyproject.toml
-      - ../.coveragerc:/app/.coveragerc
       - ../tests:/app/tests
       - ../scripts:/app/scripts
       - ../secrets:/run/secrets:ro

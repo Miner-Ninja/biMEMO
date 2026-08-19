@@ -37,6 +37,8 @@ COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 COPY app/backend/ /app/backend/
 COPY --from=frontend /frontend/dist/ /app/frontend/dist/
 COPY tests/ /app/tests/
+COPY scripts/ /app/scripts/
+COPY docker/caddy/ /app/docker/caddy/
 
 RUN chmod +x /app/docker/entrypoint.sh \
     && mkdir -p /data/keyfile /data/db /data/files \
