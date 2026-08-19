@@ -155,6 +155,14 @@ export const MessageList = memo(function MessageList({
     scrollViewportToBottom(getViewport(), "auto");
   }, [autoScrollRequest]);
 
+  // Whether the current render branch renders a scroll viewport: the
+  // empty-state branch does not. A fresh conversation load mounts the
+  // empty state first, so a key-only effect would bail while no viewport
+  // exists and never re-run — the pagination trigger would stay dead for
+  // that conversation. The branch in the deps below re-runs the effect
+  // the moment the viewport appears.
+  const viewportBranch = messages.length > 0 || isLoading;
+
   useEffect(() => {
     const nextViewport = getViewport();
     if (!nextViewport) {
@@ -216,7 +224,7 @@ export const MessageList = memo(function MessageList({
       nextViewport.removeEventListener("touchmove", handleTouchMove);
       nextViewport.removeEventListener("keydown", handleKeyDown);
     };
-  }, [conversationKey]);
+  }, [conversationKey, viewportBranch]);
 
   useEffect(() => {
     const last = messages[messages.length - 1];
