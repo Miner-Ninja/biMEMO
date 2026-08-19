@@ -1,17 +1,19 @@
 """Shared test fixtures for biMEMO test suite."""
 
+import os
+
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def _set_test_env(monkeypatch):
     """Set required environment variables for all tests."""
-    cleared_env_vars = (
-        "BIMEMO_KEY_FILE_PATH",
-        "BIMEMO_UNLOCK_PASSWORD_FILE",
-    )
-    for key in cleared_env_vars:
-        monkeypatch.delenv(key, raising=False)
+    # Clear every application variable so the suite is hermetic: the dev
+    # container runs with e.g. BIMEMO_MCP_ENABLED=true, which would leak
+    # into tests asserting library defaults.
+    for key in list(os.environ):
+        if key.startswith("BIMEMO_"):
+            monkeypatch.delenv(key)
 
     env_vars = {
         "BIMEMO_DEBUG": "true",

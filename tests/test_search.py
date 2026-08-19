@@ -15,6 +15,10 @@ from backend.memory.classification.question_classifier import (
 from backend.memory.retrieval.fulltext import (
     create_fts_tables,
 )
+from backend.memory.retrieval.vector_store import (
+    create_vector_table,
+    enable_vector_extension,
+)
 from backend.security.database import DatabaseManager
 from backend.security.schema import initialize_schema
 
@@ -29,8 +33,6 @@ def _open_db(tmp_path):
     enable_vector_extension(db)
     create_vector_table(db, 4)
     return db
-
-
 
 
 class TestMemoryQueryDetection:
@@ -135,7 +137,6 @@ class TestMemoryQueryDetection:
             )
             is True
         )
-
 
 
 class TestDetectMessageRoleFilter:
