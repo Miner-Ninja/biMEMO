@@ -11,6 +11,7 @@ restarting the process.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import mimetypes
 import uuid
@@ -18,7 +19,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.files import FileContextManager
@@ -26,9 +27,12 @@ from backend.files.paths import UPLOADED_FILES_DIR
 from backend.security.policy import get_policy
 
 from ..deps import _get_admin_client, _require_auth
+from .etag import if_none_match_matches
 
 
 if TYPE_CHECKING:
+    import os
+
     from backend.channels.jwt_auth import TokenClaims
 
     from ..clients import AdminDBClient
@@ -41,6 +45,8 @@ files_router = APIRouter(prefix="/files")
 # --- On-disk paths and conversion factors ---
 FILES_DIR = UPLOADED_FILES_DIR
 BYTES_PER_MEGABYTE = 1024 * 1024
+# Cache-Control for downloaded file content (content is immutable per id)
+FILE_CONTENT_CACHE_CONTROL = "private, max-age=86400"
 
 # --- Catalog keys read from AssistantPolicy ---
 _KEY_ALLOWED_EXTENSIONS = "filesystem.uploads.allowed_extensions"
@@ -89,6 +95,17 @@ def _file_path(file_id: str, original_name: str) -> Path:
     """Return the on-disk path for one stored file."""
     ext = Path(original_name).suffix.lower()
     return FILES_DIR / f"{file_id}{ext}"
+
+
+def _file_etag(stat_result: os.stat_result) -> str:
+    """Return the quoted ETag one FileResponse emits for a stat result.
+
+    Mirrors starlette 1.6.0 FileResponse.set_stat_headers (md5 of
+    mtime + size), so the value compared against If-None-Match is
+    exactly the ETag header the FileResponse response carries.
+    """
+    etag_base = str(stat_result.st_mtime) + "-" + str(stat_result.st_size)
+    return f'"{hashlib.md5(etag_base.encode(), usedforsecurity=False).hexdigest()}"'
 
 
 def _uploaded_file_response(
@@ -258,22 +275,33 @@ async def delete_file(
     await admin.send_operation("delete_file_metadata", {"file_id": file_id_str})
     return Response(status_code=204)
 
-
-@files_router.get("/{file_id}/content")
+@files_router.get("/{file_id}/content", response_model=None)
 async def get_file_content(
     file_id: uuid.UUID,
+    request: Request,
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
-) -> FileResponse:
+) -> FileResponse | Response:
     """Read file content.
+
+    Starlette's FileResponse does not evaluate If-None-Match, so the
+    conditional check is explicit: the ETag is computed with the same
+    stat-based formula FileResponse uses and set on the response
+    itself, so a matching If-None-Match yields a 304 with an empty body.
 
     Args:
         file_id: File UUID.
+        request: HTTP request (provides the If-None-Match header).
         _claims: Authenticated user.
         admin: DB Proxy client.
 
     Returns:
-        File content with appropriate Content-Type.
+        File content with appropriate Content-Type and
+        Cache-Control: private, max-age=86400; 304 when the conditional
+        header matches the ETag.
+
+    Raises:
+        HTTPException: 404 if the file is missing from the database or disk.
     """
     file_id_str = str(file_id)
     file_info = await _require_file_metadata(admin, file_id_str)
@@ -282,8 +310,13 @@ async def get_file_content(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
+    etag = _file_etag(file_path.stat())
+    headers = {"etag": etag, "cache-control": FILE_CONTENT_CACHE_CONTROL}
+    if if_none_match_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
     return FileResponse(
         path=str(file_path),
         media_type=file_info["mime_type"],
         filename=file_info["original_name"],
+        headers=headers,
     )

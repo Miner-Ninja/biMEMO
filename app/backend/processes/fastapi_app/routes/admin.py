@@ -235,13 +235,15 @@ async def create_backup(
     3 runs per hour.
 
     Raises:
-        HTTPException: 429 when the hourly backup limit is exhausted.
+        HTTPException: 429 (with Retry-After) when the hourly backup limit is
+        exhausted.
     """
     del claims
     if not _backup_rate_limiter.is_allowed():
         raise HTTPException(
             status_code=429,
             detail="Backup limit reached (3 per hour)",
+            headers={"Retry-After": str(_backup_rate_limiter.retry_after())},
         )
     result = await admin.create_backup()
     _backup_rate_limiter.record()

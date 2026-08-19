@@ -20,6 +20,7 @@ from backend.chat_bridge.providers import build_configured_providers
 from backend.config import get_settings
 from backend.ipc.ipc_channel import IPCSocketClient
 from backend.middleware.body_size import BodySizeMiddleware
+from backend.middleware.cache_control import CacheControlMiddleware
 from backend.middleware.csrf import CsrfMiddleware
 from backend.middleware.jwt_auth import JwtAuthMiddleware
 from backend.middleware.rate_limit import RateLimitMiddleware
@@ -377,8 +378,11 @@ def create_app(
     # NO StateCheckMiddleware — app is always READY
     # 2. Request body size limit
     application.add_middleware(BodySizeMiddleware)
-    # 1. Security headers (outermost)
+    # 1. Security headers
     application.add_middleware(SecurityHeadersMiddleware)
+    # 0. Cache-control policy (outermost; setdefault-style: a Cache-Control
+    # already set by a route is never overwritten)
+    application.add_middleware(CacheControlMiddleware)
 
     # Static files
     if FRONTEND_DIST.is_dir():

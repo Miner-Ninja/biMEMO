@@ -36,7 +36,7 @@ export function ProfilePage() {
     try {
       const res = await fetch(`/avatars/${type}`, { credentials: "include" });
       if (res.ok) {
-        return `/avatars/${type}?t=${Date.now()}`;
+        return `/avatars/${type}`;
       }
     } catch {
       /* no avatar */

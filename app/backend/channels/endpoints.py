@@ -136,7 +136,7 @@ class EndpointRateLimiter:
 
     _requests: dict[str, list[float]] = field(default_factory=dict)
 
-    def _limit_for(self, endpoint: str) -> int:
+    def limit_for(self, endpoint: str) -> int:
         """Return the configured per-minute limit for one endpoint."""
         return RATE_LIMITS.get(endpoint, SECONDS_PER_MINUTE)
 
@@ -160,7 +160,7 @@ class EndpointRateLimiter:
         Returns:
             True if within rate limit.
         """
-        limit = self._limit_for(endpoint)
+        limit = self.limit_for(endpoint)
         timestamps = self._recent_requests(endpoint)
         return len(timestamps) < limit
 
@@ -181,13 +181,39 @@ class EndpointRateLimiter:
         Returns:
             Seconds to wait (0 if allowed now).
         """
-        limit = self._limit_for(endpoint)
+        limit = self.limit_for(endpoint)
         timestamps = self._recent_requests(endpoint)
         now = _now()
         if len(timestamps) < limit:
             return 0
         oldest = min(timestamps)
         return int(oldest + SECONDS_PER_MINUTE - now) + 1
+
+    def remaining(self, endpoint: str) -> int:
+        """Return how many requests are still allowed in the active window.
+
+        Args:
+            endpoint: Endpoint name (e.g., "chat").
+
+        Returns:
+            Requests left before the per-minute limit (0 when exhausted).
+        """
+        return max(0, self.limit_for(endpoint) - len(self._recent_requests(endpoint)))
+
+    def reset_seconds(self, endpoint: str) -> int:
+        """Return whole seconds until the oldest tracked request leaves the window.
+
+        Args:
+            endpoint: Endpoint name (e.g., "chat").
+
+        Returns:
+            Seconds until the 60-second window's oldest entry expires;
+            0 when the window is empty.
+        """
+        timestamps = self._recent_requests(endpoint)
+        if not timestamps:
+            return 0
+        return max(0, int(SECONDS_PER_MINUTE - (_now() - min(timestamps))))
 
 
 @dataclass
@@ -220,3 +246,15 @@ class BackupRateLimiter:
     def record(self) -> None:
         """Record a download."""
         self._downloads.append(_now())
+
+    def retry_after(self) -> int:
+        """Return whole seconds until the oldest download leaves the hourly window.
+
+        Returns:
+            Seconds to wait before another backup download is allowed;
+            0 when the window is empty.
+        """
+        downloads = self._recent_downloads()
+        if not downloads:
+            return 0
+        return max(0, int(SECONDS_PER_HOUR - (_now() - min(downloads))))
