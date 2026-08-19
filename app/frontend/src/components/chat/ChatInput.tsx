@@ -579,6 +579,7 @@ export const ChatInput = memo(
                                     {bridgeProviderLabel(provider)}
                                   </span>
                                   <Switch
+                                    aria-label={bridgeProviderLabel(provider)}
                                     checked={enabled}
                                     disabled={
                                       disabled || bridgeDisabled || isLoadingProvider

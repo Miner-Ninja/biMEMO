@@ -51,7 +51,7 @@ describe("ChatInput", () => {
 
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    expect(onSend).toHaveBeenCalledWith("Test message", undefined);
+    expect(onSend).toHaveBeenCalledWith("Test message", undefined, []);
   });
 
   it("calls onSend when Enter is pressed", async () => {
@@ -62,7 +62,7 @@ describe("ChatInput", () => {
     const textarea = screen.getByPlaceholderText("Ask a question about your data...");
     await user.type(textarea, "Test message{Enter}");
 
-    expect(onSend).toHaveBeenCalledWith("Test message", undefined);
+    expect(onSend).toHaveBeenCalledWith("Test message", undefined, []);
   });
 
   it("does not call onSend on Shift+Enter (newline)", async () => {
@@ -123,7 +123,7 @@ describe("ChatInput", () => {
     await user.type(textarea, "  trimmed message  ");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    expect(onSend).toHaveBeenCalledWith("trimmed message", undefined);
+    expect(onSend).toHaveBeenCalledWith("trimmed message", undefined, []);
   });
 
   it("does not send empty message after trimming", async () => {
@@ -140,9 +140,9 @@ describe("ChatInput", () => {
 
   it("applies cursor-wait style when loading", () => {
     const { container } = render(<ChatInput onSend={vi.fn()} isLoading={true} />);
-    // The container div should have the cursor-wait class
-    const inputContainer = container.querySelector(".border-t");
-    expect(inputContainer).toHaveClass("[&_*]:cursor-wait");
+    // The root div gets the cursor-wait class while loading
+    const root = container.firstElementChild;
+    expect(root).toHaveClass("[&_*]:cursor-wait");
   });
 
   it("Stop button has destructive variant", () => {

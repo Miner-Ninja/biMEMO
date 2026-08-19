@@ -55,13 +55,21 @@ describe("useTheme", () => {
   });
 
   it("removes old theme class when changed", () => {
-    const { result } = renderHook(() => useTheme());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useTheme());
 
-    act(() => {
-      result.current.toggleTheme();
-    });
+      act(() => {
+        result.current.toggleTheme();
+      });
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
 
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(document.documentElement.classList.contains("light")).toBe(true);
+      expect(document.documentElement.classList.contains("dark")).toBe(false);
+      expect(document.documentElement.classList.contains("light")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
