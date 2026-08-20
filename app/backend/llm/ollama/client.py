@@ -17,13 +17,12 @@ from typing import TYPE_CHECKING, ClassVar
 
 import httpx
 
-from backend.config import get_settings
 from backend.llm.call_factory import (
+    EMPTY_LLM_RESPONSE_WARNING,
     LLM_CALL_TIMEOUT,
     AttemptRecord,
     LLMResponse,
     LLMToolCall,
-    current_thinking_enabled,
 )
 from backend.llm.call_options import (
     EmptyRetry,
@@ -40,19 +39,22 @@ from backend.llm.ollama.capabilities import (
     OllamaCapabilityError,
     detect_ollama_model_capabilities,
 )
-from backend.llm.ollama.messages import convert_messages_for_ollama
-from backend.llm.reasoning import strip_reasoning_output
+from backend.llm.ollama.models import OllamaClientError
+from backend.llm.ollama.protocol import (
+    _build_chat_payload,
+    _build_usage_from_done_chunk,
+    _emit_reasoning_deltas,
+    _extract_tool_calls,
+    _final_visible_text,
+    _raw_assistant_message,
+    _structured_content_from_ollama,
+    _uses_structured_response,
+)
 from backend.llm.response_format import resolve_llm_response_format
 from backend.llm.structured_response import (
-    STRUCTURED_RESPONSE_INSTRUCTION,
-    STRUCTURED_RESPONSE_SCHEMA,
     StructuredAssistantContent,
-    normalize_legacy_response_text,
-    parse_final_only_response_json,
-    parse_structured_response_json,
 )
 from backend.llm.structured_stream import AnswerFieldStreamExtractor
-from backend.llm.usage import LLMCallUsage
 
 
 if TYPE_CHECKING:
@@ -62,17 +64,10 @@ if TYPE_CHECKING:
     from backend.llm.compute_config import ComputeConfig
     from backend.llm.hardware import ProfileConfig
     from backend.llm.ollama.provider import OllamaProvider
+    from backend.llm.usage import LLMCallUsage
 
 
 logger = logging.getLogger(__name__)
-
-EMPTY_LLM_RESPONSE_WARNING = (
-    "LLM returned an empty response. Check your connection to LLM and try again."
-)
-
-
-class OllamaClientError(Exception):
-    """Raised when Ollama client operations fail."""
 
 
 @dataclass
@@ -329,204 +324,6 @@ class OllamaClient:
         if status:
             logger.info("Pull: %s", status)
 
-    def _build_options(self, capabilities: ModelCapabilities) -> dict[str, int]:
-        """Build Ollama request options with mandatory ``num_ctx``.
-
-        Args:
-            capabilities: Resolved capabilities for the target model. The
-                ``max_context_tokens`` value is always written into
-                ``options.num_ctx`` so Ollama cannot fall back to its
-                internal 4096 default.
-        """
-        return {"num_ctx": capabilities.max_context_tokens}
-
-    def _uses_structured_response(
-        self,
-        capabilities: ModelCapabilities,
-    ) -> bool:
-        """Return whether this Ollama request should use JSON schema output."""
-        return capabilities.llm_response_format is LlmResponseFormat.JSON_SCHEMA
-
-    def _should_stream(
-        self,
-        capabilities: ModelCapabilities,
-        response_stream: object | None = None,
-    ) -> bool:
-        """Return whether this Ollama request should stream token chunks.
-
-        When ``response_stream`` is explicitly set (from ``LLMCallOptions``),
-        it overrides the default per-format behaviour. TEXT mode streams by
-        default; JSON_SCHEMA streams only when the operator opted in via
-        ``BIMEMO_LLM_RESPONSE_STREAM=true``.
-        """
-        if response_stream is not None:
-            if isinstance(response_stream, str):
-                if response_stream in ("enabled", "true", "True", "1"):
-                    return True
-                if response_stream in ("disabled", "false", "False", "0"):
-                    return False
-                # "inherit" or unrecognized: fall through to default logic
-            else:
-                return bool(response_stream)
-        if not self._uses_structured_response(capabilities):
-            return True
-        return get_settings().llm_response_stream
-
-    def _structured_response_messages(
-        self,
-        messages: list[dict],
-    ) -> list[dict]:
-        """Append the structured-response instruction to one chat request."""
-        return [
-            {"role": "system", "content": STRUCTURED_RESPONSE_INSTRUCTION},
-            *messages,
-        ]
-
-    def _build_chat_payload(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None,
-        *,
-        capabilities: ModelCapabilities,
-        schema_override: dict | None = None,
-        tool_choice: object | None = None,
-        response_stream: object | None = None,
-        thinking_enabled: bool | None = None,
-    ) -> dict[str, object]:
-        """Build the Ollama chat request payload.
-
-        Capabilities are required: it is syntactically impossible to
-        construct a payload without a known context window. When
-        ``schema_override`` is provided and the effective format is
-        ``JSON_SCHEMA``, that schema replaces ``STRUCTURED_RESPONSE_SCHEMA``
-        in the HTTP payload for this call only.
-        """
-        request_messages = (
-            self._structured_response_messages(messages)
-            if self._uses_structured_response(capabilities)
-            else messages
-        )
-        payload: dict[str, object] = {
-            "model": self.model,
-            "messages": convert_messages_for_ollama(request_messages),
-            "stream": self._should_stream(capabilities, response_stream),
-            "options": self._build_options(capabilities),
-        }
-        # Reasoning switch: Ollama's native flag is a TOP-LEVEL "think"
-        # key (a sibling of "stream", not inside "options").
-        effective_thinking = (
-            thinking_enabled
-            if thinking_enabled is not None
-            else current_thinking_enabled()
-        )
-        if effective_thinking is False:
-            payload["think"] = False
-        if self._uses_structured_response(capabilities) and not tools:
-            payload["format"] = schema_override or STRUCTURED_RESPONSE_SCHEMA
-        if tools:
-            payload["tools"] = tools
-            if tool_choice is not None:
-                if capabilities.exact_named_choice is not CapabilitySupport.SUPPORTED:
-                    raise OllamaClientError(
-                        "Exact named tool choice required but "
-                        f"{capabilities.exact_named_choice.value} for "
-                        f"{capabilities.provider}/{capabilities.model}"
-                    )
-                payload["tool_choice"] = tool_choice
-            else:
-                payload["tool_choice"] = "auto"
-        return payload
-
-    async def _emit_reasoning_deltas(
-        self,
-        stream_queue: asyncio.Queue | None,
-        *,
-        visible_delta: str,
-        thinking_delta: str,
-    ) -> None:
-        """Forward visible and hidden reasoning deltas to the stream queue."""
-        if stream_queue is None:
-            return
-        if thinking_delta:
-            await stream_queue.put(
-                {
-                    "type": "thinking",
-                    "content": thinking_delta,
-                }
-            )
-        if visible_delta:
-            await stream_queue.put(
-                {
-                    "type": "token",
-                    "content": visible_delta,
-                }
-            )
-
-    def _extract_tool_calls(
-        self,
-        message: dict[str, object],
-    ) -> list[LLMToolCall]:
-        """Convert one Ollama chunk tool-call list into LLMToolCall objects."""
-        parsed_tool_calls: list[LLMToolCall] = []
-        for tool_call_index, tool_call_data in enumerate(message.get("tool_calls", [])):
-            function = tool_call_data.get("function", {})
-            arguments = function.get("arguments", {})
-            if not isinstance(arguments, dict):
-                logger.warning(
-                    "Ignoring Ollama tool call with non-dict arguments for %s",
-                    function.get("name", ""),
-                )
-                arguments = {}
-            parsed_tool_calls.append(
-                LLMToolCall(
-                    id=tool_call_data.get(
-                        "id",
-                        f"ollama-call-{tool_call_index}",
-                    ),
-                    name=function.get("name", ""),
-                    arguments=arguments,
-                )
-            )
-        return parsed_tool_calls
-
-    async def _build_usage_from_done_chunk(
-        self,
-        chunk: dict[str, object],
-        capabilities: ModelCapabilities,
-        *,
-        phase: str = "",
-        attempt: int = 0,
-    ) -> LLMCallUsage:
-        """Build usage data from the final Ollama done chunk.
-
-        Args:
-            chunk: Final ``done=True`` chunk from the Ollama stream.
-            capabilities: Resolved capabilities for this chat call. Its
-                ``max_context_tokens`` populates ``context_total`` so the
-                UI usage indicator reflects the value actually sent.
-            phase: Logical two-stage phase for usage attribution.
-            attempt: Provider-attempt number within the phase.
-        """
-        prompt_tokens = chunk.get("prompt_eval_count") or 0
-        completion_tokens = chunk.get("eval_count") or 0
-        nanoseconds_to_milliseconds = 1_000_000
-        return LLMCallUsage(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            prompt_ms=(
-                (chunk.get("prompt_eval_duration") or 0) / nanoseconds_to_milliseconds
-            ),
-            generation_ms=(
-                (chunk.get("eval_duration") or 0) / nanoseconds_to_milliseconds
-            ),
-            total_ms=((chunk.get("total_duration") or 0) / nanoseconds_to_milliseconds),
-            model=chunk.get("model", self.model),
-            context_total=capabilities.max_context_tokens,
-            context_used=prompt_tokens + completion_tokens,
-            phase=phase,
-            attempt=attempt,
-        )
-
     async def _stream_chat_chunks(
         self,
         payload: dict[str, object],
@@ -565,16 +362,20 @@ class OllamaClient:
                 if content:
                     full_text.append(content)
                 if content or thinking:
-                    await self._emit_reasoning_deltas(
+                    await _emit_reasoning_deltas(
                         stream_queue,
                         visible_delta=content,
                         thinking_delta=thinking,
                     )
                 if message.get("tool_calls"):
-                    tool_calls.extend(self._extract_tool_calls(message))
+                    tool_calls.extend(_extract_tool_calls(message))
                 if chunk.get("done", False):
-                    final_usage = await self._build_usage_from_done_chunk(
-                        chunk, capabilities, phase=phase, attempt=attempt
+                    final_usage = await _build_usage_from_done_chunk(
+                        chunk,
+                        capabilities,
+                        model=self.model,
+                        phase=phase,
+                        attempt=attempt,
                     )
                     break
 
@@ -595,9 +396,9 @@ class OllamaClient:
         message = chunk.get("message", {})
         content = str(message.get("content", ""))
         thinking = str(message.get("thinking", ""))
-        tool_calls = self._extract_tool_calls(message)
-        final_usage = await self._build_usage_from_done_chunk(
-            chunk, capabilities, phase=phase, attempt=attempt
+        tool_calls = _extract_tool_calls(message)
+        final_usage = await _build_usage_from_done_chunk(
+            chunk, capabilities, model=self.model, phase=phase, attempt=attempt
         )
         return content, thinking, tool_calls, final_usage
 
@@ -644,16 +445,20 @@ class OllamaClient:
                 if thinking:
                     thinking_parts.append(thinking)
                 if answer_delta or thinking:
-                    await self._emit_reasoning_deltas(
+                    await _emit_reasoning_deltas(
                         stream_queue,
                         visible_delta=answer_delta,
                         thinking_delta=thinking,
                     )
                 if message.get("tool_calls"):
-                    tool_calls.extend(self._extract_tool_calls(message))
+                    tool_calls.extend(_extract_tool_calls(message))
                 if chunk.get("done", False):
-                    final_usage = await self._build_usage_from_done_chunk(
-                        chunk, capabilities, phase=phase, attempt=attempt
+                    final_usage = await _build_usage_from_done_chunk(
+                        chunk,
+                        capabilities,
+                        model=self.model,
+                        phase=phase,
+                        attempt=attempt,
                     )
                     break
         return (
@@ -662,76 +467,6 @@ class OllamaClient:
             tool_calls,
             final_usage,
         )
-
-    def _structured_content_from_ollama(
-        self,
-        *,
-        text: str,
-        thinking: str,
-        tool_calls: list[LLMToolCall],
-        use_final_only_parser: bool = False,
-    ) -> StructuredAssistantContent | None:
-        """Build structured assistant content from one Ollama JSON response."""
-        if tool_calls:
-            return None
-        parser = (
-            parse_final_only_response_json
-            if use_final_only_parser
-            else parse_structured_response_json
-        )
-        try:
-            return parser(
-                text,
-                thinking=thinking,
-            )
-        except json.JSONDecodeError, ValueError:
-            if use_final_only_parser:
-                logger.warning(
-                    "Ollama final-only response failed strict parsing",
-                    exc_info=True,
-                )
-                return None
-            logger.warning(
-                "Ollama returned non-JSON structured response; "
-                "using plaintext fallback",
-                exc_info=True,
-            )
-            structured_content = normalize_legacy_response_text(text)
-            return StructuredAssistantContent(
-                answer=structured_content.answer,
-                thinking=thinking.strip() if thinking else None,
-                suggestions=structured_content.suggestions,
-            )
-
-    def _final_visible_text(self, full_text: list[str]) -> str:
-        """Return the assembled visible text with a defensive ``<think>`` strip.
-
-        With server-side reasoning separation this is normally a no-op, but it
-        protects the saved conversation history when an upstream Ollama version
-        leaks a raw ``<think>...</think>`` block into the visible content.
-        """
-        return strip_reasoning_output("".join(full_text))
-
-    def _raw_assistant_message(
-        self,
-        text: str,
-        tool_calls: list[LLMToolCall],
-    ) -> dict[str, object]:
-        """Build the raw assistant message payload for downstream storage."""
-        raw_message: dict[str, object] = {"role": "assistant", "content": text}
-        if tool_calls:
-            raw_message["tool_calls"] = [
-                {
-                    "id": tool_call.id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_call.name,
-                        "arguments": tool_call.arguments,
-                    },
-                }
-                for tool_call in tool_calls
-            ]
-        return raw_message
 
     async def _resolve_for_chat(self) -> ModelCapabilities:
         """Resolve capabilities for the configured model via the registry."""
@@ -760,7 +495,7 @@ class OllamaClient:
         it in ``OllamaClientError``.
         """
         stream = payload.get("stream", False)
-        if self._uses_structured_response(capabilities):
+        if _uses_structured_response(capabilities):
             if stream:
                 (
                     raw_text,
@@ -785,7 +520,7 @@ class OllamaClient:
                 )
             if skip_structured_parsing:
                 return raw_text, tool_calls, final_usage, None
-            structured_content = self._structured_content_from_ollama(
+            structured_content = _structured_content_from_ollama(
                 text=raw_text,
                 thinking=raw_thinking,
                 tool_calls=tool_calls,
@@ -804,7 +539,7 @@ class OllamaClient:
             phase=phase,
             attempt=attempt,
         )
-        text = self._final_visible_text(full_text)
+        text = _final_visible_text(full_text)
         return text, tool_calls, final_usage, None
 
     async def chat(
@@ -875,7 +610,8 @@ class OllamaClient:
                 capabilities,
                 llm_response_format=LlmResponseFormat.TEXT,
             )
-        payload = self._build_chat_payload(
+        payload = _build_chat_payload(
+            self.model,
             messages,
             effective_tools,
             capabilities=capabilities,
@@ -958,7 +694,7 @@ class OllamaClient:
                     )
                     text = EMPTY_LLM_RESPONSE_WARNING
                     if (
-                        self._uses_structured_response(capabilities)
+                        _uses_structured_response(capabilities)
                         and not skip_structured_parsing
                     ):
                         structured_content = StructuredAssistantContent(
@@ -968,7 +704,7 @@ class OllamaClient:
                         structured_content = None
         except httpx.HTTPError as e:
             raise OllamaClientError(f"Chat request failed: {e}") from e
-        raw_message = self._raw_assistant_message(text, tool_calls)
+        raw_message = _raw_assistant_message(text, tool_calls)
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,

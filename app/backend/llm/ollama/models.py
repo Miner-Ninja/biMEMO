@@ -20,6 +20,10 @@ class ModelNotAvailableError(OllamaError):
     """Raised when a required model is not available."""
 
 
+class OllamaClientError(Exception):
+    """Raised when Ollama client operations fail."""
+
+
 @dataclass
 class ChatMessage:
     """A single message in a chat conversation.

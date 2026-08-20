@@ -12,7 +12,11 @@ import json
 import httpx
 import pytest
 
-from backend.llm.call_factory import LLM_CALL_TIMEOUT, make_llm_call
+from backend.llm.call_factory import (
+    EMPTY_LLM_RESPONSE_WARNING,
+    LLM_CALL_TIMEOUT,
+    make_llm_call,
+)
 from backend.llm.capabilities import LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import (
@@ -24,10 +28,9 @@ from backend.llm.hardware import (
     HardwareProfile,
     ProfileConfig,
 )
-from backend.llm.ollama.client import (
-    OllamaClient,
-    OllamaClientError,
-)
+from backend.llm.ollama.client import OllamaClient
+from backend.llm.ollama.models import OllamaClientError
+from backend.llm.ollama.protocol import _build_chat_payload
 from backend.llm.ollama.provider import OllamaProvider
 
 
@@ -111,7 +114,8 @@ class TestBuildChatPayloadToolChoice:
         transport = httpx.MockTransport(lambda _req: httpx.Response(200))
         client = make_client(transport, tmp_path)
 
-        payload = client._build_chat_payload(
+        payload = _build_chat_payload(
+            client.model,
             [{"role": "user", "content": "check the price"}],
             [{"type": "function", "function": {"name": "http_fetch"}}],
             capabilities=self._caps(),
@@ -125,7 +129,8 @@ class TestBuildChatPayloadToolChoice:
         transport = httpx.MockTransport(lambda _req: httpx.Response(200))
         client = make_client(transport, tmp_path)
 
-        payload = client._build_chat_payload(
+        payload = _build_chat_payload(
+            client.model,
             [{"role": "user", "content": "hello"}],
             None,
             capabilities=self._caps(),
@@ -1402,8 +1407,6 @@ class TestOllamaClientEmptyRetry:
         )
         result = await client.chat([{"role": "user", "content": "Hi"}])
         assert call_count == 2
-        from backend.llm.ollama.client import EMPTY_LLM_RESPONSE_WARNING
-
         assert result.text == EMPTY_LLM_RESPONSE_WARNING
         assert result.structured_content is not None
         assert result.structured_content.answer == EMPTY_LLM_RESPONSE_WARNING
