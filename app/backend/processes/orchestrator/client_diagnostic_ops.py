@@ -2,13 +2,20 @@
 
 Provides module-level async functions that persist structured diagnostic
 records through DBProxyClient. Each function receives a DBProxyClient
-instance as its first parameter. Pure parameter-building helpers are also
-included here.
+instance as its first parameter. The on-the-wire parameter payload is
+built from the shared DB Proxy parameter models, so client and server
+validate against one definition.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+from backend.processes.db_proxy.params import (
+    WriteMemoryRouteDiagnosticParams,
+    WriteRecordProcessingDiagnosticParams,
+    WriteSummaryProcessingDiagnosticParams,
+)
 
 
 if TYPE_CHECKING:
@@ -73,34 +80,35 @@ async def write_memory_route_diagnostic(
     Returns:
         Diagnostic record ID.
     """
+    parameters = WriteMemoryRouteDiagnosticParams(
+        session_id=session_id,
+        conversation_id=conversation_id,
+        message_id=message_id,
+        channel=channel,
+        initial_intent=initial_intent,
+        initial_confidence=initial_confidence,
+        initial_role_filter=initial_role_filter,
+        initial_source=initial_source,
+        initial_signal_groups=initial_signal_groups,
+        fallback_attempted=fallback_attempted,
+        fallback_reason=fallback_reason,
+        fallback_intent=fallback_intent,
+        fallback_confidence=fallback_confidence,
+        fallback_role_filter=fallback_role_filter,
+        fallback_source=fallback_source,
+        final_intent=final_intent,
+        final_confidence=final_confidence,
+        final_role_filter=final_role_filter,
+        final_source=final_source,
+        final_signal_groups=final_signal_groups,
+        route_mismatch=route_mismatch,
+        mismatch_label=mismatch_label,
+        used_long_term_mode=used_long_term_mode,
+    )
     return await client._send_int_operation(
         "write_memory_route_diagnostic",
         result_key="diagnostic_id",
-        parameters=build_memory_route_diagnostic_params(
-            session_id=session_id,
-            conversation_id=conversation_id,
-            message_id=message_id,
-            channel=channel,
-            initial_intent=initial_intent,
-            initial_confidence=initial_confidence,
-            initial_role_filter=initial_role_filter,
-            initial_source=initial_source,
-            initial_signal_groups=initial_signal_groups,
-            fallback_attempted=fallback_attempted,
-            fallback_reason=fallback_reason,
-            fallback_intent=fallback_intent,
-            fallback_confidence=fallback_confidence,
-            fallback_role_filter=fallback_role_filter,
-            fallback_source=fallback_source,
-            final_intent=final_intent,
-            final_confidence=final_confidence,
-            final_role_filter=final_role_filter,
-            final_source=final_source,
-            final_signal_groups=final_signal_groups,
-            route_mismatch=route_mismatch,
-            mismatch_label=mismatch_label,
-            used_long_term_mode=used_long_term_mode,
-        ),
+        parameters=parameters.model_dump(),
     )
 
 
@@ -150,28 +158,29 @@ async def write_record_processing_diagnostic(
     Returns:
         Diagnostic record ID.
     """
+    parameters = WriteRecordProcessingDiagnosticParams(
+        decision=decision,
+        conversation_id=conversation_id,
+        session_id=session_id,
+        record_id=record_id,
+        model=model,
+        message_count=message_count,
+        source_message_ids=source_message_ids or [],
+        messages=messages or [],
+        injection_flagged=injection_flagged,
+        summary=summary,
+        key_facts=key_facts or [],
+        action_items=action_items or [],
+        memory_kinds=memory_kinds or [],
+        prompt=prompt or [],
+        raw_output=raw_output,
+        error=error,
+        detail=detail,
+    )
     return await client._send_int_operation(
         "write_record_processing_diagnostic",
         result_key="diagnostic_id",
-        parameters=build_record_processing_diagnostic_params(
-            decision=decision,
-            conversation_id=conversation_id,
-            session_id=session_id,
-            record_id=record_id,
-            model=model,
-            message_count=message_count,
-            source_message_ids=source_message_ids,
-            messages=messages,
-            injection_flagged=injection_flagged,
-            summary=summary,
-            key_facts=key_facts,
-            action_items=action_items,
-            memory_kinds=memory_kinds,
-            prompt=prompt,
-            raw_output=raw_output,
-            error=error,
-            detail=detail,
-        ),
+        parameters=parameters.model_dump(),
     )
 
 
@@ -221,164 +230,27 @@ async def write_summary_processing_diagnostic(
     Returns:
         Diagnostic record ID.
     """
+    parameters = WriteSummaryProcessingDiagnosticParams(
+        decision=decision,
+        summary_id=summary_id,
+        model=model,
+        record_count=record_count,
+        source_record_ids=source_record_ids or [],
+        records=records or [],
+        prompt=prompt or [],
+        raw_output=raw_output,
+        main_point=main_point,
+        based_on=based_on or [],
+        trust_level=trust_level,
+        scope=scope,
+        record_relations=record_relations or [],
+        original_scope=original_scope,
+        scope_adjustment_reason=scope_adjustment_reason,
+        error=error,
+        detail=detail,
+    )
     return await client._send_int_operation(
         "write_summary_processing_diagnostic",
         result_key="diagnostic_id",
-        parameters=build_summary_processing_diagnostic_params(
-            decision=decision,
-            summary_id=summary_id,
-            model=model,
-            record_count=record_count,
-            source_record_ids=source_record_ids,
-            records=records,
-            prompt=prompt,
-            raw_output=raw_output,
-            main_point=main_point,
-            based_on=based_on,
-            trust_level=trust_level,
-            scope=scope,
-            record_relations=record_relations,
-            original_scope=original_scope,
-            scope_adjustment_reason=scope_adjustment_reason,
-            error=error,
-            detail=detail,
-        ),
+        parameters=parameters.model_dump(),
     )
-
-
-def build_memory_route_diagnostic_params(
-    *,
-    session_id: str,
-    conversation_id: str,
-    message_id: str,
-    channel: str,
-    initial_intent: str,
-    initial_confidence: str,
-    initial_role_filter: str | None,
-    initial_source: str,
-    initial_signal_groups: list[str],
-    fallback_attempted: bool,
-    fallback_reason: str | None,
-    fallback_intent: str | None,
-    fallback_confidence: str | None,
-    fallback_role_filter: str | None,
-    fallback_source: str | None,
-    final_intent: str,
-    final_confidence: str,
-    final_role_filter: str | None,
-    final_source: str,
-    final_signal_groups: list[str],
-    route_mismatch: bool,
-    mismatch_label: str,
-    used_long_term_mode: bool,
-) -> dict[str, Any]:
-    """Build the parameter payload for one memory-route diagnostic write."""
-    return {
-        "session_id": session_id,
-        "conversation_id": conversation_id,
-        "message_id": message_id,
-        "channel": channel,
-        "initial_intent": initial_intent,
-        "initial_confidence": initial_confidence,
-        "initial_role_filter": initial_role_filter,
-        "initial_source": initial_source,
-        "initial_signal_groups": initial_signal_groups,
-        "fallback_attempted": fallback_attempted,
-        "fallback_reason": fallback_reason,
-        "fallback_intent": fallback_intent,
-        "fallback_confidence": fallback_confidence,
-        "fallback_role_filter": fallback_role_filter,
-        "fallback_source": fallback_source,
-        "final_intent": final_intent,
-        "final_confidence": final_confidence,
-        "final_role_filter": final_role_filter,
-        "final_source": final_source,
-        "final_signal_groups": final_signal_groups,
-        "route_mismatch": route_mismatch,
-        "mismatch_label": mismatch_label,
-        "used_long_term_mode": used_long_term_mode,
-    }
-
-
-def build_record_processing_diagnostic_params(
-    *,
-    decision: str,
-    conversation_id: str,
-    session_id: str,
-    record_id: str,
-    model: str,
-    message_count: int,
-    source_message_ids: list[str] | None,
-    messages: list[str] | None,
-    injection_flagged: bool,
-    summary: str,
-    key_facts: list[str] | None,
-    action_items: list[str] | None,
-    memory_kinds: list[str] | None,
-    prompt: list[dict[str, Any]] | None,
-    raw_output: str,
-    error: str,
-    detail: str,
-) -> dict[str, Any]:
-    """Build the parameter payload for one record-processing diagnostic write."""
-    return {
-        "decision": decision,
-        "conversation_id": conversation_id,
-        "session_id": session_id,
-        "record_id": record_id,
-        "model": model,
-        "message_count": message_count,
-        "source_message_ids": source_message_ids or [],
-        "messages": messages or [],
-        "injection_flagged": injection_flagged,
-        "summary": summary,
-        "key_facts": key_facts or [],
-        "action_items": action_items or [],
-        "memory_kinds": memory_kinds or [],
-        "prompt": prompt or [],
-        "raw_output": raw_output,
-        "error": error,
-        "detail": detail,
-    }
-
-
-def build_summary_processing_diagnostic_params(
-    *,
-    decision: str,
-    summary_id: str,
-    model: str,
-    record_count: int,
-    source_record_ids: list[str] | None,
-    records: list[dict[str, Any]] | None,
-    prompt: list[dict[str, Any]] | None,
-    raw_output: str,
-    main_point: str,
-    based_on: list[str] | None,
-    trust_level: str,
-    scope: str,
-    record_relations: list[str] | None,
-    original_scope: str,
-    scope_adjustment_reason: str,
-    error: str,
-    detail: str,
-) -> dict[str, Any]:
-    """Build the parameter payload for one summary-processing diagnostic write."""
-    return {
-        "decision": decision,
-        "summary_id": summary_id,
-        "model": model,
-        "record_count": record_count,
-        "source_record_ids": source_record_ids or [],
-        "records": records or [],
-        "prompt": prompt or [],
-        "raw_output": raw_output,
-        "main_point": main_point,
-        "based_on": based_on or [],
-        "trust_level": trust_level,
-        "scope": scope,
-        "record_relations": record_relations or [],
-        "original_scope": original_scope,
-        "scope_adjustment_reason": scope_adjustment_reason,
-        "error": error,
-        "detail": detail,
-    }

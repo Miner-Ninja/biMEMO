@@ -23,6 +23,7 @@ from backend.ipc.models import (
     MemoryInvalidateRequest,
     MemoryInvalidateResponse,
 )
+from backend.processes.db_proxy.params import WriteMemoryRouteDiagnosticParams
 
 from .client import DBProxyClient, DBProxyError
 
@@ -654,46 +655,41 @@ def make_memory_route_diagnostic_fn(db_client: DBProxyClient) -> Callable:
         initial_route = _normalized_route_section(route_trace, "initial_route")
         final_route = _normalized_route_section(route_trace, "final_route")
         fallback_route = _normalized_route_section(route_trace, "fallback_route")
-        return {
-            "session_id": session_id,
-            "conversation_id": conversation_id,
-            "message_id": message_id,
-            "channel": channel,
-            "initial_intent": str(
+        params = WriteMemoryRouteDiagnosticParams(
+            session_id=session_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            channel=channel,
+            initial_intent=str(
                 (initial_route or {}).get("intent", "non_memory_question")
             ),
-            "initial_confidence": str((initial_route or {}).get("confidence", "none")),
-            "initial_role_filter": _optional_route_string(
+            initial_confidence=str((initial_route or {}).get("confidence", "none")),
+            initial_role_filter=_optional_route_string(
                 initial_route,
                 "role_filter",
             ),
-            "initial_source": str((initial_route or {}).get("source", "signal")),
-            "initial_signal_groups": _route_signal_groups(initial_route),
-            "fallback_attempted": bool(route_trace.get("fallback_attempted", False)),
-            "fallback_reason": (
+            initial_source=str((initial_route or {}).get("source", "signal")),
+            initial_signal_groups=_route_signal_groups(initial_route),
+            fallback_attempted=bool(route_trace.get("fallback_attempted", False)),
+            fallback_reason=(
                 str(route_trace.get("fallback_reason"))
                 if route_trace.get("fallback_reason") is not None
                 else None
             ),
-            "fallback_intent": (_optional_route_string(fallback_route, "intent")),
-            "fallback_confidence": (
-                _optional_route_string(fallback_route, "confidence")
-            ),
-            "fallback_role_filter": (
-                _optional_route_string(fallback_route, "role_filter")
-            ),
-            "fallback_source": (_optional_route_string(fallback_route, "source")),
-            "final_intent": str(
-                (final_route or {}).get("intent", "non_memory_question")
-            ),
-            "final_confidence": str((final_route or {}).get("confidence", "none")),
-            "final_role_filter": _optional_route_string(final_route, "role_filter"),
-            "final_source": str((final_route or {}).get("source", "signal")),
-            "final_signal_groups": _route_signal_groups(final_route),
-            "route_mismatch": bool(route_trace.get("route_mismatch", False)),
-            "mismatch_label": str(route_trace.get("mismatch_label", "no_mismatch")),
-            "used_long_term_mode": used_long_term_mode,
-        }
+            fallback_intent=_optional_route_string(fallback_route, "intent"),
+            fallback_confidence=_optional_route_string(fallback_route, "confidence"),
+            fallback_role_filter=_optional_route_string(fallback_route, "role_filter"),
+            fallback_source=_optional_route_string(fallback_route, "source"),
+            final_intent=str((final_route or {}).get("intent", "non_memory_question")),
+            final_confidence=str((final_route or {}).get("confidence", "none")),
+            final_role_filter=_optional_route_string(final_route, "role_filter"),
+            final_source=str((final_route or {}).get("source", "signal")),
+            final_signal_groups=_route_signal_groups(final_route),
+            route_mismatch=bool(route_trace.get("route_mismatch", False)),
+            mismatch_label=str(route_trace.get("mismatch_label", "no_mismatch")),
+            used_long_term_mode=used_long_term_mode,
+        )
+        return params.model_dump()
 
     async def write_memory_route_diagnostic_fn(
         *,
