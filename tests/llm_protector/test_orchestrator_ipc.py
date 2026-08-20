@@ -715,8 +715,12 @@ class TestOrchestratorIPCServer:
         response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
-        assert response.structured_content.answer == "Internal error: boom"
-        assert saved_messages == [("c1", "assistant", "Internal error: boom")]
+        # The raw error text ("boom") must not reach the user; the
+        # fallback code maps to a stable user-safe message.
+        assert response.structured_content.answer == "Internal error. Please try again."
+        assert saved_messages == [
+            ("c1", "assistant", "Internal error. Please try again.")
+        ]
 
     @pytest.mark.asyncio
     async def test_handle_chat_error_uses_session_id_when_conversation_missing(
@@ -756,9 +760,9 @@ class TestOrchestratorIPCServer:
         response = await self._start_chat_and_collect_response(server, request)
 
         assert isinstance(response, ChatResponse)
-        assert response.structured_content.answer == "Internal error: broken"
+        assert response.structured_content.answer == "Internal error. Please try again."
         assert saved_messages == [
-            ("session-123", "assistant", "Internal error: broken"),
+            ("session-123", "assistant", "Internal error. Please try again."),
         ]
 
     @pytest.mark.asyncio

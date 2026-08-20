@@ -6,6 +6,7 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from backend.ipc.errors import SettingsBlobTooLargeError
 from backend.ipc.models import (
     decode_message_page_cursor,
     encode_message_page_cursor,
@@ -531,7 +532,9 @@ def make_store_ui_settings_handler(db: DatabaseManager) -> OperationHandler:
         p = validate_params(params, StoreUiSettingsParams)
         encoded = json.dumps(p.settings, ensure_ascii=False)
         if len(encoded.encode("utf-8")) > UI_SETTINGS_MAX_BYTES:
-            raise ValueError(f"UI settings blob exceeds {UI_SETTINGS_MAX_BYTES} bytes")
+            raise SettingsBlobTooLargeError(
+                f"UI settings blob exceeds {UI_SETTINGS_MAX_BYTES} bytes"
+            )
         _store_metadata_value(db, "ui_settings", encoded)
         return {"ok": True}
 

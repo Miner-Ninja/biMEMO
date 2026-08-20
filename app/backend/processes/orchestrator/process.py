@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from backend.agent.turn_state import ConfirmationStatus
 from backend.common import resolve_user_timezone, wait_for_sigterm
+from backend.ipc.errors import ConfirmationNotFoundError
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import (
     ConfirmRequest,
@@ -355,7 +356,12 @@ def _build_confirm_handler(
                 llm_call=get_llm_call(),
             )
         except (DBProxyError, RuntimeError) as exc:
-            if "unknown confirmation" not in str(exc).lower():
+            # An unknown confirmation is a typed outcome ("unknown");
+            # every other typed code and RuntimeError propagates.
+            if not (
+                isinstance(exc, DBProxyError)
+                and exc.code == ConfirmationNotFoundError.code
+            ):
                 raise
             return ConfirmResponse(
                 request_id=request.request_id,

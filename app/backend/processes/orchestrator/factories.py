@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from backend.chat_bridge.models import BridgeProvider
 from backend.constants import BRIDGE_CHANNEL_PREFIX, UUID_NAMESPACE_MCP
+from backend.ipc.errors import error_code_of, user_safe_error_text
 from backend.ipc.models import (
     McpAskRequest,
     McpAskResponse,
@@ -776,6 +777,7 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
                 return McpAskResponse(
                     request_id=request.request_id,
                     error="orchestrator not initialized",
+                    error_code="orchestrator_not_initialized",
                 )
             result = _orchestrator_fn(chat_req)
             if asyncio.iscoroutine(result):
@@ -789,6 +791,11 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
                         request_id=request.request_id,
                         error=(
                             terminal_error.message
+                            if terminal_error is not None
+                            else f"turn_{outcome_kind.value}"
+                        ),
+                        error_code=(
+                            terminal_error.code
                             if terminal_error is not None
                             else f"turn_{outcome_kind.value}"
                         ),
@@ -815,12 +822,14 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
             return McpAskResponse(
                 request_id=request.request_id,
                 error="unexpected orchestrator response",
+                error_code="unexpected_orchestrator_response",
             )
         except Exception as error:
             logger.error("MCP ask error: %s", error, exc_info=True)
             return McpAskResponse(
                 request_id=request.request_id,
-                error=str(error)[:200],
+                error=user_safe_error_text(error),
+                error_code=error_code_of(error),
             )
 
     # Attach the setter so process.py can wire it after construction

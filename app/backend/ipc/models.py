@@ -469,6 +469,8 @@ class McpAskResponse(IPCModel):
         conversation_id: The agent's session conversation.
         session_id: The agent's session identifier.
         error: Error message when the request failed.
+        error_code: Stable machine-readable failure code; empty when the
+            request succeeded or the failure carries no typed code.
     """
 
     request_id: str
@@ -477,6 +479,7 @@ class McpAskResponse(IPCModel):
     session_id: str = ""
     finalization_id: str = ""
     error: str = ""
+    error_code: str = ""
 
 
 class ReloadLLMResponse(IPCModel):
@@ -547,12 +550,15 @@ class DBResult(IPCModel):
         status: Outcome ("success" or "error").
         data: Operation result data (on success).
         error_message: Error description (on failure).
+        error_code: Stable machine-readable failure code (on failure);
+            None when the failure carries no typed code.
     """
 
     request_id: str
     status: str
     data: dict[str, Any] | None = None
     error_message: str | None = None
+    error_code: str | None = None
 
 
 # --- Multimodal content helpers ---

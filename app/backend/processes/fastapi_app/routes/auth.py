@@ -12,6 +12,7 @@ from backend.channels.jwt_auth import (
     TokenClaims,
     generate_csrf_token,
 )
+from backend.ipc.errors import PASSWORD_ALREADY_EXISTS_CODE
 from backend.models.requests import PasswordAuthRequest  # noqa: TC001
 
 from ..deps import (
@@ -162,7 +163,7 @@ async def auth_setup(
     try:
         tokens = await signing_client.setup_password(body.password)
     except HTTPException as exc:
-        if "password_already_exists" in str(exc.detail):
+        if getattr(exc, "code", None) == PASSWORD_ALREADY_EXISTS_CODE:
             await _audit_auth_failure(audit_fn, "setup")
             raise HTTPException(
                 status_code=409,

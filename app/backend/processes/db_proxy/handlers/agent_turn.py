@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from backend.agent.turn_state import InvocationStatus, arguments_hash
 from backend.common import canonical_json
+from backend.ipc.errors import ConfirmationNotFoundError
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -702,7 +703,9 @@ def make_decide_agent_confirmation_handler(db: DatabaseManager) -> OperationHand
                 (p.confirmation_id,),
             ).fetchone()
             if row is None:
-                raise ValueError("unknown confirmation")
+                raise ConfirmationNotFoundError(
+                    f"confirmation '{p.confirmation_id}' not found"
+                )
             if row[2] == "pending" and str(row[3]) <= str(row[4]):
                 db.execute(
                     "UPDATE agent_confirmations SET status = 'expired', decided_at = "

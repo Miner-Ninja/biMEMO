@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 
+from backend.ipc.errors import DBPROXY_IPC_CODE, DBPROXY_TIMEOUT_CODE
 from backend.ipc.ipc_channel import (
     IPCChannelError,
     IPCSocketClient,
@@ -30,6 +31,25 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+class DBProxyHTTPError(HTTPException):
+    """HTTP error for one DB Proxy failure carrying a stable code.
+
+    Attributes:
+        code: Machine-readable failure code from the DB Proxy response;
+            None when the failure is transport-level or untyped.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        detail: str | dict[str, Any] | None = None,
+        code: str | None = None,
+    ) -> None:
+        """Initialize the HTTP error with its status, detail, and code."""
+        super().__init__(status_code=status_code, detail=detail)
+        self.code = code
 
 
 class _BaseIPCClient:
@@ -135,18 +155,20 @@ class _BaseIPCClient:
             timeout=self._timeout,
         )
 
-    def _build_timeout_exception(self) -> HTTPException:
+    def _build_timeout_exception(self) -> DBProxyHTTPError:
         """Build the standard timeout HTTP error for DB proxy calls."""
-        return HTTPException(
+        return DBProxyHTTPError(
             status_code=504,
             detail="Database operation timed out",
+            code=DBPROXY_TIMEOUT_CODE,
         )
 
-    def _build_ipc_unavailable_exception(self) -> HTTPException:
+    def _build_ipc_unavailable_exception(self) -> DBProxyHTTPError:
         """Build the standard unavailable HTTP error for DB proxy calls."""
-        return HTTPException(
+        return DBProxyHTTPError(
             status_code=503,
             detail="Database proxy unavailable",
+            code=DBPROXY_IPC_CODE,
         )
 
     def _extract_success_data(
@@ -162,12 +184,13 @@ class _BaseIPCClient:
                 detail="Unexpected response from DB Proxy",
             )
         if response.status == "error":
-            raise HTTPException(
+            raise DBProxyHTTPError(
                 status_code=500,
                 detail=self._build_db_error_detail(
                     response=response,
                     include_error_data=include_error_data,
                 ),
+                code=response.error_code,
             )
         return response.data or {}
 

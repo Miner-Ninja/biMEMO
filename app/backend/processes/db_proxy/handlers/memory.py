@@ -15,6 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from backend.ipc.errors import VectorDimensionMismatchError
 from backend.memory.retrieval.fulltext import (
     index_observation,
 )
@@ -360,19 +361,16 @@ def make_init_vector_table_handler(db: DatabaseManager) -> OperationHandler:
 
             try:
                 search_similar(db, [0.0] * p.dimensions, 1)
-            except Exception as exc:
-                if "mismatch" in str(exc).lower():
-                    logger.info(
-                        (
-                            "Dimension mismatch detected in existing table "
-                            "— forcing recreate"
-                        ),
-                    )
-                    drop_vector_table(db)
-                    create_vector_table(db, p.dimensions)
-                    recreated = True
-                else:
-                    raise
+            except VectorDimensionMismatchError:
+                logger.info(
+                    (
+                        "Dimension mismatch detected in existing table "
+                        "— forcing recreate"
+                    ),
+                )
+                drop_vector_table(db)
+                create_vector_table(db, p.dimensions)
+                recreated = True
 
         set_embedding_metadata(db, p.embedding_model, p.dimensions)
         return {"ok": True, "recreated": recreated}

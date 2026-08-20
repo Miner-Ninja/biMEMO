@@ -13,6 +13,10 @@ from collections.abc import Callable, Coroutine, Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
+from backend.ipc.errors import (
+    OperationNotAllowedError,
+    OperationNotFoundError,
+)
 from backend.ipc.models import DBOperation, DBResult
 
 
@@ -22,14 +26,6 @@ logger = logging.getLogger(__name__)
 HEALTH_CHECK_OPERATION = "_health_check"
 STATUS_SUCCESS = "success"
 STATUS_ERROR = "error"
-
-
-class OperationNotFoundError(Exception):
-    """Raised when an unknown operation is requested."""
-
-
-class OperationNotAllowedError(Exception):
-    """Raised when an operation is not allowed on the current channel."""
 
 
 OperationHandler = Callable[
@@ -132,12 +128,17 @@ class OperationRegistry:
                 raise
 
     @staticmethod
-    def _error_result(request_id: str, message: str) -> DBResult:
+    def _error_result(
+        request_id: str,
+        message: str,
+        error_code: str | None = None,
+    ) -> DBResult:
         """Build one error DB result."""
         return DBResult(
             request_id=request_id,
             status=STATUS_ERROR,
             error_message=message,
+            error_code=error_code,
         )
 
     @staticmethod
@@ -161,6 +162,7 @@ class OperationRegistry:
         return self._error_result(
             operation.request_id,
             self._unknown_operation_message(operation.operation),
+            error_code=OperationNotFoundError.code,
         )
 
     def register(self, name: str, handler: OperationHandler) -> None:
@@ -215,7 +217,14 @@ class OperationRegistry:
                     operation.operation,
                     e,
                 )
-                return self._error_result(operation.request_id, str(e))
+                # Typed errors carry their own stable code; anything else
+                # crosses the boundary with a message only.
+                error_code = getattr(e, "code", None)
+                return self._error_result(
+                    operation.request_id,
+                    str(e),
+                    error_code=error_code,
+                )
 
 
 class ChannelAllowlist:

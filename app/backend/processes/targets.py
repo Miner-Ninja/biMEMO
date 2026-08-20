@@ -18,6 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from backend.ipc.errors import IPC_MALFORMED_CODE, OperationNotAllowedError
+
 
 if TYPE_CHECKING:
     import logging
@@ -97,6 +99,7 @@ def _build_db_proxy_handler_factory(
                     request_id="unknown",
                     status="error",
                     error_message="Expected DBOperation",
+                    error_code=IPC_MALFORMED_CODE,
                 )
             if not allowlist.is_allowed(channel, message.operation):
                 return db_result_type(
@@ -105,6 +108,7 @@ def _build_db_proxy_handler_factory(
                     error_message=(
                         f"Operation '{message.operation}' not allowed on {channel}"
                     ),
+                    error_code=OperationNotAllowedError.code,
                 )
             return await registry.dispatch(message)
 

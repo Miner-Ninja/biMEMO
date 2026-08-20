@@ -12,6 +12,11 @@ import asyncio
 import uuid
 from typing import Any
 
+from backend.ipc.errors import (
+    DBPROXY_ERROR_CODE,
+    DBPROXY_IPC_CODE,
+    DBPROXY_TIMEOUT_CODE,
+)
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import DBOperation, DBResult
 from backend.processes.orchestrator import client_admin_ops as admin_ops
@@ -31,7 +36,17 @@ DB_TYPE_MAP = {"DBResult": DBResult}
 
 
 class DBProxyError(Exception):
-    """Raised when a DB Proxy operation fails."""
+    """Raised when a DB Proxy operation fails.
+
+    Attributes:
+        code: Stable machine-readable failure code carried over IPC
+            (defaults to ``dbproxy_error`` when the server sent none).
+    """
+
+    def __init__(self, message: str, code: str = DBPROXY_ERROR_CODE) -> None:
+        """Initialize the error with its message and code."""
+        super().__init__(message)
+        self.code = code
 
 
 class DBProxyClient:
@@ -220,6 +235,7 @@ class DBProxyClient:
         """Build the timeout error for one DB proxy operation."""
         return DBProxyError(
             f"DB Proxy operation '{operation}' timed out after {timeout:.1f}s",
+            code=DBPROXY_TIMEOUT_CODE,
         )
 
     def _build_ipc_error(
@@ -229,7 +245,10 @@ class DBProxyClient:
         error: IPCChannelError,
     ) -> DBProxyError:
         """Build the IPC transport error for one DB proxy operation."""
-        return DBProxyError(f"DB Proxy IPC error for '{operation}': {error}")
+        return DBProxyError(
+            f"DB Proxy IPC error for '{operation}': {error}",
+            code=DBPROXY_IPC_CODE,
+        )
 
     def _extract_operation_result(
         self,
@@ -245,6 +264,7 @@ class DBProxyClient:
         if response.status == "error":
             raise DBProxyError(
                 f"DB Proxy operation '{operation}' failed: {response.error_message}",
+                code=response.error_code or DBPROXY_ERROR_CODE,
             )
         return response.data or {}
 

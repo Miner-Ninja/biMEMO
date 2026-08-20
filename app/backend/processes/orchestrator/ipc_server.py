@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
 from backend.common import await_maybe
+from backend.ipc.errors import user_safe_error_text
 from backend.ipc.ipc_channel import IPCSocketServer
 from backend.ipc.models import (
     BridgeInboundSyncRequest,
@@ -281,13 +282,9 @@ class OrchestratorIPCServer:
             return McpAskResponse(
                 request_id=request.request_id,
                 error="ask handler unavailable",
+                error_code="ask_handler_unavailable",
             )
         return await self._mcp_ask_fn(request)
-
-    @staticmethod
-    def _build_internal_error_text(error: Exception) -> str:
-        """Build the short user-facing text for an internal failure."""
-        return f"Internal error: {str(error)[:200]}"
 
     @staticmethod
     def _stop_response(
@@ -406,7 +403,7 @@ class OrchestratorIPCServer:
             response = await self._orchestrator_fn(request)
         except Exception as error:
             logger.error("Orchestrator error: %s", error, exc_info=True)
-            error_text = self._build_internal_error_text(error)
+            error_text = user_safe_error_text(error)
             await self._save_error_response(request, error_text)
             response = ChatResponse(
                 request_id=request.request_id,

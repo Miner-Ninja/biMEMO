@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from backend.common import wait_for_sigterm
 from backend.constants import ENV_ADMIN_PASSWORD
+from backend.ipc.errors import PASSWORD_ALREADY_EXISTS_CODE
 from backend.ipc.ipc_channel import IPCSocketClient, IPCSocketServer
 from backend.ipc.models import DBOperation, DBResult
 
@@ -341,6 +342,7 @@ def _build_result(
     *,
     message: str | None = None,
     data: dict | None = None,
+    error_code: str | None = None,
 ) -> DBResult:
     """Build one standard DBResult for signing operations."""
     return DBResult(
@@ -348,6 +350,7 @@ def _build_result(
         status=status,
         error_message=message,
         data=data,
+        error_code=error_code,
     )
 
 
@@ -356,9 +359,16 @@ def _error_result(
     message: str,
     *,
     data: dict | None = None,
+    error_code: str | None = None,
 ) -> DBResult:
     """Build a standard error DBResult for signing operations."""
-    return _build_result(request_id, "error", message=message, data=data)
+    return _build_result(
+        request_id,
+        "error",
+        message=message,
+        data=data,
+        error_code=error_code,
+    )
 
 
 def _success_result(request_id: str, data: dict | None = None) -> DBResult:
@@ -449,7 +459,11 @@ async def _setup_password_result(
 
     check = await _db_send(db_client, "get_password_hash")
     if check.status == "success" and check.data.get("exists"):
-        return _error_result(message.request_id, "password_already_exists")
+        return _error_result(
+            message.request_id,
+            "password_already_exists",
+            error_code=PASSWORD_ALREADY_EXISTS_CODE,
+        )
 
     password_hash = _ph.hash(password)
     store = await _db_send(

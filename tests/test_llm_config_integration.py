@@ -124,9 +124,14 @@ class FakeSigningClient:
 
     async def setup_password(self, password: str) -> dict:
         """Reject setup attempts because the password is already configured."""
-        from fastapi import HTTPException
+        from backend.ipc.errors import PASSWORD_ALREADY_EXISTS_CODE
+        from backend.processes.fastapi_app.base_client import DBProxyHTTPError
 
-        raise HTTPException(status_code=500, detail="password_already_exists")
+        raise DBProxyHTTPError(
+            status_code=500,
+            detail="password_already_exists",
+            code=PASSWORD_ALREADY_EXISTS_CODE,
+        )
 
 
 def _build_test_app() -> tuple[FastAPI, str, SessionManager, FakeSigningClient, list]:

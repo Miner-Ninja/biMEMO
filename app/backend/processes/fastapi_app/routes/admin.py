@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, Response
 
 from backend.channels.endpoints import BackupRateLimiter
 from backend.chat_bridge import BridgeProvider, ChatBridgeService
+from backend.ipc.errors import SettingsBlobTooLargeError
 from backend.ipc.models import StreamEventType
 from backend.models.requests import (  # noqa: TC001
     ChatBridgeCreateRequest,
@@ -226,10 +227,10 @@ async def store_ui_settings(
     try:
         await admin.store_ui_settings(body.settings)
     except HTTPException as exc:
-        # The DB-proxy client wraps operation errors into HTTPException(500)
-        # with the operation's message in detail — surface the size-cap
-        # rejection as 413 so the client can react specifically.
-        if "exceeds" in str(exc.detail):
+        # The DB-proxy client wraps operation errors into
+        # DBProxyHTTPError(500) carrying a stable code — surface the
+        # size-cap rejection as 413 so the client can react specifically.
+        if getattr(exc, "code", None) == SettingsBlobTooLargeError.code:
             raise HTTPException(status_code=413, detail=str(exc.detail)) from exc
         raise
     return {"ok": True}

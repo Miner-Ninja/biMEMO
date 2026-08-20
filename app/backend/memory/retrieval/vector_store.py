@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import sqlite_vec
 
+from backend.ipc.errors import VectorDimensionMismatchError
+
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
@@ -188,6 +190,19 @@ def search_similar(
 
     Returns:
         List of (record_id, distance) tuples.
+
+    Raises:
+        VectorDimensionMismatchError: When the stored table was created
+            with different dimensions; this is the single detection point
+            for the sqlite-vec mismatch message.
     """
-    cursor = db.execute(SEARCH_SQL, (_serialized_embedding(query_embedding), limit))
+    try:
+        cursor = db.execute(
+            SEARCH_SQL,
+            (_serialized_embedding(query_embedding), limit),
+        )
+    except Exception as exc:
+        if "mismatch" in str(exc).lower():
+            raise VectorDimensionMismatchError(str(exc)) from exc
+        raise
     return cursor.fetchall()
