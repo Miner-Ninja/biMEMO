@@ -1,7 +1,5 @@
 """LLM configuration routes."""
 
-# ruff: noqa: B008
-
 from typing import TYPE_CHECKING
 
 import httpx

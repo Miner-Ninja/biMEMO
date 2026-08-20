@@ -1,7 +1,5 @@
 """Static conversation seed data for the full-cycle memory test."""
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 

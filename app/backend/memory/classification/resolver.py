@@ -5,8 +5,6 @@ durable across future conversations versus what belongs only to the current
 session or validation run.
 """
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import re

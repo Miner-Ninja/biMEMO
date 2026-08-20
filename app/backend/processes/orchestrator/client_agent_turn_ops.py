@@ -7,8 +7,6 @@ inputs, turn events, and projection bookkeeping. Each function receives a
 DBProxyClient instance as its first parameter.
 """
 
-# ruff: noqa: ASYNC109 - the `timeout` parameter of cancel_agent_turn is a
-# boolean "is this cancellation a timeout" flag, not a duration.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -293,7 +291,7 @@ async def cancel_agent_turn(
     turn_id: str,
     *,
     reason: str = "cancelled",
-    timeout: bool = False,
+    timeout: bool = False,  # noqa: ASYNC109 — boolean "is this a timeout" flag, not a duration
     failure: bool = False,
     task_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

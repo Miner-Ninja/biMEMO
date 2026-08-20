@@ -6,8 +6,6 @@ connection configuration block. All endpoints are auth-guarded like the
 rest of the /admin routes and route through the Credential Proxy (Socket C).
 """
 
-# ruff: noqa: B008
-
 import os
 import secrets
 from pathlib import Path

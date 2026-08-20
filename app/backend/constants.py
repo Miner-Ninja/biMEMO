@@ -8,8 +8,6 @@ These values form part of the persistence and IPC contract. Changing a
 value is a protocol event (stored rows keep the old value), not a rename.
 """
 
-# ruff: noqa: S105
-
 # --- Protocol versions ---------------------------------------------------
 
 #: Tool-permission policy version written on turns, invocations, and grants.
@@ -47,7 +45,7 @@ EVIDENCE_KEY_URL_PREFIX = "url:"
 # --- Environment variable names -------------------------------------------
 
 ENV_LLM_PROVIDER = "BIMEMO_LLM_PROVIDER"
-ENV_ADMIN_PASSWORD = "BIMEMO_ADMIN_PASSWORD"
+ENV_ADMIN_PASSWORD = "BIMEMO_ADMIN_PASSWORD"  # noqa: S105 — environment variable name, not a credential
 ENV_RUNTIME_DIR = "BIMEMO_RUNTIME_DIR"
 ENV_CA_ROOT_PATH = "BIMEMO_CA_ROOT_PATH"
 
@@ -57,7 +55,7 @@ ENV_CUSTOM_NUM_CTX = "BIMEMO_CUSTOM_NUM_CTX"
 ENV_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
 
 #: Prefix of the per-label MCP token variables (``BIMEMO_MCP_TOKEN_<label>``).
-ENV_MCP_TOKEN_PREFIX = "BIMEMO_MCP_TOKEN_"
+ENV_MCP_TOKEN_PREFIX = "BIMEMO_MCP_TOKEN_"  # noqa: S105 — environment variable name, not a credential
 
 #: Per-provider env prefixes used by the LLM config env seeder.
 ENV_PREFIX_BY_PROVIDER = {
@@ -68,5 +66,5 @@ ENV_PREFIX_BY_PROVIDER = {
 
 ENV_TELEGRAM_PREFIX = "BIMEMO_TELEGRAM_"
 ENV_DISCORD_PREFIX = "BIMEMO_DISCORD_"
-ENV_BOT_TOKEN_SUFFIX = "BOT_TOKEN"
+ENV_BOT_TOKEN_SUFFIX = "BOT_TOKEN"  # noqa: S105 — environment variable name, not a credential
 ENV_ALLOWED_USER_IDS_SUFFIX = "ALLOWED_USER_IDS"

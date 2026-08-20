@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: S310
 """Memory subsystem stress test.
 
 Sends 30 test questions to biMEMO LLM, then verifies that all

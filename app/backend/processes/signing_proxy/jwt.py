@@ -1,7 +1,5 @@
 """JWT encoding, decoding, and token issuance."""
 
-# ruff: noqa: S105
-
 import base64
 import json
 import time
@@ -20,8 +18,8 @@ JWT_CONTEXT_LABEL = b"bimemo-jwt-signing-v1"
 # JWT token lifetimes (seconds).
 ACCESS_TOKEN_LIFETIME = 900  # 15 minutes
 REFRESH_TOKEN_LIFETIME = 604800  # 7 days
-ACCESS_TOKEN_TYPE = "access"
-REFRESH_TOKEN_TYPE = "refresh"
+ACCESS_TOKEN_TYPE = "access"  # noqa: S105 — token type constant, not a credential
+REFRESH_TOKEN_TYPE = "refresh"  # noqa: S105 — token type constant, not a credential
 
 
 def _urlsafe_b64encode(data: bytes) -> bytes:

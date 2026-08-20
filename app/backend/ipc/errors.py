@@ -12,9 +12,6 @@ This module has no application imports: it is safe to import from any
 process without circular-import risk.
 """
 
-
-# ruff: noqa: S105
-
 from __future__ import annotations
 
 
@@ -22,7 +19,7 @@ from __future__ import annotations
 
 #: Signing-proxy setup refusal.  The signing handler labels the DB result
 #: directly (it never raises), so the code is a shared constant.
-PASSWORD_ALREADY_EXISTS_CODE = "password_already_exists"
+PASSWORD_ALREADY_EXISTS_CODE = "password_already_exists"  # noqa: S105 — error-code constant name, not a credential
 
 #: Code assigned by the DB Proxy clients to transport-level failures.
 DBPROXY_ERROR_CODE = "dbproxy_error"

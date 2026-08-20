@@ -1,7 +1,5 @@
 """DB proxy handlers for assistant project roots and capability grants."""
 
-# ruff: noqa: S608
-
 from __future__ import annotations
 
 import hashlib
@@ -295,7 +293,7 @@ def make_create_capability_grant_handler(db: DatabaseManager) -> OperationHandle
         )
         db.commit()
         row = db.execute(
-            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "  # noqa: S608 — dynamic identifiers only; values bound
             "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
             "AND channel = ?",
             (p.scope_type, p.scope_value, p.capability, p.channel),
@@ -320,7 +318,7 @@ def make_list_capability_grants_handler(db: DatabaseManager) -> OperationHandler
             values.append(value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = db.execute(
-            f"SELECT {_GRANT_COLUMNS} FROM capability_grants {where} "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants {where} "  # noqa: S608 — dynamic identifiers only; values bound
             "ORDER BY created_at DESC",
             tuple(values),
         ).fetchall()
@@ -335,7 +333,7 @@ def make_lookup_capability_grant_handler(db: DatabaseManager) -> OperationHandle
     async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
         p = validate_params(params, LookupCapabilityGrantParams)
         row = db.execute(
-            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "
+            f"SELECT {_GRANT_COLUMNS} FROM capability_grants "  # noqa: S608 — dynamic identifiers only; values bound
             "WHERE scope_type = ? AND scope_value = ? AND capability = ? "
             "AND channel = ? "
             "AND (expires_at IS NULL OR expires_at > "
@@ -636,7 +634,7 @@ def make_list_agent_run_events_handler(db: DatabaseManager) -> OperationHandler:
             values.append(p.conversation_id)
         values.append(p.limit)
         rows = db.execute(
-            "SELECT id, run_id, request_id, conversation_id, sequence, event_type, "
+            "SELECT id, run_id, request_id, conversation_id, sequence, event_type, "  # noqa: S608 — dynamic identifiers only; values bound
             "payload_json, created_at, delivered_at FROM agent_run_events "
             f"WHERE {' AND '.join(filters)} "
             "ORDER BY created_at ASC, sequence ASC LIMIT ?",
@@ -660,7 +658,7 @@ def make_list_agent_runs_handler(db: DatabaseManager) -> OperationHandler:
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         values.extend([p.limit, p.offset])
         rows = db.execute(
-            "SELECT id, conversation_id, session_id, channel, status, current_step, "
+            "SELECT id, conversation_id, session_id, channel, status, current_step, "  # noqa: S608 — dynamic identifiers only; values bound
             "request_id, resume_payload, tool_policy_version, created_at, "
             "updated_at, completed_at "
             f"FROM agent_runs {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -703,7 +701,7 @@ def make_list_pending_actions_handler(db: DatabaseManager) -> OperationHandler:
             values.append(value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = db.execute(
-            "SELECT id, run_id, tool_name, parameters_json, channel, status, "
+            "SELECT id, run_id, tool_name, parameters_json, channel, status, "  # noqa: S608 — dynamic identifiers only; values bound
             "decision, preview_json, result_json, error_message, created_at, "
             f"updated_at, expires_at, decided_at, executed_at "
             f"FROM pending_actions {where} ORDER BY created_at DESC",

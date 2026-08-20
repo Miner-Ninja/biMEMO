@@ -292,7 +292,7 @@ def build_mcp_server(
         query: str,
         limit: int = 20,
         offset: int = 0,
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Search memory for relevant entries.
 
@@ -326,7 +326,7 @@ def build_mcp_server(
     async def recent_memory(
         limit: int = 20,
         offset: int = 0,
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Return recent memory entries.
 
@@ -356,7 +356,7 @@ def build_mcp_server(
     async def get_memory(
         entry_id: str,
         table: str = "messages",
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Fetch one memory entry by id.
 
@@ -383,7 +383,7 @@ def build_mcp_server(
         ),
     )
     async def memory_stats(
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Return memory statistics.
 
@@ -407,7 +407,7 @@ def build_mcp_server(
         conversation_id: str,
         limit: int = 20,
         offset: int = 0,
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Return entries for one conversation.
 
@@ -439,7 +439,7 @@ def build_mcp_server(
     async def remember(
         content: str,
         context: str = "",
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Remember a piece of information.
 
@@ -483,7 +483,7 @@ def build_mcp_server(
     )
     async def ask(
         question: str,
-        headers: dict[str, str] = CurrentHeaders(),  # noqa: B008 (FastMCP marker)
+        headers: dict[str, str] = CurrentHeaders(),
     ) -> dict[str, Any]:
         """Ask biMEMO a question and get an answer.
 

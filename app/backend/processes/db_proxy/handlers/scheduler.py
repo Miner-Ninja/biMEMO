@@ -8,7 +8,6 @@ updates, and deletion.
 
 from __future__ import annotations
 
-# ruff: noqa: S608
 import uuid
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -163,13 +162,13 @@ def make_list_scheduled_tasks_handler(
         p = validate_params(params, ListScheduledTasksParams)
         if p.status in ("active", "paused", "completed"):
             rows = db.execute(
-                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
+                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608 — dynamic identifiers only; values bound
                 "WHERE status = ? ORDER BY next_run_at ASC LIMIT 100",
                 (p.status,),
             ).fetchall()
         else:
             rows = db.execute(
-                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
+                f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608 — dynamic identifiers only; values bound
                 "ORDER BY next_run_at ASC LIMIT 100",
             ).fetchall()
         return {"tasks": [_task_item(row) for row in rows]}
@@ -186,7 +185,7 @@ def make_get_due_tasks_handler(
         """Get all tasks that are due for execution."""
         p = validate_params(params, GetDueTasksParams)
         rows = db.execute(
-            f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "
+            f"SELECT {_SELECT_COLUMNS} FROM scheduled_tasks "  # noqa: S608 — dynamic identifiers only; values bound
             "WHERE next_run_at <= ? AND status = 'active' "
             "ORDER BY next_run_at ASC",
             (p.now,),
@@ -246,7 +245,7 @@ def make_mark_task_run_handler(
             return {"ok": True}
         values.append(p.task_id)
         db.execute(
-            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",  # noqa: S608 — dynamic identifiers only; values bound
             tuple(values),
         )
         db.commit()
@@ -302,7 +301,7 @@ def make_update_scheduled_task_handler(
             return {"ok": True}
         values.append(p.task_id)
         db.execute(
-            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE scheduled_tasks SET {', '.join(updates)} WHERE id = ?",  # noqa: S608 — dynamic identifiers only; values bound
             tuple(values),
         )
         db.commit()

@@ -8,8 +8,6 @@ this channel supports multiple message types via a JSON envelope with
 a _type discriminator field.
 """
 
-# ruff: noqa: ASYNC240
-
 import asyncio
 import json
 import logging
@@ -225,7 +223,7 @@ class IPCSocketServer:
 
     async def start(self) -> None:
         """Start listening on the Unix domain socket."""
-        if os.path.exists(self.socket_path):
+        if os.path.exists(self.socket_path):  # noqa: ASYNC240 — single stat of the socket file at start/stop
             os.unlink(self.socket_path)
 
         self._server = await asyncio.start_unix_server(
@@ -246,7 +244,7 @@ class IPCSocketServer:
             await self._server.wait_closed()
             self._server = None
 
-        if os.path.exists(self.socket_path):
+        if os.path.exists(self.socket_path):  # noqa: ASYNC240 — single stat of the socket file at start/stop
             os.unlink(self.socket_path)
 
     async def push(self, message: BaseModel) -> None:

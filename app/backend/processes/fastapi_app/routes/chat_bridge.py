@@ -1,7 +1,5 @@
 """Provider-facing routes for external chat bridge synchronization."""
 
-# ruff: noqa: B008
-
 import json
 import uuid
 from collections.abc import Awaitable, Callable

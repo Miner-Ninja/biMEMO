@@ -169,7 +169,7 @@ def upload_file(
         mime_type=mime_type,
         content=content,
     )
-    request = Request(  # noqa: S310
+    request = Request(
         f"{client.base_url}/files/upload",
         data=body,
         method="POST",

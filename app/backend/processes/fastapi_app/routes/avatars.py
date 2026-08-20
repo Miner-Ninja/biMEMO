@@ -7,8 +7,6 @@ can issue conditional requests (If-None-Match -> 304). Used by frontend
 components to display avatars in chat messages, sidebar, and profile page.
 """
 
-# ruff: noqa: B008
-
 import base64
 import hashlib
 from typing import TYPE_CHECKING

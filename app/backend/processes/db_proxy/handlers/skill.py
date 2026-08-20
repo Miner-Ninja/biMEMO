@@ -5,8 +5,6 @@ Provides CRUD handlers for the skills table with structured columns
 usage log, and list operations.
 """
 
-# ruff: noqa: RUF001, S608
-
 import json
 import uuid
 from datetime import UTC, datetime
@@ -292,7 +290,7 @@ def make_skill_search_handler(db: DatabaseManager) -> OperationHandler:
             return {"skills": []}
         safe_query = " OR ".join(words)
         rows = db.execute(
-            f"SELECT {_SKILL_COLUMNS} "
+            f"SELECT {_SKILL_COLUMNS} "  # noqa: S608 — dynamic identifiers only; values bound
             "FROM skills s "
             "JOIN skills_fts f ON s.rowid = f.rowid "
             "WHERE skills_fts MATCH ? AND s.enabled = 1 "
@@ -333,7 +331,7 @@ def make_skill_load_handler(db: DatabaseManager) -> OperationHandler:
         """Load a skill by name and return assembled text."""
         p = validate_params(params, SkillLoadParams)
         row = db.execute(
-            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills WHERE name = ?",
+            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills WHERE name = ?",  # noqa: S608 — dynamic identifiers only; values bound
             (p.name,),
         ).fetchone()
         if row is None:
@@ -386,7 +384,7 @@ def make_skill_update_handler(db: DatabaseManager) -> OperationHandler:
         values.append(_current_utc_timestamp())
         values.append(p.name)
         db.execute(
-            f"UPDATE skills SET {', '.join(updates)} WHERE name = ?",
+            f"UPDATE skills SET {', '.join(updates)} WHERE name = ?",  # noqa: S608 — dynamic identifiers only; values bound
             tuple(values),
         )
         db.commit()
@@ -415,7 +413,7 @@ def make_skill_list_handler(db: DatabaseManager) -> OperationHandler:
         """List all skills with structured fields and last usage status."""
         validate_params(params, SkillListParams)
         rows = db.execute(
-            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills "
+            f"SELECT {_SKILL_COLUMNS_PLAIN} FROM skills "  # noqa: S608 — dynamic identifiers only; values bound
             "ORDER BY use_count DESC LIMIT 50",
         ).fetchall()
         skills = [_skill_item(row) for row in rows]

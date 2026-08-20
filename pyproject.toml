@@ -59,8 +59,18 @@ ignore = ["D203", "D213", "S101"]
 fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
+# RUF001 (ambiguous-unicode) flags legitimate Cyrillic letters that look like
+# Latin (а/е/ш) in these files' user-facing Russian strings; per-line noqa
+# would bury the text, so the ignore is explicit here.
+"app/backend/memory/classification/resolver.py" = ["RUF001"]
+"app/backend/processes/db_proxy/handlers/skill.py" = ["RUF001"]
+# B008 (function call in a default argument) is the standard FastAPI
+# Depends() idiom used throughout the route files.
+"app/backend/processes/fastapi_app/routes/*.py" = ["B008"]
 "tests/**/*.py" = ["S101", "S105", "S106", "S108", "S603", "S607", "ANN", "ASYNC"]
-"scripts/**/*.py" = ["D", "ANN"]
+# S310 (use of random) and RUF001 (Cyrillic seed text): the seed/stress
+# scripts exist to generate randomized data.
+"scripts/**/*.py" = ["D", "ANN", "RUF001", "S310"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "backend"]

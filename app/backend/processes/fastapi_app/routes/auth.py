@@ -1,7 +1,5 @@
 """Authentication routes."""
 
-# ruff: noqa: B008
-
 from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING
 

@@ -6,7 +6,6 @@ summaries. All tables use foreign keys with cascade delete for
 secure data removal. Schema is applied via DatabaseManager after
 successful unlock.
 """
-# ruff: noqa: S608
 
 from __future__ import annotations
 
@@ -987,7 +986,7 @@ def _ensure_capability_grants_schema(db: DatabaseManager) -> None:
         if name not in columns:
             db.execute(f"ALTER TABLE capability_grants ADD COLUMN {name} {declaration}")
     db.execute(
-        "UPDATE capability_grants SET revoked_at = "
+        "UPDATE capability_grants SET revoked_at = "  # noqa: S608 — dynamic identifiers only; values bound
         "COALESCE(revoked_at, strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
         f"WHERE policy_revision IS NULL OR policy_revision != '{TOOL_POLICY_VERSION}'"
     )
@@ -999,7 +998,7 @@ def _ensure_agent_turns_schema(db: DatabaseManager) -> None:
     if "tool_policy_version" not in columns:
         db.execute("ALTER TABLE agent_turns ADD COLUMN tool_policy_version TEXT")
     db.execute(
-        "UPDATE agent_turns SET status = 'failed', terminal_outcome = 'failed', "
+        "UPDATE agent_turns SET status = 'failed', terminal_outcome = 'failed', "  # noqa: S608 — dynamic identifiers only; values bound
         "terminal_error = 'Turn retired during tool-policy migration', "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE (tool_policy_version IS NULL "
@@ -1007,7 +1006,7 @@ def _ensure_agent_turns_schema(db: DatabaseManager) -> None:
         "AND (terminal_outcome IS NULL OR terminal_outcome = 'paused')"
     )
     db.execute(
-        "UPDATE agent_confirmations SET status = 'expired', "
+        "UPDATE agent_confirmations SET status = 'expired', "  # noqa: S608 — dynamic identifiers only; values bound
         "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE status = 'pending' AND turn_id IN ("
         "SELECT id FROM agent_turns WHERE tool_policy_version IS NULL "

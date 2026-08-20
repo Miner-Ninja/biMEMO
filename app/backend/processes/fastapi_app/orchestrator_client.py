@@ -6,8 +6,6 @@ messages resolve pending futures for request handlers. Manages
 session-to-conversation bindings and memory event fan-out.
 """
 
-# ruff: noqa: ASYNC109
-
 from __future__ import annotations
 
 import asyncio
@@ -338,7 +336,7 @@ class OrchestratorClient:
         self,
         request: IPCChatRequest,
         session_id: str,
-        timeout: float = 300.0,
+        timeout: float = 300.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCChatResponse:
         """Send a ChatRequest and wait for the ChatResponse.
 
@@ -382,7 +380,7 @@ class OrchestratorClient:
     async def send_bridge_inbound_sync(
         self,
         request: IPCBridgeInboundSyncRequest,
-        timeout: float = 30.0,
+        timeout: float = 30.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCBridgeInboundSyncResponse:
         """Send one inbound bridge message for persistence via Orchestrator."""
         self._require_connected()
@@ -401,7 +399,7 @@ class OrchestratorClient:
         content: str,
         channel: str,
         agent_id: str = "",
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCMcpMemoryRememberResponse:
         """Store one MCP external-agent memory via the Orchestrator.
 
@@ -434,7 +432,7 @@ class OrchestratorClient:
         *,
         assertion_id: str,
         reason: str,
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCMemoryInvalidateResponse:
         """Invalidate one graph assertion via the Orchestrator.
 
@@ -466,7 +464,7 @@ class OrchestratorClient:
         *,
         question: str,
         agent_id: str = "",
-        timeout: float = 300.0,
+        timeout: float = 300.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCMcpAskResponse:
         """Ask biMEMO a question via an MCP external agent.
 
@@ -499,7 +497,7 @@ class OrchestratorClient:
         run_id: str = "",
         after_sequence: int = 0,
         limit: int = 200,
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCListAgentRunEventsResponse:
         """Request persisted runtime events from the orchestrator process."""
         self._require_connected()
@@ -518,7 +516,7 @@ class OrchestratorClient:
     async def send_stop(
         self,
         request: IPCStopRequest,
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCStopResponse:
         """Send a StopRequest and wait for the StopResponse.
 
@@ -565,7 +563,7 @@ class OrchestratorClient:
     async def send_reload_llm(
         self,
         request_id: str,
-        timeout: float = 30.0,
+        timeout: float = 30.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCReloadLLMResponse:
         """Send one runtime LLM reload request and wait for the response."""
         self._require_connected()
@@ -582,7 +580,7 @@ class OrchestratorClient:
     async def send_confirm(
         self,
         request: IPCConfirmRequest,
-        timeout: float = CONFIRM_RESUME_TIMEOUT_SECONDS,
+        timeout: float = CONFIRM_RESUME_TIMEOUT_SECONDS,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> IPCConfirmResponse:
         """Send a ConfirmRequest and wait for the ConfirmResponse.
 
@@ -610,7 +608,7 @@ class OrchestratorClient:
         self,
         *,
         request: BaseModel,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> BaseModel:
         """Send one IPC request and wait for its matching response."""
         response_future = self._register_response_future(request.request_id)
@@ -633,7 +631,7 @@ class OrchestratorClient:
         self._response_futures[request_id] = response_future
         return response_future
 
-    async def list_tool_catalog(self, timeout: float = 10.0) -> list[dict[str, str]]:
+    async def list_tool_catalog(self, timeout: float = 10.0) -> list[dict[str, str]]:  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
         """Read the minimal catalog from the finalized orchestrator registry."""
         self._require_connected()
         response = await self._send_request_and_wait(
@@ -647,7 +645,7 @@ class OrchestratorClient:
     async def authorize_scheduled_tools(
         self,
         tool_names: list[str],
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 — IPC operation timeout, not asyncio.timeout
     ) -> list[dict[str, str]]:
         """Validate names and return revision-pinned scheduler entries."""
         self._require_connected()

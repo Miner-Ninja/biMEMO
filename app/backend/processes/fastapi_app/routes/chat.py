@@ -1,7 +1,5 @@
 """Chat, WebSocket, stop, confirm routes."""
 
-# ruff: noqa: B008
-
 import uuid
 from typing import TYPE_CHECKING
 

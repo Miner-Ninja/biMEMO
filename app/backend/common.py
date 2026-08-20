@@ -4,7 +4,6 @@ Canonical JSON serialization, sync/async callback invocation, process
 SIGTERM waiting, and user-profile timezone resolution. Standard library
 only, so importing here never creates a dependency cycle.
 """
-# ruff: noqa: ANN401
 
 from __future__ import annotations
 
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def canonical_json(value: Any) -> str:
+def canonical_json(value: Any) -> str:  # noqa: ANN401 — generic helper; Any is the intended type
     """Serialize ``value`` in the stable canonical form.
 
     Sorted keys, compact separators, non-ASCII preserved, and NaN/Inf
@@ -40,7 +39,7 @@ def canonical_json(value: Any) -> str:
     )
 
 
-async def await_maybe(callback: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+async def await_maybe(callback: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 — generic helper; Any is the intended type
     """Invoke a callback that may be sync or async and return its result.
 
     A coroutine function is awaited; a plain callable is called directly.

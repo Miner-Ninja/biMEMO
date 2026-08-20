@@ -117,7 +117,7 @@ def request_json(
     if body is not None:
         data = json.dumps(body).encode()
 
-    request = Request(url, data=data, method=method)  # noqa: S310
+    request = Request(url, data=data, method=method)
     request.add_header("Content-Type", "application/json")
     if client.csrf_token:
         request.add_header("X-CSRF-Token", client.csrf_token)

@@ -1,7 +1,5 @@
 """Text-to-speech routes."""
 
-# ruff: noqa: B008
-
 import logging
 from typing import TYPE_CHECKING
 

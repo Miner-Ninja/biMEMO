@@ -1,7 +1,5 @@
 """Admin routes for memory debug dashboard."""
 
-# ruff: noqa: B008
-
 from __future__ import annotations
 
 import asyncio

@@ -5,8 +5,6 @@ task scheduler. List, create, update (pause/resume), and delete
 scheduled tasks via the DB Proxy Socket B client.
 """
 
-# ruff: noqa: B008
-
 import json
 import logging
 from typing import TYPE_CHECKING

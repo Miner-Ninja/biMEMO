@@ -4,8 +4,6 @@ Implements EdDSA (Ed25519) token signing via HKDF-SHA256
 derived key, with access/refresh token lifecycle.
 """
 
-# ruff: noqa: S106
-
 import hmac
 import json
 import logging
@@ -342,7 +340,7 @@ class SessionManager:
         """
         claims, _ = _issued_token_payload(
             generation=self.generation,
-            token_type="access",
+            token_type="access",  # noqa: S106 — JWT token_type marker, not a secret
             lifetime_seconds=ACCESS_TOKEN_LIFETIME,
         )
         return encode_token(claims, private_key)
@@ -361,7 +359,7 @@ class SessionManager:
         """
         claims, _ = _issued_token_payload(
             generation=self.generation,
-            token_type="refresh",
+            token_type="refresh",  # noqa: S106 — JWT token_type marker, not a secret
             lifetime_seconds=REFRESH_TOKEN_LIFETIME,
         )
         return encode_token(claims, private_key)
@@ -405,7 +403,7 @@ class SessionManager:
         """
         _, payload = _issued_token_payload(
             generation=self.generation,
-            token_type="access",
+            token_type="access",  # noqa: S106 — JWT token_type marker, not a secret
             lifetime_seconds=ACCESS_TOKEN_LIFETIME,
         )
         return await signing_client.sign_token(payload)
@@ -424,7 +422,7 @@ class SessionManager:
         """
         _, payload = _issued_token_payload(
             generation=self.generation,
-            token_type="refresh",
+            token_type="refresh",  # noqa: S106 — JWT token_type marker, not a secret
             lifetime_seconds=REFRESH_TOKEN_LIFETIME,
         )
         return await signing_client.sign_token(payload)

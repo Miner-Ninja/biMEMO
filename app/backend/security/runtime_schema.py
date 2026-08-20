@@ -1,7 +1,5 @@
 """Runtime database schema for short-lived assistant execution state."""
 
-# ruff: noqa: S608
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -158,7 +156,7 @@ def initialize_runtime_schema(db: DatabaseManager) -> None:
     if "tool_policy_version" not in columns:
         db.execute("ALTER TABLE agent_runs ADD COLUMN tool_policy_version TEXT")
     db.execute(
-        "UPDATE agent_runs SET status = 'failed', "
+        "UPDATE agent_runs SET status = 'failed', "  # noqa: S608 — dynamic identifiers only; values bound
         "completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE (tool_policy_version IS NULL "
@@ -166,7 +164,7 @@ def initialize_runtime_schema(db: DatabaseManager) -> None:
         "AND status NOT IN ('cancelled', 'completed', 'failed', 'stopped')"
     )
     db.execute(
-        "UPDATE pending_actions SET status = 'expired', "
+        "UPDATE pending_actions SET status = 'expired', "  # noqa: S608 — dynamic identifiers only; values bound
         "error_message = 'Action retired during tool-policy migration', "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE status NOT IN ('completed', 'failed', 'denied', 'expired') "
@@ -217,7 +215,7 @@ def prune_runtime_state(
         (current_time,),
     ).rowcount
     db.execute(
-        "UPDATE resume_snapshots SET "
+        "UPDATE resume_snapshots SET "  # noqa: S608 — dynamic identifiers only; values bound
         "consumed_at = COALESCE(consumed_at, strftime('%Y-%m-%dT%H:%M:%f', 'now')), "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE action_id IN ("
@@ -233,7 +231,7 @@ def prune_runtime_state(
         (current_time, snapshot_cutoff),
     ).rowcount
     db.execute(
-        "DELETE FROM agent_run_events WHERE run_id IN ("
+        "DELETE FROM agent_run_events WHERE run_id IN ("  # noqa: S608 — dynamic identifiers only; values bound
         "SELECT id FROM agent_runs WHERE "
         f"status IN ({_status_placeholders(RUN_TERMINAL_STATUSES)}) "
         "AND completed_at IS NOT NULL AND completed_at <= ?"
@@ -241,7 +239,7 @@ def prune_runtime_state(
         (*tuple(sorted(RUN_TERMINAL_STATUSES)), run_cutoff),
     )
     deleted_runs = db.execute(
-        "DELETE FROM agent_runs WHERE "
+        "DELETE FROM agent_runs WHERE "  # noqa: S608 — dynamic identifiers only; values bound
         f"status IN ({_status_placeholders(RUN_TERMINAL_STATUSES)}) "
         "AND completed_at IS NOT NULL AND completed_at <= ?",
         (*tuple(sorted(RUN_TERMINAL_STATUSES)), run_cutoff),

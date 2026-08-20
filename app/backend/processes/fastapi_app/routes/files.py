@@ -6,8 +6,6 @@ so runtime policy changes take effect on the next upload without
 restarting the process.
 """
 
-# ruff: noqa: B008
-
 from __future__ import annotations
 
 import asyncio

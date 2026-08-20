@@ -1,7 +1,5 @@
 """Admin routes (integrations, conversations, profile)."""
 
-# ruff: noqa: B008
-
 import base64
 import mimetypes
 import os

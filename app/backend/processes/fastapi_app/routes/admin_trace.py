@@ -9,7 +9,6 @@ Read-only; reuses the Socket B admin client. Gated behind admin auth.
 
 from __future__ import annotations
 
-# ruff: noqa: B008
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: RUF001, S310
 """Full-cycle memory testing through biMEMO chat API.
 
 Simulates real user conversation to seed personal information,
