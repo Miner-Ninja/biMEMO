@@ -15,6 +15,22 @@ if TYPE_CHECKING:
     import asyncio
     from collections.abc import Awaitable, Callable
 
+    from backend.agent.agent_loop import AgentOrchestrator
+    from backend.llm.capabilities_registry import CapabilitiesRegistry
+    from backend.llm.custom_provider.provider import CustomLLMProvider
+    from backend.llm.ollama.provider import OllamaProvider
+    from backend.llm.openai_compatible.provider import OpenAICompatibleProvider
+    from backend.llm.openrouter.provider import OpenRouterProvider
+    from backend.memory.runtime.event_bus import MemoryEventBus
+    from backend.memory.runtime.rate_limiter import (
+        DialogRecorderQueue,
+        RecordRateLimiter,
+    )
+    from backend.memory.runtime.scheduler import (
+        DialogRecorderScheduler,
+        SchedulingMode,
+    )
+
     from .client import DBProxyClient
 
 
@@ -75,12 +91,12 @@ def _select_dialog_recorder_scheduling_mode(
 
 
 async def _setup_dialog_recorder_pipeline(
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     db_client: DBProxyClient,
     llm_config: dict,
     service_type: str,
-    capabilities_registry: object,
-    event_bus: object | None = None,
+    capabilities_registry: CapabilitiesRegistry,
+    event_bus: MemoryEventBus | None = None,
 ) -> tuple[list[asyncio.Task], Callable[[str], Awaitable[list[float]]] | None]:
     """Wire dialog recorder, distiller, and re-embed background loops.
 
@@ -168,10 +184,10 @@ async def _setup_dialog_recorder_pipeline(
 
 async def _prepare_dialog_recorder_vector_runtime(
     *,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     db_client: DBProxyClient,
     llm_config: dict[str, object],
-    dialog_recorder_provider: object,
+    dialog_recorder_provider: OllamaProvider | OpenAICompatibleProvider,
 ) -> tuple[Callable[[str], Awaitable[list[float]]], bool]:
     """Build the embed callback, probe vector support, and apply context wiring."""
     from .llm_setup import _apply_runtime_context_fn
@@ -201,13 +217,13 @@ def _start_dialog_recorder_background_tasks(
     *,
     tasks: list[asyncio.Task],
     db_client: DBProxyClient,
-    dialog_recorder_provider: object,
-    dialog_recorder_queue: object,
-    dialog_recorder_rate_limiter: object,
-    dialog_recorder_scheduler: object,
+    dialog_recorder_provider: OllamaProvider | OpenAICompatibleProvider,
+    dialog_recorder_queue: DialogRecorderQueue,
+    dialog_recorder_rate_limiter: RecordRateLimiter,
+    dialog_recorder_scheduler: DialogRecorderScheduler,
     embed_fn: Callable[[str], Awaitable[list[float]]],
     vector_ready: bool,
-    event_bus: object | None,
+    event_bus: MemoryEventBus | None,
     service_type: str,
     run_dialog_recorder_loop_fn: object,
     run_extraction_loop_fn: object,
@@ -265,9 +281,9 @@ def _build_dialog_recorder_provider(
     *,
     llm_config: dict[str, object],
     service_type: str,
-    custom_provider_cls: object,
-    openrouter_provider_cls: object,
-    capabilities_registry: object,
+    custom_provider_cls: type[CustomLLMProvider],
+    openrouter_provider_cls: type[OpenRouterProvider],
+    capabilities_registry: CapabilitiesRegistry,
 ) -> object | None:
     """Build the provider used by the dialog recorder pipeline."""
     from .process_helpers import parse_optional_int
@@ -319,9 +335,9 @@ def _build_dialog_recorder_provider(
 def _build_dialog_recorder_scheduler(
     *,
     llm_config: dict[str, object],
-    dialog_recorder_scheduler_cls: object,
-    scheduling_mode_cls: object,
-) -> object:
+    dialog_recorder_scheduler_cls: type[DialogRecorderScheduler],
+    scheduling_mode_cls: type[SchedulingMode],
+) -> DialogRecorderScheduler:
     """Build the dialog recorder scheduler for the active provider pair."""
     scheduling_mode_name, grace_period_seconds = (
         _select_dialog_recorder_scheduling_mode(
@@ -337,10 +353,10 @@ def _build_dialog_recorder_scheduler(
 
 def _apply_dialog_recorder_runtime_hooks(
     *,
-    orchestrator: object,
-    dialog_recorder_queue: object,
-    dialog_recorder_scheduler: object,
-    db_client: object,
+    orchestrator: AgentOrchestrator,
+    dialog_recorder_queue: DialogRecorderQueue,
+    dialog_recorder_scheduler: DialogRecorderScheduler,
+    db_client: DBProxyClient,
 ) -> None:
     """Attach dialog recorder callbacks and queue-backed persistence hooks."""
     from .process_helpers import build_queue_record_fn
@@ -354,8 +370,8 @@ def _apply_dialog_recorder_runtime_hooks(
 
 
 async def _reload_pending_queue_items(
-    dialog_recorder_queue: object,
-    db_client: object,
+    dialog_recorder_queue: DialogRecorderQueue,
+    db_client: DBProxyClient,
 ) -> None:
     """Refill the in-memory recorder queue from persisted pending rows.
 
@@ -395,7 +411,7 @@ async def _reload_pending_queue_items(
 async def _probe_vector_embedding_support(
     *,
     db_client: DBProxyClient,
-    dialog_recorder_provider: object,
+    dialog_recorder_provider: OllamaProvider | OpenAICompatibleProvider,
     embedding_model: str,
 ) -> bool:
     """Probe embedding dimensions and initialize the vector table when possible."""
@@ -431,12 +447,12 @@ async def _probe_vector_embedding_support(
 
 async def _start_runtime_dialog_recorder_tasks(
     *,
-    orch: object,
+    orch: AgentOrchestrator,
     db_client: DBProxyClient,
     llm_config: dict[str, object] | None,
     active_service_type: str | None,
-    memory_event_bus: object,
-    capabilities_registry: object,
+    memory_event_bus: MemoryEventBus,
+    capabilities_registry: CapabilitiesRegistry,
 ) -> list[asyncio.Task]:
     """Start dialog recorder background tasks when LLM config exists."""
     if llm_config is None or active_service_type is None:

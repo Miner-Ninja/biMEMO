@@ -49,6 +49,9 @@ from backend.tools.handlers.registration import (
 
 
 if TYPE_CHECKING:
+    from backend.agent.turn_state import ToolObligation
+    from backend.llm.call_factory import LLMResponse
+    from backend.processes.orchestrator.client import DBProxyClient
     from backend.trust.confirmation import ConfirmationManager, PendingAction
 
 logger = logging.getLogger(__name__)
@@ -67,7 +70,7 @@ class ToolExecutor:
         broker: ToolBroker,
         confirmation_mgr: ConfirmationManager,
         action_decisions: ActionDecisionService | None = None,
-        turn_store: object | None = None,
+        turn_store: DBProxyClient | None = None,
     ) -> None:
         """Initialize tool executor.
 
@@ -87,7 +90,7 @@ class ToolExecutor:
                 workspace_roots=broker.workspace_roots,
             )
         self.turn_store = turn_store
-        self.stream_queue: object | None = None
+        self.stream_queue: asyncio.Queue | None = None
         self._pending_red: list[PendingAction] = []
         self.tool_call_count: int = 0
         self.tool_names_used: list[str] = []
@@ -104,9 +107,9 @@ class ToolExecutor:
         # Invocation identity for idempotent red-zone queueing.
         self._last_invocation_id: tuple[str, ...] | None = None
         self._pending_continuation: dict[str, object] | None = None
-        self.current_obligations: tuple[object, ...] = ()
+        self.current_obligations: tuple[ToolObligation, ...] = ()
         self._authorized_grants: dict[str, dict[str, object]] = {}
-        self._prepared_calls: dict[str, object] = {}
+        self._prepared_calls: dict[str, PreparedInvocation] = {}
         self._policy_decisions: dict[str, ActionDecision] = {}
 
     @property
@@ -124,7 +127,7 @@ class ToolExecutor:
         turn_id = self._core_turn_id
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{turn_id}:call:{tool_call_id}"))
 
-    def build_tool_calls(self, llm_response: object) -> list[ToolCall]:
+    def build_tool_calls(self, llm_response: LLMResponse) -> list[ToolCall]:
         """Convert calls and collapse identical tool/argument requests."""
         self._prepared_calls = {}
         self._policy_decisions = {}
@@ -150,7 +153,7 @@ class ToolExecutor:
 
     @staticmethod
     def _assistant_message_for_calls(
-        llm_response: object,
+        llm_response: LLMResponse,
         calls: list[ToolCall],
     ) -> dict[str, object]:
         """Keep the assistant transcript consistent with deduplicated calls."""
@@ -553,7 +556,7 @@ class ToolExecutor:
         }
 
     @staticmethod
-    def canonical_url_host(prepared: object) -> str | None:
+    def canonical_url_host(prepared: PreparedInvocation) -> str | None:
         """Return the lowercased host of a prepared invocation's URL argument.
 
         Server-side only: the host is read from the CANONICAL parameters of
@@ -772,7 +775,7 @@ class ToolExecutor:
         self,
         *,
         messages: list[dict[str, object]],
-        llm_response: object,
+        llm_response: LLMResponse,
         immediate_calls: list[ToolCall],
         results: list[ToolResult],
     ) -> None:
@@ -800,7 +803,7 @@ class ToolExecutor:
     async def run_one_tool_round(
         self,
         *,
-        llm_response: object,
+        llm_response: LLMResponse,
         messages: list[dict[str, object]],
         channel: str,
         required_tools: tuple[str, ...] = (),

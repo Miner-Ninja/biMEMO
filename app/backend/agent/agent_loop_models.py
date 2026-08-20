@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from backend.llm.usage import LLMCallUsage
     from backend.memory.classification.question_router import MemoryQuestionRoute
     from backend.memory.classification.trace import MemoryQuestionRouteTrace
+    from backend.memory.context_builder.models import ContextEntry
     from backend.models.chat_stats import ExtendedUsage
 
 
@@ -73,7 +74,7 @@ class AgentResponse:
 class PreparedContext:
     """Prepared conversation context for one orchestrator turn."""
 
-    entries: list[object]
+    entries: list[ContextEntry]
     retrieved_memories: list[dict[str, str]]
     retrieved_messages: list[dict[str, str]] | None
     memory_guidance: str | None

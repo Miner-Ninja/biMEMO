@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 
     from backend.channels.jwt_auth import TokenClaims
     from backend.chat_bridge import ChatBridgeService
+    from backend.ipc.models import ConfirmRequest, StopRequest
     from backend.models.requests import ChatRequest as HTTPChatRequest
 
     from ..clients import AdminDBClient, OrchestratorClient
@@ -446,7 +447,7 @@ def build_conversation_message_item(
 async def send_ipc_control_request(
     *,
     send_fn: Callable[[object], Awaitable[object]],
-    ipc_request: object,
+    ipc_request: StopRequest | ConfirmRequest,
 ) -> object:
     """Send one stop/confirm IPC request and map transport errors to HTTP."""
     try:

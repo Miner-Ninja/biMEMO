@@ -10,9 +10,13 @@ session or validation run.
 from __future__ import annotations
 
 import re
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from backend.memory.time_signals import TimeSignals
+
+
+if TYPE_CHECKING:
+    from backend.memory.context_builder.models import ContextEntry
 
 
 class LongTermMemoryResolver:
@@ -210,7 +214,7 @@ class LongTermMemoryResolver:
 
     def build_response(
         self,
-        context_entries: list[object],
+        context_entries: list[ContextEntry],
         session_id: str,
         question_text: str = "",
     ) -> str:
@@ -291,7 +295,7 @@ class LongTermMemoryResolver:
         return 1
 
     @classmethod
-    def _best_style_scores(cls, context_entries: list[object]) -> tuple[int, int]:
+    def _best_style_scores(cls, context_entries: list[ContextEntry]) -> tuple[int, int]:
         """Return the strongest current-style and old-style evidence scores."""
         best_current_score = 0
         best_old_score = 0

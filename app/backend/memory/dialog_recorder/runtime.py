@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from backend.llm.ollama.provider import OllamaProvider
     from backend.memory.runtime.event_bus import MemoryEventBus
     from backend.memory.runtime.rate_limiter import RecordRateLimiter
+    from backend.processes.orchestrator.client import DBProxyClient
 logger = logging.getLogger(__name__)
 
 
@@ -255,7 +256,7 @@ async def compress_messages(
 
 async def _write_dialog_recorder_trace(
     decision: str,
-    db_client: object,
+    db_client: DBProxyClient,
     messages: list[str],
     conversation_id: str,
     session_id: str,
@@ -320,7 +321,7 @@ def _dialog_recorder_text_messages(messages: list[str]) -> tuple[list[str], bool
 async def _write_skip_trace(
     *,
     decision: str,
-    db_client: object,
+    db_client: DBProxyClient,
     text_messages: list[str],
     conversation_id: str,
     session_id: str,
@@ -346,7 +347,7 @@ async def _write_skip_trace(
 async def _skip_record(
     *,
     decision: str,
-    db_client: object,
+    db_client: DBProxyClient,
     text_messages: list[str],
     conversation_id: str,
     session_id: str,
@@ -385,7 +386,7 @@ def _recent_observation_records(existing_memory: dict[str, object]) -> list[Reco
 
 async def _load_recent_memory_for_dedup(
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     session_id: str,
     conversation_id: str,
 ) -> tuple[list[Record], list[object]]:
@@ -404,7 +405,7 @@ async def _load_recent_memory_for_dedup(
 
 async def _store_record_embedding_if_available(
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     embed_fn: Callable | None,
     record_id: str,
     record: Record,
@@ -433,7 +434,7 @@ async def _store_record_embedding_if_available(
 
 async def process_record(
     provider: OllamaProvider,
-    db_client: object,
+    db_client: DBProxyClient,
     messages: list[str],
     conversation_id: str,
     session_id: str,

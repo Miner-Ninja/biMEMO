@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from backend.models.requests import PasswordAuthRequest  # noqa: TC001
 from backend.security.startup_state import StartupState
+
+
+if TYPE_CHECKING:
+    import uvicorn
+
+    from backend.config import Settings
 
 
 # --- Startup gate response defaults ---
@@ -62,7 +69,7 @@ def _validate_password(password: str) -> None:
         )
 
 
-async def _stop_server_after_response(server: object) -> None:
+async def _stop_server_after_response(server: uvicorn.Server) -> None:
     """Ask uvicorn to stop after the current response has been sent."""
     await asyncio.sleep(STARTUP_GATE_SHUTDOWN_DELAY_SECONDS)
     server.should_exit = True
@@ -72,7 +79,7 @@ async def _accept_startup_password(
     *,
     password: str,
     password_future: asyncio.Future[str],
-    server: object,
+    server: uvicorn.Server,
 ) -> dict[str, str]:
     """Store one submitted password in memory and stop the startup gate."""
     if password_future.done():
@@ -153,7 +160,7 @@ def create_startup_gate_app(
     return app
 
 
-async def run_startup_gate(settings: object, state: StartupState) -> str:
+async def run_startup_gate(settings: Settings, state: StartupState) -> str:
     """Run the startup gate until a password is submitted.
 
     Args:

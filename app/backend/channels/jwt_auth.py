@@ -13,6 +13,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -21,6 +22,11 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from backend.channels.jwt_auth_models import TokenClaims
+
+
+if TYPE_CHECKING:
+    from backend.processes.fastapi_app.signing_client import SigningClient
+    from backend.security.database import DatabaseManager
 
 
 logger = logging.getLogger(__name__)
@@ -69,7 +75,7 @@ def _urlsafe_b64encode_bytes(data: bytes) -> bytes:
     return base64.urlsafe_b64encode(data).rstrip(b"=")
 
 
-def get_or_create_jwt_salt(db: object) -> bytes:
+def get_or_create_jwt_salt(db: DatabaseManager) -> bytes:
     """Get or create the JWT HKDF salt from the database.
 
     On first unlock, generates 16 random bytes and stores them
@@ -387,7 +393,7 @@ class SessionManager:
 
     async def async_issue_access_token(
         self,
-        signing_client: object,
+        signing_client: SigningClient | None,
     ) -> str:
         """Issue a new access token via Signing Proxy.
 
@@ -406,7 +412,7 @@ class SessionManager:
 
     async def async_issue_refresh_token(
         self,
-        signing_client: object,
+        signing_client: SigningClient | None,
     ) -> str:
         """Issue a new refresh token via Signing Proxy.
 
@@ -426,7 +432,7 @@ class SessionManager:
     async def async_validate_token(
         self,
         token: str,
-        signing_client: object,
+        signing_client: SigningClient | None,
         expected_type: str = "access",
         audit_fn: object = None,
     ) -> TokenClaims | None:

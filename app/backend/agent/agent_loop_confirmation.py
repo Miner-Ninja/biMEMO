@@ -63,6 +63,9 @@ from backend.llm.structured_response import StructuredAssistantContent
 from backend.llm.usage import aggregate_call_usages
 from backend.memory.classification.question_router import route_memory_question
 from backend.permissions import ActionContext, DecisionKind
+from backend.processes.orchestrator.run_event_recorder import (
+    AgentRunEventType,
+)
 from backend.security.content_filter import filter_output
 from backend.security.policy import get_policy
 from backend.security.provenance import serialize_tool_result
@@ -71,6 +74,7 @@ from backend.tools.broker import AuthorizationContext, ToolBroker
 
 if TYPE_CHECKING:
     from backend.agent.agent_loop import AgentOrchestrator
+    from backend.llm.capabilities import ModelCapabilities
     from backend.llm.usage import LLMCallUsage
 
 
@@ -621,7 +625,7 @@ async def resume_structured_confirmation(
         try:
             await orchestrator.turn_store.append_agent_turn_event(
                 turn_id=turn_id,
-                event_type="active_time_recorded",
+                event_type=AgentRunEventType.ACTIVE_TIME_RECORDED.value,
                 phase="foreground_resume",
                 payload={
                     "duration_ms": max(
@@ -953,7 +957,7 @@ async def run_structured_authority_turn(
         )
         await orchestrator.turn_store.append_agent_turn_event(
             turn_id=prepared_turn.run_id,
-            event_type="tool_round_started",
+            event_type=AgentRunEventType.TOOL_ROUND_STARTED.value,
             phase="tool_loop",
             attempt=int(canonical.get("tool_rounds", 0)) + 1,
             payload={
@@ -1000,7 +1004,7 @@ async def run_structured_authority_turn(
                 )
             await orchestrator.turn_store.append_agent_turn_event(
                 turn_id=prepared_turn.run_id,
-                event_type="native_decision_invalid",
+                event_type=AgentRunEventType.NATIVE_DECISION_INVALID.value,
                 phase="tool_loop",
                 attempt=used_reask + 1,
                 payload={
@@ -1029,7 +1033,7 @@ async def run_structured_authority_turn(
                     )
                 await orchestrator.turn_store.append_agent_turn_event(
                     turn_id=prepared_turn.run_id,
-                    event_type="finish_rejected",
+                    event_type=AgentRunEventType.FINISH_REJECTED.value,
                     phase="tool_loop",
                     attempt=used_reask + 1,
                     payload={
@@ -1047,7 +1051,7 @@ async def run_structured_authority_turn(
             if not successful_evidence:
                 await orchestrator.turn_store.append_agent_turn_event(
                     turn_id=prepared_turn.run_id,
-                    event_type="semantic_finish_without_tool",
+                    event_type=AgentRunEventType.SEMANTIC_FINISH_WITHOUT_TOOL.value,
                     phase="tool_loop",
                     attempt=int(canonical.get("tool_rounds", 0)),
                     payload={"model_owned_judgment": True},
@@ -1099,7 +1103,7 @@ async def run_structured_authority_turn(
                 )
             await orchestrator.turn_store.append_agent_turn_event(
                 turn_id=prepared_turn.run_id,
-                event_type="exact_force_ignored",
+                event_type=AgentRunEventType.EXACT_FORCE_IGNORED.value,
                 phase="tool_loop",
                 attempt=used_reask + 1,
                 payload={
@@ -1267,7 +1271,7 @@ async def require_structured_capabilities(
     *,
     stage: str,
     exact_choice: bool = False,
-) -> object:
+) -> ModelCapabilities:
     """Fail closed unless the active provider declares the required phase."""
     resolver = getattr(orchestrator, "_capabilities_resolver", None)
     if resolver is None:

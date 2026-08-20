@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from backend.llm.call_factory import LLMResponse
 
 
 ASK_USER_TOOL_NAME = "bimemo_ask_user"
@@ -83,7 +87,7 @@ def with_semantic_controls(external_tools: list[dict] | None) -> list[dict]:
 
 
 def parse_semantic_decision(
-    response: object,
+    response: LLMResponse,
     *,
     allowed_external_names: set[str] | None = None,
 ) -> SemanticDecision:

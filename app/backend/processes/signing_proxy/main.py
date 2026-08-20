@@ -24,6 +24,8 @@ from .jwt import _decode_jwt, _encode_jwt, _issue_tokens
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from backend.security.startup_password import StartupPasswordSource
+
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +149,7 @@ async def _load_signing_private_key(
     return Ed25519PrivateKey.from_private_bytes(key_bytes)
 
 
-def _legacy_admin_secret_source() -> object | None:
+def _legacy_admin_secret_source() -> StartupPasswordSource | None:
     """Return the legacy admin secret source when configured."""
     from backend.security.startup_password import StartupPasswordSource
 
@@ -160,7 +162,9 @@ def _legacy_admin_secret_source() -> object | None:
     )
 
 
-def _startup_secret_source(startup_password: str | None = None) -> object | None:
+def _startup_secret_source(
+    startup_password: str | None = None,
+) -> StartupPasswordSource | None:
     """Return the password-startup secret source when configured."""
     from backend.config import get_settings
     from backend.security.startup_password import (
@@ -190,7 +194,9 @@ def _startup_secret_source(startup_password: str | None = None) -> object | None
         return None
 
 
-def _initial_secret_source(startup_password: str | None = None) -> object | None:
+def _initial_secret_source(
+    startup_password: str | None = None,
+) -> StartupPasswordSource | None:
     """Return the initial UI password source in priority order."""
     legacy_source = _legacy_admin_secret_source()
     if legacy_source is not None:
@@ -201,7 +207,7 @@ def _initial_secret_source(startup_password: str | None = None) -> object | None
 def _verify_existing_password_hash(
     *,
     stored_hash: str,
-    secret_source: object,
+    secret_source: StartupPasswordSource,
 ) -> None:
     """Verify that a startup password source matches the stored UI password."""
     try:

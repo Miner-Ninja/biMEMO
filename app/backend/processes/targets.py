@@ -20,7 +20,14 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
+    import logging
     from collections.abc import Awaitable, Callable
+
+    from backend.config import Settings
+    from backend.ipc.db_proxy import ChannelAllowlist, OperationRegistry
+    from backend.ipc.ipc_channel import IPCSocketServer
+    from backend.ipc.models import DBOperation
+    from backend.security.database import DatabaseManager
 
 
 # --- Socket paths (in /tmp for container runtime) ---
@@ -57,18 +64,18 @@ def _ensure_parent_directory(file_path: str) -> None:
 
 
 def _db_proxy_servers(
-    server_a: object,
-    server_b: object,
-    server_c: object,
-) -> tuple[object, object, object]:
+    server_a: IPCSocketServer,
+    server_b: IPCSocketServer,
+    server_c: IPCSocketServer,
+) -> tuple[IPCSocketServer, IPCSocketServer, IPCSocketServer]:
     """Return the three DB Proxy IPC servers in startup and shutdown order."""
     return server_a, server_b, server_c
 
 
 def _build_db_proxy_handler_factory(
     *,
-    allowlist: object,
-    registry: object,
+    allowlist: ChannelAllowlist,
+    registry: OperationRegistry,
     db_operation_type: type,
     db_result_type: type,
 ) -> Callable[[str], Awaitable[Callable[[str, object], Awaitable[object]]]]:
@@ -81,7 +88,7 @@ def _build_db_proxy_handler_factory(
 
         async def handler(
             type_name: str,
-            message: object,
+            message: DBOperation,
         ) -> object:
             """Dispatch DBOperation to the registry after allowlist checks."""
             del type_name
@@ -112,7 +119,7 @@ def _build_db_proxy_handler_factory(
 
 
 async def _load_master_key(
-    settings: object,
+    settings: Settings,
     startup_password: str | None = None,
 ) -> bytes:
     """Load the SQLCipher master key from the configured key source."""
@@ -133,7 +140,7 @@ async def _load_master_key(
 
 def _key_source_kwargs(
     *,
-    settings: object,
+    settings: Settings,
     startup_password: str | None = None,
     password_loader: object,
     key_source_error: type[Exception],
@@ -166,7 +173,11 @@ def _key_source_kwargs(
     raise key_source_error(f"Unsupported key_source: {key_source}")
 
 
-def _open_primary_db(settings: object, master_key: bytes, logger: object) -> object:
+def _open_primary_db(
+    settings: Settings,
+    master_key: bytes,
+    logger: logging.Logger,
+) -> DatabaseManager:
     """Open and initialize the main encrypted application database."""
     from backend.memory.retrieval.fulltext import create_fts_tables
     from backend.memory.retrieval.vector_store import enable_vector_extension
@@ -193,7 +204,7 @@ def _open_primary_db(settings: object, master_key: bytes, logger: object) -> obj
     return db
 
 
-def _open_diagnostics_db(settings: object, master_key: bytes) -> object:
+def _open_diagnostics_db(settings: Settings, master_key: bytes) -> DatabaseManager:
     """Open and initialize the diagnostics database."""
     from backend.security.database import DatabaseManager
     from backend.security.diagnostics_schema import (
@@ -216,7 +227,7 @@ def _open_diagnostics_db(settings: object, master_key: bytes) -> object:
     return diagnostics_db
 
 
-def _open_runtime_db(settings: object, master_key: bytes) -> object:
+def _open_runtime_db(settings: Settings, master_key: bytes) -> DatabaseManager:
     """Open and initialize the short-lived assistant runtime database."""
     from backend.security.database import DatabaseManager
     from backend.security.runtime_schema import (
@@ -249,7 +260,7 @@ async def _build_db_proxy_servers(
     secret_b: bytes,
     socket_c_path: str,
     secret_c: bytes,
-) -> tuple[object, object, object]:
+) -> tuple[IPCSocketServer, IPCSocketServer, IPCSocketServer]:
     """Build the three DB Proxy IPC servers for sockets A, B, and C."""
     from backend.ipc.ipc_channel import IPCSocketServer
     from backend.processes.db_proxy import CHANNEL_A, CHANNEL_B, CHANNEL_C
@@ -279,9 +290,9 @@ async def _build_db_proxy_servers(
 
 
 async def _start_db_proxy_servers(
-    server_a: object,
-    server_b: object,
-    server_c: object,
+    server_a: IPCSocketServer,
+    server_b: IPCSocketServer,
+    server_c: IPCSocketServer,
 ) -> None:
     """Start all three DB Proxy IPC servers."""
     for server in _db_proxy_servers(server_a, server_b, server_c):
@@ -289,9 +300,9 @@ async def _start_db_proxy_servers(
 
 
 async def _stop_db_proxy_servers(
-    server_a: object,
-    server_b: object,
-    server_c: object,
+    server_a: IPCSocketServer,
+    server_b: IPCSocketServer,
+    server_c: IPCSocketServer,
 ) -> None:
     """Stop all three DB Proxy IPC servers."""
     for server in _db_proxy_servers(server_a, server_b, server_c):

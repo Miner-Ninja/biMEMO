@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from backend.channels.endpoints import ReauthManager
     from backend.channels.jwt_auth import TokenClaims
+    from backend.files.file_context_models import StoredFileContext
 
     from ..clients import AdminDBClient, CredentialClient
     from ..orchestrator_client import OrchestratorClient
@@ -80,7 +81,7 @@ def _stored_file_raw_content(
     *,
     file_id: str,
     file_metadata: dict[str, object],
-    stored_context: object,
+    stored_context: StoredFileContext,
 ) -> str | None:
     """Load raw file text when preview is small enough and file still exists."""
     if (

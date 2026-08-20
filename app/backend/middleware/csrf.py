@@ -19,6 +19,8 @@ from backend.processes.fastapi_app.problem import (
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
 
+    from backend.channels.jwt_auth_models import TokenClaims
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,7 @@ def _csrf_token(scope: Scope) -> str:
     return headers.get(b"x-csrf-token", b"").decode()
 
 
-def _claims_from_scope(scope: Scope) -> object | None:
+def _claims_from_scope(scope: Scope) -> TokenClaims | None:
     """Read authenticated claims from request state."""
     return scope.get("state", {}).get("claims")
 

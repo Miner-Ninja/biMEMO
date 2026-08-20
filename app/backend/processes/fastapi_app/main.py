@@ -62,6 +62,11 @@ from .routes import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from starlette.exceptions import HTTPException
+
+    from backend.config import Settings
+    from backend.llm.tts_client import TTSClient
+
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +114,7 @@ async def _connect_optional_ipc_client(
 
 def _build_chat_bridge_service(
     *,
-    settings: object,
+    settings: Settings,
     admin_client: AdminDBClient,
 ) -> ChatBridgeService | None:
     """Create the chat bridge service from registered providers."""
@@ -171,7 +176,7 @@ def _apply_audit_fn_to_middleware(
         walker = getattr(walker, "app", None)
 
 
-def _build_tts_client(settings: object) -> object | None:
+def _build_tts_client(settings: Settings) -> TTSClient | None:
     """Create the TTS client when TTS settings are configured."""
     if not settings.tts_endpoint:
         return None
@@ -395,7 +400,7 @@ def create_app(
         index_html = FRONTEND_DIST / "index.html"
 
         @application.exception_handler(404)
-        async def _spa_fallback(request: Request, exc: object) -> Response:
+        async def _spa_fallback(request: Request, exc: HTTPException) -> Response:
             """Serve the frontend index for HTML paths that miss FastAPI routes."""
             accept = request.headers.get("accept", "")
             if "text/html" in accept:

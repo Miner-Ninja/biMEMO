@@ -76,6 +76,9 @@ from backend.memory.classification.resolver import (
 from backend.permissions import (
     ActionDecisionService,
 )
+from backend.processes.orchestrator.run_event_recorder import (
+    AgentRunEventType,
+)
 from backend.security.content_filter import (
     filter_input,
     filter_output,
@@ -93,7 +96,11 @@ if TYPE_CHECKING:
     from backend.agent.agent_loop_skills import SkillQualityVerdict
     from backend.agent.concurrency import AgentConcurrency
     from backend.llm.call_factory import AttemptRecord
+    from backend.llm.capabilities import ModelCapabilities
     from backend.llm.usage import LLMCallUsage
+    from backend.memory.context_builder.models import ContextEntry
+    from backend.processes.orchestrator.client import DBProxyClient
+    from backend.processes.orchestrator.run_event_recorder import RunEventRecorder
     from backend.tools.broker import ToolBroker
     from backend.trust.confirmation import PendingAction
 
@@ -150,15 +157,15 @@ class AgentOrchestrator:
     notify_primary_started: Callable[[], None] | None = None
     notify_primary_finished: Callable[[], None] | None = None
     confirmation_mgr: ConfirmationManager = field(default_factory=ConfirmationManager)
-    stream_queue: object | None = None
+    stream_queue: asyncio.Queue | None = None
     user_profile: dict[str, str] = field(default_factory=dict)
     model_name: str = ""
     list_skills_fn: Callable | None = None
     search_skills_fn: Callable | None = None
     create_skill_fn: Callable | None = None
     log_skill_usage_fn: Callable | None = None
-    turn_store: object | None = None
-    run_event_recorder: object | None = None
+    turn_store: DBProxyClient | None = None
+    run_event_recorder: RunEventRecorder | None = None
     scheduled_task_run: dict[str, object] | None = None
     _current_run_id: str = field(default="")
     MIN_COMPLETION_TOKENS_FOR_SKILL = 300
@@ -324,7 +331,7 @@ class AgentOrchestrator:
 
     def _log_context_composition(
         self,
-        context_entries: list[object],
+        context_entries: list[ContextEntry],
     ) -> None:
         """Log the role breakdown of one loaded prompt context."""
         role_counts: dict[str, int] = {}
@@ -1144,7 +1151,7 @@ class AgentOrchestrator:
                 try:
                     await self.turn_store.append_agent_turn_event(
                         turn_id=active_core_turn_id,
-                        event_type="active_time_recorded",
+                        event_type=AgentRunEventType.ACTIVE_TIME_RECORDED.value,
                         phase="foreground",
                         payload={
                             "duration_ms": max(
@@ -1356,7 +1363,7 @@ class AgentOrchestrator:
         *,
         stage: str,
         exact_choice: bool = False,
-    ) -> object:
+    ) -> ModelCapabilities:
         """Fail closed unless the active provider declares the required phase."""
         return await confirm_ops.require_structured_capabilities(
             self,

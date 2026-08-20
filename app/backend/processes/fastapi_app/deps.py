@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from backend.channels.jwt_auth import SessionManager, TokenClaims
     from backend.channels.realtime import RealtimeConnectionManager
     from backend.chat_bridge import ChatBridgeService
+    from backend.config import Settings
 
     from .clients import (
         AdminDBClient,
@@ -140,7 +141,7 @@ def _get_optional_chat_bridge_service(
     return _app_state_value(request, "chat_bridge_service")
 
 
-def _bridge_bearer_token(settings: object, provider: str) -> str:
+def _bridge_bearer_token(settings: Settings, provider: str) -> str:
     """Return the configured local bridge token for one provider."""
     normalized_provider = provider.strip().lower()
     if normalized_provider == "discord":

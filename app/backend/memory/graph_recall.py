@@ -10,10 +10,14 @@ empty graph.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.memory.context_builder.constants import estimate_tokens
 from backend.memory.evidence_chain_models import EvidenceBundle
+
+
+if TYPE_CHECKING:
+    from backend.processes.orchestrator.client import DBProxyClient
 
 
 logger = logging.getLogger(__name__)
@@ -54,7 +58,7 @@ def _assertion_line(assertion: dict[str, Any]) -> str:
 
 
 async def build_graph_recall_lines(
-    client: object,
+    client: DBProxyClient,
     query: str,
     *,
     entry_limit: int = GRAPH_RECALL_ENTRY_LIMIT,
@@ -117,7 +121,7 @@ def trim_lines_to_token_budget(text: str, budget_tokens: int) -> str:
     return "\n".join(kept)
 
 
-async def build_user_fact_lines(client: object) -> list[str]:
+async def build_user_fact_lines(client: DBProxyClient) -> list[str]:
     """List the user entity's currently-valid facts with dates.
 
     Returns an empty list when the graph has no user entity or no valid
@@ -150,7 +154,7 @@ async def build_user_fact_lines(client: object) -> list[str]:
 
 
 async def load_graph_evidence_bundle(
-    client: object,
+    client: DBProxyClient,
     query: str,
 ) -> EvidenceBundle | None:
     """Build an evidence bundle from the best-matching graph assertion.

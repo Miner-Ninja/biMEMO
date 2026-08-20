@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from backend.llm.ollama.provider import OllamaProvider
+    from backend.llm.openai_compatible.provider import OpenAICompatibleProvider
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +38,7 @@ class YesNoClassifierSpec:
 async def run_yes_no_classifier(
     *,
     message: str,
-    provider: object | None,
+    provider: OllamaProvider | OpenAICompatibleProvider | None,
     spec: YesNoClassifierSpec,
 ) -> bool:
     """Run one dialog-recorder yes/no classification request.

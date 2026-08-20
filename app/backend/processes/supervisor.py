@@ -15,6 +15,7 @@ import logging
 import os
 import secrets
 import signal
+from typing import TYPE_CHECKING
 
 from backend.ipc.supervisor import (
     ProcessSpec,
@@ -36,6 +37,11 @@ from backend.processes.targets import (
     _orchestrator_target,
     _signing_proxy_target,
 )
+
+
+if TYPE_CHECKING:
+    from backend.config import Settings
+    from backend.security.startup_state import StartupState
 
 
 logger = logging.getLogger(__name__)
@@ -169,8 +175,8 @@ def _register_shutdown_signals(
 
 
 async def _startup_password_from_gate(
-    settings: object,
-    startup_state: object,
+    settings: Settings,
+    startup_state: StartupState,
 ) -> str | None:
     """Run the startup gate for states that need manual password input."""
     from backend.processes.startup_gate import run_startup_gate
@@ -187,8 +193,8 @@ async def _startup_password_from_gate(
 
 async def _start_supervisor_with_password_retry(
     *,
-    settings: object,
-    startup_state: object,
+    settings: Settings,
+    startup_state: StartupState,
 ) -> ProcessSupervisor:
     """Start the supervisor, using the startup gate after missing or bad passwords."""
     from backend.security.startup_state import StartupState

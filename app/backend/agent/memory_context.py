@@ -37,6 +37,8 @@ from backend.recoverable_errors import RECOVERABLE_MEMORY_CALLBACK_ERRORS
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from backend.memory.classification.fallback_classifier import SemanticFallbackResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +257,7 @@ class MemoryContextLoader:
     def build_fallback_memory_route(
         self,
         *,
-        fallback_result: object,
+        fallback_result: SemanticFallbackResult,
     ) -> MemoryQuestionRoute:
         """Convert the fallback classifier result into a memory route."""
         fallback_classification = fallback_result.classification

@@ -27,8 +27,11 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from zoneinfo import ZoneInfo
 
+    from backend.agent.agent_loop import AgentOrchestrator
     from backend.config import Settings
+    from backend.llm.capabilities import ModelCapabilities
     from backend.llm.capabilities_registry import CapabilitiesRegistry
+    from backend.tools.broker import ToolBroker
 
     from .client import DBProxyClient
 
@@ -45,7 +48,7 @@ def _build_gateway_orchestrator(
     db_client: DBProxyClient,
     user_profile: dict[str, str],
     user_tz: ZoneInfo | None,
-) -> object:
+) -> AgentOrchestrator:
     """Build the gateway orchestrator with its DB-backed helpers.
 
     Note: ``context_fn`` is constructed here as a placeholder without a
@@ -85,7 +88,7 @@ def _build_runtime_orchestrator(
     user_profile: dict[str, str],
     user_tz: ZoneInfo | None,
     gateway_concurrency_cls: object,
-) -> object:
+) -> AgentOrchestrator:
     """Build the gateway orchestrator used by this process runtime."""
     return _build_gateway_orchestrator(
         broker=broker,
@@ -115,7 +118,7 @@ def _build_capabilities_resolver(
             f"{type(llm_client).__name__}",
         )
 
-    async def resolve() -> object:
+    async def resolve() -> ModelCapabilities:
         return await capabilities_registry.get_or_detect(
             llm_client,
             llm_client.model,
@@ -126,7 +129,7 @@ def _build_capabilities_resolver(
 
 def _apply_llm_context_settings(
     *,
-    orch: object,
+    orch: AgentOrchestrator,
     db_client: DBProxyClient,
     llm_config: dict[str, object] | None,
     user_tz: ZoneInfo | None,
@@ -154,7 +157,7 @@ def _apply_llm_context_settings(
 
 def _apply_runtime_context_fn(
     *,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     db_client: DBProxyClient,
     llm_config: dict[str, object],
     embed_fn: Callable[[str], Awaitable[list[float]]] | None,
@@ -184,7 +187,7 @@ def _apply_runtime_context_fn(
 async def _init_llm(
     db_client: DBProxyClient,
     settings: Settings,
-    broker: object = None,
+    broker: ToolBroker | None = None,
     capabilities_registry: CapabilitiesRegistry | None = None,
 ) -> tuple[
     Callable[..., Awaitable[object]] | None,

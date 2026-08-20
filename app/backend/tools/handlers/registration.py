@@ -62,7 +62,12 @@ from backend.tools.registry import (
 
 
 if TYPE_CHECKING:
+    from backend.memory.evidence_chain_models import EvidenceBundle
+    from backend.processes.orchestrator.client import DBProxyClient
     from backend.tools.broker import ToolBroker
+    from backend.workers.fs_worker import WorkspaceDirs
+    from backend.workspace.history_store import WorkspaceHistoryStore
+    from backend.workspace.history_tracker import WorkspaceHistoryTracker
 
 
 logger = logging.getLogger(__name__)
@@ -380,7 +385,7 @@ def register_tool_definitions(registry: ToolRegistry) -> None:
 def _register_core_handlers(
     broker: ToolBroker,
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     data_dir: str,
     ready_since: float,
     get_ollama_status: callable,
@@ -488,7 +493,7 @@ def _fast_recall_parts(
 
 
 async def _fuse_vector_records(
-    db_client: object,
+    db_client: DBProxyClient,
     query: str,
     fts_records: list[dict[str, object]],
 ) -> list[dict[str, object]]:
@@ -526,7 +531,7 @@ async def _fuse_vector_records(
 
 async def _build_fast_recall_result(
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     query: str,
     max_message_chars: int,
 ) -> str:
@@ -591,7 +596,7 @@ def _evidence_source_messages(
     return formatted_messages
 
 
-def _build_evidence_result(bundle: object) -> str:
+def _build_evidence_result(bundle: EvidenceBundle) -> str:
     """Format one evidence bundle into tool output text."""
     summary = getattr(bundle, "summary", {})
     records = getattr(bundle, "records", [])
@@ -615,7 +620,7 @@ def _build_evidence_result(bundle: object) -> str:
 
 async def _build_evidence_recall_result(
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     query: str,
     max_message_chars: int,
 ) -> str:
@@ -643,7 +648,7 @@ async def _build_evidence_recall_result(
     return evidence_result
 
 
-def _make_memory_recall_handler(db_client: object) -> callable:
+def _make_memory_recall_handler(db_client: DBProxyClient) -> callable:
     """Build an async handler for the memory_recall tool."""
     from backend.memory.context_builder.constants import MAX_RETRIEVED_CONTENT_CHARS
 
@@ -670,9 +675,9 @@ def _make_memory_recall_handler(db_client: object) -> callable:
 
 
 def _make_set_workspace_handler(
-    workspace: object,
-    db_client: object,
-    policy_workspace: object | None = None,
+    workspace: WorkspaceDirs,
+    db_client: DBProxyClient,
+    policy_workspace: WorkspaceDirs | None = None,
 ) -> callable:
     """Build an async handler for the set_workspace tool."""
 
@@ -734,7 +739,7 @@ def _make_set_workspace_handler(
     return handler
 
 
-def _make_workspace_history_handler(store: object) -> callable:
+def _make_workspace_history_handler(store: WorkspaceHistoryStore) -> callable:
     """Build an async handler for the workspace_history tool."""
 
     async def handler(params: object) -> dict:
@@ -760,8 +765,8 @@ def _make_workspace_history_handler(store: object) -> callable:
 
 
 def _make_workspace_note_handler(
-    tracker: object,
-    store: object,
+    tracker: WorkspaceHistoryTracker,
+    store: WorkspaceHistoryStore,
 ) -> callable:
     """Build an async handler for the workspace_note tool."""
     import json as _json
@@ -979,17 +984,17 @@ def _worker_proxy_tools() -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 def register_all_handlers(
     broker: ToolBroker,
-    db_client: object,
+    db_client: DBProxyClient,
     fs_worker: WorkerHandle,
     net_worker: WorkerHandle,
-    workspace: object,
-    history_tracker: object,
-    history_store: object,
+    workspace: WorkspaceDirs,
+    history_tracker: WorkspaceHistoryTracker,
+    history_store: WorkspaceHistoryStore,
     data_dir: str,
     ready_since: float,
     get_ollama_status: callable,
     get_worker_count: callable,
-    policy_workspace: object | None = None,
+    policy_workspace: WorkspaceDirs | None = None,
     db_path: str | None = None,
     smtp_config: dict | None = None,
 ) -> None:

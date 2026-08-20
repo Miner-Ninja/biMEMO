@@ -33,6 +33,7 @@ from .chat_models import (
 
 
 if TYPE_CHECKING:
+    from backend.files.file_context_models import FileContextResult
     from backend.models.requests import ChatRequest as HTTPChatRequest
 
     from ..clients import AdminDBClient
@@ -241,7 +242,7 @@ async def build_file_context_from_raw_text(
     original_name: str,
     mime_type: str,
     file_path: Path,
-) -> object | None:
+) -> FileContextResult | None:
     """Build one file context directly from raw text on disk."""
     if not await path_exists(file_path):
         return None
@@ -260,7 +261,7 @@ async def save_file_context_usage_snapshot(
     admin_client: AdminDBClient,
     body: HTTPChatRequest,
     file_id: str,
-    file_context: object,
+    file_context: FileContextResult,
 ) -> None:
     """Persist the usage snapshot for one prepared file context."""
     usage_snapshot = FILE_CONTEXT_MANAGER.build_usage_snapshot(

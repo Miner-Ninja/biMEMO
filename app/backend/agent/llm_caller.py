@@ -39,9 +39,12 @@ from backend.security.policy import get_policy
 
 
 if TYPE_CHECKING:
+    import asyncio
     from collections.abc import Callable
 
     from backend.agent.tool_executor import ToolExecutor
+    from backend.llm.call_factory import LLMResponse
+    from backend.llm.structured_response import StructuredAssistantContent
     from backend.llm.usage import LLMCallUsage
     from backend.tools.broker import ToolBroker
 
@@ -60,7 +63,7 @@ class LLMStreamMode(StrEnum):
 class ThinkingOnlyStreamQueue:
     """Forward only model reasoning events while buffering visible answer text."""
 
-    def __init__(self, target_queue: object | None) -> None:
+    def __init__(self, target_queue: asyncio.Queue | None) -> None:
         """Initialize the queue wrapper."""
         self.target_queue = target_queue
 
@@ -84,7 +87,7 @@ def _tool_to_reask(
     *,
     decision: FinalAnswerDecision,
     requirements: ResponseRequirements,
-    structured_content: object,
+    structured_content: StructuredAssistantContent,
     executed_tools: list[dict],
     available_tools: set[str] | None = None,
 ) -> str | None:
@@ -127,7 +130,9 @@ def _tool_to_reask(
     )
 
 
-def _clarification_question(structured_content: object) -> str | None:
+def _clarification_question(
+    structured_content: StructuredAssistantContent,
+) -> str | None:
     """Return the model's self-check clarifying question, if it flagged one.
 
     The model sets ``tool_plan.needs_clarification`` and puts a short question in
@@ -163,7 +168,7 @@ class LLMCaller:
         """
         self.model_name = model_name
         self.broker = broker
-        self.stream_queue: object | None = None
+        self.stream_queue: asyncio.Queue | None = None
         self.on_attempt: Callable | None = None
 
     async def call_once(
@@ -178,7 +183,7 @@ class LLMCaller:
         phase: str = "Stage 1",
         thinking_enabled: bool | None = None,
         response_format: LlmResponseFormat | None = None,
-    ) -> object:
+    ) -> LLMResponse:
         """Call the LLM once with the currently prepared prompt messages."""
         llm_response = await self.invoke(
             llm_call=llm_call,
@@ -206,7 +211,7 @@ class LLMCaller:
         thinking_enabled: bool | None = None,
         response_format: LlmResponseFormat | None = None,
         response_schema: dict | None = None,
-    ) -> object:
+    ) -> LLMResponse:
         """Invoke the configured LLM with the supported optional arguments."""
         options = LLMCallOptions(
             response_format=(
@@ -254,7 +259,7 @@ class LLMCaller:
         openai_tools: list[dict] | None,
         tool_choice: object | None = None,
         stream_mode: LLMStreamMode = LLMStreamMode.ALL,
-    ) -> object:
+    ) -> LLMResponse:
         """Invoke the configured LLM while forwarding tokens into the SSE queue."""
         stream_queue = self._stream_queue_for_mode(stream_mode)
         if llm_accepts_tools_override(llm_call):

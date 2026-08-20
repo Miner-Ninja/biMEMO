@@ -35,15 +35,27 @@ from .process_helpers import (
     init_tts_client,
 )
 from .process_models import (
+    RuntimeCoreServices,
     RuntimeServices,
     RuntimeStartupState,
+    RuntimeSupportServices,
 )
 
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from backend.agent.agent_loop import AgentOrchestrator
+    from backend.agent.agent_loop_models import AgentResponse
+    from backend.bot.discord_bot import DiscordBot
+    from backend.bot.telegram_bot import TelegramBot
+    from backend.chat_bridge.service import ChatBridgeService
     from backend.config import Settings
+    from backend.llm.stt_client import STTClient
+    from backend.llm.tts_client import TTSClient
+    from backend.memory.runtime.event_bus import MemoryEventBus
+    from backend.tools.broker import ToolBroker
+    from backend.tools.handlers.worker_proxy import WorkerHandle
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 async def _forward_memory_events_to_ipc(
     *,
-    memory_event_bus: object,
+    memory_event_bus: MemoryEventBus,
     ipc_server: OrchestratorIPCServer,
 ) -> None:
     """Forward memory debug events from the in-process bus into IPC."""
@@ -111,7 +123,7 @@ def _start_runtime_background_task(
 
 async def _start_runtime_event_forwarder(
     *,
-    memory_event_bus: object,
+    memory_event_bus: MemoryEventBus,
     ipc_server: OrchestratorIPCServer,
 ) -> asyncio.Task:
     """Start forwarding in-process memory events into IPC."""
@@ -189,8 +201,8 @@ async def _load_runtime_user_context(
 def _build_runtime_media_services(
     *,
     settings: Settings,
-    memory_event_bus_cls: object,
-) -> tuple[object | None, object | None, object]:
+    memory_event_bus_cls: type[MemoryEventBus],
+) -> tuple[STTClient | None, TTSClient | None, MemoryEventBus]:
     """Build STT, TTS, and the in-process memory event bus."""
     return (
         init_stt_client(settings),
@@ -203,12 +215,12 @@ def _build_runtime_ipc_server(
     *,
     frontend_socket: str,
     frontend_secret: bytes,
-    orch: object,
+    orch: AgentOrchestrator,
     db_client: DBProxyClient,
-    broker: object,
+    broker: ToolBroker,
     get_llm_call: Callable[[], Callable | None],
-    stt_client: object | None,
-    bridge_service: object,
+    stt_client: STTClient | None,
+    bridge_service: ChatBridgeService,
     ipc_server_ref: Callable[[], OrchestratorIPCServer],
     reload_llm_fn: Callable[[], object] | None = None,
 ) -> OrchestratorIPCServer:
@@ -323,7 +335,7 @@ def _build_list_run_events_handler(
 
 def _build_confirm_handler(
     *,
-    orch: object,
+    orch: AgentOrchestrator,
     db_client: DBProxyClient,
     get_llm_call: Callable[[], Callable | None],
     ipc_server_ref: Callable[[], OrchestratorIPCServer],
@@ -389,7 +401,7 @@ async def _push_core_confirmation_outcome(
     *,
     ipc_server: OrchestratorIPCServer,
     request_id: str,
-    response: object,
+    response: AgentResponse,
 ) -> None:
     """Publish the typed canonical outcome produced by a resumed core turn."""
     outcome = getattr(response, "outcome", None)
@@ -488,7 +500,7 @@ async def _restart_scheduler_task(
     services: RuntimeServices,
     db_client: DBProxyClient,
     llm_call: Callable | None,
-    bridge_service: object,
+    bridge_service: ChatBridgeService,
     ipc_server: OrchestratorIPCServer,
 ) -> None:
     """Restart the scheduler loop for the active LLM when available."""
@@ -516,7 +528,7 @@ async def _reload_llm_subsystem(
     services: RuntimeServices,
     db_client: DBProxyClient,
     settings: Settings,
-    bridge_service: object,
+    bridge_service: ChatBridgeService,
     ipc_server: OrchestratorIPCServer,
 ) -> ReloadLLMResponse:
     """Reload the active LLM provider from fresh database configuration."""
@@ -616,7 +628,7 @@ def _build_reload_fn(
     services: RuntimeServices,
     db_client: DBProxyClient,
     settings: Settings,
-    bridge_service: object,
+    bridge_service: ChatBridgeService,
     ipc_server: OrchestratorIPCServer,
 ) -> Callable[[], object]:
     """Build the closure used by IPC to trigger an LLM reload."""
@@ -636,8 +648,8 @@ def _build_reload_fn(
 
 async def _stop_runtime_workers(
     *,
-    fs_worker: object,
-    net_worker: object,
+    fs_worker: WorkerHandle,
+    net_worker: WorkerHandle,
 ) -> None:
     """Stop the in-process tool workers during runtime shutdown."""
     await fs_worker.stop()
@@ -646,13 +658,13 @@ async def _stop_runtime_workers(
 
 async def _shutdown_orchestrator_runtime(
     *,
-    telegram_bot: object | None,
-    discord_bot: object | None,
+    telegram_bot: TelegramBot | None,
+    discord_bot: DiscordBot | None,
     event_forwarder_task: asyncio.Task | None,
     bg_tasks: list[asyncio.Task],
-    broker: object,
-    fs_worker: object,
-    net_worker: object,
+    broker: ToolBroker,
+    fs_worker: WorkerHandle,
+    net_worker: WorkerHandle,
     ipc_server: OrchestratorIPCServer,
     db_ipc: IPCSocketClient,
 ) -> None:
@@ -690,29 +702,29 @@ async def _prepare_runtime_services(
         capabilities_registry=capabilities_registry,
     )
     support = await _prepare_runtime_support_services(
-        orch=core[5],
+        orch=core.orch,
         db_client=db_client,
         settings=settings,
-        llm_config=core[8],
-        active_service_type=core[9],
+        llm_config=core.llm_config,
+        active_service_type=core.active_service_type,
         capabilities_registry=capabilities_registry,
     )
     return RuntimeServices(
-        broker=core[0],
-        fs_worker=core[1],
-        net_worker=core[2],
-        history_tracker=core[3],
-        history_store=core[4],
-        orch=core[5],
-        scheduler_orch=core[6],
-        llm_call=core[7],
-        llm_config=core[8],
-        active_service_type=core[9],
-        llm_client=core[10],
-        stt_client=support[0],
-        tts_client=support[1],
-        memory_event_bus=support[2],
-        bg_tasks=support[3],
+        broker=core.broker,
+        fs_worker=core.fs_worker,
+        net_worker=core.net_worker,
+        history_tracker=core.history_tracker,
+        history_store=core.history_store,
+        orch=core.orch,
+        scheduler_orch=core.scheduler_orch,
+        llm_call=core.llm_call,
+        llm_config=core.llm_config,
+        active_service_type=core.active_service_type,
+        llm_client=core.llm_client,
+        stt_client=support.stt_client,
+        tts_client=support.tts_client,
+        memory_event_bus=support.memory_event_bus,
+        bg_tasks=support.bg_tasks,
         capabilities_registry=capabilities_registry,
     )
 
@@ -722,7 +734,7 @@ async def _prepare_runtime_core_services(
     db_client: DBProxyClient,
     settings: Settings,
     capabilities_registry: CapabilitiesRegistry,
-) -> tuple:
+) -> RuntimeCoreServices:
     """Build the core broker, workers, orchestrator, and LLM pieces."""
     from backend.agent.concurrency import AgentConcurrency
 
@@ -782,30 +794,30 @@ async def _prepare_runtime_core_services(
             llm_client=llm_client,
         )
 
-    return (
-        broker,
-        fs_worker,
-        net_worker,
-        history_tracker,
-        history_store,
-        orch,
-        scheduler_orch,
-        llm_call,
-        llm_config,
-        active_service_type,
-        llm_client,
+    return RuntimeCoreServices(
+        broker=broker,
+        fs_worker=fs_worker,
+        net_worker=net_worker,
+        history_tracker=history_tracker,
+        history_store=history_store,
+        orch=orch,
+        scheduler_orch=scheduler_orch,
+        llm_call=llm_call,
+        llm_config=llm_config,
+        active_service_type=active_service_type,
+        llm_client=llm_client,
     )
 
 
 async def _prepare_runtime_support_services(
     *,
-    orch: object,
+    orch: AgentOrchestrator,
     db_client: DBProxyClient,
     settings: Settings,
     llm_config: dict[str, object] | None,
     active_service_type: str | None,
     capabilities_registry: CapabilitiesRegistry | None = None,
-) -> tuple:
+) -> RuntimeSupportServices:
     """Build media services and start dialog recorder background tasks."""
     from backend.memory.runtime.event_bus import MemoryEventBus
 
@@ -825,7 +837,12 @@ async def _prepare_runtime_support_services(
         memory_event_bus=memory_event_bus,
         capabilities_registry=capabilities_registry,
     )
-    return stt_client, tts_client, memory_event_bus, bg_tasks
+    return RuntimeSupportServices(
+        stt_client=stt_client,
+        tts_client=tts_client,
+        memory_event_bus=memory_event_bus,
+        bg_tasks=bg_tasks,
+    )
 
 
 async def _start_runtime_process(

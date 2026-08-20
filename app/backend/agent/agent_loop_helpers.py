@@ -26,7 +26,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.agent.agent_loop_models import ToolCall
+    from backend.llm.call_factory import LLMResponse
     from backend.llm.usage import LLMCallUsage
+    from backend.memory.context_builder.models import ContextEntry
+    from backend.models.chat_stats import ExtendedUsage
     from backend.tools.broker import ToolResult
 
 # --- Dialog step formatting ---
@@ -157,7 +160,7 @@ MESSAGE_META_USED_TOOLS_KEY = "used_tools"
 
 
 def build_assistant_message_meta(
-    stats: object | None,
+    stats: ExtendedUsage | None,
     structured_content: StructuredAssistantContent | None,
     used_tools: list[dict] | None = None,
 ) -> dict[str, object] | None:
@@ -219,7 +222,7 @@ async def request_non_empty_final_answer(
     return normalize_legacy_response_text(recovery_response.text)
 
 
-def extract_recovered_suggestions(response: object) -> list[str]:
+def extract_recovered_suggestions(response: LLMResponse) -> list[str]:
     """Extract suggestions from a lightweight recovery response."""
     structured_content = getattr(response, "structured_content", None)
     if structured_content is not None and structured_content.suggestions:
@@ -309,7 +312,7 @@ def build_dialog_step_record_input(
 
 
 def context_contains_active_long_term_preference(
-    context_entries: list[object],
+    context_entries: list[ContextEntry],
 ) -> bool:
     """Return True when prompt context already contains a long-term preference."""
     for entry in context_entries:

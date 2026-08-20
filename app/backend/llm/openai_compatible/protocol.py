@@ -10,6 +10,8 @@ branded adapters.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from backend.config import get_settings
 from backend.llm.call_factory import EMPTY_LLM_RESPONSE_WARNING, LLMResponse
 from backend.llm.capabilities import LlmResponseFormat
@@ -20,6 +22,10 @@ from backend.llm.structured_response import (
     StructuredAssistantContent,
 )
 from backend.llm.usage import LLMCallUsage
+
+
+if TYPE_CHECKING:
+    from backend.llm.call_options import ResponseStream
 
 
 # --- Wire constants ---
@@ -110,7 +116,7 @@ def _chat_payload(
 
 def _should_stream(
     llm_response_format: LlmResponseFormat,
-    response_stream: object | None = None,
+    response_stream: ResponseStream | None = None,
 ) -> bool:
     """Return whether one OpenAI-compatible chat request should stream.
 

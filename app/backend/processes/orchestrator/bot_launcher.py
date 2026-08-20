@@ -17,7 +17,15 @@ from .bridge_handler import _build_internal_bridge_inbound_url
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from backend.agent.agent_loop import AgentOrchestrator
+    from backend.app_state import AppStateManager
+    from backend.bot.discord_bot import DiscordBot
+    from backend.bot.telegram_bot import TelegramBot
+    from backend.llm.stt_client import STTClient
+    from backend.llm.tts_client import TTSClient
+
     from .client import DBProxyClient
+    from .process_models import RuntimeStartupState
 
 
 logger = logging.getLogger(__name__)
@@ -48,12 +56,12 @@ async def _start_telegram_bot(
     *,
     token: str,
     allowed_user_ids: frozenset[int],
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
-    stt_client: object | None,
-    tts_client: object | None,
-    app_state: object,
-) -> object:
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
+    app_state: AppStateManager,
+) -> TelegramBot:
     """Start the Telegram bot as a bridge transport endpoint."""
     del orchestrator, llm_call, stt_client, tts_client, app_state
     from backend.bot.telegram_bot import TelegramBot
@@ -72,12 +80,12 @@ async def _start_discord_bot(
     *,
     token: str,
     allowed_user_ids: frozenset[int],
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
-    stt_client: object | None,
-    tts_client: object | None,
-    app_state: object,
-) -> object:
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
+    app_state: AppStateManager,
+) -> DiscordBot:
     """Start the Discord bot as a bridge transport endpoint."""
     del orchestrator, llm_call, stt_client, tts_client, app_state
     from backend.bot.discord_bot import DiscordBot
@@ -122,12 +130,12 @@ async def _launch_configured_bot(
     *,
     service_type: str,
     config: BotRuntimeConfig,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
-    stt_client: object | None,
-    tts_client: object | None,
-    app_state: object,
-) -> object:
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
+    app_state: AppStateManager,
+) -> TelegramBot | DiscordBot:
     """Launch one concrete bot from the already loaded runtime config."""
     if service_type == "telegram":
         return await _start_telegram_bot(
@@ -153,10 +161,10 @@ async def _launch_configured_bot(
 async def _start_configured_bots(
     *,
     db_client: DBProxyClient,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable | None,
-    stt_client: object | None,
-    tts_client: object | None,
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
 ) -> tuple[object | None, object | None]:
     """Start the configured messenger bots when an LLM is available."""
     if llm_call is None:
@@ -176,10 +184,10 @@ async def _start_configured_bots(
 async def _start_runtime_bots(
     *,
     db_client: DBProxyClient,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
-    stt_client: object | None,
-    tts_client: object | None,
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
     service_types: tuple[str, ...],
 ) -> dict[str, object | None]:
     """Start the requested messenger bot types and return them by service name."""
@@ -198,12 +206,12 @@ async def _start_runtime_bots(
 
 async def _start_bot(
     db_client: DBProxyClient,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
     service_type: str,
-    stt_client: object | None = None,
-    tts_client: object | None = None,
-) -> object | None:
+    stt_client: STTClient | None = None,
+    tts_client: TTSClient | None = None,
+) -> TelegramBot | DiscordBot | None:
     """Load bot config from DB and start polling if configured.
 
     Args:
@@ -244,11 +252,11 @@ async def _start_loaded_bot_config(
     *,
     service_type: str,
     config: BotRuntimeConfig,
-    orchestrator: object,
+    orchestrator: AgentOrchestrator,
     llm_call: Callable,
-    stt_client: object | None,
-    tts_client: object | None,
-) -> object:
+    stt_client: STTClient | None,
+    tts_client: TTSClient | None,
+) -> TelegramBot | DiscordBot:
     """Start one already loaded bot config with a ready app-state wrapper."""
     from backend.app_state import AppState, AppStateManager
 
@@ -266,8 +274,8 @@ async def _start_loaded_bot_config(
 
 async def _stop_runtime_bots(
     *,
-    telegram_bot: object | None,
-    discord_bot: object | None,
+    telegram_bot: TelegramBot | None,
+    discord_bot: DiscordBot | None,
 ) -> None:
     """Stop the configured messenger bots during runtime shutdown."""
     if telegram_bot is not None:
@@ -278,7 +286,7 @@ async def _stop_runtime_bots(
 
 async def _start_runtime_messenger_bots(
     *,
-    startup: object,
+    startup: RuntimeStartupState,
 ) -> tuple[object | None, object | None]:
     """Start the configured messenger bots for one started runtime."""
     return await _start_configured_bots(

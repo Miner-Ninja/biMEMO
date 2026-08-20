@@ -31,6 +31,8 @@ from ..deps import (
 
 
 if TYPE_CHECKING:
+    from backend.config import Settings
+
     from ..clients import OrchestratorClient
 
 
@@ -58,7 +60,7 @@ def _require_supported_bridge_inbound_provider(provider: str) -> str:
 
 
 def _validate_inbound_server(
-    settings: object,
+    settings: Settings,
     provider: str,
     external_space_id: str,
 ) -> None:
@@ -74,7 +76,7 @@ def _validate_inbound_server(
 
 
 def _validate_inbound_user(
-    settings: object,
+    settings: Settings,
     provider: str,
     author_id: str,
 ) -> None:

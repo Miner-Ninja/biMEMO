@@ -9,7 +9,7 @@ leaves the batch eligible for the next cycle.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.security.content_filter import filter_output
 
@@ -39,6 +39,13 @@ from .trace import (
 )
 
 
+if TYPE_CHECKING:
+    from backend.llm.ollama.provider import OllamaProvider
+    from backend.llm.openai_compatible.provider import OpenAICompatibleProvider
+    from backend.memory.runtime.event_bus import MemoryEventBus
+    from backend.processes.orchestrator.client import DBProxyClient
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,7 +61,7 @@ def _records_prompt(records: list[dict[str, Any]]) -> str:
 
 async def _store_assertion(
     *,
-    db_client: object,
+    db_client: DBProxyClient,
     assertion: ExtractedAssertion,
     entity_ids: dict[str, str],
     record_ids: list[str],
@@ -137,10 +144,10 @@ async def _store_assertion(
 
 
 async def process_graph_extraction(
-    provider: object,
-    db_client: object,
+    provider: OllamaProvider | OpenAICompatibleProvider,
+    db_client: DBProxyClient,
     records: list[dict[str, Any]],
-    event_bus: object | None = None,
+    event_bus: MemoryEventBus | None = None,
 ) -> int:
     """Extract one batch of records into graph entities and assertions.
 

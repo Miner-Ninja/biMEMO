@@ -33,6 +33,7 @@ from backend.llm.usage import LLMCallUsage
 if TYPE_CHECKING:
     import asyncio
 
+    from backend.llm.call_options import ResponseStream
     from backend.llm.capabilities import ModelCapabilities
 
 
@@ -60,7 +61,7 @@ def _uses_structured_response(
 
 def _should_stream(
     capabilities: ModelCapabilities,
-    response_stream: object | None = None,
+    response_stream: ResponseStream | None = None,
 ) -> bool:
     """Return whether this Ollama request should stream token chunks.
 
@@ -101,7 +102,7 @@ def _build_chat_payload(
     capabilities: ModelCapabilities,
     schema_override: dict | None = None,
     tool_choice: object | None = None,
-    response_stream: object | None = None,
+    response_stream: ResponseStream | None = None,
     thinking_enabled: bool | None = None,
 ) -> dict[str, object]:
     """Build the Ollama chat request payload.

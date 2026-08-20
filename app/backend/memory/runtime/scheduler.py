@@ -24,10 +24,13 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from backend.llm.ollama.provider import OllamaProvider
+    from backend.memory.runtime.event_bus import MemoryEventBus
     from backend.memory.runtime.rate_limiter import (
         DialogRecorderQueue,
+        DialogRecorderQueueItem,
         RecordRateLimiter,
     )
+    from backend.processes.orchestrator.client import DBProxyClient
 logger = logging.getLogger(__name__)
 
 DISTILLER_POLL_INTERVAL_SECONDS = 3.0
@@ -316,8 +319,8 @@ MAX_QUEUED_RECORD_ATTEMPTS = 3
 
 async def _resolve_processed_queue_item(
     queue: DialogRecorderQueue,
-    db_client: object,
-    item: object,
+    db_client: DBProxyClient,
+    item: DialogRecorderQueueItem,
     record_task: asyncio.Task,
 ) -> None:
     """Acknowledge or retry one processed queue item.
@@ -363,11 +366,11 @@ async def _resolve_processed_queue_item(
 async def run_dialog_recorder_loop(
     queue: DialogRecorderQueue,
     provider: OllamaProvider,
-    db_client: object,
+    db_client: DBProxyClient,
     rate_limiter: RecordRateLimiter,
     scheduler: DialogRecorderScheduler,
     embed_fn: Callable | None = None,
-    event_bus: object | None = None,
+    event_bus: MemoryEventBus | None = None,
 ) -> None:
     """Run the Dialog Recorder background task loop through DB proxy calls."""
     logger.info("Dialog Recorder background loop started")
@@ -414,10 +417,10 @@ async def run_dialog_recorder_loop(
 
 async def run_graph_extractor_loop(
     provider: OllamaProvider,
-    db_client: object,
+    db_client: DBProxyClient,
     scheduler: DialogRecorderScheduler,
     threshold: int = 20,
-    event_bus: object | None = None,
+    event_bus: MemoryEventBus | None = None,
 ) -> None:
     """Run the graph extractor loop (stage-2 replacement for the distiller).
 
@@ -502,7 +505,7 @@ async def run_graph_extractor_loop(
 PRUNING_INTERVAL_SECONDS = 3600.0
 
 
-async def run_pruning_loop(db_client: object) -> None:
+async def run_pruning_loop(db_client: DBProxyClient) -> None:
     """Run periodic memory pruning in the background.
 
     Deletes uncited old records, long-invalidated assertions, and
@@ -541,7 +544,7 @@ async def run_pruning_loop(db_client: object) -> None:
 
 
 async def run_reembed_loop(
-    db_client: object,
+    db_client: DBProxyClient,
     embed_fn: Callable,
     batch_size: int = 20,
     interval: float = 30.0,

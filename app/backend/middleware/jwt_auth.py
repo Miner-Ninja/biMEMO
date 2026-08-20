@@ -18,9 +18,12 @@ from backend.processes.fastapi_app.problem import (
 
 
 if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from backend.channels.jwt_auth import SessionManager
+    from backend.channels.jwt_auth_models import TokenClaims
+    from backend.processes.fastapi_app.signing_client import SigningClient
 
 
 logger = logging.getLogger(__name__)
@@ -55,7 +58,7 @@ def _accepts_html(scope: Scope) -> bool:
     return "text/html" in accept
 
 
-def _attach_claims(scope: Scope, claims: object) -> None:
+def _attach_claims(scope: Scope, claims: TokenClaims) -> None:
     """Store validated claims on the ASGI scope."""
     scope.setdefault("state", {})
     scope["state"]["claims"] = claims
@@ -98,8 +101,8 @@ class JwtAuthMiddleware:
         self,
         app: ASGIApp,
         session_manager: SessionManager,
-        signing_key: object = None,
-        signing_client: object = None,
+        signing_key: Ed25519PrivateKey | None = None,
+        signing_client: SigningClient | None = None,
         audit_fn: object = None,
     ) -> None:
         """Initialize with ASGI app and auth components.
@@ -117,7 +120,7 @@ class JwtAuthMiddleware:
         self.signing_client = signing_client
         self.audit_fn = audit_fn
 
-    async def _validate(self, token: str) -> object:
+    async def _validate(self, token: str) -> TokenClaims | None:
         """Validate a token using signing_client or signing_key.
 
         Args:

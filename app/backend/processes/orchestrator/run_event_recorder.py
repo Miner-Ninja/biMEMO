@@ -17,7 +17,13 @@ STREAM_EVENT_TYPE_KEY = "type"
 
 
 class AgentRunEventType(StrEnum):
-    """Closed set of persisted runtime chat run event types."""
+    """Closed set of persisted runtime run event types.
+
+    This is the complete vocabulary written to ``agent_turn_events``:
+    the chat run events recorded through :meth:`RunEventRecorder.record`
+    plus the provider and tool-loop transition events appended directly
+    by the agent loop.
+    """
 
     RUN_STARTED = "run_started"
     TOOL_STATUS = "tool_status"
@@ -33,6 +39,13 @@ class AgentRunEventType(StrEnum):
     RUN_FAILED = "run_failed"
     RUN_STOPPED = "run_stopped"
     RUN_CANCELLED = "run_cancelled"
+    PROVIDER_ATTEMPT = "provider_attempt"
+    ACTIVE_TIME_RECORDED = "active_time_recorded"
+    TOOL_ROUND_STARTED = "tool_round_started"
+    NATIVE_DECISION_INVALID = "native_decision_invalid"
+    FINISH_REJECTED = "finish_rejected"
+    SEMANTIC_FINISH_WITHOUT_TOOL = "semantic_finish_without_tool"
+    EXACT_FORCE_IGNORED = "exact_force_ignored"
 
 
 STREAM_TO_RUN_EVENT_TYPE = {
@@ -96,7 +109,7 @@ class RunEventRecorder:
             return None
         return await self._db_client.append_agent_turn_event(
             turn_id=self._context.run_id,
-            event_type="provider_attempt",
+            event_type=AgentRunEventType.PROVIDER_ATTEMPT.value,
             phase=phase,
             attempt=attempt,
             payload=payload,
