@@ -1066,6 +1066,7 @@ class FakeAdminClient:
                     return {"chat_bridge_message_link": link}
             return {"chat_bridge_message_link": None}
         raise AssertionError(f"Unexpected operation: {operation}")
+
     async def get_user_profile(self) -> dict:
         """Return the stored fake user profile, wrapped as the db-proxy handler does."""
         return {"profile": dict(self._profile)}

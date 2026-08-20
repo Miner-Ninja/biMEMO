@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from backend.llm.openai_compatible.client import DEFAULT_OPENAI_API_PREFIX
+from backend.llm.openai_compatible.protocol import DEFAULT_OPENAI_API_PREFIX
 from backend.llm.openai_compatible.provider import (
     OpenAICompatibleProvider,
     OpenAICompatibleProviderError,

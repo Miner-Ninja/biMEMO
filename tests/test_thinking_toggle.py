@@ -15,7 +15,7 @@ from backend.llm.call_factory import (
     set_thinking_enabled,
 )
 from backend.llm.capabilities import LlmResponseFormat
-from backend.llm.openai_compatible.client import (
+from backend.llm.openai_compatible.protocol import (
     CUSTOM_API_PREFIX,
     DEFAULT_OPENAI_API_PREFIX,
     _chat_payload,

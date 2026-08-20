@@ -11,9 +11,10 @@ from typing import TYPE_CHECKING, ClassVar
 import httpx
 
 from backend.llm.ollama.models import ChatMessage, ChatResponse
-from backend.llm.openai_compatible.client import (
+from backend.llm.openai_compatible.protocol import (
     CUSTOM_API_PREFIX,
     DEFAULT_OPENAI_API_PREFIX,
+    DONE_STREAM_MARKER,
     _build_auth_headers,
     normalize_system_messages,
 )
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-DONE_STREAM_MARKER = "[DONE]"
 
 
 class OpenAICompatibleProviderError(Exception):

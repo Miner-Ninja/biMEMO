@@ -6,14 +6,10 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from backend.constants import ENV_CUSTOM_NUM_CTX
-from backend.llm.openai_compatible.client import (
+from backend.llm.openai_compatible.capabilities import SOURCE_CUSTOM_MODELS
+from backend.llm.openai_compatible.client import OpenAICompatibleClient
+from backend.llm.openai_compatible.protocol import (
     CUSTOM_API_PREFIX,
-    DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
-    SOURCE_CUSTOM_MODELS,
-    SOURCE_ENV_OVERRIDE,
-    SOURCE_PROVIDER_DEFAULT,
-    SOURCE_UI_OVERRIDE,
-    OpenAICompatibleClient,
     OpenAICompatibleClientError,
 )
 
@@ -32,12 +28,6 @@ CustomLLMClientError = OpenAICompatibleClientError
 
 
 __all__ = [
-    "CUSTOM_API_PREFIX",
-    "DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS",
-    "SOURCE_CUSTOM_MODELS",
-    "SOURCE_ENV_OVERRIDE",
-    "SOURCE_PROVIDER_DEFAULT",
-    "SOURCE_UI_OVERRIDE",
     "CustomLLMClient",
     "CustomLLMClientError",
 ]

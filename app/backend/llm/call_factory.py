@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 LLM_CALL_TIMEOUT_SECONDS = 120.0
 LLM_CALL_TIMEOUT = LLM_CALL_TIMEOUT_SECONDS
 
+#: User-facing warning surfaced by provider clients when the model returns
+#: an empty response after the empty-retry.
+EMPTY_LLM_RESPONSE_WARNING = (
+    "LLM returned an empty response. Check your connection to LLM and try again."
+)
+
 # Per-turn reasoning switch. Set by the chat handler before a turn and
 # cleared in its finally block; provider clients read it when building
 # the request payload. A module-level holder is safe while the

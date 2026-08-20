@@ -13,7 +13,7 @@ from backend.llm.ollama.capabilities import (
     OllamaCapabilityError,
     detect_ollama_model_capabilities,
 )
-from backend.llm.openrouter.client import _build_auth_headers
+from backend.llm.openai_compatible.protocol import _build_auth_headers
 
 from ..deps import _get_credential_client, _require_auth
 from ..problem import SLUG_UPSTREAM_ERROR, typed_http_exception

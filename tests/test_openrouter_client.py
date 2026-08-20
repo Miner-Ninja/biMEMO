@@ -10,12 +10,20 @@ import json
 import httpx
 import pytest
 
-from backend.llm.call_factory import LLM_CALL_TIMEOUT, LLMResponse, make_llm_call
+from backend.llm.call_factory import (
+    EMPTY_LLM_RESPONSE_WARNING,
+    LLM_CALL_TIMEOUT,
+    LLMResponse,
+    make_llm_call,
+)
 from backend.llm.capabilities import LlmResponseFormat
-from backend.llm.custom_provider.client import SOURCE_CUSTOM_MODELS, CustomLLMClient
-from backend.llm.openrouter.client import (
+from backend.llm.custom_provider.client import CustomLLMClient
+from backend.llm.openai_compatible.capabilities import (
     DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS,
+    SOURCE_CUSTOM_MODELS,
     SOURCE_PROVIDER_DEFAULT,
+)
+from backend.llm.openrouter.client import (
     OpenRouterClient,
     OpenRouterClientError,
 )
@@ -959,8 +967,6 @@ class TestOpenRouterClientEmptyRetry:
             del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
             await client.close()
         assert call_count == 2
-        from backend.llm.openrouter.client import EMPTY_LLM_RESPONSE_WARNING
-
         assert result.text == EMPTY_LLM_RESPONSE_WARNING
         assert result.structured_content is not None
         assert result.structured_content.answer == EMPTY_LLM_RESPONSE_WARNING
