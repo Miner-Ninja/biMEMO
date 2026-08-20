@@ -166,8 +166,20 @@ def _chat_bridge_provider_item(
 def _chat_bridge_message_link_item(
     item: dict[str, object],
 ) -> ChatBridgeMessageLinkItem:
-    """Build one stored bridge-message mapping response item."""
-    return ChatBridgeMessageLinkItem(**item)
+    """Build one stored bridge-message mapping response item.
+
+    The db-proxy item also carries ``finalization_id``, which is not part of
+    the declared response model; only the model's fields are forwarded.
+    """
+    response_fields = (
+        "id",
+        "bridge_link_id",
+        "message_id",
+        "external_message_id",
+        "direction",
+        "created_at",
+    )
+    return ChatBridgeMessageLinkItem(**{k: item[k] for k in response_fields})
 
 
 def _chat_bridge_for_conversation_response(

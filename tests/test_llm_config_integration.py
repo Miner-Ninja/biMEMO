@@ -1039,6 +1039,7 @@ class FakeAdminClient:
                 "message_id": operation_parameters["message_id"],
                 "external_message_id": operation_parameters["external_message_id"],
                 "direction": operation_parameters["direction"],
+                "finalization_id": "final-1",
                 "created_at": str(time.time()),
             }
             self._chat_bridge_message_links[mapping_id] = link
@@ -2110,6 +2111,7 @@ class TestLLMConfigCRUD:
             "message_id": "web-message-1",
             "external_message_id": "discord-message-1",
             "direction": "outbound",
+            "finalization_id": "final-1",
             "created_at": "2026-03-25T10:02:00Z",
         }
         app.state.admin_client = admin_client
