@@ -15,11 +15,8 @@ from backend.constants import ENV_OLLAMA_NUM_CTX as ENV_VAR_NUM_CTX
 from backend.llm.capabilities import ContextDetectionError, LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import ComputeConfig, ComputeMode
+from backend.llm.ollama.capabilities import PS_ENDPOINT, SOURCE_RUNTIME
 from backend.llm.ollama.client import OllamaClient
-from backend.llm.ollama.kv_detector import (
-    PS_ENDPOINT,
-    SOURCE_PS,
-)
 from backend.llm.ollama.provider import (
     SOURCE_ENV_OVERRIDE,
     SOURCE_UI_OVERRIDE,
@@ -230,7 +227,7 @@ class TestProviderResolveUIOverride:
         finally:
             await provider.close()
         assert caps.max_context_tokens == DETECT_VALUE
-        assert caps.source == SOURCE_PS
+        assert caps.source == SOURCE_RUNTIME
         assert caps.llm_response_format is LlmResponseFormat.TEXT
 
     async def test_ui_negative_treated_as_unset(
@@ -267,7 +264,7 @@ class TestProviderResolveDetect:
         finally:
             await provider.close()
         assert caps.max_context_tokens == DETECT_VALUE
-        assert caps.source == SOURCE_PS
+        assert caps.source == SOURCE_RUNTIME
 
     async def test_detect_failure_propagates(
         self, monkeypatch: pytest.MonkeyPatch
@@ -356,7 +353,7 @@ class TestOllamaClientResolveCapabilities:
         finally:
             await client.close()
         assert caps.max_context_tokens == DETECT_VALUE
-        assert caps.source == SOURCE_PS
+        assert caps.source == SOURCE_RUNTIME
 
     async def test_class_var_name_is_ollama(self) -> None:
         """The provider name attribute is the literal 'ollama'."""
