@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from backend.files import FileContextManager
+from backend.files import paths as files_paths
 from backend.memory.graph_extractor.trace import read_graph_extractor_trace
 from backend.tools.handlers.registration import get_recall_stats
 
@@ -20,7 +21,6 @@ from ..deps import (
     _get_reauth_manager,
     _require_auth,
 )
-from . import files as files_routes
 
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ def _stored_file_raw_content(
     ):
         return None
     extension = Path(str(file_metadata["original_name"])).suffix.lower()
-    file_path = files_routes.FILES_DIR / f"{file_id}{extension}"
+    file_path = files_paths.uploaded_files_dir() / f"{file_id}{extension}"
     if not file_path.exists():
         return None
     return file_path.read_text(errors="replace")

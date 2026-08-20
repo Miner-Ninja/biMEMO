@@ -17,22 +17,17 @@ workspace_router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 
 def _get_workspace_dirs() -> list[str]:
-    """Get configured workspace directories.
+    """Get the workspace directories.
 
-    Defaults to the same safe dirs used by the orchestrator:
-    data_dir (containing the database) and UPLOADED_FILES_DIR.
+    The same safe dirs used by the orchestrator: data_dir (containing
+    the database) and the configured uploaded-files directory.
     """
     from backend.config import get_settings
-    from backend.files.paths import UPLOADED_FILES_DIR
+    from backend.files.paths import uploaded_files_dir
 
     settings = get_settings()
-    # Use WORKSPACE_DIRS env var if set
-    dirs_raw = getattr(settings, "workspace_dirs", None) or []
-    if dirs_raw:
-        return [str(Path(d).resolve()) for d in dirs_raw]
-    # Default: same safe dirs as the orchestrator tool_setup
     data_dir = str(Path(settings.database_path).parent)
-    return [data_dir, str(UPLOADED_FILES_DIR)]
+    return [data_dir, str(uploaded_files_dir())]
 
 
 @workspace_router.get("/tree")

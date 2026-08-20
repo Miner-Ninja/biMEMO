@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+import backend.files.paths as files_paths
 from backend.app_state import AppState, AppStateManager
 from backend.channels.endpoints import BackupRateLimiter, EndpointRateLimiter
 from backend.channels.jwt_auth import (
@@ -657,7 +658,7 @@ class TestFileContentRoute:
         file_id = str(uuid.uuid4())
         file_path = tmp_path / f"{file_id}.txt"
         file_path.write_bytes(b"file body content")
-        monkeypatch.setattr(files_routes, "FILES_DIR", tmp_path)
+        monkeypatch.setattr(files_paths, "uploaded_files_dir", lambda: tmp_path)
         admin = _FakeFileAdmin(
             {"original_name": f"{file_id}.txt", "mime_type": "text/plain"}
         )

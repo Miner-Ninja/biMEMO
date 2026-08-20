@@ -163,9 +163,9 @@ def _build_runtime_tool_workers(
 
 def _build_fs_allowed_dirs(data_dir: str) -> list[str]:
     """Return directories that file tools may access."""
-    from backend.files.paths import UPLOADED_FILES_DIR
+    from backend.files.paths import uploaded_files_dir
 
-    return [data_dir, str(UPLOADED_FILES_DIR)]
+    return [data_dir, str(uploaded_files_dir())]
 
 
 def _register_runtime_tool_handlers(

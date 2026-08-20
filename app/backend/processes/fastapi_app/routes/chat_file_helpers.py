@@ -17,13 +17,13 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException
 
 from backend.files import FileContextManager
+from backend.files import paths as files_paths
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.security.content_filter import (
     ImageValidationError,
     validate_image_data_url,
 )
 
-from . import files as files_routes
 from .chat_models import (
     ChatInputContext,
     PreparedFileCollection,
@@ -132,7 +132,7 @@ def resolve_stored_chat_file(
         original_name=original_name,
         mime_type=str(file_metadata.get("mime_type", "") or ""),
         size_bytes=int(file_metadata.get("size", 0)),
-        file_path=files_routes.FILES_DIR / f"{file_id}{extension}",
+        file_path=files_paths.uploaded_files_dir() / f"{file_id}{extension}",
     )
 
 

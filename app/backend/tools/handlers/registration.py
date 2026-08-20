@@ -739,14 +739,30 @@ def _make_set_workspace_handler(
     return handler
 
 
-def _make_workspace_history_handler(store: WorkspaceHistoryStore) -> callable:
-    """Build an async handler for the workspace_history tool."""
+def _make_workspace_history_handler(
+    store: WorkspaceHistoryStore,
+    broker: ToolBroker | None = None,
+) -> callable:
+    """Build an async handler for the workspace_history tool.
+
+    Args:
+        store: Workspace history store (get/clear by conversation).
+        broker: Optional ToolBroker — used to read the per-call execution
+            context (conversation_id) so history stays linked to the
+            originating chat. Falls back to "default" without a context.
+    """
 
     async def handler(params: object) -> dict:
         """Get or clear workspace history."""
         action = getattr(params, "action", "") or ""
-        # Get conversation_id from broker context
+        # Resolve conversation_id from the per-call broker context, like
+        # schedule.py does; fall back to "default" for calls without a
+        # chat context.
         conversation_id = "default"
+        ctx = getattr(broker, "current_context", None) if broker is not None else None
+        ctx_conv = ctx.get("conversation_id", "") if isinstance(ctx, dict) else ""
+        if ctx_conv:
+            conversation_id = ctx_conv
 
         if action == "get":
             entries = await store.get_latest(conversation_id, last_n=10)
@@ -1056,7 +1072,7 @@ def register_all_handlers(
 
     broker.bind_handler(
         "workspace_history",
-        _make_workspace_history_handler(history_store),
+        _make_workspace_history_handler(history_store, broker),
     )
     broker.bind_handler(
         "workspace_note",

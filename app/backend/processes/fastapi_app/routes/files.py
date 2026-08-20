@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.files import FileContextManager
-from backend.files.paths import UPLOADED_FILES_DIR
+from backend.files import paths as files_paths
 from backend.security.policy import get_policy
 
 from ..deps import _get_admin_client, _require_auth
@@ -40,8 +40,7 @@ logger = logging.getLogger(__name__)
 
 files_router = APIRouter(prefix="/files")
 
-# --- On-disk paths and conversion factors ---
-FILES_DIR = UPLOADED_FILES_DIR
+# --- Conversion factors ---
 BYTES_PER_MEGABYTE = 1024 * 1024
 # Cache-Control for downloaded file content (content is immutable per id)
 FILE_CONTENT_CACHE_CONTROL = "private, max-age=86400"
@@ -92,7 +91,7 @@ async def _require_file_metadata(
 def _file_path(file_id: str, original_name: str) -> Path:
     """Return the on-disk path for one stored file."""
     ext = Path(original_name).suffix.lower()
-    return FILES_DIR / f"{file_id}{ext}"
+    return files_paths.uploaded_files_dir() / f"{file_id}{ext}"
 
 
 def _file_etag(stat_result: os.stat_result) -> str:
@@ -178,7 +177,8 @@ async def upload_file(
             )
         )
 
-    await asyncio.to_thread(FILES_DIR.mkdir, parents=True, exist_ok=True)
+    files_dir = files_paths.uploaded_files_dir()
+    await asyncio.to_thread(files_dir.mkdir, parents=True, exist_ok=True)
     file_path = _file_path(file_id, file.filename)
     await asyncio.to_thread(file_path.write_bytes, content)
     replacements: list[dict] = []

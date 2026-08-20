@@ -2639,10 +2639,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 first_resp = client.post(
                     "/files/upload",
@@ -2670,7 +2670,7 @@ class TestFileReplacement:
                 replacement_file = Path(tmp_dir) / f"{second_id}.txt"
                 assert replacement_file.read_text() == "second version"
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_chat_resolves_attached_files_from_file_ids(self) -> None:
         """Chat should resolve attached file identifiers to readable filenames."""
@@ -2703,10 +2703,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 upload_resp = client.post(
                     "/files/upload",
@@ -2728,7 +2728,7 @@ class TestFileReplacement:
                 assert sent_requests[0].attached_files == ["context.txt [inline]"]
                 assert "--- File: context.txt ---" in sent_requests[0].message
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_chat_summarizes_large_attached_text_files(self) -> None:
         """Large text files should summarize instead of raw full inline injection."""
@@ -2761,10 +2761,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 large_content = "\n".join(
                     [
@@ -2803,7 +2803,7 @@ class TestFileReplacement:
                 )
                 assert "--- File: rollout.md ---" not in sent_requests[0].message
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_chat_reuses_stored_large_file_context_without_raw_disk_read(self) -> None:
         """Large-file chat should still work after raw bytes disappear."""
@@ -2836,10 +2836,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 large_content = "\n".join(
                     [
@@ -2878,7 +2878,7 @@ class TestFileReplacement:
                     sent_requests[0].message
                 )
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_chat_falls_back_to_metadata_block_when_small_raw_file_is_missing(
         self,
@@ -2913,10 +2913,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 upload_resp = client.post(
                     "/files/upload",
@@ -2951,7 +2951,7 @@ class TestFileReplacement:
                     sent_requests[0].message
                 )
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_admin_memory_file_context_view_returns_stored_context(self) -> None:
         """Admin memory route should expose stored summary and chunks for one file."""
@@ -2966,10 +2966,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 large_content = "\n".join(
                     [
@@ -3006,7 +3006,7 @@ class TestFileReplacement:
                     "File summary:" in block for block in payload["prompt_blocks"]
                 )
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_admin_memory_file_context_view_shows_last_prompt_usage(self) -> None:
         """Admin memory file context should include the latest prompt usage snapshot."""
@@ -3039,10 +3039,10 @@ class TestFileReplacement:
         )
 
         with TemporaryDirectory() as tmp_dir:
-            import backend.processes.fastapi_app.routes.files as files_module
+            import backend.files.paths as files_paths
 
-            original_files_dir = files_module.FILES_DIR
-            files_module.FILES_DIR = Path(tmp_dir)
+            original_files_dir = files_paths.uploaded_files_dir
+            files_paths.uploaded_files_dir = lambda: Path(tmp_dir)
             try:
                 large_content = "\n".join(
                     [
@@ -3088,7 +3088,7 @@ class TestFileReplacement:
                     for block in payload["prompt_blocks"]
                 )
             finally:
-                files_module.FILES_DIR = original_files_dir
+                files_paths.uploaded_files_dir = original_files_dir
 
     def test_chat_uses_provided_conversation_id_for_orchestrator(self) -> None:
         """Chat should forward the explicit conversation identifier."""

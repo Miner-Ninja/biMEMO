@@ -45,6 +45,7 @@ class Settings(BaseSettings):
         runtime_database_path: Optional path to the encrypted runtime DB.
         diagnostics_database_path: Optional path to the encrypted diagnostics DB.
         diagnostics_retention_days: Number of days to keep route diagnostics.
+        uploaded_files_dir: Directory where uploaded chat files are stored.
         searxng_url: Base URL for the local SearXNG search instance.
         host: HTTP server bind address.
         port: HTTP server bind port.
@@ -68,6 +69,7 @@ class Settings(BaseSettings):
     runtime_database_path: str = ""
     diagnostics_database_path: str = ""
     diagnostics_retention_days: int = 14
+    uploaded_files_dir: str
     searxng_url: str
     host: str
     port: int
