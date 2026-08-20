@@ -65,6 +65,9 @@ Thumbs.db
 app/.runtime/
 .runtime/
 
+# --- Runtime data (DB, key files, uploads — created by non-container runs) ---
+data/
+
 # --- Build / linker artifacts ---
 a.out
 *.out
