@@ -54,7 +54,7 @@ class TestLLMCallOptionsTypedConstruction:
         assert options.response_schema is None
         assert options.tools is None
         assert options.tool_choice is None
-        assert options.sse_queue is None
+        assert options.stream_queue is None
 
     def test_full_tool_round_options_construction(self):
         """Verify the complete tool-round override bundle constructs correctly."""
@@ -68,7 +68,7 @@ class TestLLMCallOptionsTypedConstruction:
         assert options.response_schema is TOOL_ROUND_SCHEMA
         assert options.tools == []
         assert options.tool_choice == "none"
-        assert options.sse_queue is None
+        assert options.stream_queue is None
 
 
 class TestLLMCallOptionsToolRoundPropagation:

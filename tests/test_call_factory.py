@@ -49,15 +49,15 @@ class TestResolveOptions:
         """Verify default resolution uses the caller-scoped defaults."""
         resolved = _resolve_options(
             options=None,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=None,
             tool_choice=None,
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=None,
         )
         assert resolved.tools is None
         assert resolved.tool_choice is None
-        assert resolved.sse_queue is None
+        assert resolved.stream_queue is None
         assert resolved.response_format is None
 
     def test_none_options_picks_legacy_tools_override(self):
@@ -65,10 +65,10 @@ class TestResolveOptions:
         tools = [{"type": "function"}]
         resolved = _resolve_options(
             options=None,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=tools,
             tool_choice=None,
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=None,
         )
         assert resolved.tools == tools
@@ -78,10 +78,10 @@ class TestResolveOptions:
         default_tools = [{"type": "function", "default": True}]
         resolved = _resolve_options(
             options=None,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=None,
             tool_choice=None,
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=default_tools,
         )
         assert resolved.tools == default_tools
@@ -90,10 +90,10 @@ class TestResolveOptions:
         """Verify legacy tool_choice flows into options.tool_choice."""
         resolved = _resolve_options(
             options=None,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=None,
             tool_choice="none",
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=None,
         )
         assert resolved.tool_choice == "none"
@@ -104,10 +104,10 @@ class TestResolveOptions:
         with caplog.at_level(logging.WARNING):
             resolved = _resolve_options(
                 options=options,
-                sse_queue_override=None,
+                stream_queue_override=None,
                 tools_override=[{"type": "function", "loser": True}],
                 tool_choice=None,
-                default_sse_queue=None,
+                default_stream_queue=None,
                 default_tools=None,
             )
         assert resolved is options
@@ -119,27 +119,27 @@ class TestResolveOptions:
         with caplog.at_level(logging.WARNING):
             resolved = _resolve_options(
                 options=options,
-                sse_queue_override=None,
+                stream_queue_override=None,
                 tools_override=None,
                 tool_choice=None,
-                default_sse_queue=None,
+                default_stream_queue=None,
                 default_tools=None,
             )
         assert resolved is options
         assert caplog.records == []
 
-    def test_legacy_sse_queue_override_flows_into_options(self):
-        """Verify legacy sse_queue_override lands in the synthesised options."""
+    def test_legacy_stream_queue_override_flows_into_options(self):
+        """Verify legacy stream_queue_override lands in the synthesised options."""
         queue: asyncio.Queue = asyncio.Queue()
         resolved = _resolve_options(
             options=None,
-            sse_queue_override=queue,
+            stream_queue_override=queue,
             tools_override=None,
             tool_choice=None,
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=None,
         )
-        assert resolved.sse_queue is queue
+        assert resolved.stream_queue is queue
 
 
 class TestCallWithTimeout:
@@ -155,7 +155,7 @@ class TestCallWithTimeout:
             client,  # type: ignore[arg-type]
             messages=messages,
             options=options,
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=None,
         )
         assert client.received_messages is messages
@@ -171,7 +171,7 @@ class TestCallWithTimeout:
             client,  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "hi"}],
             options=LLMCallOptions(),
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=default_tools,
         )
         assert client.received_options is not None
@@ -186,26 +186,26 @@ class TestCallWithTimeout:
             client,  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "hi"}],
             options=LLMCallOptions(tools=[]),
-            default_sse_queue=None,
+            default_stream_queue=None,
             default_tools=default_tools,
         )
         assert client.received_options is not None
         assert client.received_options.tools == []
 
     @pytest.mark.asyncio
-    async def test_applies_default_sse_queue_when_options_queue_is_none(self):
-        """Verify default sse_queue backfill when options.sse_queue is None."""
+    async def test_applies_default_stream_queue_when_options_queue_is_none(self):
+        """Verify default stream_queue backfill when options.stream_queue is None."""
         client = _RecordingClient()
         default_queue: asyncio.Queue = asyncio.Queue()
         await _call_with_timeout(
             client,  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "hi"}],
             options=LLMCallOptions(),
-            default_sse_queue=default_queue,
+            default_stream_queue=default_queue,
             default_tools=None,
         )
         assert client.received_options is not None
-        assert client.received_options.sse_queue is default_queue
+        assert client.received_options.stream_queue is default_queue
 
 
 class TestMakeLLMCall:

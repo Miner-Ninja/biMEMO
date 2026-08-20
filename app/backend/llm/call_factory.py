@@ -5,7 +5,7 @@ queue forwarding, and per-call overrides via ``LLMCallOptions``.
 
 The ``LLMCallOptions`` value type is the single documented per-call
 override entry point. Legacy keyword arguments (``tools_override``,
-``tool_choice``, ``sse_queue_override``) remain accepted for backward
+``tool_choice``, ``stream_queue_override``) remain accepted for backward
 compatibility; when both are passed ``options`` wins and a warning is
 logged.
 """
@@ -105,7 +105,7 @@ class LLMClient(Protocol):
         self,
         messages: list[dict],
         *,
-        sse_queue: asyncio.Queue | None = None,
+        stream_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
         options: LLMCallOptions | None = None,
     ) -> LLMResponse:
@@ -123,10 +123,10 @@ def _selected_value[T](override: T | None, default: T | None) -> T | None:
 def _resolve_options(
     *,
     options: LLMCallOptions | None,
-    sse_queue_override: asyncio.Queue | None,
+    stream_queue_override: asyncio.Queue | None,
     tools_override: list[dict] | None,
     tool_choice: object | None,
-    default_sse_queue: asyncio.Queue | None,
+    default_stream_queue: asyncio.Queue | None,
     default_tools: list[dict] | None,
 ) -> LLMCallOptions:
     """Resolve per-call options, honouring legacy kwargs when needed.
@@ -137,7 +137,7 @@ def _resolve_options(
     single consistent type.
     """
     legacy_set = (
-        sse_queue_override is not None
+        stream_queue_override is not None
         or tools_override is not None
         or tool_choice is not None
     )
@@ -149,15 +149,15 @@ def _resolve_options(
             )
         # Merge factory-scoped defaults for fields that are None on options.
         resolved = options
-        if options.sse_queue is None and default_sse_queue is not None:
-            resolved = replace(resolved, sse_queue=default_sse_queue)
+        if options.stream_queue is None and default_stream_queue is not None:
+            resolved = replace(resolved, stream_queue=default_stream_queue)
         if options.tools is None and default_tools is not None:
             resolved = replace(resolved, tools=default_tools)
         return resolved
     return LLMCallOptions(
         tools=_selected_value(tools_override, default_tools),
         tool_choice=tool_choice,
-        sse_queue=_selected_value(sse_queue_override, default_sse_queue),
+        stream_queue=_selected_value(stream_queue_override, default_stream_queue),
     )
 
 
@@ -169,7 +169,7 @@ async def _call_with_timeout(
     attempt: int = 1,
     phase: str = "default",
     on_attempt: Callable[[AttemptRecord], None] | None = None,
-    default_sse_queue: asyncio.Queue | None = None,
+    default_stream_queue: asyncio.Queue | None = None,
     default_tools: list[dict] | None = None,
 ) -> LLMResponse:
     """Call the client once with the shared LLM timeout.
@@ -182,8 +182,8 @@ async def _call_with_timeout(
     per-attempt recording internally; the outer callback is suppressed to
     avoid duplicate records.
     """
-    if options.sse_queue is None and default_sse_queue is not None:
-        options = replace(options, sse_queue=default_sse_queue)
+    if options.stream_queue is None and default_stream_queue is not None:
+        options = replace(options, stream_queue=default_stream_queue)
     if options.tools is None and default_tools is not None:
         options = replace(options, tools=default_tools)
 
@@ -217,7 +217,7 @@ async def _call_with_timeout(
 
 def make_llm_call(
     client: LLMClient,
-    sse_queue: asyncio.Queue | None = None,
+    stream_queue: asyncio.Queue | None = None,
     tools: list[dict] | None = None,
     on_attempt: Callable[[AttemptRecord], None] | None = None,
     phase: str = "default",
@@ -226,7 +226,7 @@ def make_llm_call(
 
     Args:
         client: LLM client with a .chat(messages, options=) method.
-        sse_queue: Optional caller-scoped default SSE queue.
+        stream_queue: Optional caller-scoped default SSE queue.
         tools: Optional caller-scoped default OpenAI-format tool schemas.
         on_attempt: Optional callback invoked after every provider attempt,
             including failures without usage data.
@@ -239,7 +239,7 @@ def make_llm_call(
 
     async def llm_call(
         messages: list[dict],
-        sse_queue_override: asyncio.Queue | None = None,
+        stream_queue_override: asyncio.Queue | None = None,
         *,
         options: LLMCallOptions | None = None,
         tools_override: list[dict] | None = None,
@@ -250,7 +250,7 @@ def make_llm_call(
 
         Args:
             messages: Conversation messages.
-            sse_queue_override: Legacy per-call SSE queue override.
+            stream_queue_override: Legacy per-call stream queue override.
             options: Per-call overrides bundle. When provided this wins
                 over any legacy kwargs (with a warning log).
             tools_override: Legacy per-call tool schema override.
@@ -265,10 +265,10 @@ def make_llm_call(
         effective_phase = phase_override if phase_override is not None else phase
         effective = _resolve_options(
             options=options,
-            sse_queue_override=sse_queue_override,
+            stream_queue_override=stream_queue_override,
             tools_override=tools_override,
             tool_choice=tool_choice,
-            default_sse_queue=sse_queue,
+            default_stream_queue=stream_queue,
             default_tools=tools,
         )
         # Add the factory callback only after resolving legacy kwargs. Creating

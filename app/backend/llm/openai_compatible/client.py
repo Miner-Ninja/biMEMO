@@ -559,7 +559,7 @@ class OpenAICompatibleClient:
         self,
         messages: list[dict],
         *,
-        sse_queue: asyncio.Queue | None = None,
+        stream_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
         tool_choice: object | None = None,
         options: LLMCallOptions | None = None,
@@ -580,9 +580,9 @@ class OpenAICompatibleClient:
 
         Args:
             messages: List of message dicts with role/content.
-            sse_queue: Optional queue for real-time token forwarding to
-                the Web UI via SSE. Ignored when ``options.sse_queue`` is
-                set.
+            stream_queue: Optional queue for real-time token forwarding to
+                the Web UI over the realtime stream. Ignored when
+                ``options.stream_queue`` is set.
             tools: Optional OpenAI-format tool schemas. Ignored when
                 ``options.tools`` is set.
             tool_choice: Optional forced tool selection override. Ignored
@@ -597,8 +597,10 @@ class OpenAICompatibleClient:
             OpenAICompatibleClientError: If chat request fails.
         """
         effective = options or LLMCallOptions()
-        effective_sse_queue = (
-            effective.sse_queue if effective.sse_queue is not None else sse_queue
+        effective_stream_queue = (
+            effective.stream_queue
+            if effective.stream_queue is not None
+            else stream_queue
         )
         effective_tools = effective.tools if effective.tools is not None else tools
         effective_tool_choice = (
@@ -610,12 +612,12 @@ class OpenAICompatibleClient:
         empty_retry = effective.empty_retry
         event_sink = effective.event_sink
 
-        # Apply event_sink tri-state to SSE queue.
+        # Apply event_sink tri-state to the stream queue.
         if event_sink is EventSink.DISABLED:
-            effective_sse_queue = None
+            effective_stream_queue = None
         elif event_sink is EventSink.ENABLED:
-            pass  # keep effective_sse_queue as resolved above
-        # INHERIT or None: use the already-resolved effective_sse_queue
+            pass  # keep effective_stream_queue as resolved above
+        # INHERIT or None: use the already-resolved effective_stream_queue
 
         # Determine whether to retry on empty response.
         do_empty_retry = True
@@ -664,7 +666,7 @@ class OpenAICompatibleClient:
                 result = await self._execute_chat_once(
                     payload,
                     llm_response_format,
-                    effective_sse_queue,
+                    effective_stream_queue,
                     skip_structured_parsing=skip_structured_parsing,
                     phase=single_phase,
                     attempt=attempt_num,
@@ -709,7 +711,7 @@ class OpenAICompatibleClient:
         self,
         payload: dict[str, object],
         llm_response_format: LlmResponseFormat,
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         *,
         skip_structured_parsing: bool,
         use_final_only_parser: bool = False,
@@ -722,7 +724,7 @@ class OpenAICompatibleClient:
             if stream:
                 return await self._streaming_chat(
                     payload,
-                    sse_queue,
+                    stream_queue,
                     llm_response_format,
                     structured=True,
                     skip_structured_parsing=skip_structured_parsing,
@@ -739,7 +741,7 @@ class OpenAICompatibleClient:
             )
         return await self._streaming_chat(
             payload,
-            sse_queue,
+            stream_queue,
             llm_response_format,
             phase=phase,
             attempt=attempt,
@@ -748,7 +750,7 @@ class OpenAICompatibleClient:
     async def _streaming_chat(
         self,
         payload: dict[str, object],
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         llm_response_format: LlmResponseFormat,
         *,
         structured: bool = False,
@@ -818,8 +820,8 @@ class OpenAICompatibleClient:
                     if content:
                         if extractor is not None:
                             answer_delta = extractor.feed(content)
-                            if answer_delta and sse_queue is not None:
-                                await sse_queue.put(
+                            if answer_delta and stream_queue is not None:
+                                await stream_queue.put(
                                     {
                                         "type": "token",
                                         "content": answer_delta,
@@ -827,8 +829,8 @@ class OpenAICompatibleClient:
                                 )
                         else:
                             full_text.append(content)
-                            if sse_queue is not None:
-                                await sse_queue.put(
+                            if stream_queue is not None:
+                                await stream_queue.put(
                                     {
                                         "type": "token",
                                         "content": content,
@@ -840,8 +842,8 @@ class OpenAICompatibleClient:
                     reasoning_content = delta.get("reasoning_content", "")
                     if reasoning_content:
                         thinking_parts.append(reasoning_content)
-                        if sse_queue is not None:
-                            await sse_queue.put(
+                        if stream_queue is not None:
+                            await stream_queue.put(
                                 {
                                     "type": "thinking",
                                     "content": reasoning_content,

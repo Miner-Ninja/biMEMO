@@ -344,7 +344,7 @@ class TestFinalAnswerRecovery:
             model_name="qwen3.5:9b",
             broker=MagicMock(),
         )
-        llm_caller.sse_queue = asyncio.Queue()
+        llm_caller.stream_queue = asyncio.Queue()
         loop = MagicMock()
         loop.check_limits.return_value = LoopState.RUNNING
         tool_executor = MagicMock()
@@ -362,7 +362,7 @@ class TestFinalAnswerRecovery:
             """Capture LLM call kwargs and return one text response."""
             del messages
             captured_kwargs.update(kwargs)
-            stream_queue = kwargs.get("sse_queue_override")
+            stream_queue = kwargs.get("stream_queue_override")
             await stream_queue.put({"type": "token", "content": "draft"})
             await stream_queue.put({"type": "thinking", "content": "checking"})
             return _text_response("BTC is 100.")
@@ -385,12 +385,12 @@ class TestFinalAnswerRecovery:
         )
 
         assert result.raw_final_text == "BTC is 100."
-        assert captured_kwargs["sse_queue_override"] is not llm_caller.sse_queue
-        assert await llm_caller.sse_queue.get() == {
+        assert captured_kwargs["stream_queue_override"] is not llm_caller.stream_queue
+        assert await llm_caller.stream_queue.get() == {
             "type": "thinking",
             "content": "checking",
         }
-        assert llm_caller.sse_queue.empty()
+        assert llm_caller.stream_queue.empty()
 
     @pytest.mark.asyncio
     async def test_request_non_empty_final_answer_keeps_structured_sections(self):
@@ -891,13 +891,13 @@ class TestAgentOrchestrator:
         broker.execute = AsyncMock()
         broker.list_openai_schemas = MagicMock(return_value=[])
         orchestrator = _make_orchestrator(broker=broker)
-        orchestrator.sse_queue = object()
+        orchestrator.stream_queue = object()
 
         llm_call_count = 0
 
         async def mock_llm(
             messages,
-            sse_queue_override=None,
+            stream_queue_override=None,
             *,
             tools_override=None,
         ):
@@ -905,7 +905,7 @@ class TestAgentOrchestrator:
             del tools_override
             nonlocal llm_call_count
             llm_call_count += 1
-            assert sse_queue_override is orchestrator.sse_queue
+            assert stream_queue_override is orchestrator.stream_queue
             return _text_response("BTC is trading at 100.")
 
         resp = await orchestrator.process_message(

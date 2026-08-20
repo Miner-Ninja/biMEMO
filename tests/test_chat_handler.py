@@ -489,7 +489,7 @@ class _FakeIPCServer:
 def test_push_conversation_updated_event_with_bound_queue() -> None:
     """The helper pushes a formatted dict onto the bound stream queue."""
     queue: asyncio.Queue = asyncio.Queue()
-    orch = SimpleNamespace(sse_queue=queue)
+    orch = SimpleNamespace(stream_queue=queue)
 
     asyncio.run(
         _push_conversation_updated_event(
@@ -516,7 +516,7 @@ def test_push_conversation_updated_event_with_bound_queue() -> None:
 
 def test_push_conversation_updated_event_no_queue_is_noop() -> None:
     """Helper returns silently when orch has no bound stream queue."""
-    orch = SimpleNamespace(sse_queue=None)
+    orch = SimpleNamespace(stream_queue=None)
 
     asyncio.run(
         _push_conversation_updated_event(
@@ -532,7 +532,7 @@ def test_push_conversation_updated_event_no_queue_is_noop() -> None:
 def test_mark_conversation_processing_idle_emits_sse_event() -> None:
     """Marking idle writes to DB and pushes a conversation_updated event."""
     queue: asyncio.Queue = asyncio.Queue()
-    orch = SimpleNamespace(sse_queue=queue)
+    orch = SimpleNamespace(stream_queue=queue)
     db_client = SimpleNamespace(
         update_conversation_processing_state=AsyncMock(return_value=None)
     )
@@ -571,7 +571,7 @@ def test_mark_conversation_processing_active_emits_sse_event(
         lambda: "2026-04-25T10:00:00.000",
     )
     queue: asyncio.Queue = asyncio.Queue()
-    orch = SimpleNamespace(sse_queue=queue)
+    orch = SimpleNamespace(stream_queue=queue)
     db_client = SimpleNamespace(
         update_conversation_processing_state=AsyncMock(return_value=None)
     )
@@ -731,7 +731,7 @@ def test_forwarder_maps_error_to_stream_event_type() -> None:
 def test_orchestrator_handler_streams_missing_llm_final_response() -> None:
     """No-LLM fallback still reaches the browser stream in start-only mode."""
     ipc_server = _FakeIPCServer()
-    orch = SimpleNamespace(sse_queue=None)
+    orch = SimpleNamespace(stream_queue=None)
     handler = _build_orchestrator_request_handler(
         orch=orch,
         ipc_server_ref=lambda: ipc_server,
@@ -770,7 +770,7 @@ def test_chat_request_failure_streams_error_and_done() -> None:
     """A failed chat turn must terminate the browser stream."""
     ipc_server = _FakeIPCServer()
     orch = SimpleNamespace(
-        sse_queue=None,
+        stream_queue=None,
         process_message=AsyncMock(side_effect=TimeoutError("llm timeout")),
         pending_red_calls=[],
     )
@@ -818,7 +818,7 @@ def test_chat_request_success_records_completed_runtime_event() -> None:
     """A successful chat turn records started and completed runtime events."""
     ipc_server = _FakeIPCServer()
     orch = SimpleNamespace(
-        sse_queue=None,
+        stream_queue=None,
         process_message=AsyncMock(
             return_value=AgentResponse(
                 structured_content=normalize_legacy_response_text("Done."),
@@ -873,7 +873,7 @@ def test_chat_request_cancellation_records_stopped_runtime_event() -> None:
         await asyncio.sleep(60)
 
     orch = SimpleNamespace(
-        sse_queue=None,
+        stream_queue=None,
         process_message=slow_process_message,
         pending_red_calls=[],
     )
@@ -976,7 +976,7 @@ def test_in_flight_duplicate_run_replays_without_new_turn() -> None:
     """The same run_id on a live turn answers without starting a new one."""
     ipc_server = _FakeIPCServer()
     orch = SimpleNamespace(
-        sse_queue=None,
+        stream_queue=None,
         current_run_id="run-1",
         process_message=AsyncMock(),
         pending_red_calls=[],
@@ -1015,7 +1015,7 @@ def test_dead_duplicate_run_terminalizes_and_restarts() -> None:
     """The same run_id on a dead turn closes it and delivers a fresh turn."""
     ipc_server = _FakeIPCServer()
     orch = SimpleNamespace(
-        sse_queue=None,
+        stream_queue=None,
         current_run_id="",
         process_message=AsyncMock(
             return_value=AgentResponse(

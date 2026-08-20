@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from backend.agent.agent_loop_helpers import (
     llm_accepts_call_options,
-    llm_accepts_sse_queue,
+    llm_accepts_stream_queue,
     llm_accepts_tools_override,
     request_missing_suggestions,
     request_non_empty_final_answer,
@@ -163,7 +163,7 @@ class LLMCaller:
         """
         self.model_name = model_name
         self.broker = broker
-        self.sse_queue: object | None = None
+        self.stream_queue: object | None = None
         self.on_attempt: Callable | None = None
 
     async def call_once(
@@ -219,7 +219,7 @@ class LLMCaller:
             response_schema=response_schema,
             tools=openai_tools,
             tool_choice=tool_choice,
-            sse_queue=self._stream_queue_for_mode(stream_mode),
+            stream_queue=self._stream_queue_for_mode(stream_mode),
             event_sink=(
                 EventSink.DISABLED if stream_mode is LLMStreamMode.DISABLED else None
             ),
@@ -229,7 +229,7 @@ class LLMCaller:
         )
         if llm_accepts_call_options(llm_call):
             return await llm_call(messages, options=options)
-        if stream_mode is not LLMStreamMode.DISABLED and llm_accepts_sse_queue(
+        if stream_mode is not LLMStreamMode.DISABLED and llm_accepts_stream_queue(
             llm_call
         ):
             return await self.invoke_with_sse(
@@ -259,7 +259,7 @@ class LLMCaller:
         stream_queue = self._stream_queue_for_mode(stream_mode)
         if llm_accepts_tools_override(llm_call):
             kwargs: dict[str, object] = {
-                "sse_queue_override": stream_queue,
+                "stream_queue_override": stream_queue,
                 "tools_override": openai_tools,
             }
             if tool_choice is not None:
@@ -273,9 +273,9 @@ class LLMCaller:
     def _stream_queue_for_mode(self, stream_mode: LLMStreamMode) -> object | None:
         """Return the queue object that implements the requested stream policy."""
         if stream_mode is LLMStreamMode.ALL:
-            return self.sse_queue
+            return self.stream_queue
         if stream_mode is LLMStreamMode.THINKING_ONLY:
-            return ThinkingOnlyStreamQueue(self.sse_queue)
+            return ThinkingOnlyStreamQueue(self.stream_queue)
         return None
 
     async def classify_clarification_approval(

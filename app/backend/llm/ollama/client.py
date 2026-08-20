@@ -439,23 +439,23 @@ class OllamaClient:
 
     async def _emit_reasoning_deltas(
         self,
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         *,
         visible_delta: str,
         thinking_delta: str,
     ) -> None:
-        """Forward visible and hidden reasoning deltas to the SSE queue."""
-        if sse_queue is None:
+        """Forward visible and hidden reasoning deltas to the stream queue."""
+        if stream_queue is None:
             return
         if thinking_delta:
-            await sse_queue.put(
+            await stream_queue.put(
                 {
                     "type": "thinking",
                     "content": thinking_delta,
                 }
             )
         if visible_delta:
-            await sse_queue.put(
+            await stream_queue.put(
                 {
                     "type": "token",
                     "content": visible_delta,
@@ -530,7 +530,7 @@ class OllamaClient:
     async def _stream_chat_chunks(
         self,
         payload: dict[str, object],
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         capabilities: ModelCapabilities,
         *,
         phase: str = "",
@@ -539,7 +539,7 @@ class OllamaClient:
         """Stream Ollama chat chunks and collect text, tool calls, and usage.
 
         Reads ``message.content`` and ``message.thinking`` as separate
-        channels and forwards them to the SSE queue without buffering.
+        channels and forwards them to the stream queue without buffering.
         Ollama 0.5+ splits visible content from reasoning content on the
         server side, so the application no longer parses ``<think>`` markers.
 
@@ -566,7 +566,7 @@ class OllamaClient:
                     full_text.append(content)
                 if content or thinking:
                     await self._emit_reasoning_deltas(
-                        sse_queue,
+                        stream_queue,
                         visible_delta=content,
                         thinking_delta=thinking,
                     )
@@ -604,7 +604,7 @@ class OllamaClient:
     async def _stream_structured_chat(
         self,
         payload: dict[str, object],
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         capabilities: ModelCapabilities,
         *,
         phase: str = "",
@@ -645,7 +645,7 @@ class OllamaClient:
                     thinking_parts.append(thinking)
                 if answer_delta or thinking:
                     await self._emit_reasoning_deltas(
-                        sse_queue,
+                        stream_queue,
                         visible_delta=answer_delta,
                         thinking_delta=thinking,
                     )
@@ -742,7 +742,7 @@ class OllamaClient:
         self,
         payload: dict[str, object],
         capabilities: ModelCapabilities,
-        sse_queue: asyncio.Queue | None,
+        stream_queue: asyncio.Queue | None,
         *,
         skip_structured_parsing: bool,
         use_final_only_parser: bool = False,
@@ -769,7 +769,7 @@ class OllamaClient:
                     final_usage,
                 ) = await self._stream_structured_chat(
                     payload,
-                    sse_queue,
+                    stream_queue,
                     capabilities,
                     phase=phase,
                     attempt=attempt,
@@ -799,7 +799,7 @@ class OllamaClient:
             final_usage,
         ) = await self._stream_chat_chunks(
             payload,
-            sse_queue,
+            stream_queue,
             capabilities,
             phase=phase,
             attempt=attempt,
@@ -811,7 +811,7 @@ class OllamaClient:
         self,
         messages: list[dict],
         *,
-        sse_queue: asyncio.Queue | None = None,
+        stream_queue: asyncio.Queue | None = None,
         tools: list[dict] | None = None,
         options: LLMCallOptions | None = None,
     ) -> LLMResponse:
@@ -823,9 +823,9 @@ class OllamaClient:
 
         Args:
             messages: List of message dicts with role/content.
-            sse_queue: Optional queue for real-time token forwarding to
-                the Web UI via SSE. Ignored when ``options.sse_queue`` is
-                set.
+            stream_queue: Optional queue for real-time token forwarding to
+                the Web UI over the realtime stream. Ignored when
+                ``options.stream_queue`` is set.
             tools: Optional OpenAI-format tool schemas. Ignored when
                 ``options.tools`` is set.
             options: Per-call override bundle. Any field set overrides the
@@ -839,8 +839,10 @@ class OllamaClient:
                 cannot be resolved.
         """
         effective = options or LLMCallOptions()
-        effective_sse_queue = (
-            effective.sse_queue if effective.sse_queue is not None else sse_queue
+        effective_stream_queue = (
+            effective.stream_queue
+            if effective.stream_queue is not None
+            else stream_queue
         )
         effective_tools = effective.tools if effective.tools is not None else tools
         capabilities = await self._resolve_for_chat()
@@ -855,11 +857,11 @@ class OllamaClient:
         empty_retry = effective.empty_retry
         event_sink = effective.event_sink
 
-        # Apply event_sink tri-state to SSE queue.
+        # Apply event_sink tri-state to the stream queue.
         if event_sink is EventSink.DISABLED:
-            effective_sse_queue = None
+            effective_stream_queue = None
         elif event_sink is EventSink.ENABLED:
-            pass  # keep effective_sse_queue as resolved above
+            pass  # keep effective_stream_queue as resolved above
 
         # Determine whether to retry on empty response.
         do_empty_retry = True
@@ -897,7 +899,7 @@ class OllamaClient:
                 result = await self._execute_chat_once(
                     payload,
                     capabilities,
-                    effective_sse_queue,
+                    effective_stream_queue,
                     skip_structured_parsing=skip_structured_parsing,
                     phase=single_phase,
                     attempt=attempt_num,

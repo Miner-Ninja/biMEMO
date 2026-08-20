@@ -87,7 +87,7 @@ class ToolExecutor:
                 workspace_roots=broker.workspace_roots,
             )
         self.turn_store = turn_store
-        self.sse_queue: object | None = None
+        self.stream_queue: object | None = None
         self._pending_red: list[PendingAction] = []
         self.tool_call_count: int = 0
         self.tool_names_used: list[str] = []
@@ -201,8 +201,8 @@ class ToolExecutor:
             )
             self.executed_tools[-1]["status"] = "blocked"
             self.executed_tools[-1]["error"] = decision.reason
-            if self.sse_queue is not None:
-                await self.sse_queue.put(
+            if self.stream_queue is not None:
+                await self.stream_queue.put(
                     {"type": "tool_status", "name": tool_call.name, "status": "error"}
                 )
             prepared = self._prepared_calls.get(tool_call.id)
@@ -232,8 +232,8 @@ class ToolExecutor:
                     },
                 )
             raise PermissionError(msg)
-        if self.sse_queue is not None:
-            await self.sse_queue.put(
+        if self.stream_queue is not None:
+            await self.stream_queue.put(
                 {"type": "tool_status", "name": tool_call.name, "status": "started"}
             )
         # Push the current execution context into the broker so handlers
@@ -320,8 +320,8 @@ class ToolExecutor:
             # result.duration_ms to record — measure the wall clock locally
             # so a crashed call still gets an accurate duration.
             duration_ms = (perf_counter() - execution_started_at) * 1000
-            if self.sse_queue is not None:
-                await self.sse_queue.put(
+            if self.stream_queue is not None:
+                await self.stream_queue.put(
                     {"type": "tool_status", "name": tool_call.name, "status": "error"}
                 )
             self.executed_tools[-1]["status"] = "failed"
@@ -399,8 +399,8 @@ class ToolExecutor:
                     else str(result.result)
                 ),
             )
-        if self.sse_queue is not None:
-            await self.sse_queue.put(
+        if self.stream_queue is not None:
+            await self.stream_queue.put(
                 {"type": "tool_status", "name": tool_call.name, "status": "completed"}
             )
         return result
@@ -755,9 +755,9 @@ class ToolExecutor:
         action_id: str,
     ) -> None:
         """Emit a stream event for one action awaiting confirmation."""
-        if self.sse_queue is None:
+        if self.stream_queue is None:
             return
-        await self.sse_queue.put(
+        await self.stream_queue.put(
             {
                 "type": "confirmation",
                 "status": "waiting_confirmation",

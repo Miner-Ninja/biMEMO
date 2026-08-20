@@ -289,7 +289,9 @@ async def test_adaptive_chain_and_thinking(monkeypatch) -> None:
                 output_filtered=False,
             )
 
-    monkeypatch.setattr("backend.agent.agent_loop.StructuredFinalizer", Finalizer)
+    monkeypatch.setattr(
+        "backend.agent.agent_loop_confirmation.StructuredFinalizer", Finalizer
+    )
     responses = iter(
         [
             LLMResponse(

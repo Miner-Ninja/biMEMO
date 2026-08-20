@@ -433,7 +433,7 @@ class TestCheckModel:
         queue: asyncio.Queue = asyncio.Queue()
         response = await client.chat(
             [{"role": "user", "content": "hello"}],
-            sse_queue=queue,
+            stream_queue=queue,
         )
         assert response.text == "Visible answer"
         queued = [queue.get_nowait() for _ in range(queue.qsize())]
@@ -804,7 +804,7 @@ class TestChat:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_forwards_to_sse_queue(self, tmp_path):
+    async def test_forwards_to_stream_queue(self, tmp_path):
         """Verify tokens are placed on SSE queue."""
         lines = [
             json.dumps(
@@ -833,7 +833,7 @@ class TestChat:
 
         result = await client.chat(
             [{"role": "user", "content": "Hi"}],
-            sse_queue=queue,
+            stream_queue=queue,
         )
 
         assert result.text == "tok1tok2"
@@ -990,7 +990,7 @@ class TestMakeLlmCall:
         transport = httpx.MockTransport(handler)
         client = make_client(transport, tmp_path)
         queue: asyncio.Queue = asyncio.Queue()
-        llm_call = make_llm_call(client, sse_queue=queue)
+        llm_call = make_llm_call(client, stream_queue=queue)
 
         await llm_call([{"role": "user", "content": "Hi"}])
         assert queue.qsize() == 1
@@ -1593,20 +1593,20 @@ class TestStructuredStreaming:
             "qwen3:8b",
             response_format=LlmResponseFormat.JSON_SCHEMA,
         )
-        sse_queue: asyncio.Queue = asyncio.Queue()
+        stream_queue: asyncio.Queue = asyncio.Queue()
 
         try:
             result = await client.chat(
                 [{"role": "user", "content": "Hi"}],
-                sse_queue=sse_queue,
+                stream_queue=stream_queue,
             )
         finally:
             await client.close()
             reset_settings()
 
         token_events: list[str] = []
-        while not sse_queue.empty():
-            event = sse_queue.get_nowait()
+        while not stream_queue.empty():
+            event = stream_queue.get_nowait()
             if event["type"] == "token":
                 token_events.append(event["content"])
         assert "".join(token_events) == "hello world"
@@ -1663,18 +1663,18 @@ class TestStructuredStreaming:
             "qwen3:8b",
             response_format=LlmResponseFormat.JSON_SCHEMA,
         )
-        sse_queue: asyncio.Queue = asyncio.Queue()
+        stream_queue: asyncio.Queue = asyncio.Queue()
 
         try:
             result = await client.chat(
                 [{"role": "user", "content": "Hi"}],
-                sse_queue=sse_queue,
+                stream_queue=stream_queue,
             )
         finally:
             await client.close()
             reset_settings()
 
-        assert sse_queue.empty()
+        assert stream_queue.empty()
         assert result.text == "blocking answer"
         assert result.structured_content is not None
         assert result.structured_content.answer == "blocking answer"

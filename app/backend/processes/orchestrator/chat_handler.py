@@ -549,10 +549,10 @@ async def _push_conversation_updated_event(
     processing_started_at: str | None,
 ) -> None:
     """Push a conversation_updated event onto the bound request stream queue."""
-    sse_queue = getattr(orch, "sse_queue", None)
-    if sse_queue is None:
+    stream_queue = getattr(orch, "stream_queue", None)
+    if stream_queue is None:
         return
-    await sse_queue.put(
+    await stream_queue.put(
         _conversation_updated_event_data(
             conversation_id=conversation_id,
             processing_status=processing_status,
@@ -644,7 +644,7 @@ async def _finish_request_event_forwarding(
     """Finish stream forwarding for one chat request and clear the runtime queue."""
     await request_stream_queue.put(_done_event_data())
     await event_forwarder
-    orch.sse_queue = None
+    orch.stream_queue = None
 
 
 async def _run_prepared_chat_request(
@@ -1158,7 +1158,7 @@ def _start_request_event_forwarding(
             run_event_recorder=run_event_recorder,
         )
     )
-    orch.sse_queue = request_stream_queue
+    orch.stream_queue = request_stream_queue
     return request_stream_queue, event_forwarder
 
 

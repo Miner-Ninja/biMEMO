@@ -35,10 +35,10 @@ class TestLLMCallOptionsDefaults:
         options = LLMCallOptions()
         assert options.tool_choice is None
 
-    def test_default_sse_queue_is_none(self):
-        """Verify sse_queue defaults to None (use default)."""
+    def test_default_stream_queue_is_none(self):
+        """Verify stream_queue defaults to None (use default)."""
         options = LLMCallOptions()
-        assert options.sse_queue is None
+        assert options.stream_queue is None
 
 
 class TestLLMCallOptionsFields:
@@ -77,11 +77,11 @@ class TestLLMCallOptionsFields:
         options = LLMCallOptions(tool_choice="none")
         assert options.tool_choice == "none"
 
-    def test_sse_queue_instance_is_stored(self):
+    def test_stream_queue_instance_is_stored(self):
         """Verify an asyncio.Queue instance is stored by reference."""
         queue: asyncio.Queue = asyncio.Queue()
-        options = LLMCallOptions(sse_queue=queue)
-        assert options.sse_queue is queue
+        options = LLMCallOptions(stream_queue=queue)
+        assert options.stream_queue is queue
 
 
 class TestLLMCallOptionsImmutable:

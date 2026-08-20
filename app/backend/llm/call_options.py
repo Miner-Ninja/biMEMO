@@ -62,7 +62,7 @@ class LLMCallOptions:
             call only. ``None`` keeps the caller-scoped default.
         tool_choice: Override the forced tool-choice directive for this
             call only. ``None`` leaves the provider to auto-select.
-        sse_queue: Override the SSE queue target for this call only.
+        stream_queue: Override the SSE queue target for this call only.
             ``None`` keeps the caller-scoped default.
         event_sink: Override the event-sink tri-state (INHERIT / ENABLED /
             DISABLED) for this call only. ``None`` keeps the default.
@@ -83,7 +83,7 @@ class LLMCallOptions:
     response_schema: dict | None = None
     tools: list[dict] | None = None
     tool_choice: object | None = None
-    sse_queue: asyncio.Queue | None = None
+    stream_queue: asyncio.Queue | None = None
     event_sink: EventSink | None = None
     response_stream: ResponseStream | None = None
     empty_retry: EmptyRetry | None = None

@@ -193,7 +193,7 @@ class TestChat:
         queue: asyncio.Queue = asyncio.Queue()
         result = await client.chat(
             [{"role": "user", "content": "Hi"}],
-            sse_queue=queue,
+            stream_queue=queue,
         )
         assert result.text == "Visible"
         queued = [queue.get_nowait() for _ in range(queue.qsize())]
@@ -227,7 +227,7 @@ class TestChat:
         await client.close()
 
     @pytest.mark.asyncio
-    async def test_forwards_to_sse_queue(self):
+    async def test_forwards_to_stream_queue(self):
         """Verify tokens are placed on SSE queue as separate events.
 
         Each streamed chunk is forwarded immediately without buffering, so
@@ -248,7 +248,7 @@ class TestChat:
 
         result = await client.chat(
             [{"role": "user", "content": "Hi"}],
-            sse_queue=queue,
+            stream_queue=queue,
         )
 
         assert result.text == "tok1tok2"
@@ -700,7 +700,7 @@ class TestMakeLlmCall:
         transport = httpx.MockTransport(handler)
         client = make_client(transport)
         queue: asyncio.Queue = asyncio.Queue()
-        llm_call = make_llm_call(client, sse_queue=queue)
+        llm_call = make_llm_call(client, stream_queue=queue)
         await llm_call([{"role": "user", "content": "Hi"}])
         assert queue.qsize() == 1
         await client.close()
@@ -1149,11 +1149,11 @@ class TestOpenRouterStructuredStreaming:
         )
         transport = httpx.MockTransport(handler)
         client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
-        sse_queue: asyncio.Queue = asyncio.Queue()
+        stream_queue: asyncio.Queue = asyncio.Queue()
         try:
             result = await client.chat(
                 [{"role": "user", "content": "Hi"}],
-                sse_queue=sse_queue,
+                stream_queue=stream_queue,
             )
         finally:
             del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
@@ -1161,8 +1161,8 @@ class TestOpenRouterStructuredStreaming:
             reset_settings()
 
         token_events: list[str] = []
-        while not sse_queue.empty():
-            event = sse_queue.get_nowait()
+        while not stream_queue.empty():
+            event = stream_queue.get_nowait()
             if event["type"] == "token":
                 token_events.append(event["content"])
         assert "".join(token_events) == "hello"
@@ -1211,18 +1211,18 @@ class TestOpenRouterStructuredStreaming:
         )
         transport = httpx.MockTransport(handler)
         client = make_client(transport, model=STRUCTURED_OPENROUTER_MODEL)
-        sse_queue: asyncio.Queue = asyncio.Queue()
+        stream_queue: asyncio.Queue = asyncio.Queue()
         try:
             result = await client.chat(
                 [{"role": "user", "content": "Hi"}],
-                sse_queue=sse_queue,
+                stream_queue=stream_queue,
             )
         finally:
             del EXACT_RESPONSE_FORMAT_OVERRIDES[STRUCTURED_OPENROUTER_OVERRIDE_KEY]
             await client.close()
             reset_settings()
 
-        assert sse_queue.empty()
+        assert stream_queue.empty()
         assert result.structured_content is not None
         assert result.structured_content.answer == "blocking answer"
         assert result.text == "blocking answer"

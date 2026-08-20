@@ -197,10 +197,10 @@ async def request_non_empty_final_answer(
             recovery_messages,
             options=LLMCallOptions(tools=[]),
         )
-    elif llm_accepts_sse_queue(llm_call):
+    elif llm_accepts_stream_queue(llm_call):
         recovery_response = await llm_call(
             recovery_messages,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=[],
         )
     elif llm_accepts_tools_override(llm_call):
@@ -277,10 +277,10 @@ async def request_missing_suggestions(
             ),
         },
     ]
-    if llm_accepts_sse_queue(llm_call):
+    if llm_accepts_stream_queue(llm_call):
         recovery_response = await llm_call(
             recovery_messages,
-            sse_queue_override=None,
+            stream_queue_override=None,
             tools_override=[],
         )
     elif llm_accepts_tools_override(llm_call):
@@ -355,13 +355,13 @@ def build_tool_result_messages(
     ]
 
 
-def llm_accepts_sse_queue(llm_call: object) -> bool:
+def llm_accepts_stream_queue(llm_call: object) -> bool:
     """Check whether the LLM callable accepts an SSE queue argument."""
     try:
         parameters = inspect.signature(llm_call).parameters
     except TypeError, ValueError:
         return False
-    if "sse_queue_override" in parameters:
+    if "stream_queue_override" in parameters:
         return True
     return any(
         parameter.kind == inspect.Parameter.VAR_KEYWORD
