@@ -25,6 +25,7 @@ from ..params import (
     AuthorizeAgentInvocationParams,
     CreateCapabilityGrantParams,
     ExpireCapabilityGrantsParams,
+    GetAgentRunParams,
     ListAgentRunEventsParams,
     ListAgentRunsParams,
     ListCapabilityGrantsParams,
@@ -666,6 +667,23 @@ def make_list_agent_runs_handler(db: DatabaseManager) -> OperationHandler:
             tuple(values),
         ).fetchall()
         return {"runs": [_run_record(row) for row in rows]}
+
+    return handle
+
+
+def make_get_agent_run_handler(db: DatabaseManager) -> OperationHandler:
+    """Create handler for get_agent_run operation (single run by id)."""
+
+    async def handle(params: dict[str, Any] | None) -> dict[str, Any]:
+        p = validate_params(params, GetAgentRunParams)
+        row = db.execute(
+            "SELECT id, conversation_id, session_id, channel, status, current_step, "
+            "request_id, resume_payload, tool_policy_version, created_at, "
+            "updated_at, completed_at "
+            "FROM agent_runs WHERE id = ?",
+            (p.run_id,),
+        ).fetchone()
+        return {"agent_run": _run_record(row) if row is not None else None}
 
     return handle
 

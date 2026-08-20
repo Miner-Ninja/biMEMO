@@ -59,9 +59,9 @@ from backend.security.schema import (
 )
 
 
-EXPECTED_SOCKET_A_OPERATION_COUNT = 125
-EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 61
-EXPECTED_SOCKET_B_OPERATION_COUNT = 98
+EXPECTED_SOCKET_A_OPERATION_COUNT = 126
+EXPECTED_SOCKET_B_ONLY_OPERATION_COUNT = 62
+EXPECTED_SOCKET_B_OPERATION_COUNT = 99
 EXPECTED_SOCKET_C_OPERATION_COUNT = 14
 
 SCHEDULED_TASK_SOCKET_A_OPERATIONS = {
@@ -1332,6 +1332,54 @@ class TestRegistryIntegration:
         result = await registry.dispatch(operation)
         assert result.status == "success"
         assert "message_id" in result.data
+
+    @pytest.mark.asyncio
+    async def test_dispatch_get_agent_run(self, db: FakeDB) -> None:
+        """Dispatches ``get_agent_run`` and returns the run record by id."""
+        db.connection.execute(
+            """CREATE TABLE agent_runs (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                status TEXT NOT NULL,
+                current_step TEXT NOT NULL DEFAULT '',
+                request_id TEXT NOT NULL DEFAULT '',
+                resume_payload TEXT NOT NULL DEFAULT '{}',
+                tool_policy_version TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT
+            )"""
+        )
+        db.connection.execute(
+            "INSERT INTO agent_runs (id, conversation_id, session_id, channel, "
+            "status, created_at, updated_at, completed_at) VALUES "
+            "('run1', 'c1', 's1', 'web', 'final', 't0', 't1', 't1')"
+        )
+        registry = build_registry(
+            db,
+            "/tmp/test.db",
+            b"\x00" * 32,
+        )
+        operation = DBOperation(
+            request_id="r1",
+            operation="get_agent_run",
+            parameters={"run_id": "run1"},
+        )
+        result = await registry.dispatch(operation)
+        assert result.status == "success"
+        assert result.data["agent_run"]["id"] == "run1"
+        assert result.data["agent_run"]["conversation_id"] == "c1"
+        assert result.data["agent_run"]["resume_payload"] == {}
+        missing = DBOperation(
+            request_id="r2",
+            operation="get_agent_run",
+            parameters={"run_id": "nope"},
+        )
+        missing_result = await registry.dispatch(missing)
+        assert missing_result.status == "success"
+        assert missing_result.data["agent_run"] is None
 
     @pytest.mark.asyncio
     async def test_dispatch_unknown_operation(self, db: FakeDB) -> None:

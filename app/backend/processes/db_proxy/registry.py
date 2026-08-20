@@ -171,6 +171,7 @@ from .handlers.permissions import (
     make_authorize_agent_invocation_handler,
     make_create_capability_grant_handler,
     make_expire_capability_grants_handler,
+    make_get_agent_run_handler,
     make_list_agent_run_events_handler,
     make_list_agent_runs_handler,
     make_list_capability_grants_handler,
@@ -324,6 +325,7 @@ SOCKET_A_OPERATIONS = {
     "project_agent_turn_event",
     "list_agent_run_events",
     "list_agent_runs",
+    "get_agent_run",
     "list_pending_actions",
     "prune_runtime_state",
     "create_agent_turn",
@@ -411,6 +413,7 @@ SOCKET_B_ONLY_OPERATIONS = {
     "expire_capability_grants",
     "list_agent_run_events",
     "list_agent_runs",
+    "get_agent_run",
     "list_agent_confirmations",
     "list_pending_actions",
     "prune_runtime_state",
@@ -773,6 +776,10 @@ def _register_permission_operations(
     registry.register(
         "list_agent_runs",
         make_list_agent_runs_handler(runtime_db),
+    )
+    registry.register(
+        "get_agent_run",
+        make_get_agent_run_handler(runtime_db),
     )
     registry.register(
         "list_pending_actions",

@@ -1113,6 +1113,12 @@ class ListAgentRunsParams(ForbidExtraParams):
     offset: int = Field(default=0, ge=0)
 
 
+class GetAgentRunParams(ForbidExtraParams):
+    """Parameters for get_agent_run operation."""
+
+    run_id: str = Field(min_length=1, max_length=128)
+
+
 class ListPendingActionsParams(ForbidExtraParams):
     """Parameters for list_pending_actions operation."""
 
