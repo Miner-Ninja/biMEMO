@@ -9,6 +9,15 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
+from backend.constants import (
+    ENV_ALLOWED_USER_IDS_SUFFIX,
+    ENV_BOT_TOKEN_SUFFIX,
+    ENV_DISCORD_PREFIX,
+    ENV_LLM_PROVIDER,
+    ENV_PREFIX_BY_PROVIDER,
+    ENV_TELEGRAM_PREFIX,
+)
+
 
 if TYPE_CHECKING:
     from .client import DBProxyClient
@@ -19,16 +28,11 @@ logger = logging.getLogger(__name__)
 
 async def seed_llm_config_from_env(db_client: DBProxyClient) -> None:
     """Write LLM config from env vars into DB, overwriting existing."""
-    provider = os.environ.get("BIMEMO_LLM_PROVIDER")
+    provider = os.environ.get(ENV_LLM_PROVIDER)
     if not provider:
         return
 
-    prefix_map = {
-        "openrouter": "BIMEMO_OPENROUTER_",
-        "ollama": "BIMEMO_OLLAMA_",
-        "custom": "BIMEMO_CUSTOM_",
-    }
-    prefix = prefix_map.get(provider)
+    prefix = ENV_PREFIX_BY_PROVIDER.get(provider)
     if not prefix:
         logger.warning("Unknown BIMEMO_LLM_PROVIDER=%r, skipping env seed", provider)
         return
@@ -76,21 +80,21 @@ async def seed_bot_configs_from_env(db_client: DBProxyClient) -> None:
     bot_configs = [
         {
             "service_type": "telegram",
-            "env_prefix": "BIMEMO_TELEGRAM_",
+            "env_prefix": ENV_TELEGRAM_PREFIX,
             "field_map": {
-                "BOT_TOKEN": "bot_token",
-                "ALLOWED_USER_IDS": "allowed_user_ids",
+                ENV_BOT_TOKEN_SUFFIX: "bot_token",
+                ENV_ALLOWED_USER_IDS_SUFFIX: "allowed_user_ids",
             },
-            "required_env": "BIMEMO_TELEGRAM_BOT_TOKEN",
+            "required_env": ENV_TELEGRAM_PREFIX + ENV_BOT_TOKEN_SUFFIX,
         },
         {
             "service_type": "discord",
-            "env_prefix": "BIMEMO_DISCORD_",
+            "env_prefix": ENV_DISCORD_PREFIX,
             "field_map": {
-                "BOT_TOKEN": "bot_token",
-                "ALLOWED_USER_IDS": "allowed_user_ids",
+                ENV_BOT_TOKEN_SUFFIX: "bot_token",
+                ENV_ALLOWED_USER_IDS_SUFFIX: "allowed_user_ids",
             },
-            "required_env": "BIMEMO_DISCORD_BOT_TOKEN",
+            "required_env": ENV_DISCORD_PREFIX + ENV_BOT_TOKEN_SUFFIX,
         },
     ]
 

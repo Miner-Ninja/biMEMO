@@ -11,6 +11,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from backend.constants import ENV_OLLAMA_NUM_CTX as ENV_VAR_NUM_CTX
 from backend.llm.capabilities import ContextDetectionError, LlmResponseFormat
 from backend.llm.capabilities_registry import CapabilitiesRegistry
 from backend.llm.compute_config import ComputeConfig, ComputeMode
@@ -20,7 +21,6 @@ from backend.llm.ollama.kv_detector import (
     SOURCE_PS,
 )
 from backend.llm.ollama.provider import (
-    ENV_VAR_NUM_CTX,
     SOURCE_ENV_OVERRIDE,
     SOURCE_UI_OVERRIDE,
     OllamaProvider,

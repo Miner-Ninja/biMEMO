@@ -13,6 +13,8 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.constants import ENV_RUNTIME_DIR
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,7 @@ MAX_TRACE_LIMIT = 500
 
 def _trace_path() -> str:
     """Return the trace file path inside the runtime directory."""
-    runtime_dir = os.environ.get("BIMEMO_RUNTIME_DIR", ".runtime")
+    runtime_dir = os.environ.get(ENV_RUNTIME_DIR, ".runtime")
     return os.path.join(runtime_dir, TRACE_FILE_NAME)
 
 

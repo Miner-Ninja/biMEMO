@@ -6,6 +6,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from backend.constants import BRIDGE_CHANNEL_PREFIX, EXTERNAL_CHAT_BRIDGE_SOURCE
 from backend.ipc.models import extract_image_urls, extract_text_content
 
 from .models import (
@@ -29,8 +30,6 @@ if TYPE_CHECKING:
 
 
 SAVE_MESSAGE_ROLE = "user"
-SAVE_MESSAGE_CHANNEL_PREFIX = "bridge:"
-EXTERNAL_MESSAGE_META_SOURCE = "external_chat_bridge"
 RECENT_OUTBOUND_SYNC_LIMIT = 6
 OUTBOUND_SYNC_ROLES = {"user", "assistant"}
 DEFAULT_WEB_DISPLAY_NAME = "Web User"
@@ -423,7 +422,7 @@ class ChatBridgeService:
                 "conversation_id": bridge_link.conversation_id,
                 "role": SAVE_MESSAGE_ROLE,
                 "content": message.content,
-                "channel": f"{SAVE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
+                "channel": f"{BRIDGE_CHANNEL_PREFIX}{message.provider.value}",
                 "meta": self._inbound_message_meta(message),
             },
         )
@@ -537,7 +536,7 @@ class ChatBridgeService:
         """Build stored metadata for one inbound external message."""
         return json.dumps(
             {
-                "source": EXTERNAL_MESSAGE_META_SOURCE,
+                "source": EXTERNAL_CHAT_BRIDGE_SOURCE,
                 "provider": message.provider.value,
                 "external_space_id": message.external_space_id,
                 "external_channel_id": message.external_channel_id,
@@ -693,7 +692,7 @@ class ChatBridgeService:
             payload = json.loads(meta)
         except json.JSONDecodeError:
             return False
-        return payload.get("source") == EXTERNAL_MESSAGE_META_SOURCE
+        return payload.get("source") == EXTERNAL_CHAT_BRIDGE_SOURCE
 
     @staticmethod
     def _meta_finalization_id(meta: object) -> str:

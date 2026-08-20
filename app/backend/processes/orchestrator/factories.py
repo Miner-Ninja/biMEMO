@@ -13,6 +13,8 @@ import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from backend.chat_bridge.models import BridgeProvider
+from backend.constants import BRIDGE_CHANNEL_PREFIX, UUID_NAMESPACE_MCP
 from backend.ipc.models import (
     McpAskRequest,
     McpAskResponse,
@@ -764,11 +766,11 @@ def make_mcp_ask_fn(db_client: DBProxyClient) -> Callable:
                 run_id=str(
                     uuid.uuid5(
                         uuid.NAMESPACE_URL,
-                        f"bimemo:mcp:{request.agent_id}:{request.request_id}",
+                        f"{UUID_NAMESPACE_MCP}{request.agent_id}:{request.request_id}",
                     )
                 ),
                 message=request.question,
-                channel="bridge:mcp",
+                channel=f"{BRIDGE_CHANNEL_PREFIX}{BridgeProvider.MCP.value}",
                 session_id=session_id,
                 conversation_id=conversation_id,
             )

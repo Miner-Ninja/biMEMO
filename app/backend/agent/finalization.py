@@ -12,6 +12,7 @@ from backend.agent.turn_state import (
     SatisfactionBind,
     ToolObligation,
 )
+from backend.constants import UUID_NAMESPACE_AGENT_TURN
 
 
 if TYPE_CHECKING:
@@ -306,7 +307,7 @@ def build_tool_obligations(
     requirements: ResponseRequirements,
 ) -> tuple[ToolObligation, ...]:
     """Create stable concrete evidence obligations for an enabled turn."""
-    namespace = uuid.uuid5(uuid.NAMESPACE_URL, f"bimemo-agent-turn:{run_id}")
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, f"{UUID_NAMESPACE_AGENT_TURN}{run_id}")
     obligations: list[ToolObligation] = []
     ordinal = 0
 

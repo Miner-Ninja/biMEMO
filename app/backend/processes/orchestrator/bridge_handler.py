@@ -11,6 +11,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING
 
+from backend.agent.turn_state import TurnOutcomeKind
 from backend.chat_bridge import (
     BridgeProvider,
     ChatBridgeService,
@@ -19,6 +20,11 @@ from backend.chat_bridge import (
 )
 from backend.chat_bridge.providers import (
     build_configured_providers,
+)
+from backend.constants import (
+    BRIDGE_CHANNEL_PREFIX,
+    EXTERNAL_CHAT_BRIDGE_SOURCE,
+    UUID_NAMESPACE_BRIDGE,
 )
 
 from .chat_handler import (
@@ -39,8 +45,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-BRIDGE_MESSAGE_CHANNEL_PREFIX = "bridge:"
-BRIDGE_MESSAGE_META_SOURCE = "external_chat_bridge"
 INTERNAL_FASTAPI_HOST = "127.0.0.1"
 
 
@@ -65,7 +69,7 @@ def _build_bridge_message_meta(
 ) -> dict[str, str]:
     """Build stored metadata for one inbound external bridge message."""
     return {
-        "source": BRIDGE_MESSAGE_META_SOURCE,
+        "source": EXTERNAL_CHAT_BRIDGE_SOURCE,
         "provider": message.provider.value,
         "external_space_id": message.external_space_id,
         "external_channel_id": message.external_channel_id,
@@ -131,22 +135,20 @@ async def _run_bridge_message_through_orchestrator(
     db_client: DBProxyClient,
 ) -> object:
     """Run one inbound bridge message through the normal chat path."""
+    bridge_source = f"{message.provider.value}:{message.external_message_id}"
     turn_id = str(
-        uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"bimemo:bridge:{message.provider.value}:{message.external_message_id}",
-        )
+        uuid.uuid5(uuid.NAMESPACE_URL, f"{UUID_NAMESPACE_BRIDGE}{bridge_source}")
     )
     await db_client.create_agent_turn(
         conversation_id=conversation_id,
         turn_id=turn_id,
         session_id=session_id,
-        channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
+        channel=f"{BRIDGE_CHANNEL_PREFIX}{message.provider.value}",
     )
     return await _run_orchestrator_message(
         orch=orch,
         message=message.content,
-        channel=f"{BRIDGE_MESSAGE_CHANNEL_PREFIX}{message.provider.value}",
+        channel=f"{BRIDGE_CHANNEL_PREFIX}{message.provider.value}",
         llm_call=llm_call,
         session_id=session_id,
         conversation_id=conversation_id,
@@ -183,7 +185,7 @@ async def _process_bridge_inbound_message(
     try:
         orch.save_fn = _build_bridge_capture_save_fn(
             original_save_fn=original_save_fn,
-            message_source=BRIDGE_MESSAGE_META_SOURCE,
+            message_source=EXTERNAL_CHAT_BRIDGE_SOURCE,
             captured_ids=captured_ids,
         )
         response = await _run_with_processing_state(
@@ -208,7 +210,7 @@ async def _process_bridge_inbound_message(
         raise RuntimeError("Bridge inbound sync did not persist the user message")
     structured = getattr(response, "structured_content", None)
     outcome = getattr(response, "outcome", None)
-    if outcome is not None and outcome.kind.value == "paused":
+    if outcome is not None and outcome.kind == TurnOutcomeKind.PAUSED:
         raise RuntimeError("Bridge turn is waiting for an interactive confirmation")
     response_text = structured.answer if structured is not None else ""
     response_message_id = getattr(response, "assistant_message_id", None)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -11,6 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from backend.common import canonical_json
+from backend.constants import TOOL_POLICY_VERSION
 from backend.tools.registry import (
     PermissionMode,
     PermissionReply,
@@ -49,13 +50,7 @@ def scope_hash(scope: dict[str, object]) -> str:
     db-proxy recomputation must all agree byte-for-byte, so every caller
     hashes through this function.
     """
-    canonical_scope = json.dumps(
-        scope,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
+    canonical_scope = canonical_json(scope)
     return hashlib.sha256(canonical_scope.encode()).hexdigest()
 
 
@@ -76,7 +71,7 @@ class ActionContext:
     session_id: str
     tool_name: str
     parameters: dict
-    tool_policy_version: str = "registry-v1"
+    tool_policy_version: str = TOOL_POLICY_VERSION
     prepared: PreparedInvocation | None = None
 
 
@@ -154,7 +149,7 @@ class ActionDecisionService:
         raise ValidationError("Permission decision requires a prepared invocation")
 
     def _decide_or_raise(self, context: ActionContext) -> ActionDecision:
-        if context.tool_policy_version != "registry-v1":
+        if context.tool_policy_version != TOOL_POLICY_VERSION:
             raise ValidationError("Unsupported tool policy version")
         prepared = self._prepared(context)
         params = dict(prepared.canonical_parameters)

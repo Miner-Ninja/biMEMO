@@ -59,6 +59,7 @@ from backend.agent.structured_finalization import (
 from backend.agent.tool_executor import ToolExecutor
 from backend.agent.turn_state import (
     ConfirmationStatus,
+    InvocationStatus,
     ObligationStatus,
     PendingInput,
     PendingInputStatus,
@@ -70,6 +71,7 @@ from backend.agent.turn_state import (
 from backend.agent.turn_state import (
     PendingConfirmation as TurnPendingConfirmation,
 )
+from backend.constants import TOOL_POLICY_VERSION
 from backend.ipc.models import build_multimodal_content
 from backend.llm.call_options import LLMCallOptions
 from backend.llm.capabilities import CapabilitySupport, LlmResponseFormat
@@ -1421,7 +1423,7 @@ class AgentOrchestrator:
                 if item.get("status") == "pending"
             ]
             canonical_decision = confirmation
-            if decision == "denied":
+            if decision == ConfirmationStatus.DENIED:
                 canonical_decision = await self.turn_store.decide_agent_confirmation(
                     confirmation_id,
                     decision,
@@ -1458,7 +1460,7 @@ class AgentOrchestrator:
                             ),
                             policy_revision=str(
                                 denied_policy.details.get(
-                                    "policy_revision", "registry-v1"
+                                    "policy_revision", TOOL_POLICY_VERSION
                                 )
                             ),
                             source="user_confirmation",
@@ -1487,7 +1489,7 @@ class AgentOrchestrator:
                     for item in canonical.get("confirmations", [])
                     if item.get("status") == "pending"
                 ]
-            if canonical_decision.get("status") == "expired":
+            if canonical_decision.get("status") == ConfirmationStatus.EXPIRED:
                 if pending_confirmations:
                     return self._paused_response_from_canonical(canonical, loop)
                 return await self._commit_structured_failure(
@@ -1498,7 +1500,9 @@ class AgentOrchestrator:
                     code="tool_confirmation_expired",
                     message="The requested action expired before it was approved.",
                 )
-            if decision == "denied" and not canonical_decision.get("changed"):
+            if decision == ConfirmationStatus.DENIED and not canonical_decision.get(
+                "changed"
+            ):
                 invocation_status = next(
                     (
                         str(item.get("status", ""))
@@ -1527,7 +1531,7 @@ class AgentOrchestrator:
                     "confirmation is already "
                     f"{canonical_decision.get('status', 'decided')}"
                 )
-            if decision == "denied":
+            if decision == ConfirmationStatus.DENIED:
                 if pending_confirmations:
                     return self._paused_response_from_canonical(canonical, loop)
                 return await self._commit_structured_failure(
@@ -1682,7 +1686,7 @@ class AgentOrchestrator:
                     permission.details.get("permission_mode", "per_invocation")
                 ),
                 policy_revision=str(
-                    permission.details.get("policy_revision", "registry-v1")
+                    permission.details.get("policy_revision", TOOL_POLICY_VERSION)
                 ),
                 source="user_confirmation",
                 authorization_id=confirmation_id,
@@ -1927,7 +1931,11 @@ class AgentOrchestrator:
         siblings = [item for item in invocations if item.get("batch_id") == batch_id]
         for sibling in siblings:
             status = str(sibling.get("status", ""))
-            if status in {"required", "pending_confirmation", "executing"}:
+            if status in {
+                InvocationStatus.REQUIRED,
+                InvocationStatus.PENDING_CONFIRMATION,
+                InvocationStatus.EXECUTING,
+            }:
                 continue
             payload = (
                 sibling.get("result")
@@ -2052,7 +2060,7 @@ class AgentOrchestrator:
     ) -> AgentResponse | None:
         """Return a replay response when a confirmation targets a terminal turn."""
         terminal = str(canonical.get("terminal_outcome") or "")
-        if terminal not in {"final", "failed"}:
+        if terminal not in {TurnOutcomeKind.FINAL, TurnOutcomeKind.FAILED}:
             return None
         payload = canonical.get("outcome_payload")
         data = payload if isinstance(payload, dict) else {}
@@ -2160,7 +2168,9 @@ class AgentOrchestrator:
                 "tool_policy_version": str(
                     (canonical_authority_turn or {}).get(
                         "tool_policy_version",
-                        str((meta or {}).get("tool_policy_version", "registry-v1")),
+                        str(
+                            (meta or {}).get("tool_policy_version", TOOL_POLICY_VERSION)
+                        ),
                     )
                 ),
                 "scheduled_task_id": str(

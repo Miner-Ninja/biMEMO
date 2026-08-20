@@ -15,6 +15,19 @@ from typing import TYPE_CHECKING, Any
 
 from backend.llm.kv_detector import HttpDetectorSpec
 
+# SOURCE_PS aliases capabilities' SOURCE_RUNTIME for this module's tests.
+from backend.llm.ollama.capabilities import (
+    GENERATE_ENDPOINT,
+    PS_ENDPOINT,
+    SHOW_ENDPOINT,
+    WARMUP_KEEP_ALIVE,
+    WARMUP_PROMPT,
+    WARMUP_STREAM,
+)
+from backend.llm.ollama.capabilities import (
+    SOURCE_RUNTIME as SOURCE_PS,
+)
+
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -24,19 +37,6 @@ if TYPE_CHECKING:
 
 # --- Provider identity ---
 OLLAMA_PROVIDER_NAME = "ollama"
-
-# --- Endpoint paths ---
-PS_ENDPOINT = "/api/ps"
-GENERATE_ENDPOINT = "/api/generate"
-SHOW_ENDPOINT = "/api/show"
-
-# --- Source identifier stamped on resolved capabilities ---
-SOURCE_PS = "ollama:/api/ps"
-
-# --- Warmup request shape ---
-WARMUP_KEEP_ALIVE = "5m"
-WARMUP_PROMPT = ""
-WARMUP_STREAM = False
 
 
 def _extract_ollama(body: dict[str, Any], model: str) -> int | None:

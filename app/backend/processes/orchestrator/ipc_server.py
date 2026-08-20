@@ -9,6 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from backend.chat_bridge.service_models import ChatBridgeSyncSkippedError
+from backend.common import await_maybe
 from backend.ipc.ipc_channel import IPCSocketServer
 from backend.ipc.models import (
     BridgeInboundSyncRequest,
@@ -459,20 +460,12 @@ class OrchestratorIPCServer:
         error_text: str,
     ) -> None:
         """Persist one fallback assistant error response through the save callback."""
-        if inspect.iscoroutinefunction(self._save_error_response_fn):
-            await self._save_error_response_fn(
-                conversation_id,
-                "assistant",
-                error_text,
-            )
-            return
-        result = self._save_error_response_fn(
+        await await_maybe(
+            self._save_error_response_fn,
             conversation_id,
             "assistant",
             error_text,
         )
-        if inspect.isawaitable(result):
-            await result
 
     async def _handle_stop(self, request: StopRequest) -> StopResponse:
         """Cancel the active agentic loop.

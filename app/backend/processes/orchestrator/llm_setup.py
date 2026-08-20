@@ -11,6 +11,8 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
+from backend.constants import ENV_LLM_PROVIDER
+
 from .factories import (
     make_evidence_bundle_fn,
     make_graph_facts_fn,
@@ -244,7 +246,7 @@ async def _init_llm(
 
 def _build_llm_service_lookup_order() -> list[str]:
     """Return the provider lookup order, with env override first when set."""
-    env_provider = os.environ.get("BIMEMO_LLM_PROVIDER")
+    env_provider = os.environ.get(ENV_LLM_PROVIDER)
     llm_service_types = ["openrouter", "ollama", "custom"]
     if env_provider and env_provider in llm_service_types:
         llm_service_types.remove(env_provider)

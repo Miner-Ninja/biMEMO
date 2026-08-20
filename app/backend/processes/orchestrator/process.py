@@ -11,9 +11,10 @@ import asyncio
 import contextlib
 import inspect
 import logging
-import signal
 from typing import TYPE_CHECKING
 
+from backend.agent.turn_state import ConfirmationStatus
+from backend.common import resolve_user_timezone, wait_for_sigterm
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import (
     ConfirmRequest,
@@ -32,7 +33,6 @@ from .ipc_server import OrchestratorIPCServer
 from .process_helpers import (
     init_stt_client,
     init_tts_client,
-    resolve_user_tz,
 )
 from .process_models import (
     RuntimeServices,
@@ -183,7 +183,7 @@ async def _load_runtime_user_context(
 ) -> tuple[dict[str, str], object]:
     """Load the runtime user profile and resolve its timezone."""
     user_profile = await db_client.get_user_profile()
-    return user_profile, resolve_user_tz(user_profile)
+    return user_profile, resolve_user_timezone(user_profile)
 
 
 def _build_runtime_media_services(
@@ -334,7 +334,11 @@ def _build_confirm_handler(
         try:
             core_response = await orch.resume_structured_confirmation(
                 confirmation_id=request.action_id,
-                decision="approved" if request.decision == "approve" else "denied",
+                decision=(
+                    ConfirmationStatus.APPROVED
+                    if request.decision == "approve"
+                    else ConfirmationStatus.DENIED
+                ),
                 scope=request.scope,
                 llm_call=get_llm_call(),
             )
@@ -454,14 +458,6 @@ async def _push_confirmation_event(
             },
         )
     )
-
-
-async def _wait_for_sigterm() -> None:
-    """Wait until the process receives SIGTERM."""
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGTERM, stop_event.set)
-    await stop_event.wait()
 
 
 async def _cancel_background_tasks(
@@ -971,7 +967,7 @@ def orchestrator_main(
         telegram_bot, discord_bot = await _start_runtime_messenger_bots(
             startup=startup,
         )
-        await _wait_for_sigterm()
+        await wait_for_sigterm()
         await _shutdown_orchestrator_runtime(
             telegram_bot=telegram_bot,
             discord_bot=discord_bot,

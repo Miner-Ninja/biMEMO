@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-import signal
 
+from backend.common import wait_for_sigterm
 from backend.ipc.ipc_channel import IPCSocketClient, IPCSocketServer
 from backend.ipc.models import DBOperation, DBResult
 
@@ -43,14 +43,6 @@ def _db_error_result(request_id: str, message: str) -> DBResult:
 def _is_allowed_credential_operation(operation: str) -> bool:
     """Return whether one DB operation may pass through the credential proxy."""
     return operation in CREDENTIAL_OPERATIONS
-
-
-async def _wait_for_sigterm() -> None:
-    """Wait until the process receives SIGTERM."""
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGTERM, stop_event.set)
-    await stop_event.wait()
 
 
 def credential_proxy_main(
@@ -113,7 +105,7 @@ def credential_proxy_main(
             credential_socket_path,
             db_socket_c_path,
         )
-        await _wait_for_sigterm()
+        await wait_for_sigterm()
 
         await server.stop()
         await db_client.close()

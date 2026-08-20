@@ -10,14 +10,13 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-import httpx
-
 from backend.agent.conversation_settings import (
     read_suggestions_enabled,
     read_thinking_enabled,
 )
+from backend.agent.turn_state import PendingInputStatus, TurnArchitecture
 from backend.config import get_settings
-from backend.ipc.ipc_channel import IPCChannelError
+from backend.constants import TOOL_POLICY_VERSION
 from backend.ipc.models import (
     ChatRequest,
     ChatResponse,
@@ -35,6 +34,10 @@ from backend.processes.orchestrator.run_event_recorder import (
     RunEventContext,
     RunEventRecorder,
 )
+from backend.recoverable_errors import (
+    RECOVERABLE_AUDIT_ERRORS,
+    RECOVERABLE_TRANSCRIPTION_ERRORS,
+)
 from backend.security.policy import get_policy
 from backend.tools.handlers.registration import confirmation_button_extras
 
@@ -50,13 +53,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-RECOVERABLE_TRANSCRIPTION_ERRORS = (
-    RuntimeError,
-    ValueError,
-    OSError,
-    httpx.HTTPError,
-)
-RECOVERABLE_AUDIT_ERRORS = (RuntimeError, IPCChannelError, TypeError, ValueError)
 DEFAULT_CONVERSATION_PROCESSING_STAGE = "Processing..."
 
 STREAM_EVENT_TYPE_BY_VALUE = {
@@ -659,7 +655,7 @@ async def _run_prepared_chat_request(
     message: str,
     transcription: str | None,
     agent_run_id: str = "",
-    tool_policy_version: str = "registry-v1",
+    tool_policy_version: str = TOOL_POLICY_VERSION,
     pending_input_resume: dict[str, object] | None = None,
 ) -> ChatResponse:
     """Run one already-prepared chat message through the orchestrator."""
@@ -841,7 +837,7 @@ async def _run_chat_request_with_prepared_message(
     get_agent_turn = getattr(db_client, "get_agent_turn", None)
     create_agent_turn = getattr(db_client, "create_agent_turn", None)
     if not callable(get_agent_turn) or not callable(create_agent_turn):
-        raise RuntimeError("registry-v1 core authority is unavailable")
+        raise RuntimeError(f"{TOOL_POLICY_VERSION} core authority is unavailable")
     existing_core = await get_agent_turn(request.run_id) if request.run_id else None
     if existing_core is None and not request.pending_input_id:
         permission_reply = await _maybe_handle_permission_reply(
@@ -945,7 +941,7 @@ async def _run_chat_request_with_prepared_message(
                     )
                 }
             )
-        if pending_input_resume.get("status") != "answered":
+        if pending_input_resume.get("status") != PendingInputStatus.ANSWERED:
             return await _commit_core_request_failure(
                 db_client=db_client,
                 request=request,
@@ -962,10 +958,12 @@ async def _run_chat_request_with_prepared_message(
             )
             if replay is not None:
                 return replay
-    pinned_tool_policy_version = str(turn.get("tool_policy_version", "registry-v1"))
+    pinned_tool_policy_version = str(
+        turn.get("tool_policy_version", TOOL_POLICY_VERSION)
+    )
     if run_event_context is not None:
         run_event_context.run_id = agent_run_id
-        run_event_context.architecture_version = "structured_v1"
+        run_event_context.architecture_version = TurnArchitecture.STRUCTURED_V1
     if run_event_recorder is not None:
         await run_event_recorder.record(
             AgentRunEventType.RUN_STARTED,

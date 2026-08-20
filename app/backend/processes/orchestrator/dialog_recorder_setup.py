@@ -8,9 +8,7 @@ support, and wires scheduling hooks into the gateway orchestrator.
 import logging
 from typing import TYPE_CHECKING, Protocol
 
-import httpx
-
-from backend.ipc.ipc_channel import IPCChannelError
+from backend.recoverable_errors import RECOVERABLE_EMBEDDING_ERRORS
 
 
 if TYPE_CHECKING:
@@ -22,12 +20,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-RECOVERABLE_EMBEDDING_ERRORS = (
-    RuntimeError,
-    ValueError,
-    IPCChannelError,
-    httpx.HTTPError,
-)
 CUSTOM_API_PREFIX = "/v1"
 S_ZONE_COMPRESSION_TEMPERATURE = 0.1
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 
 if TYPE_CHECKING:
@@ -42,18 +41,6 @@ def parse_optional_int(raw_value: object) -> int | None:
             "Ignoring invalid integer config value: %r",
             raw_value,
         )
-        return None
-
-
-def resolve_user_tz(profile: dict[str, str]) -> ZoneInfo | None:
-    """Extract ZoneInfo from user profile, or None if invalid/missing."""
-    tz_name = profile.get("timezone", "")
-    if not tz_name:
-        return None
-    try:
-        return ZoneInfo(tz_name)
-    except KeyError, ValueError:
-        logger.warning("Invalid timezone in user profile: %r", tz_name)
         return None
 
 

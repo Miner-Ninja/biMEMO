@@ -3,6 +3,8 @@
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from backend.constants import PENDING_LINK_PREFIX
+
 from ..common import OperationHandler, validate_params
 from ..params import (
     ClaimChatBridgeFinalizationParams,
@@ -377,7 +379,7 @@ def make_claim_chat_bridge_finalization_handler(
                 mapping_id,
                 p.bridge_link_id,
                 p.message_id,
-                f"pending:{p.finalization_id}",
+                f"{PENDING_LINK_PREFIX}{p.finalization_id}",
                 p.direction,
                 p.finalization_id,
             ),
@@ -411,7 +413,7 @@ def make_complete_chat_bridge_finalization_handler(
                 p.external_message_id,
                 p.bridge_link_id,
                 p.finalization_id,
-                f"pending:{p.finalization_id}",
+                f"{PENDING_LINK_PREFIX}{p.finalization_id}",
             ),
         )
         db.commit()

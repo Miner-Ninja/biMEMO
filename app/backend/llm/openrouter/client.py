@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from backend.constants import ENV_OPENROUTER_NUM_CTX
 from backend.llm.openai_compatible.client import (
     DEFAULT_OPENAI_API_PREFIX as DEFAULT_OPENROUTER_API_PREFIX,
 )
@@ -21,7 +22,6 @@ from backend.llm.openai_compatible.client import (
 )
 
 
-ENV_VAR_OPENROUTER_NUM_CTX = "BIMEMO_OPENROUTER_NUM_CTX"
 SOURCE_OPENROUTER_MODELS = "openrouter:/models"
 
 
@@ -30,7 +30,7 @@ class OpenRouterClient(OpenAICompatibleClient):
     """OpenRouter-specific adapter for the shared OpenAI-compatible client."""
 
     name: ClassVar[str] = "openrouter"
-    env_override_names: ClassVar[tuple[str, ...]] = (ENV_VAR_OPENROUTER_NUM_CTX,)
+    env_override_names: ClassVar[tuple[str, ...]] = (ENV_OPENROUTER_NUM_CTX,)
     models_source: ClassVar[str] = SOURCE_OPENROUTER_MODELS
     base_url: str = "https://openrouter.ai"
 
@@ -42,7 +42,6 @@ __all__ = [
     "DEFAULT_OPENAI_COMPAT_CONTEXT_TOKENS",
     "DEFAULT_OPENROUTER_API_PREFIX",
     "EMPTY_LLM_RESPONSE_WARNING",
-    "ENV_VAR_OPENROUTER_NUM_CTX",
     "SOURCE_ENV_OVERRIDE",
     "SOURCE_OPENROUTER_MODELS",
     "SOURCE_PROVIDER_DEFAULT",

@@ -322,8 +322,8 @@ def _db_proxy_target(
         startup_password: Optional manual startup password kept in process memory.
     """
     import logging
-    import signal
 
+    from backend.common import wait_for_sigterm
     from backend.config import get_settings
     from backend.ipc.models import DBOperation, DBResult
     from backend.logging_config import configure_logging
@@ -395,10 +395,7 @@ def _db_proxy_target(
             )
         )
 
-        stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGTERM, stop_event.set)
-        await stop_event.wait()
+        await wait_for_sigterm()
 
         backup_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

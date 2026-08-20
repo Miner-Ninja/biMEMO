@@ -23,6 +23,23 @@ class TurnArchitecture(StrEnum):
     STRUCTURED_V1 = "structured_v1"
 
 
+class TurnLifecycleStatus(StrEnum):
+    """Persisted lifecycle status of an agent turn (default, paused, terminal).
+
+    In-memory in-flight substates (such as ``tool_execution``,
+    ``tool_loop``) belong to the agent-turn state machine, not this set.
+    """
+
+    PREPARED = "prepared"
+    RUNNING = "running"
+    PAUSED = "paused"
+    FINAL = "final"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+
+
 class TurnOutcomeKind(StrEnum):
     """Closed set of externally observable turn outcomes."""
 
@@ -350,6 +367,7 @@ __all__ = [
     "ToolObligation",
     "TurnArchitecture",
     "TurnCounters",
+    "TurnLifecycleStatus",
     "TurnOutcome",
     "TurnOutcomeKind",
     "arguments_hash",

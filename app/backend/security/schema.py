@@ -6,14 +6,34 @@ summaries. All tables use foreign keys with cascade delete for
 secure data removal. Schema is applied via DatabaseManager after
 successful unlock.
 """
+# ruff: noqa: S608
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from backend.agent.turn_state import (
+    AuthorityStore,
+    ClarificationStatus,
+    ConfirmationStatus,
+    InvocationStatus,
+    ObligationStatus,
+    PendingInputStatus,
+    TurnArchitecture,
+    TurnLifecycleStatus,
+    TurnOutcomeKind,
+)
+from backend.constants import TOOL_POLICY_VERSION
+
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
+
+
+def _sql_in_list(enum_cls: type) -> str:
+    """Return a quoted, comma-separated SQL IN-list from one enum's values."""
+    return ", ".join(f"'{member.value}'" for member in enum_cls)
+
 
 # --- Schema version ---
 SCHEMA_VERSION = 24
@@ -498,20 +518,21 @@ CREATE INDEX IF NOT EXISTS idx_capability_grants_lookup
 ON capability_grants(scope_type, scope_value, capability, channel, expires_at)
 """
 
-CREATE_AGENT_TURNS_TABLE = """
+CREATE_AGENT_TURNS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_turns (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
     channel TEXT NOT NULL,
     architecture_version TEXT NOT NULL
-        CHECK (architecture_version IN ('legacy', 'structured_v1')),
-    tool_policy_version TEXT NOT NULL DEFAULT 'registry-v1',
-    authority_store TEXT NOT NULL CHECK (authority_store IN ('core', 'runtime')),
-    status TEXT NOT NULL DEFAULT 'prepared',
+        CHECK (architecture_version IN ({_sql_in_list(TurnArchitecture)})),
+    tool_policy_version TEXT NOT NULL DEFAULT '{TOOL_POLICY_VERSION}',
+    authority_store TEXT NOT NULL
+        CHECK (authority_store IN ({_sql_in_list(AuthorityStore)})),
+    status TEXT NOT NULL DEFAULT '{TurnLifecycleStatus.PREPARED.value}',
     terminal_outcome TEXT CHECK (
         terminal_outcome IS NULL OR
-        terminal_outcome IN ('final', 'paused', 'failed', 'cancelled')
+        terminal_outcome IN ({_sql_in_list(TurnOutcomeKind)})
     ),
     finalization_id TEXT NOT NULL UNIQUE,
     active_time_ms INTEGER NOT NULL DEFAULT 0,
@@ -528,7 +549,7 @@ CREATE TABLE IF NOT EXISTS agent_turns (
 )
 """
 
-CREATE_AGENT_TOOL_OBLIGATIONS_TABLE = """
+CREATE_AGENT_TOOL_OBLIGATIONS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_tool_obligations (
     id TEXT PRIMARY KEY,
     turn_id TEXT NOT NULL,
@@ -537,7 +558,7 @@ CREATE TABLE IF NOT EXISTS agent_tool_obligations (
     evidence_key TEXT NOT NULL DEFAULT '',
     argument_predicate TEXT,
     status TEXT NOT NULL DEFAULT 'open'
-        CHECK (status IN ('open', 'satisfied', 'closed')),
+        CHECK (status IN ({_sql_in_list(ObligationStatus)})),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
@@ -555,7 +576,7 @@ CREATE TABLE IF NOT EXISTS agent_tool_batches (
 )
 """
 
-CREATE_AGENT_TOOL_INVOCATIONS_TABLE = """
+CREATE_AGENT_TOOL_INVOCATIONS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_tool_invocations (
     id TEXT PRIMARY KEY,
     turn_id TEXT NOT NULL,
@@ -564,12 +585,11 @@ CREATE TABLE IF NOT EXISTS agent_tool_invocations (
     tool_name TEXT NOT NULL,
     canonical_arguments TEXT NOT NULL,
     canonical_args_hash TEXT NOT NULL,
-    policy_revision TEXT NOT NULL DEFAULT 'registry-v1',
+    policy_revision TEXT NOT NULL DEFAULT '{TOOL_POLICY_VERSION}',
     evidence_key TEXT,
     source TEXT NOT NULL DEFAULT 'model',
     status TEXT NOT NULL DEFAULT 'required' CHECK (status IN (
-        'required', 'pending_confirmation', 'executing', 'succeeded',
-        'failed', 'denied', 'expired', 'unknown'
+        {_sql_in_list(InvocationStatus)}
     )),
     claim_generation INTEGER NOT NULL DEFAULT 0,
     idempotency_key TEXT,
@@ -607,13 +627,13 @@ CREATE TABLE IF NOT EXISTS agent_obligation_binds (
 )
 """
 
-CREATE_AGENT_CONFIRMATIONS_TABLE = """
+CREATE_AGENT_CONFIRMATIONS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_confirmations (
     id TEXT PRIMARY KEY,
     turn_id TEXT NOT NULL,
     invocation_id TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'approved', 'denied', 'expired')),
+        CHECK (status IN ({_sql_in_list(ConfirmationStatus)})),
     title TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     expires_at TEXT NOT NULL,
@@ -624,21 +644,21 @@ CREATE TABLE IF NOT EXISTS agent_confirmations (
 )
 """
 
-CREATE_AGENT_CLARIFICATIONS_TABLE = """
+CREATE_AGENT_CLARIFICATIONS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_clarifications (
     id TEXT PRIMARY KEY,
     turn_id TEXT NOT NULL,
     proposed_tool TEXT NOT NULL,
     reason TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'accepted', 'rejected', 'expired')),
+        CHECK (status IN ({_sql_in_list(ClarificationStatus)})),
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     FOREIGN KEY (turn_id) REFERENCES agent_turns(id) ON DELETE CASCADE
 )
 """
 
-CREATE_AGENT_PENDING_INPUTS_TABLE = """
+CREATE_AGENT_PENDING_INPUTS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_pending_inputs (
     id TEXT PRIMARY KEY,
     turn_id TEXT NOT NULL,
@@ -647,7 +667,7 @@ CREATE TABLE IF NOT EXISTS agent_pending_inputs (
     expected_input_schema TEXT NOT NULL,
     transcript_snapshot TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'answered', 'expired')),
+        CHECK (status IN ({_sql_in_list(PendingInputStatus)})),
     cas_version INTEGER NOT NULL DEFAULT 1,
     answer_payload TEXT,
     expires_at TEXT NOT NULL,
@@ -969,7 +989,7 @@ def _ensure_capability_grants_schema(db: DatabaseManager) -> None:
     db.execute(
         "UPDATE capability_grants SET revoked_at = "
         "COALESCE(revoked_at, strftime('%Y-%m-%dT%H:%M:%f', 'now')) "
-        "WHERE policy_revision IS NULL OR policy_revision != 'registry-v1'"
+        f"WHERE policy_revision IS NULL OR policy_revision != '{TOOL_POLICY_VERSION}'"
     )
 
 
@@ -983,7 +1003,7 @@ def _ensure_agent_turns_schema(db: DatabaseManager) -> None:
         "terminal_error = 'Turn retired during tool-policy migration', "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE (tool_policy_version IS NULL "
-        "OR tool_policy_version != 'registry-v1') "
+        f"OR tool_policy_version != '{TOOL_POLICY_VERSION}') "
         "AND (terminal_outcome IS NULL OR terminal_outcome = 'paused')"
     )
     db.execute(
@@ -991,13 +1011,13 @@ def _ensure_agent_turns_schema(db: DatabaseManager) -> None:
         "decided_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE status = 'pending' AND turn_id IN ("
         "SELECT id FROM agent_turns WHERE tool_policy_version IS NULL "
-        "OR tool_policy_version != 'registry-v1')"
+        f"OR tool_policy_version != '{TOOL_POLICY_VERSION}')"
     )
     invocation_columns = _table_columns(db, "agent_tool_invocations")
     if "policy_revision" not in invocation_columns:
         db.execute(
             "ALTER TABLE agent_tool_invocations ADD COLUMN "
-            "policy_revision TEXT NOT NULL DEFAULT 'registry-v1'"
+            f"policy_revision TEXT NOT NULL DEFAULT '{TOOL_POLICY_VERSION}'"
         )
 
 

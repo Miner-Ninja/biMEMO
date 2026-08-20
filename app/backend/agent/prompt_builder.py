@@ -8,22 +8,21 @@ user message content.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from backend.agent.agent_loop_helpers import (
     context_contains_active_long_term_preference,
     message_allows_file_read_tools,
     message_allows_file_write_tool,
 )
+from backend.common import await_maybe, resolve_user_timezone
 from backend.memory.evidence_recall import (
     build_evidence_recall_context,
     is_evidence_recall_question,
 )
-from backend.processes.orchestrator.client import DBProxyError
+from backend.recoverable_errors import RECOVERABLE_MEMORY_CALLBACK_ERRORS
 from backend.security.policy import get_policy
 from backend.security.provenance import PROVENANCE_SYSTEM_PROMPT
 
@@ -59,12 +58,6 @@ MEMORY_META_GUARDRAIL = (
     "already retrieved durable answer-style preference. Do not conclude that "
     "a new style was session-only unless the retrieved memory explicitly says "
     "the preference was temporary."
-)
-RECOVERABLE_MEMORY_CALLBACK_ERRORS = (
-    DBProxyError,
-    RuntimeError,
-    TypeError,
-    ValueError,
 )
 
 
@@ -255,16 +248,7 @@ class PromptBuilder:
             Formatted datetime string like
             ``Current datetime: 2026-03-10T14:30+03:00``.
         """
-        tz_name = self.user_profile.get("timezone", "")
-        tz = UTC
-        if tz_name:
-            try:
-                tz = ZoneInfo(tz_name)
-            except KeyError, ValueError:
-                logger.warning(
-                    "Invalid timezone in user profile: %r, using UTC",
-                    tz_name,
-                )
+        tz = resolve_user_timezone(self.user_profile) or UTC
 
         now = datetime.now(tz)
         return "Current datetime: " + now.strftime("%Y-%m-%d %H:%M:%S%z")
@@ -418,12 +402,10 @@ class PromptBuilder:
         ):
             return None
         try:
-            if inspect.iscoroutinefunction(self.evidence_bundle_fn):
-                evidence_bundle = await self.evidence_bundle_fn(
-                    filtered_message,
-                )
-            else:
-                evidence_bundle = self.evidence_bundle_fn(filtered_message)
+            evidence_bundle = await await_maybe(
+                self.evidence_bundle_fn,
+                filtered_message,
+            )
             if evidence_bundle is None or (
                 not evidence_bundle.records and not evidence_bundle.source_messages
             ):

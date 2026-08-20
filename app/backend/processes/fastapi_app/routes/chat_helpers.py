@@ -17,6 +17,7 @@ import httpx
 from fastapi import BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from backend.constants import CHANNEL_WEB
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import ChatRequest as IPCChatRequest
 from backend.ipc.models import ChatResponse as IPCChatResponse
@@ -205,7 +206,7 @@ def build_ipc_chat_request(
         request_id=str(uuid.uuid4()),
         run_id=body.run_id or str(uuid.uuid4()),
         message=chat_input_context.message,
-        channel="web",
+        channel=CHANNEL_WEB,
         session_id=claims.jti,
         conversation_id=conversation_id,
         images=chat_input_context.images,

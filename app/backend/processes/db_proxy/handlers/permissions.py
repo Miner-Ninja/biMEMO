@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
 
+from backend.agent.turn_state import InvocationStatus, TurnLifecycleStatus
+from backend.common import canonical_json
 from backend.security.runtime_schema import prune_runtime_state
 
 from ..common import OperationHandler, validate_params
@@ -381,13 +383,7 @@ def make_authorize_agent_invocation_handler(
                 raise PermissionError("authorization policy revision mismatch")
             if invocation[5] not in (None, "paused"):
                 raise RuntimeError("terminal turn cannot dispatch another invocation")
-            canonical_scope = json.dumps(
-                p.scope_json,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
+            canonical_scope = canonical_json(p.scope_json)
             canonical_hash = hashlib.sha256(canonical_scope.encode("utf-8")).hexdigest()
             if canonical_hash != p.scope_hash:
                 raise PermissionError("grant scope hash does not match scope payload")
@@ -408,7 +404,9 @@ def make_authorize_agent_invocation_handler(
                     "claim_generation": invocation[1],
                 }
             expected_status = (
-                "pending_confirmation" if p.confirmation_id is not None else "required"
+                InvocationStatus.PENDING_CONFIRMATION
+                if p.confirmation_id is not None
+                else InvocationStatus.REQUIRED
             )
             if invocation[0] != expected_status:
                 raise RuntimeError(f"invocation cannot be claimed from {invocation[0]}")
@@ -588,11 +586,11 @@ def make_project_agent_turn_event_handler(db: DatabaseManager) -> OperationHandl
         # Mirror the turn's lifecycle onto the projected run row so the
         # trace list shows real states instead of a constant 'projection'.
         projected_status = {
-            "run_started": "running",
-            "run_paused": "paused",
-            "final_accepted": "final",
-            "run_failed": "failed",
-            "run_cancelled": "cancelled",
+            "run_started": TurnLifecycleStatus.RUNNING,
+            "run_paused": TurnLifecycleStatus.PAUSED,
+            "final_accepted": TurnLifecycleStatus.FINAL,
+            "run_failed": TurnLifecycleStatus.FAILED,
+            "run_cancelled": TurnLifecycleStatus.CANCELLED,
         }.get(p.event_type)
         if projected_status is not None:
             db.execute(

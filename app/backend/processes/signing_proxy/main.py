@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import time
 import uuid
 from typing import TYPE_CHECKING
@@ -14,6 +13,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from backend.common import wait_for_sigterm
+from backend.constants import ENV_ADMIN_PASSWORD
 from backend.ipc.ipc_channel import IPCSocketClient, IPCSocketServer
 from backend.ipc.models import DBOperation, DBResult
 
@@ -150,7 +151,7 @@ def _legacy_admin_secret_source() -> object | None:
     """Return the legacy admin secret source when configured."""
     from backend.security.startup_password import StartupPasswordSource
 
-    admin_secret = os.environ.get("BIMEMO_ADMIN_PASSWORD")
+    admin_secret = os.environ.get(ENV_ADMIN_PASSWORD)
     if not admin_secret:
         return None
     return StartupPasswordSource(
@@ -326,14 +327,6 @@ async def _start_signing_server(
         signing_socket_path,
     )
     return server
-
-
-async def _wait_for_sigterm() -> None:
-    """Block until the process receives SIGTERM."""
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGTERM, stop_event.set)
-    await stop_event.wait()
 
 
 def _build_result(
@@ -549,7 +542,7 @@ def signing_proxy_main(
             signing_handler,
             type_map,
         )
-        await _wait_for_sigterm()
+        await wait_for_sigterm()
         await server.stop()
         await db_client.close()
 

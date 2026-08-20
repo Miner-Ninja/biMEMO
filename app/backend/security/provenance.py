@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+from backend.common import canonical_json
+
 
 MAX_TOOL_RESULT_BYTES = 65536
 
@@ -41,18 +43,14 @@ def serialize_tool_result(
             default=str,
         )
     bounded, truncated, original_bytes = _truncate_utf8(text, max_data_bytes)
-    return json.dumps(
+    return canonical_json(
         {
             "source": tool_name,
             "invocation_id": invocation_id,
             "data": bounded,
             "truncated": truncated,
             "original_bytes": original_bytes,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
+        }
     )
 
 

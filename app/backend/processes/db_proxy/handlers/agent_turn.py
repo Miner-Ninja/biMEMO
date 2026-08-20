@@ -7,7 +7,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from backend.agent.turn_state import arguments_hash
+from backend.agent.turn_state import InvocationStatus, arguments_hash
+from backend.common import canonical_json
 
 from ..common import OperationHandler, validate_params
 from ..params import (
@@ -46,13 +47,7 @@ def _id() -> str:
 
 
 def _json(value: object) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
+    return canonical_json(value)
 
 
 def _load_json(value: str | None, fallback: object) -> object:
@@ -557,18 +552,19 @@ def make_claim_agent_invocation_handler(db: DatabaseManager) -> OperationHandler
             ).fetchone()
             if row is None:
                 raise ValueError("unknown invocation")
-            if row[0] == "executing" and row[2] == p.idempotency_key:
+            if row[0] == InvocationStatus.EXECUTING and row[2] == p.idempotency_key:
                 db.commit()
                 return {
                     "claimed": False,
                     "status": row[0],
                     "claim_generation": row[1],
                 }
-            if row[0] != "required":
+            if row[0] != InvocationStatus.REQUIRED:
                 raise RuntimeError(f"invocation cannot be claimed from {row[0]}")
             generation = int(row[1]) + 1
             db.execute(
-                "UPDATE agent_tool_invocations SET status = 'executing', "
+                "UPDATE agent_tool_invocations "  # noqa: S608 — fixed fragment
+                f"SET status = '{InvocationStatus.EXECUTING}', "
                 "claim_generation = ?, idempotency_key = ?, updated_at = "
                 "strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ? AND turn_id = ?",
                 (generation, p.idempotency_key, p.invocation_id, p.turn_id),

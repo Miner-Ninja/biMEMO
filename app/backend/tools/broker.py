@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError as PydanticError
 
+from backend.common import canonical_json
+from backend.constants import TOOL_POLICY_VERSION
 from backend.tools.rate_limits import PersistentRateLimiter, ToolRateLimiter
 
 
@@ -105,7 +107,7 @@ class ToolResult:
     duration_ms: float
     authorization: AuthorizationContext = field(
         default_factory=lambda: AuthorizationContext(
-            "implicit", "registry-v1", "unspecified"
+            "implicit", TOOL_POLICY_VERSION, "unspecified"
         )
     )
 
@@ -461,13 +463,7 @@ class ToolBroker:
                 canonical_parameters[path_argument] = str(
                     Path(raw_workspace).expanduser().resolve(strict=False)
                 )
-        canonical_json = json.dumps(
-            canonical_parameters,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
+        canonical_text = canonical_json(canonical_parameters)
         frozen_parameters = _freeze_json(canonical_parameters)
         if not isinstance(frozen_parameters, MappingProxyType):
             raise ToolBrokerError("Canonical tool input must be an object")
@@ -480,8 +476,8 @@ class ToolBroker:
             definition=tool_def,
             typed_input=immutable_input,
             canonical_parameters=frozen_parameters,
-            canonical_json=canonical_json,
-            canonical_hash=hashlib.sha256(canonical_json.encode("utf-8")).hexdigest(),
+            canonical_json=canonical_text,
+            canonical_hash=hashlib.sha256(canonical_text.encode("utf-8")).hexdigest(),
         )
 
     def restore_prepared(

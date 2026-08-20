@@ -66,7 +66,6 @@ EMPTY_LLM_RESPONSE_WARNING = (
 )
 
 # --- Capability sources for OpenAI-compatible providers ---
-ENV_VAR_CUSTOM_NUM_CTX = "BIMEMO_CUSTOM_NUM_CTX"
 SOURCE_ENV_OVERRIDE = "env-override"
 SOURCE_UI_OVERRIDE = "ui-override"
 SOURCE_CUSTOM_MODELS = "custom_llm:/v1/models"

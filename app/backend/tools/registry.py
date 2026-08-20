@@ -9,6 +9,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from backend.constants import TOOL_POLICY_VERSION
+
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -53,7 +55,7 @@ class PermissionPolicy:
     """Versioned declarative permission policy owned by backend code."""
 
     mode: PermissionMode | None
-    revision: str = "registry-v1"
+    revision: str = TOOL_POLICY_VERSION
     scope: PermissionScope = PermissionScope.NONE
     reply: PermissionReply = PermissionReply.NONE
     scope_argument: str = ""

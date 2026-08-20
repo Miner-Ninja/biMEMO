@@ -8,7 +8,6 @@ persistence. Works with both sync and async context callables.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import TYPE_CHECKING
 
@@ -16,6 +15,7 @@ from backend.agent.agent_loop_models import (
     MemoryRouteDecision,
     PreparedContext,
 )
+from backend.common import await_maybe
 from backend.memory.classification.fallback_classifier import (
     classify_memory_question_with_llm_call,
 )
@@ -31,7 +31,7 @@ from backend.memory.classification.trace import (
     MemoryQuestionRouteTrace,
 )
 from backend.memory.context_builder import ContextResult
-from backend.processes.orchestrator.client import DBProxyError
+from backend.recoverable_errors import RECOVERABLE_MEMORY_CALLBACK_ERRORS
 
 
 if TYPE_CHECKING:
@@ -39,14 +39,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-# --- Recoverable errors for memory callbacks ---
-RECOVERABLE_MEMORY_CALLBACK_ERRORS = (
-    DBProxyError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-)
 
 
 class MemoryContextLoader:
@@ -100,13 +92,8 @@ class MemoryContextLoader:
         conversation_id: str,
     ) -> object:
         """Load one raw context payload from the configured context source."""
-        if inspect.iscoroutinefunction(self.context_fn):
-            return await self.context_fn(
-                session_id,
-                query=filtered_message,
-                conversation_id=conversation_id,
-            )
-        return self.context_fn(
+        return await await_maybe(
+            self.context_fn,
             session_id,
             query=filtered_message,
             conversation_id=conversation_id,
@@ -338,24 +325,15 @@ class MemoryContextLoader:
             return
         diagnostic_payload = route_trace.to_dict()
         try:
-            if inspect.iscoroutinefunction(self.write_diagnostic_fn):
-                await self.write_diagnostic_fn(
-                    session_id=session_id,
-                    conversation_id=conversation_id,
-                    message_id=user_message_id or "",
-                    channel=channel,
-                    route_trace=diagnostic_payload,
-                    used_long_term_mode=used_long_term_mode,
-                )
-            else:
-                self.write_diagnostic_fn(
-                    session_id=session_id,
-                    conversation_id=conversation_id,
-                    message_id=user_message_id or "",
-                    channel=channel,
-                    route_trace=diagnostic_payload,
-                    used_long_term_mode=used_long_term_mode,
-                )
+            await await_maybe(
+                self.write_diagnostic_fn,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                message_id=user_message_id or "",
+                channel=channel,
+                route_trace=diagnostic_payload,
+                used_long_term_mode=used_long_term_mode,
+            )
         except RECOVERABLE_MEMORY_CALLBACK_ERRORS:
             logger.warning(
                 "Failed to persist memory-route diagnostic",

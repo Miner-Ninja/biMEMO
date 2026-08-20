@@ -7,7 +7,6 @@ compression. Supports both sync and async save callables.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import TYPE_CHECKING
 
@@ -15,7 +14,9 @@ from backend.agent.agent_loop_helpers import (
     build_assistant_message_meta,
     build_dialog_step_record_input,
 )
-from backend.processes.orchestrator.client import DBProxyError
+from backend.common import await_maybe
+from backend.constants import SCHED_ID_PREFIX
+from backend.recoverable_errors import RECOVERABLE_MEMORY_CALLBACK_ERRORS
 
 
 if TYPE_CHECKING:
@@ -26,14 +27,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-# --- Recoverable errors for persistence callbacks ---
-RECOVERABLE_MEMORY_CALLBACK_ERRORS = (
-    DBProxyError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-)
 
 
 class MessagePersistence:
@@ -75,15 +68,8 @@ class MessagePersistence:
         if used_tools is not None and role == "assistant":
             message_meta = meta.copy() if meta else {}
             message_meta["used_tools"] = used_tools
-        if inspect.iscoroutinefunction(self.save_fn):
-            return await self.save_fn(
-                conversation_id,
-                role,
-                content,
-                meta=message_meta,
-                client_message_id=client_message_id,
-            )
-        return self.save_fn(
+        return await await_maybe(
+            self.save_fn,
             conversation_id,
             role,
             content,
@@ -193,17 +179,12 @@ class MessagePersistence:
         """Write one dialog-step record through the configured save callback."""
         # Skip dialog recorder for scheduler sessions — prevents memory
         # pollution from repetitive scheduled tasks.
-        if session_id.startswith("sched_") or conversation_id.startswith("sched_"):
+        if session_id.startswith(SCHED_ID_PREFIX) or conversation_id.startswith(
+            SCHED_ID_PREFIX
+        ):
             return
-        if inspect.iscoroutinefunction(self.save_record_fn):
-            await self.save_record_fn(
-                conversation_id,
-                session_id,
-                record_input,
-                source_message_ids,
-            )
-            return
-        self.save_record_fn(
+        await await_maybe(
+            self.save_record_fn,
             conversation_id,
             session_id,
             record_input,

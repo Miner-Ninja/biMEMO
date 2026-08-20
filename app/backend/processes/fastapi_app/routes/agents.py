@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
 
+from backend.constants import ENV_CA_ROOT_PATH
 from backend.security.token_hash import hash_token as _hash_token
 
 from ..deps import (
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 agents_router = APIRouter(prefix="/admin/agents")
 
 # Public CA root certificate path (set by generate_dev_tls.sh).
-_CA_ROOT_PATH = Path(os.environ.get("BIMEMO_CA_ROOT_PATH", ""))
+_CA_ROOT_PATH = Path(os.environ.get(ENV_CA_ROOT_PATH, ""))
 
 
 def _generate_token() -> str:

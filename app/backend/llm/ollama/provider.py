@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
+from backend.constants import ENV_OLLAMA_NUM_CTX
 from backend.llm.call_factory import LLM_CALL_TIMEOUT
 from backend.llm.capabilities import ContextDetectionError, ModelCapabilities
 from backend.llm.compute_config import ComputeConfig, ComputeMode
@@ -41,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 # --- Override sources for capability resolution ---
-ENV_VAR_NUM_CTX = "BIMEMO_OLLAMA_NUM_CTX"
 SOURCE_ENV_OVERRIDE = "env-override"
 SOURCE_UI_OVERRIDE = "ui-override"
 
@@ -54,7 +54,7 @@ def _read_env_override() -> int | None:
     the priority chain proceed to UI override or auto-detect, per the
     spec scenario "Override value is zero or negative".
     """
-    raw = os.environ.get(ENV_VAR_NUM_CTX)
+    raw = os.environ.get(ENV_OLLAMA_NUM_CTX)
     if raw is None or raw.strip() == "":
         return None
     try:
@@ -62,7 +62,7 @@ def _read_env_override() -> int | None:
     except ValueError:
         logger.warning(
             "Invalid integer in %s=%r; ignoring override",
-            ENV_VAR_NUM_CTX,
+            ENV_OLLAMA_NUM_CTX,
             raw,
         )
         return None

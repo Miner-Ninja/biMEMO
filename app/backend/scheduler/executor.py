@@ -16,6 +16,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from backend.agent.conversation_settings import read_suggestions_enabled
+from backend.agent.turn_state import TurnArchitecture
+from backend.constants import (
+    CHANNEL_SCHEDULER,
+    SCHED_ID_PREFIX,
+    SCHED_MESSAGE_ID_PREFIX,
+)
 from backend.ipc.models import StreamEventType
 from backend.processes.orchestrator.run_event_recorder import (
     RunEventContext,
@@ -117,7 +123,7 @@ async def _execute_agent_task(
 
     # One stable conversation per task (bound to the task id) so every run's
     # result accumulates in the same chat instead of spawning a new one each run.
-    conversation_id = f"sched_{task_id}"
+    conversation_id = f"{SCHED_ID_PREFIX}{task_id}"
 
     # Create it once; create_conversation is idempotent (INSERT OR IGNORE), so
     # repeated runs reuse the same conversation.
@@ -158,23 +164,23 @@ async def _execute_agent_task(
         await services.db_client.create_agent_turn(
             conversation_id=conversation_id,
             turn_id=turn_id,
-            session_id=f"sched_{task_id}",
-            channel="scheduler",
+            session_id=f"{SCHED_ID_PREFIX}{task_id}",
+            channel=CHANNEL_SCHEDULER,
         )
         orch.run_event_recorder = RunEventRecorder(
             db_client=services.db_client,
             context=RunEventContext(
                 run_id=turn_id,
-                request_id=f"sched_{task_id}",
+                request_id=f"{SCHED_ID_PREFIX}{task_id}",
                 conversation_id=conversation_id,
-                architecture_version="structured_v1",
+                architecture_version=TurnArchitecture.STRUCTURED_V1,
             ),
         )
         response = await orch.process_message(
             message=prompt,
-            channel="scheduler",
+            channel=CHANNEL_SCHEDULER,
             llm_call=services.llm_call,
-            session_id=f"sched_{task_id}",
+            session_id=f"{SCHED_ID_PREFIX}{task_id}",
             conversation_id=conversation_id,
             agent_run_id=turn_id,
             forced_tools=sorted(required_tools),
@@ -375,13 +381,13 @@ async def _emit_result_event(
     from backend.ipc.models import StreamEvent
 
     event = StreamEvent(
-        request_id=f"sched_{task['id']}",
+        request_id=f"{SCHED_ID_PREFIX}{task['id']}",
         event_type=StreamEventType.SCHEDULED_TASK_RESULT,
         data={
             "task_id": task["id"],
             "task_name": task["name"],
             "task_type": task["task_type"],
-            "conversation_id": f"sched_{task['id']}",
+            "conversation_id": f"{SCHED_ID_PREFIX}{task['id']}",
             "result_text": result_text[:2000],
             "status": "ok" if success else "error",
         },
@@ -422,7 +428,7 @@ async def _deliver_to_bridge(
         return
 
     out_message_id = message_id or (
-        f"sched_msg_{task['id']}_{int(datetime.now(tz=UTC).timestamp())}"
+        f"{SCHED_MESSAGE_ID_PREFIX}{task['id']}_{int(datetime.now(tz=UTC).timestamp())}"
     )
     # An agent task's result is already a complete, self-contained answer, so
     # send it bare (no label). A reminder carries only its reminder text, so

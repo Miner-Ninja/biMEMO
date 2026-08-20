@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentHeaders
 
+from backend.constants import ENV_MCP_TOKEN_PREFIX
 from backend.memory.mcp_seam import (
     MCP_CHANNEL_NAME,
     resolve_conversation_memory,
@@ -187,7 +188,7 @@ async def seed_mcp_tokens_from_env(
     Raises:
         ValueError: If a value is malformed (missing colon, bad capability).
     """
-    env_prefix = "BIMEMO_MCP_TOKEN_"
+    env_prefix = ENV_MCP_TOKEN_PREFIX
     env_tokens: dict[str, tuple[str, str]] = {}
     for env_name, env_value in os.environ.items():
         if not env_name.startswith(env_prefix):

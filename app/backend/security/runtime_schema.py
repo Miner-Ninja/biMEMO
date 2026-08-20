@@ -7,6 +7,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from backend.constants import TOOL_POLICY_VERSION
+
 
 if TYPE_CHECKING:
     from backend.security.database import DatabaseManager
@@ -22,7 +24,7 @@ CREATE TABLE IF NOT EXISTS runtime_schema_version (
 )
 """
 
-CREATE_AGENT_RUNS_TABLE = """
+CREATE_AGENT_RUNS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS agent_runs (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -31,8 +33,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     status TEXT NOT NULL,
     current_step TEXT NOT NULL DEFAULT '',
     request_id TEXT NOT NULL DEFAULT '',
-    resume_payload TEXT NOT NULL DEFAULT '{}',
-    tool_policy_version TEXT NOT NULL DEFAULT 'registry-v1',
+    resume_payload TEXT NOT NULL DEFAULT '{{}}',
+    tool_policy_version TEXT NOT NULL DEFAULT '{TOOL_POLICY_VERSION}',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now')),
     completed_at TEXT
@@ -160,7 +162,7 @@ def initialize_runtime_schema(db: DatabaseManager) -> None:
         "completed_at = strftime('%Y-%m-%dT%H:%M:%f', 'now'), "
         "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') "
         "WHERE (tool_policy_version IS NULL "
-        "OR tool_policy_version != 'registry-v1') "
+        f"OR tool_policy_version != '{TOOL_POLICY_VERSION}') "
         "AND status NOT IN ('cancelled', 'completed', 'failed', 'stopped')"
     )
     db.execute(
@@ -170,7 +172,7 @@ def initialize_runtime_schema(db: DatabaseManager) -> None:
         "WHERE status NOT IN ('completed', 'failed', 'denied', 'expired') "
         "AND run_id IN (SELECT id FROM agent_runs "
         "WHERE tool_policy_version IS NULL "
-        "OR tool_policy_version != 'registry-v1')"
+        f"OR tool_policy_version != '{TOOL_POLICY_VERSION}')"
     )
     _ensure_runtime_schema_version(db)
     db.commit()

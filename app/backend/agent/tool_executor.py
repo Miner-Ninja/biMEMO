@@ -25,6 +25,7 @@ from backend.agent.agent_loop_models import (
     ToolRoundResult,
 )
 from backend.agent.stage_timings import StageTimings, humanize_stage_label
+from backend.constants import TOOL_POLICY_VERSION
 from backend.permissions import (
     ActionContext,
     ActionDecision,
@@ -116,7 +117,7 @@ class ToolExecutor:
     @property
     def _uses_registry_policy(self) -> bool:
         """Require the sole supported permission-policy version."""
-        return self.current_context.get("tool_policy_version") == "registry-v1"
+        return self.current_context.get("tool_policy_version") == TOOL_POLICY_VERSION
 
     def _invocation_id(self, tool_call_id: str) -> str:
         """Derive one stable invocation identity within the active turn."""
@@ -215,7 +216,7 @@ class ToolExecutor:
                             decision.details.get("permission_mode", "blocked")
                         ),
                         policy_revision=str(
-                            decision.details.get("policy_revision", "registry-v1")
+                            decision.details.get("policy_revision", TOOL_POLICY_VERSION)
                         ),
                         source=str(decision.details.get("source", "registry_policy")),
                     ),
@@ -295,7 +296,9 @@ class ToolExecutor:
         )
         authorization = AuthorizationContext(
             permission_mode=str(decision.details.get("permission_mode", "implicit")),
-            policy_revision=str(decision.details.get("policy_revision", "registry-v1")),
+            policy_revision=str(
+                decision.details.get("policy_revision", TOOL_POLICY_VERSION)
+            ),
             source=source,
             authorization_id=(
                 str(grant.get("authorization_id", ""))
@@ -582,7 +585,9 @@ class ToolExecutor:
                                 decision.details.get("permission_mode", "blocked")
                             ),
                             policy_revision=str(
-                                decision.details.get("policy_revision", "registry-v1")
+                                decision.details.get(
+                                    "policy_revision", TOOL_POLICY_VERSION
+                                )
                             ),
                             source=str(
                                 decision.details.get("source", "registry_policy")
@@ -702,7 +707,7 @@ class ToolExecutor:
                 duration_ms=0.0,
                 authorization=AuthorizationContext(
                     permission_mode="unspecified",
-                    policy_revision="registry-v1",
+                    policy_revision=TOOL_POLICY_VERSION,
                     source="execution_error",
                 ),
             )

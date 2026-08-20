@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from backend.agent.turn_state import TurnArchitecture
+
 
 if TYPE_CHECKING:
     from backend.processes.orchestrator.client import DBProxyClient
@@ -47,7 +49,7 @@ class RunEventContext:
     run_id: str = ""
     request_id: str = ""
     conversation_id: str = ""
-    architecture_version: str = "structured_v1"
+    architecture_version: str = TurnArchitecture.STRUCTURED_V1
 
 
 class RunEventRecorder:
