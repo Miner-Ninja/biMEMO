@@ -2,8 +2,8 @@
 
 Wraps an IPCSocketClient and provides typed methods for each
 database operation used by the Orchestrator process. Domain-specific
-methods are implemented in companion modules (client_memory_ops,
-client_diagnostic_ops, client_conversation_ops) and delegated here.
+methods are implemented in companion ``client_*_ops`` modules and
+delegated here.
 """
 
 # ruff: noqa: ASYNC109
@@ -14,9 +14,15 @@ from typing import Any
 
 from backend.ipc.ipc_channel import IPCChannelError, IPCSocketClient
 from backend.ipc.models import DBOperation, DBResult
+from backend.processes.orchestrator import client_admin_ops as admin_ops
+from backend.processes.orchestrator import client_agent_turn_ops as turn_ops
+from backend.processes.orchestrator import client_audit_ops as audit_ops
 from backend.processes.orchestrator import client_conversation_ops as conv_ops
 from backend.processes.orchestrator import client_diagnostic_ops as diag_ops
 from backend.processes.orchestrator import client_memory_ops as mem_ops
+from backend.processes.orchestrator import client_permission_ops as perm_ops
+from backend.processes.orchestrator import client_scheduling_ops as sched_ops
+from backend.processes.orchestrator import client_skills_ops as skills_ops
 
 
 # --- Constants ---
@@ -333,30 +339,15 @@ class DBProxyClient:
         zone: str | None = None,
         duration_ms: float | None = None,
     ) -> int:
-        """Append an audit log entry.
-
-        Args:
-            event_type: Audit event type.
-            tool_name: Tool name.
-            parameters: JSON parameters (redacted).
-            result: Result summary.
-            zone: Trust zone.
-            duration_ms: Execution time.
-
-        Returns:
-            Entry ID.
-        """
-        return await self._send_int_operation(
-            "write_audit",
-            result_key="entry_id",
-            parameters={
-                "event_type": event_type,
-                "tool_name": tool_name,
-                "parameters": parameters,
-                "result": result,
-                "zone": zone,
-                "duration_ms": duration_ms,
-            },
+        """Append an audit log entry."""
+        return await audit_ops.write_audit(
+            self,
+            event_type,
+            tool_name,
+            parameters,
+            result,
+            zone,
+            duration_ms,
         )
 
     async def write_memory_route_diagnostic(
@@ -501,15 +492,8 @@ class DBProxyClient:
         )
 
     async def verify_chain(self) -> bool:
-        """Verify audit log hash chain integrity.
-
-        Returns:
-            True if chain is valid.
-        """
-        return await self._send_bool_operation(
-            "verify_chain",
-            result_key="valid",
-        )
+        """Verify audit log hash chain integrity."""
+        return await audit_ops.verify_chain(self)
 
     # --- Record operations (delegated to client_memory_ops) ---
 
@@ -729,23 +713,15 @@ class DBProxyClient:
 
     async def create_scheduled_task(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a new scheduled task."""
-        return await self.send_operation("create_scheduled_task", params)
+        return await sched_ops.create_scheduled_task(self, params)
 
     async def list_scheduled_tasks(self, status: str = "all") -> list[dict[str, Any]]:
         """List scheduled tasks."""
-        return await self._send_list_operation(
-            "list_scheduled_tasks",
-            result_key="tasks",
-            parameters={"status": status},
-        )
+        return await sched_ops.list_scheduled_tasks(self, status)
 
     async def get_due_tasks(self, now: str) -> list[dict[str, Any]]:
         """Get tasks that are due for execution."""
-        return await self._send_list_operation(
-            "get_due_tasks",
-            result_key="tasks",
-            parameters={"now": now},
-        )
+        return await sched_ops.get_due_tasks(self, now)
 
     async def advance_task_next_run(
         self,
@@ -754,33 +730,31 @@ class DBProxyClient:
         repeat_count: int,
     ) -> dict[str, Any]:
         """Advance next_run_at before execution."""
-        return await self.send_operation(
-            "advance_task_next_run",
-            {
-                "task_id": task_id,
-                "next_run_at": next_run_at,
-                "repeat_count": repeat_count,
-            },
+        return await sched_ops.advance_task_next_run(
+            self,
+            task_id,
+            next_run_at,
+            repeat_count,
         )
 
     async def mark_task_run(self, params: dict[str, Any]) -> dict[str, Any]:
         """Mark a task run as completed or failed."""
-        return await self.send_operation("mark_task_run", params)
+        return await sched_ops.mark_task_run(self, params)
 
     async def update_scheduled_task(self, params: dict[str, Any]) -> dict[str, Any]:
         """Update a scheduled task."""
-        return await self.send_operation("update_scheduled_task", params)
+        return await sched_ops.update_scheduled_task(self, params)
 
     async def delete_scheduled_task(self, task_id: str) -> dict[str, Any]:
         """Delete a scheduled task."""
-        return await self.send_operation("delete_scheduled_task", {"task_id": task_id})
+        return await sched_ops.delete_scheduled_task(self, task_id)
 
     async def record_task_run(
         self,
         params: dict[str, Any],
     ) -> dict[str, Any]:
         """Record a single task run in the run history table."""
-        return await self.send_operation("record_task_run", params)
+        return await sched_ops.record_task_run(self, params)
 
     async def list_task_runs(
         self,
@@ -788,11 +762,7 @@ class DBProxyClient:
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         """List recent runs for a task."""
-        return await self._send_list_operation(
-            "list_task_runs",
-            result_key="runs",
-            parameters={"task_id": task_id, "limit": limit},
-        )
+        return await sched_ops.list_task_runs(self, task_id, limit)
 
     # --- Skill operations ---
 
@@ -807,81 +777,36 @@ class DBProxyClient:
         verification: str = "",
         tool_sequence: str = "",
     ) -> dict[str, Any]:
-        """Create or update a skill.
-
-        Args:
-            name: Kebab-case unique identifier.
-            title: Human-readable name.
-            description: One-line summary.
-            trigger: When to use this skill.
-            procedure: JSON array of procedure steps.
-            errors: JSON array of error/fix pairs.
-            verification: How to verify the result.
-            tool_sequence: Comma-separated tool names.
-
-        Returns:
-            Confirmation dict with skill name and status.
-        """
-        return await self.send_operation(
-            "skill_create",
-            {
-                "name": name,
-                "title": title,
-                "description": description,
-                "trigger": trigger,
-                "procedure": procedure,
-                "errors": errors,
-                "verification": verification,
-                "tool_sequence": tool_sequence,
-            },
+        """Create or update a skill."""
+        return await skills_ops.create_skill(
+            self,
+            name,
+            title,
+            description,
+            trigger,
+            procedure,
+            errors,
+            verification,
+            tool_sequence,
         )
 
     async def search_skills(
         self,
         query: str,
     ) -> list[dict[str, Any]]:
-        """Search skills via FTS5.
-
-        Args:
-            query: Search query string.
-
-        Returns:
-            List of matching skill dicts with full content.
-        """
-        return await self._send_list_operation(
-            "skill_search",
-            result_key="skills",
-            parameters={"query": query},
-        )
+        """Search skills via FTS5."""
+        return await skills_ops.search_skills(self, query)
 
     async def increment_skill_use(
         self,
         skill_id: str,
     ) -> dict[str, Any]:
-        """Increment use_count for a skill.
-
-        Args:
-            skill_id: Skill UUID.
-
-        Returns:
-            Status dict.
-        """
-        return await self.send_operation(
-            "skill_use",
-            {"skill_id": skill_id},
-        )
+        """Increment use_count for a skill."""
+        return await skills_ops.increment_skill_use(self, skill_id)
 
     async def list_skills(self) -> list[dict[str, Any]]:
-        """List all skills as a compact index.
-
-        Returns:
-            List of skill dicts with name, title, description, use_count.
-        """
-        return await self._send_list_operation(
-            "skill_list",
-            result_key="skills",
-            parameters={},
-        )
+        """List all skills as a compact index."""
+        return await skills_ops.list_skills(self)
 
     async def log_skill_usage(
         self,
@@ -891,42 +816,19 @@ class DBProxyClient:
         duration_ms: int = 0,
         note: str = "",
     ) -> dict[str, Any]:
-        """Log a skill usage entry.
-
-        Args:
-            skill_id: Skill UUID.
-            question: User question text.
-            status: Result status (success/partial/error).
-            duration_ms: Response duration.
-            note: Optional note.
-
-        Returns:
-            Log entry ID.
-        """
-        return await self.send_operation(
-            "skill_usage_log_create",
-            {
-                "skill_id": skill_id,
-                "question": question,
-                "status": status,
-                "duration_ms": duration_ms,
-                "note": note,
-            },
+        """Log a skill usage entry."""
+        return await skills_ops.log_skill_usage(
+            self,
+            skill_id,
+            question,
+            status,
+            duration_ms,
+            note,
         )
 
     async def delete_skill(self, name: str) -> dict[str, Any]:
-        """Delete a skill by name.
-
-        Args:
-            name: Skill name to delete.
-
-        Returns:
-            Status dict.
-        """
-        return await self.send_operation(
-            "skill_delete",
-            {"name": name},
-        )
+        """Delete a skill by name."""
+        return await skills_ops.delete_skill(self, name)
 
     # --- Conversation operations (delegated to client_conversation_ops) ---
 
@@ -994,8 +896,7 @@ class DBProxyClient:
 
     async def list_project_roots(self) -> list[dict[str, Any]]:
         """Return configured project roots for assistant actions."""
-        result = await self.send_operation("list_project_roots")
-        return result.get("project_roots", [])
+        return await perm_ops.list_project_roots(self)
 
     async def add_project_root(
         self,
@@ -1004,16 +905,11 @@ class DBProxyClient:
         root_path: str,
     ) -> dict[str, Any] | None:
         """Create or update one trusted project root."""
-        result = await self.send_operation(
-            "add_project_root",
-            {"name": name, "root_path": root_path},
-        )
-        return result.get("project_root")
+        return await perm_ops.add_project_root(self, name=name, root_path=root_path)
 
     async def remove_project_root(self, root_id: str) -> bool:
         """Remove one trusted project root."""
-        result = await self.send_operation("remove_project_root", {"id": root_id})
-        return bool(result.get("removed"))
+        return await perm_ops.remove_project_root(self, root_id)
 
     async def list_capability_grants(
         self,
@@ -1024,18 +920,13 @@ class DBProxyClient:
         channel: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return persisted assistant action grants."""
-        params = {
-            key: value
-            for key, value in {
-                "scope_type": scope_type,
-                "scope_value": scope_value,
-                "capability": capability,
-                "channel": channel,
-            }.items()
-            if value is not None
-        }
-        result = await self.send_operation("list_capability_grants", params)
-        return result.get("grants", [])
+        return await perm_ops.list_capability_grants(
+            self,
+            scope_type=scope_type,
+            scope_value=scope_value,
+            capability=capability,
+            channel=channel,
+        )
 
     async def create_capability_grant(
         self,
@@ -1052,22 +943,19 @@ class DBProxyClient:
         expires_at: str | None = None,
     ) -> dict[str, Any] | None:
         """Persist one assistant action grant."""
-        result = await self.send_operation(
-            "create_capability_grant",
-            {
-                "scope_type": scope_type,
-                "scope_value": scope_value,
-                "capability": capability,
-                "decision": decision,
-                "channel": channel,
-                "scope_json": scope_json or {},
-                "scope_hash": scope_hash,
-                "policy_revision": policy_revision,
-                "origin_confirmation_id": origin_confirmation_id,
-                "expires_at": expires_at,
-            },
+        return await perm_ops.create_capability_grant(
+            self,
+            scope_type=scope_type,
+            scope_value=scope_value,
+            capability=capability,
+            decision=decision,
+            policy_revision=policy_revision,
+            channel=channel,
+            scope_json=scope_json,
+            scope_hash=scope_hash,
+            origin_confirmation_id=origin_confirmation_id,
+            expires_at=expires_at,
         )
-        return result.get("grant")
 
     async def lookup_capability_grant(
         self,
@@ -1080,18 +968,15 @@ class DBProxyClient:
         scope_hash: str = "",
     ) -> dict[str, Any] | None:
         """Return the best persisted grant for one action scope."""
-        result = await self.send_operation(
-            "lookup_capability_grant",
-            {
-                "scope_type": scope_type,
-                "scope_value": scope_value,
-                "capability": capability,
-                "channel": channel,
-                "scope_hash": scope_hash,
-                "policy_revision": policy_revision,
-            },
+        return await perm_ops.lookup_capability_grant(
+            self,
+            scope_type=scope_type,
+            scope_value=scope_value,
+            capability=capability,
+            policy_revision=policy_revision,
+            channel=channel,
+            scope_hash=scope_hash,
         )
-        return result.get("grant")
 
     async def authorize_agent_invocation(
         self,
@@ -1112,34 +997,31 @@ class DBProxyClient:
         grant_expires_at: str | None = None,
     ) -> dict[str, Any]:
         """Atomically authorize and claim one structured invocation."""
-        parameters: dict[str, Any] = {
-            "turn_id": turn_id,
-            "invocation_id": invocation_id,
-            "idempotency_key": idempotency_key,
-            "capability": capability,
-            "channel": channel,
-            "scope_type": scope_type,
-            "scope_value": scope_value,
-            "scope_json": scope_json,
-            "scope_hash": scope_hash,
-            "policy_revision": policy_revision,
-            "canonical_args_hash": canonical_args_hash,
-            "confirmation_id": confirmation_id,
-            "create_reusable_grant": create_reusable_grant,
-            "grant_expires_at": grant_expires_at,
-        }
-        return await self.send_operation("authorize_agent_invocation", parameters)
+        return await perm_ops.authorize_agent_invocation(
+            self,
+            turn_id=turn_id,
+            invocation_id=invocation_id,
+            idempotency_key=idempotency_key,
+            capability=capability,
+            channel=channel,
+            scope_type=scope_type,
+            scope_value=scope_value,
+            scope_json=scope_json,
+            scope_hash=scope_hash,
+            policy_revision=policy_revision,
+            canonical_args_hash=canonical_args_hash,
+            confirmation_id=confirmation_id,
+            create_reusable_grant=create_reusable_grant,
+            grant_expires_at=grant_expires_at,
+        )
 
     async def revoke_capability_grant(self, grant_id: str) -> bool:
         """Remove one persisted assistant action grant."""
-        result = await self.send_operation("revoke_capability_grant", {"id": grant_id})
-        return bool(result.get("revoked"))
+        return await perm_ops.revoke_capability_grant(self, grant_id)
 
     async def expire_capability_grants(self, now: str | None = None) -> int:
         """Delete expired assistant action grants."""
-        params = {"now": now} if now is not None else {}
-        result = await self.send_operation("expire_capability_grants", params)
-        return int(result.get("expired", 0))
+        return await perm_ops.expire_capability_grants(self, now)
 
     async def list_agent_run_events(
         self,
@@ -1151,18 +1033,14 @@ class DBProxyClient:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Return persisted runtime events for a run or conversation."""
-        result = await self.send_operation(
-            "list_agent_run_events",
-            {
-                "run_id": run_id,
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "after_sequence": after_sequence,
-                "limit": limit,
-            },
+        return await perm_ops.list_agent_run_events(
+            self,
+            run_id=run_id,
+            request_id=request_id,
+            conversation_id=conversation_id,
+            after_sequence=after_sequence,
+            limit=limit,
         )
-        events = result.get("events", [])
-        return events if isinstance(events, list) else []
 
     async def list_agent_confirmations(
         self,
@@ -1171,12 +1049,7 @@ class DBProxyClient:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Return every confirmation of one turn, any status, current first."""
-        result = await self.send_operation(
-            "list_agent_confirmations",
-            {"turn_id": turn_id, "limit": limit},
-        )
-        confirmations = result.get("confirmations", [])
-        return confirmations if isinstance(confirmations, list) else []
+        return await perm_ops.list_agent_confirmations(self, turn_id, limit=limit)
 
     async def list_pending_actions(
         self,
@@ -1186,17 +1059,12 @@ class DBProxyClient:
         channel: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return persisted pending actions with optional filters."""
-        params = {
-            key: value
-            for key, value in {
-                "run_id": run_id,
-                "status": status,
-                "channel": channel,
-            }.items()
-            if value is not None
-        }
-        result = await self.send_operation("list_pending_actions", params)
-        return result.get("pending_actions", [])
+        return await perm_ops.list_pending_actions(
+            self,
+            run_id=run_id,
+            status=status,
+            channel=channel,
+        )
 
     async def prune_runtime_state(
         self,
@@ -1206,18 +1074,12 @@ class DBProxyClient:
         run_retention_days: int = 7,
     ) -> dict[str, int]:
         """Expire and delete stale short-lived assistant runtime rows."""
-        params: dict[str, Any] = {
-            "snapshot_retention_hours": snapshot_retention_hours,
-            "run_retention_days": run_retention_days,
-        }
-        if now is not None:
-            params["now"] = now
-        result = await self.send_operation("prune_runtime_state", params)
-        return {
-            "expired_pending_actions": int(result.get("expired_pending_actions", 0)),
-            "deleted_resume_snapshots": int(result.get("deleted_resume_snapshots", 0)),
-            "deleted_agent_runs": int(result.get("deleted_agent_runs", 0)),
-        }
+        return await perm_ops.prune_runtime_state(
+            self,
+            now=now,
+            snapshot_retention_hours=snapshot_retention_hours,
+            run_retention_days=run_retention_days,
+        )
 
     # --- Core-authority agent turn operations ---
 
@@ -1231,24 +1093,18 @@ class DBProxyClient:
         finalization_id: str | None = None,
     ) -> dict[str, Any]:
         """Create or replay one architecture-pinned authoritative turn."""
-        return await self.send_operation(
-            "create_agent_turn",
-            {
-                "turn_id": turn_id,
-                "finalization_id": finalization_id,
-                "conversation_id": conversation_id,
-                "session_id": session_id,
-                "channel": channel,
-            },
+        return await turn_ops.create_agent_turn(
+            self,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            channel=channel,
+            turn_id=turn_id,
+            finalization_id=finalization_id,
         )
 
     async def get_agent_turn(self, turn_id: str) -> dict[str, Any] | None:
         """Read canonical core turn state and its complete ledger."""
-        return await self._send_optional_dict_operation(
-            "get_agent_turn",
-            result_key="turn",
-            parameters={"turn_id": turn_id},
-        )
+        return await turn_ops.get_agent_turn(self, turn_id)
 
     async def upsert_agent_turn_obligations(
         self,
@@ -1256,9 +1112,10 @@ class DBProxyClient:
         obligations: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Idempotently persist mandatory evidence records."""
-        return await self.send_operation(
-            "upsert_agent_turn_obligations",
-            {"turn_id": turn_id, "obligations": obligations},
+        return await turn_ops.upsert_agent_turn_obligations(
+            self,
+            turn_id,
+            obligations,
         )
 
     async def upsert_agent_tool_batch(
@@ -1271,15 +1128,13 @@ class DBProxyClient:
         invocations: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Persist one complete native tool-call batch."""
-        return await self.send_operation(
-            "upsert_agent_tool_batch",
-            {
-                "turn_id": turn_id,
-                "batch_id": batch_id,
-                "assistant_message": assistant_message,
-                "transcript_snapshot": transcript_snapshot,
-                "invocations": invocations,
-            },
+        return await turn_ops.upsert_agent_tool_batch(
+            self,
+            turn_id=turn_id,
+            batch_id=batch_id,
+            assistant_message=assistant_message,
+            transcript_snapshot=transcript_snapshot,
+            invocations=invocations,
         )
 
     async def claim_agent_invocation(
@@ -1290,12 +1145,12 @@ class DBProxyClient:
         idempotency_key: str,
     ) -> dict[str, Any]:
         """Commit the durable execution claim before broker dispatch."""
-        parameters: dict[str, Any] = {
-            "turn_id": turn_id,
-            "invocation_id": invocation_id,
-            "idempotency_key": idempotency_key,
-        }
-        return await self.send_operation("claim_agent_invocation", parameters)
+        return await turn_ops.claim_agent_invocation(
+            self,
+            turn_id=turn_id,
+            invocation_id=invocation_id,
+            idempotency_key=idempotency_key,
+        )
 
     async def complete_agent_invocation(
         self,
@@ -1308,16 +1163,14 @@ class DBProxyClient:
         error: str | None = None,
     ) -> dict[str, Any]:
         """Record a generation-fenced result and compatible success binds."""
-        return await self.send_operation(
-            "complete_agent_invocation",
-            {
-                "turn_id": turn_id,
-                "invocation_id": invocation_id,
-                "claim_generation": claim_generation,
-                "status": status,
-                "result": result,
-                "error": error,
-            },
+        return await turn_ops.complete_agent_invocation(
+            self,
+            turn_id=turn_id,
+            invocation_id=invocation_id,
+            claim_generation=claim_generation,
+            status=status,
+            result=result,
+            error=error,
         )
 
     async def decide_agent_confirmation(
@@ -1326,9 +1179,10 @@ class DBProxyClient:
         decision: str,
     ) -> dict[str, Any]:
         """CAS a canonical confirmation decision in core authority."""
-        return await self.send_operation(
-            "decide_agent_confirmation",
-            {"confirmation_id": confirmation_id, "decision": decision},
+        return await turn_ops.decide_agent_confirmation(
+            self,
+            confirmation_id,
+            decision,
         )
 
     async def get_agent_confirmation(
@@ -1336,22 +1190,14 @@ class DBProxyClient:
         confirmation_id: str,
     ) -> dict[str, Any] | None:
         """Read one canonical confirmation without mutating it."""
-        return await self._send_optional_dict_operation(
-            "get_agent_confirmation",
-            result_key="confirmation",
-            parameters={"confirmation_id": confirmation_id},
-        )
+        return await turn_ops.get_agent_confirmation(self, confirmation_id)
 
     async def list_pending_agent_confirmations(
         self,
         conversation_id: str,
     ) -> list[dict[str, Any]]:
         """Return pending canonical confirmations for one conversation."""
-        result = await self.send_operation(
-            "list_pending_agent_confirmations",
-            {"conversation_id": conversation_id},
-        )
-        return list(result.get("confirmations", []))
+        return await turn_ops.list_pending_agent_confirmations(self, conversation_id)
 
     async def append_agent_turn_event(
         self,
@@ -1364,16 +1210,14 @@ class DBProxyClient:
         event_id: str | None = None,
     ) -> dict[str, Any]:
         """Append an authoritative transition/provider-attempt outbox event."""
-        return await self.send_operation(
-            "append_agent_turn_event",
-            {
-                "turn_id": turn_id,
-                "event_id": event_id,
-                "event_type": event_type,
-                "phase": phase,
-                "attempt": attempt,
-                "payload": payload or {},
-            },
+        return await turn_ops.append_agent_turn_event(
+            self,
+            turn_id=turn_id,
+            event_type=event_type,
+            phase=phase,
+            attempt=attempt,
+            payload=payload,
+            event_id=event_id,
         )
 
     async def cancel_agent_turn(
@@ -1386,15 +1230,13 @@ class DBProxyClient:
         task_result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Resolve cancellation against the canonical run-state CAS domain."""
-        return await self.send_operation(
-            "cancel_agent_turn",
-            {
-                "turn_id": turn_id,
-                "reason": reason,
-                "timeout": timeout,
-                "failure": failure,
-                "task_result": task_result,
-            },
+        return await turn_ops.cancel_agent_turn(
+            self,
+            turn_id,
+            reason=reason,
+            timeout=timeout,
+            failure=failure,
+            task_result=task_result,
         )
 
     async def commit_agent_turn_finalization(
@@ -1414,22 +1256,20 @@ class DBProxyClient:
         task_result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Atomically commit interactive FINAL or FAILED persistence."""
-        return await self.send_operation(
-            "commit_agent_turn_finalization",
-            {
-                "turn_id": turn_id,
-                "finalization_id": finalization_id,
-                "outcome_kind": outcome_kind,
-                "conversation_id": conversation_id,
-                "session_id": session_id,
-                "assistant_content": assistant_content,
-                "assistant_meta": assistant_meta,
-                "dialog_content": dialog_content,
-                "source_message_ids": source_message_ids,
-                "outcome_payload": outcome_payload,
-                "persist_chat": persist_chat,
-                "task_result": task_result,
-            },
+        return await turn_ops.commit_agent_turn_finalization(
+            self,
+            turn_id=turn_id,
+            finalization_id=finalization_id,
+            outcome_kind=outcome_kind,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            assistant_content=assistant_content,
+            assistant_meta=assistant_meta,
+            dialog_content=dialog_content,
+            source_message_ids=source_message_ids,
+            outcome_payload=outcome_payload,
+            persist_chat=persist_chat,
+            task_result=task_result,
         )
 
     async def list_unprojected_agent_turn_events(
@@ -1437,11 +1277,7 @@ class DBProxyClient:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Read stable events awaiting optional runtime projection."""
-        return await self._send_list_operation(
-            "list_unprojected_agent_turn_events",
-            result_key="events",
-            parameters={"limit": limit},
-        )
+        return await turn_ops.list_unprojected_agent_turn_events(self, limit)
 
     async def list_agent_turn_events(
         self,
@@ -1452,21 +1288,17 @@ class DBProxyClient:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Read canonical core events for reconnect recovery."""
-        return await self._send_list_operation(
-            "list_agent_turn_events",
-            result_key="events",
-            parameters={
-                "turn_id": turn_id,
-                "conversation_id": conversation_id,
-                "after_sequence": after_sequence,
-                "limit": limit,
-            },
+        return await turn_ops.list_agent_turn_events(
+            self,
+            turn_id=turn_id,
+            conversation_id=conversation_id,
+            after_sequence=after_sequence,
+            limit=limit,
         )
 
     async def project_agent_turn_event(self, event: dict[str, Any]) -> bool:
         """Idempotently write one core event into the runtime projection."""
-        result = await self.send_operation("project_agent_turn_event", event)
-        return bool(result.get("projected"))
+        return await turn_ops.project_agent_turn_event(self, event)
 
     async def mark_agent_turn_event_projected(
         self,
@@ -1474,19 +1306,15 @@ class DBProxyClient:
         projection_version: int = 1,
     ) -> bool:
         """Acknowledge one idempotent runtime projection."""
-        return await self._send_bool_operation(
-            "mark_agent_turn_event_projected",
-            result_key="updated",
-            parameters={
-                "event_id": event_id,
-                "projection_version": projection_version,
-            },
+        return await turn_ops.mark_agent_turn_event_projected(
+            self,
+            event_id,
+            projection_version,
         )
 
     async def recover_agent_turns(self) -> int:
         """Fence invocation claims abandoned by a previous orchestrator."""
-        result = await self.send_operation("recover_agent_turns", {})
-        return int(result.get("recovered", 0))
+        return await turn_ops.recover_agent_turns(self)
 
     async def create_agent_clarification(
         self,
@@ -1498,34 +1326,29 @@ class DBProxyClient:
         expires_at: str,
     ) -> dict[str, Any]:
         """Persist one backend-owned low-confidence proposal."""
-        return await self.send_operation(
-            "create_agent_clarification",
-            {
-                "turn_id": turn_id,
-                "clarification_id": clarification_id,
-                "proposed_tool": proposed_tool,
-                "reason": reason,
-                "expires_at": expires_at,
-            },
+        return await turn_ops.create_agent_clarification(
+            self,
+            turn_id=turn_id,
+            clarification_id=clarification_id,
+            proposed_tool=proposed_tool,
+            reason=reason,
+            expires_at=expires_at,
         )
 
     async def get_pending_agent_clarification(
         self, conversation_id: str
     ) -> dict[str, Any] | None:
         """Read the latest live proposal for one conversation."""
-        return await self._send_optional_dict_operation(
-            "get_pending_agent_clarification",
-            result_key="clarification",
-            parameters={"conversation_id": conversation_id},
-        )
+        return await turn_ops.get_pending_agent_clarification(self, conversation_id)
 
     async def decide_agent_clarification(
         self, clarification_id: str, decision: str
     ) -> dict[str, Any]:
         """Close a proposal with a classified decision."""
-        return await self.send_operation(
-            "decide_agent_clarification",
-            {"clarification_id": clarification_id, "decision": decision},
+        return await turn_ops.decide_agent_clarification(
+            self,
+            clarification_id,
+            decision,
         )
 
     async def create_agent_pending_input(
@@ -1540,19 +1363,16 @@ class DBProxyClient:
         expires_at: str,
     ) -> dict[str, object]:
         """Persist one typed missing-input pause in core authority."""
-        result = await self.send_operation(
-            "create_agent_pending_input",
-            {
-                "turn_id": turn_id,
-                "pending_input_id": pending_input_id,
-                "question": question,
-                "suggestions": suggestions,
-                "expected_input_schema": expected_input_schema,
-                "transcript_snapshot": transcript_snapshot,
-                "expires_at": expires_at,
-            },
+        return await turn_ops.create_agent_pending_input(
+            self,
+            turn_id=turn_id,
+            pending_input_id=pending_input_id,
+            question=question,
+            suggestions=suggestions,
+            expected_input_schema=expected_input_schema,
+            transcript_snapshot=transcript_snapshot,
+            expires_at=expires_at,
         )
-        return dict(result.get("pending_input") or {})
 
     async def get_agent_pending_input(
         self,
@@ -1561,15 +1381,11 @@ class DBProxyClient:
         conversation_id: str | None = None,
     ) -> dict[str, object] | None:
         """Read one typed missing-input state from core authority."""
-        result = await self.send_operation(
-            "get_agent_pending_input",
-            {
-                "pending_input_id": pending_input_id,
-                "conversation_id": conversation_id,
-            },
+        return await turn_ops.get_agent_pending_input(
+            self,
+            pending_input_id=pending_input_id,
+            conversation_id=conversation_id,
         )
-        value = result.get("pending_input")
-        return dict(value) if isinstance(value, dict) else None
 
     async def reply_agent_pending_input(
         self,
@@ -1581,30 +1397,20 @@ class DBProxyClient:
         value: object,
     ) -> dict[str, object]:
         """Validate and CAS one reply into the same structured run."""
-        result = await self.send_operation(
-            "reply_agent_pending_input",
-            {
-                "turn_id": turn_id,
-                "pending_input_id": pending_input_id,
-                "conversation_id": conversation_id,
-                "cas_version": cas_version,
-                "value": value,
-            },
+        return await turn_ops.reply_agent_pending_input(
+            self,
+            turn_id=turn_id,
+            pending_input_id=pending_input_id,
+            conversation_id=conversation_id,
+            cas_version=cas_version,
+            value=value,
         )
-        pending = dict(result.get("pending_input") or {})
-        if result.get("validation_error") is not None:
-            pending["validation_error"] = str(result["validation_error"])
-        return pending
 
     # --- Admin operations ---
 
     async def get_stats(self) -> dict[str, int]:
-        """Get database statistics.
-
-        Returns:
-            Dict with table name -> row count.
-        """
-        return await self.send_operation("get_stats")
+        """Get database statistics."""
+        return await admin_ops.get_stats(self)
 
     # --- Integration config operations ---
 
@@ -1612,64 +1418,24 @@ class DBProxyClient:
         self,
         service_type: str,
     ) -> dict[str, Any]:
-        """Return integration + all credentials for a service_type.
-
-        Args:
-            service_type: Integration type (e.g. 'openrouter', 'ollama', 'telegram').
-
-        Returns:
-            Dict with 'integration' (or None) and 'credentials' keys.
-        """
-        return await self.send_operation(
-            "get_integration_config",
-            {
-                "service_type": service_type,
-            },
-        )
+        """Return integration + all credentials for a service_type."""
+        return await admin_ops.get_integration_config(self, service_type)
 
     async def record_rate_limit_call(
         self,
         tool_name: str,
         called_at: float,
     ) -> dict[str, Any]:
-        """Persist a rate limit call timestamp.
-
-        Args:
-            tool_name: Name of the tool that was called.
-            called_at: Unix timestamp of the call.
-
-        Returns:
-            Dict with 'ok' key.
-        """
-        return await self.send_operation(
-            "record_rate_limit_call",
-            {
-                "tool_name": tool_name,
-                "called_at": called_at,
-            },
-        )
+        """Persist a rate limit call timestamp."""
+        return await admin_ops.record_rate_limit_call(self, tool_name, called_at)
 
     async def get_recent_rate_limit_calls(
         self,
         tool_name: str,
         since: float,
     ) -> dict[str, Any]:
-        """Return recent rate limit call timestamps for a tool.
-
-        Args:
-            tool_name: Name of the tool.
-            since: Unix timestamp; return calls after this time.
-
-        Returns:
-            Dict with 'timestamps' list.
-        """
-        return await self.send_operation(
-            "get_recent_rate_limit_calls",
-            {
-                "tool_name": tool_name,
-                "since": since,
-            },
-        )
+        """Return recent rate limit call timestamps for a tool."""
+        return await admin_ops.get_recent_rate_limit_calls(self, tool_name, since)
 
     # --- Vector table management (delegated to client_memory_ops) ---
 
