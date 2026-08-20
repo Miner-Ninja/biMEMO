@@ -19,8 +19,9 @@ function parameterPreview(parameters: Record<string, unknown>): string {
     ([, value]) => typeof value === "string" && value !== ""
   );
   if (!entries.length) return "";
-  const [, value] = entries[0];
-  const text = String(value);
+  const first = entries[0];
+  if (!first) return "";
+  const text = String(first[1]);
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 

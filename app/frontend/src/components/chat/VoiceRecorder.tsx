@@ -98,7 +98,7 @@ export function VoiceRecorder({
         // Average a slice of frequency data for this bar
         let sum = 0;
         for (let j = 0; j < step; j++) {
-          sum += dataArray[i * step + j];
+          sum += dataArray[i * step + j] ?? 0;
         }
         const avg = sum / step / 255;
 

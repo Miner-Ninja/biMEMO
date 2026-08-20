@@ -133,7 +133,8 @@ export const MessageList = memo(function MessageList({
   // Find the last user message ID (for edit button visibility)
   const lastUserMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") return messages[i].id;
+      const message = messages[i];
+      if (message && message.role === "user") return message.id;
     }
     return null;
   }, [messages]);

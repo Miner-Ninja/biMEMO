@@ -19,7 +19,7 @@ function sortEntries(
   order: "desc" | "asc"
 ) {
   const sorted = [...entries].sort((left, right) =>
-    String(left.created_at || "").localeCompare(String(right.created_at || ""))
+    String(left["created_at"] || "").localeCompare(String(right["created_at"] || ""))
   );
 
   if (!isMessages) {
@@ -29,7 +29,7 @@ function sortEntries(
   const grouped: Array<Array<Record<string, unknown>>> = [];
   let current: Array<Record<string, unknown>> = [];
   for (const entry of sorted) {
-    if (entry.role === "user") {
+    if (entry["role"] === "user") {
       if (current.length > 0) grouped.push(current);
       current = [entry];
     } else {
@@ -128,27 +128,29 @@ export function ContextSnapshotPanel({ refreshToken }: { refreshToken: number })
                       className="rounded-lg border border-border bg-muted/10 p-3"
                     >
                       <div className="mb-1 flex flex-wrap items-center gap-2">
-                        {entry.role ? <TypeBadge type={String(entry.role)} /> : null}
+                        {entry["role"] ? (
+                          <TypeBadge type={String(entry["role"])} />
+                        ) : null}
                         <span className="text-xs text-muted-foreground">
-                          {String(entry.created_at || entry.id || "")}
+                          {String(entry["created_at"] || entry["id"] || "")}
                         </span>
                       </div>
                       <div className="text-sm text-foreground">
                         <ContentDisplay
                           content={
-                            entry.content ||
-                            entry.summary ||
-                            entry.assertion_text ||
+                            entry["content"] ||
+                            entry["summary"] ||
+                            entry["assertion_text"] ||
                             entry
                           }
                         />
                       </div>
-                      {typeof entry.scope === "string" ? (
+                      {typeof entry["scope"] === "string" ? (
                         <div className="mt-2">
-                          <SummaryScopeBadge scope={entry.scope} />
+                          <SummaryScopeBadge scope={entry["scope"]} />
                         </div>
                       ) : null}
-                      <MetaBadges meta={entry.meta} />
+                      <MetaBadges meta={entry["meta"]} />
                     </div>
                   ))}
                   {entries.length === 0 ? (

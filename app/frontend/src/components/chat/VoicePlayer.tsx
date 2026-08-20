@@ -160,7 +160,7 @@ export function VoicePlayer({ src, className }: VoicePlayerProps) {
         for (let i = 0; i < BAR_COUNT; i++) {
           let max = 0;
           for (let j = 0; j < step; j++) {
-            const abs = Math.abs(raw[i * step + j]);
+            const abs = Math.abs(raw[i * step + j] ?? 0);
             if (abs > max) max = abs;
           }
           peaks.push(max);

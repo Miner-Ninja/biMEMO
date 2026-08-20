@@ -11,9 +11,9 @@ import { getSidebarActionButtonClassName } from "./sidebar-chrome";
 
 interface UserMenuProps {
   userName?: string;
-  onLogout?: () => void;
-  voiceMode?: boolean;
-  onToggleVoiceMode?: () => void;
+  onLogout?: (() => void) | undefined;
+  voiceMode?: boolean | undefined;
+  onToggleVoiceMode?: (() => void) | undefined;
 }
 
 const ITEM_CLASS =
@@ -182,7 +182,7 @@ export function UserMenu({
               className={ITEM_CLASS}
               onClick={(e) => {
                 e.preventDefault();
-                setUiLanguage(nextLanguage);
+                if (nextLanguage) setUiLanguage(nextLanguage);
               }}
             >
               <Languages className="size-4" />

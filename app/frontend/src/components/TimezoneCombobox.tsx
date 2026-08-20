@@ -64,8 +64,10 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
       return;
     }
     if (event.key === "Enter" && highlighted >= 0) {
+      const selected = filtered[highlighted];
+      if (!selected) return;
       event.preventDefault();
-      onChange(filtered[highlighted]);
+      onChange(selected);
       setOpen(false);
       setHighlighted(-1);
       return;

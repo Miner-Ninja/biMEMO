@@ -24,9 +24,9 @@ export interface SaveLLMConfigParams {
 
 export interface TestLLMConnectionParams {
   service_type: "openrouter" | "ollama" | "custom";
-  api_key?: string;
-  model?: string;
-  base_url?: string;
+  api_key?: string | undefined;
+  model?: string | undefined;
+  base_url?: string | undefined;
   dialog_recorder_base_url?: string;
   num_ctx?: string;
   /** "embedding" probes the embeddings endpoint instead of chat. */
@@ -64,8 +64,8 @@ export async function saveLLMConfig(params: SaveLLMConfigParams): Promise<void> 
 
 export async function getModelList(params: {
   service_type: "openrouter" | "ollama" | "custom";
-  api_key?: string;
-  base_url?: string;
+  api_key?: string | undefined;
+  base_url?: string | undefined;
 }): Promise<{ models: string[]; record?: string }> {
   return apiRequest("/admin/llm/models", {
     method: "POST",

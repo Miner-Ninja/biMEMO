@@ -56,7 +56,7 @@ export function ProblemsPanel({
         const results: Problem[] = [];
         const now = Date.now();
 
-        const pruneLoop = health.loops?.pruning;
+        const pruneLoop = health.loops?.["pruning"];
         if (!pruneLoop) {
           results.push({
             text: t("memoryDebug.problemLoopNever", {
@@ -74,7 +74,7 @@ export function ProblemsPanel({
           });
         }
 
-        const backupLoop = health.loops?.backup;
+        const backupLoop = health.loops?.["backup"];
         if (!backupLoop) {
           results.push({
             text: t("memoryDebug.problemLoopNever", {

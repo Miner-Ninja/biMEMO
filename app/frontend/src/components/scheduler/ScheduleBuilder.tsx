@@ -82,11 +82,11 @@ export function parseScheduleToBuilder(
     // ISO timestamp like "2026-04-10T09:00:00" or with TZ
     const [datePart, timePart = "09:00"] = expr.split("T");
     const time = timePart.slice(0, 5);
-    return { ...base, mode: "once", onceDate: datePart, onceTime: time };
+    return { ...base, mode: "once", onceDate: datePart ?? "", onceTime: time };
   }
   if (kind === "interval") {
     const m = SIMPLE_INTERVAL_RE.exec(expr.trim());
-    if (m) {
+    if (m && m[1] && m[2]) {
       return {
         ...base,
         mode: "every",
@@ -99,7 +99,7 @@ export function parseScheduleToBuilder(
   if (kind === "cron") {
     // Try to recognise daily cron "M H * * DOW"
     const m = SIMPLE_DAILY_CRON_RE.exec(expr.trim());
-    if (m) {
+    if (m && m[3]) {
       const minute = Number(m[1]);
       const hour = Number(m[2]);
       const dowField = m[3];
@@ -457,7 +457,7 @@ function NaturalLanguagePreview({ value }: { value: ScheduleBuilderValue }) {
 interface PresetButtonProps {
   label: string;
   onClick: () => void;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
 }
 
 function PresetButton({ label, onClick, disabled }: PresetButtonProps) {

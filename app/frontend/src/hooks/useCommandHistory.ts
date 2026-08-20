@@ -25,7 +25,7 @@ export function useCommandHistory({
         }
         const nextIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
         setHistoryIndex(nextIndex);
-        setValue(commandHistory[nextIndex]);
+        setValue(commandHistory[nextIndex] ?? value);
         return true;
       }
     }
@@ -37,7 +37,7 @@ export function useCommandHistory({
         setValue(savedInput);
       } else {
         setHistoryIndex(nextIndex);
-        setValue(commandHistory[nextIndex]);
+        setValue(commandHistory[nextIndex] ?? savedInput);
       }
       return true;
     }

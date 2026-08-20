@@ -48,19 +48,19 @@ export interface Message {
   /** Message text content */
   content: string;
   /** Base64 data URLs for attached images */
-  images?: string[];
+  images?: string[] | undefined;
   /** Whether this message originated from a voice recording */
   isVoice?: boolean;
   /** Base64 data URL of the recorded audio for playback */
   voiceDataUrl?: string;
   /** LLM thinking content */
-  thinking?: string;
+  thinking?: string | undefined;
   /** Current tool execution status */
   toolStatus?: ToolStatus;
   /** Follow-up suggestions shown after the final answer */
-  suggestions?: string[];
+  suggestions?: string[] | undefined;
   /** Error message if query failed (assistant messages only) */
-  error?: string;
+  error?: string | undefined;
   /** Structured error category from backend */
   errorCategory?: string;
   /** Technical error detail for collapsible block */
@@ -68,13 +68,13 @@ export interface Message {
   /** User-facing suggestion for error recovery */
   errorSuggestion?: string;
   /** Token usage statistics (assistant messages only) */
-  stats?: ExtendedUsage;
+  stats?: ExtendedUsage | undefined;
   /** Pending RED zone actions awaiting user confirmation */
-  pendingConfirmations?: PendingConfirmation[];
+  pendingConfirmations?: PendingConfirmation[] | undefined;
   /** Typed value requested to resume the same backend run */
-  pendingInput?: PendingInput;
+  pendingInput?: PendingInput | undefined;
   /** Used tools recorded for this message */
-  usedTools?: UsedTool[];
+  usedTools?: UsedTool[] | undefined;
   /** When the message was created */
   timestamp: Date;
 }
@@ -146,7 +146,7 @@ export interface Chat {
   /** Display title, auto-generated from first user message */
   title: string;
   /** Active external bridge provider for this chat, if connected */
-  bridgeProvider?: string | null;
+  bridgeProvider?: string | null | undefined;
   /** Per-conversation display settings */
   settings: ChatSettings;
   /** Current server-side processing status for this conversation */
@@ -154,7 +154,7 @@ export interface Chat {
   /** Human-readable server-side processing stage label */
   processingStage: string;
   /** When server-side processing started */
-  processingStartedAt?: Date;
+  processingStartedAt?: Date | undefined;
   /** Ordered list of messages in this conversation */
   messages: Message[];
   /** When the chat was created */

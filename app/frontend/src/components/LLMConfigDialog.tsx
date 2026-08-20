@@ -32,7 +32,7 @@ type LoadState =
   | { status: "loading" }
   | { status: "ok"; count: number }
   | { status: "empty" }
-  | { status: "error"; detail?: string };
+  | { status: "error"; detail?: string | undefined };
 
 const IDLE: LoadState = { status: "idle" };
 
@@ -110,7 +110,7 @@ export function LLMConfigDialog({
     opts?: {
       service_type?: ProviderType;
       api_key?: string;
-      base_url?: string;
+      base_url?: string | undefined;
     }
   ) => {
     setLoad(target, { status: "loading" });
@@ -248,17 +248,28 @@ export function LLMConfigDialog({
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await onSave({
-        service_type: serviceType,
-        api_key: apiKey || undefined,
-        model: model || undefined,
-        dialog_recorder_model: dialogRecorderModel || undefined,
-        base_url: baseUrl || undefined,
-        dialog_recorder_base_url: dialogRecorderBaseUrl || undefined,
-        embedding_model: embeddingModel || undefined,
-        embedding_base_url: embeddingBaseUrl || undefined,
-        num_ctx: editConfig?.num_ctx,
-      });
+      const data: {
+        service_type: ProviderType;
+        api_key?: string;
+        model?: string;
+        dialog_recorder_model?: string;
+        base_url?: string;
+        dialog_recorder_base_url?: string;
+        embedding_model?: string;
+        embedding_base_url?: string;
+        num_ctx?: string;
+      } = { service_type: serviceType };
+      // Empty form fields are omitted rather than sent as empty strings.
+      if (apiKey) data.api_key = apiKey;
+      if (model) data.model = model;
+      if (dialogRecorderModel) data.dialog_recorder_model = dialogRecorderModel;
+      if (baseUrl) data.base_url = baseUrl;
+      if (dialogRecorderBaseUrl) data.dialog_recorder_base_url = dialogRecorderBaseUrl;
+      if (embeddingModel) data.embedding_model = embeddingModel;
+      if (embeddingBaseUrl) data.embedding_base_url = embeddingBaseUrl;
+      const numCtx = editConfig?.num_ctx;
+      if (numCtx) data.num_ctx = numCtx;
+      await onSave(data);
     } finally {
       setSaving(false);
     }

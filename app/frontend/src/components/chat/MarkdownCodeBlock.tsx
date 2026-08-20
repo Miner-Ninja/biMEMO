@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 interface MarkdownCodeBlockProps {
   code: string;
-  language?: string;
+  language?: string | undefined;
   className?: string;
 }
 

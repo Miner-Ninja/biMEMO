@@ -100,10 +100,10 @@ export function ContentDisplay({ content }: { content: unknown }) {
 export function MetaBadges({ meta }: { meta: unknown }) {
   const { t } = useTranslation();
   const parsed = parseMeta(meta);
-  const source = parsed.source as string | undefined;
-  const imagesCount = parsed.images_count as number | undefined;
-  const files = Array.isArray(parsed.attached_files)
-    ? parsed.attached_files.map(String)
+  const source = parsed["source"] as string | undefined;
+  const imagesCount = parsed["images_count"] as number | undefined;
+  const files = Array.isArray(parsed["attached_files"])
+    ? parsed["attached_files"].map(String)
     : [];
 
   if (!source && !imagesCount && files.length === 0) return null;

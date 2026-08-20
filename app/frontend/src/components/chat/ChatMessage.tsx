@@ -36,11 +36,11 @@ import { cn, formatDate } from "@/lib/utils";
 
 interface ChatMessageProps {
   message: Message;
-  assistantName?: string;
-  onCommandClick?: (command: string) => void;
+  assistantName?: string | undefined;
+  onCommandClick?: ((command: string) => void) | undefined;
   showThinking?: boolean;
   isEditable?: boolean;
-  onEdit?: (messageId: string, newContent: string) => void;
+  onEdit?: ((messageId: string, newContent: string) => void) | undefined;
   ttsAvailable?: boolean;
 }
 

@@ -28,7 +28,7 @@ interface SidebarProps {
   onFilesChange?: () => void;
   fileRefreshKey?: number;
   voiceMode?: boolean;
-  onToggleVoiceMode?: () => void;
+  onToggleVoiceMode?: (() => void) | undefined;
 }
 
 /**

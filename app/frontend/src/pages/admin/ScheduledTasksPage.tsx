@@ -79,11 +79,11 @@ export function ScheduledTasksPage() {
           ? (event.data as Record<string, unknown>)
           : null;
       const taskName = String(
-        eventPayload?.task_name || t("scheduler.scheduledTaskFallbackName")
+        eventPayload?.["task_name"] || t("scheduler.scheduledTaskFallbackName")
       );
-      const taskType = String(eventPayload?.task_type || "");
-      const resultText = String(eventPayload?.result_text || "");
-      const status = String(eventPayload?.status || "ok");
+      const taskType = String(eventPayload?.["task_type"] || "");
+      const resultText = String(eventPayload?.["result_text"] || "");
+      const status = String(eventPayload?.["status"] || "ok");
       const isError = status === "error";
       const summary =
         resultText.length > 200 ? resultText.slice(0, 200) + "..." : resultText;

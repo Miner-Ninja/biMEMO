@@ -48,6 +48,7 @@ export const ProcessingStages = memo(function ProcessingStages({
   if (stages.length === 0) return null;
 
   const current = stages[stages.length - 1];
+  if (!current) return null;
 
   return (
     <div className={cn("px-2 py-2 sm:px-4 sm:py-3", className)}>

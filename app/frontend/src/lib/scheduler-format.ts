@@ -39,7 +39,7 @@ export function describeSchedule(
   const trimmed = expr.trim();
   if (kind === "interval") {
     const match = INTERVAL_RE.exec(trimmed);
-    if (match) {
+    if (match && match[2]) {
       const value = Number(match[1]);
       const unit = match[2].toLowerCase() as keyof typeof UNIT_KEYS;
       return i18n.t(UNIT_KEYS[unit], { count: value });

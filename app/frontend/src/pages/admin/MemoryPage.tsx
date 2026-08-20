@@ -86,7 +86,7 @@ interface PendingInvalidation {
 
 interface FactCardProps {
   assertion: MemoryAssertion;
-  sourceRef?: MemoryRecordRef | "unavailable";
+  sourceRef?: MemoryRecordRef | "unavailable" | undefined;
   onResolveSource: (assertion: MemoryAssertion) => void;
   onInvalidate: (assertion: MemoryAssertion, reason: InvalidateReason) => void;
 }

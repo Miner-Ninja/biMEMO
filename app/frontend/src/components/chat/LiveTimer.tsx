@@ -4,7 +4,7 @@ interface LiveTimerProps {
   /** performance.now() timestamp when the timer started */
   startedAt: number;
   /** If set, display this frozen value instead of ticking */
-  frozenMs?: number;
+  frozenMs?: number | undefined;
 }
 
 function formatTime(ms: number): string {

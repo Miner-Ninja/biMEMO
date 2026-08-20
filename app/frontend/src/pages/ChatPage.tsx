@@ -207,7 +207,7 @@ const MIN_PSEUDO_STREAM_CHUNK_SIZE = 1;
 type StructuredChatSections = {
   thinking: string;
   answer: string;
-  suggestions?: string[];
+  suggestions?: string[] | undefined;
 };
 
 type PseudoStreamSectionInput = {
@@ -222,8 +222,8 @@ type StructuredAssistantPlaybackInput = {
   assistantMessageId: string;
   stats: ExtendedUsage | undefined;
   sections: StructuredChatSections;
-  pendingConfirmations?: PendingConfirmation[];
-  usedTools?: UsedTool[];
+  pendingConfirmations?: PendingConfirmation[] | undefined;
+  usedTools?: UsedTool[] | undefined;
 };
 
 type ApplyAssistantResponseInput = {
@@ -452,8 +452,9 @@ export function ChatPage() {
       }
       return;
     }
-    if (chats.length > 0) {
-      navigate(`/c/${chats[0].id}`, { replace: true });
+    const firstChat = chats[0];
+    if (firstChat) {
+      navigate(`/c/${firstChat.id}`, { replace: true });
     }
   }, [urlConversationId, isReady, chats, activeChatId, switchChat, navigate]);
 
@@ -1004,22 +1005,23 @@ export function ChatPage() {
               runId: pausedEvent.run_id,
             };
           }
-          const rawConfirmations = pausedEvent.payload?.pending_confirmations;
+          const rawConfirmations = pausedEvent.payload?.["pending_confirmations"];
           const confirmations = Array.isArray(rawConfirmations)
             ? rawConfirmations
                 .filter((item): item is Record<string, unknown> =>
                   Boolean(item && typeof item === "object")
                 )
                 .map((item) => ({
-                  action_id: String(item.action_id || ""),
-                  tool_name: String(item.tool_name || ""),
+                  action_id: String(item["action_id"] || ""),
+                  tool_name: String(item["tool_name"] || ""),
                   parameters:
-                    item.parameters && typeof item.parameters === "object"
-                      ? (item.parameters as Record<string, unknown>)
+                    item["parameters"] && typeof item["parameters"] === "object"
+                      ? (item["parameters"] as Record<string, unknown>)
                       : {},
                   status: "pending" as const,
-                  grant_capable: item.grant_capable === true,
-                  url_host: typeof item.url_host === "string" ? item.url_host : null,
+                  grant_capable: item["grant_capable"] === true,
+                  url_host:
+                    typeof item["url_host"] === "string" ? item["url_host"] : null,
                 }))
                 .filter((item) => item.action_id)
             : [];
@@ -1030,23 +1032,23 @@ export function ChatPage() {
               confirmations
             );
           } else {
-            const rawInput = pausedEvent.payload?.pending_input;
+            const rawInput = pausedEvent.payload?.["pending_input"];
             if (rawInput && typeof rawInput === "object") {
               const item = rawInput as Record<string, unknown>;
               const pendingInput: PendingInput = {
                 run_id: String(pausedEvent.run_id || ""),
-                pending_input_id: String(item.pending_input_id || ""),
-                question: String(item.question || ""),
-                suggestions: Array.isArray(item.suggestions)
-                  ? item.suggestions.map(String)
+                pending_input_id: String(item["pending_input_id"] || ""),
+                question: String(item["question"] || ""),
+                suggestions: Array.isArray(item["suggestions"])
+                  ? item["suggestions"].map(String)
                   : [],
                 expected_input_schema:
-                  item.expected_input_schema &&
-                  typeof item.expected_input_schema === "object"
-                    ? (item.expected_input_schema as Record<string, unknown>)
+                  item["expected_input_schema"] &&
+                  typeof item["expected_input_schema"] === "object"
+                    ? (item["expected_input_schema"] as Record<string, unknown>)
                     : {},
-                expires_at: String(item.expires_at || ""),
-                cas_version: Number(item.cas_version || 0),
+                expires_at: String(item["expires_at"] || ""),
+                cas_version: Number(item["cas_version"] || 0),
               };
               pendingInputRef.current = pendingInput;
               addMessageToConversation(conversationId, {
@@ -1377,10 +1379,10 @@ export function ChatPage() {
             : new Date(),
         });
       } else if (event.type === "scheduled_task_result") {
-        const taskName = String(eventPayload?.task_name || t("chat.scheduledTask"));
-        const taskType = String(eventPayload?.task_type || "");
-        const resultText = String(eventPayload?.result_text || "");
-        const status = String(eventPayload?.status || "ok");
+        const taskName = String(eventPayload?.["task_name"] || t("chat.scheduledTask"));
+        const taskType = String(eventPayload?.["task_type"] || "");
+        const resultText = String(eventPayload?.["result_text"] || "");
+        const status = String(eventPayload?.["status"] || "ok");
         const isError = status === "error";
         const summary =
           resultText.length > 200 ? resultText.slice(0, 200) + "..." : resultText;
@@ -1395,7 +1397,7 @@ export function ChatPage() {
         // server-side; the browser gets no per-message push for it. If that
         // conversation is the one being viewed, refetch it so the result
         // appears immediately instead of only on the next socket reconnect.
-        const scheduledConversationId = String(eventPayload?.conversation_id || "");
+        const scheduledConversationId = String(eventPayload?.["conversation_id"] || "");
         if (scheduledConversationId && scheduledConversationId === activeChatId) {
           void refreshConversationMessages(scheduledConversationId);
           updateConversationActivity(scheduledConversationId, new Date());
@@ -1513,7 +1515,7 @@ export function ChatPage() {
       setUploadProgress({
         current: 1,
         total: filesToUpload.length,
-        filename: filesToUpload[0].name,
+        filename: filesToUpload[0]?.name ?? "",
         results: [],
       });
 
@@ -1552,7 +1554,7 @@ export function ChatPage() {
       setUploadProgress({
         current: filesToUpload.length,
         total: filesToUpload.length,
-        filename: filesToUpload[filesToUpload.length - 1].name,
+        filename: filesToUpload[filesToUpload.length - 1]?.name ?? "",
         results: [...results],
       });
       setTimeout(() => setUploadProgress(null), 3000);
@@ -1573,8 +1575,8 @@ export function ChatPage() {
     messageContent: string,
     conversationId: string,
     options?: {
-      images?: string[];
-      forcedTools?: string[];
+      images?: string[] | undefined;
+      forcedTools?: string[] | undefined;
       pendingInput?: PendingInput | null;
       sendIds?: ResolvedChatSendIds;
       userMessageId?: string | null;
@@ -1613,12 +1615,12 @@ export function ChatPage() {
         conversation_id: conversationId,
       };
       if (images && images.length > 0) {
-        body.images = images;
+        body["images"] = images;
       }
       if (activeFiles.length > 0) {
-        body.file_ids = activeFiles;
+        body["file_ids"] = activeFiles;
       }
-      if (forcedTools && forcedTools.length > 0) body.forced_tools = forcedTools;
+      if (forcedTools && forcedTools.length > 0) body["forced_tools"] = forcedTools;
       if (pendingInput) {
         // A pending-input answer keeps the turn's run_id (bound by
         // bindPendingInputReply) and carries its own fresh client_message_id.
@@ -1918,7 +1920,7 @@ export function ChatPage() {
         voiceSendIds
       );
       if (activeFiles.length > 0) {
-        body.file_ids = activeFiles;
+        body["file_ids"] = activeFiles;
       }
       const response = await apiRequest<ChatResponsePayload>("/chat", {
         method: "POST",

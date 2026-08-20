@@ -17,13 +17,13 @@ const DEFAULT_MESSAGES_LIMIT = 200;
 const IDLE_PROCESSING_STATUS = "idle";
 
 type ConversationUpdate = {
-  title?: string;
-  bridgeProvider?: string | null;
-  settings?: ChatSettings;
-  processingStatus?: "idle" | "active";
-  processingStage?: string;
-  processingStartedAt?: Date | null;
-  updatedAt?: Date;
+  title?: string | undefined;
+  bridgeProvider?: string | null | undefined;
+  settings?: ChatSettings | undefined;
+  processingStatus?: "idle" | "active" | undefined;
+  processingStage?: string | undefined;
+  processingStartedAt?: Date | null | undefined;
+  updatedAt?: Date | undefined;
 };
 
 type ConversationInsert = {
@@ -33,7 +33,7 @@ type ConversationInsert = {
   settings?: ChatSettings;
   processingStatus: "idle" | "active";
   processingStage: string;
-  processingStartedAt?: Date;
+  processingStartedAt?: Date | undefined;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -50,9 +50,9 @@ export type AssistantStructuredContent = {
 
 type AssistantMessageFieldsInput = {
   fallbackContent: string;
-  structuredContent?: AssistantStructuredContent | null;
-  stats?: ExtendedUsage;
-  images?: string[];
+  structuredContent?: AssistantStructuredContent | null | undefined;
+  stats?: ExtendedUsage | undefined;
+  images?: string[] | undefined;
 };
 
 function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
@@ -677,8 +677,8 @@ export function useChat() {
         return currentChat;
       }
     }
-    if (chats.length > 0) {
-      const firstChat = chats[0];
+    const firstChat = chats[0];
+    if (firstChat) {
       await switchChat(firstChat.id);
       return firstChat;
     }

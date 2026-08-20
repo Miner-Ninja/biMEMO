@@ -263,7 +263,15 @@ export function SkillDetailPage() {
   const updateStep = (i: number, key: keyof ProcedureStep, val: string) => {
     setEditData((d) => {
       const proc = [...(d.procedure || [])];
-      proc[i] = { ...proc[i], [key]: val };
+      const step = proc[i];
+      if (!step) return d;
+      const next: ProcedureStep = { ...step };
+      if (key === "note") {
+        next.note = val;
+      } else {
+        next[key] = val;
+      }
+      proc[i] = next;
       return { ...d, procedure: proc };
     });
   };
@@ -283,7 +291,11 @@ export function SkillDetailPage() {
   const updateError = (i: number, key: keyof ErrorEntry, val: string) => {
     setEditData((d) => {
       const errs = [...(d.errors || [])];
-      errs[i] = { ...errs[i], [key]: val };
+      const entry = errs[i];
+      if (!entry) return d;
+      const next: ErrorEntry = { ...entry };
+      next[key] = val;
+      errs[i] = next;
       return { ...d, errors: errs };
     });
   };
@@ -332,6 +344,7 @@ export function SkillDetailPage() {
       label: t("admin.procedure"),
     },
   ];
+  const latestLog = logs[0];
   const timeMetrics = [
     {
       label: t("admin.created"),
@@ -341,7 +354,7 @@ export function SkillDetailPage() {
     { label: t("admin.updated"), value: formatDate(skill.updated_at), icon: RefreshCw },
     {
       label: t("admin.lastUsed"),
-      value: logs.length > 0 ? formatDate(logs[0].created_at) : "—",
+      value: latestLog ? formatDate(latestLog.created_at) : "—",
       icon: History,
     },
   ];
@@ -789,8 +802,10 @@ export function SkillDetailPage() {
                 ) : (
                   <div className="space-y-3">
                     {logs.map((log) => {
-                      const style = STATUS_STYLES[log.status] || STATUS_STYLES.success;
-                      const dot = STATUS_DOT[log.status] || STATUS_DOT.success;
+                      const style =
+                        STATUS_STYLES[log.status] || STATUS_STYLES["success"];
+                      const dot = STATUS_DOT[log.status] || STATUS_DOT["success"];
+                      if (!style) return null;
                       return (
                         <div
                           key={log.id}

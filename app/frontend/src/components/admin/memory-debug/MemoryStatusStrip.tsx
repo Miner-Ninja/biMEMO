@@ -74,7 +74,7 @@ export function MemoryStatusStrip({ refreshToken }: { refreshToken: number }) {
           ? new Date(recEntry.timestamp).toLocaleTimeString()
           : t("memoryDebug.lampNoData");
 
-        const extLoop = health.loops?.graph_extractor;
+        const extLoop = health.loops?.["graph_extractor"];
         const extTime = extLoop ? new Date(extLoop).getTime() : 0;
         const extAge = now - extTime;
         const extColor = !extLoop
@@ -98,7 +98,7 @@ export function MemoryStatusStrip({ refreshToken }: { refreshToken: number }) {
                 total: coverage.total,
               });
 
-        const pruneLoop = health.loops?.pruning;
+        const pruneLoop = health.loops?.["pruning"];
         const pruneTime = pruneLoop ? new Date(pruneLoop).getTime() : 0;
         const pruneAge = now - pruneTime;
         const pruneColor = !pruneLoop
@@ -110,7 +110,7 @@ export function MemoryStatusStrip({ refreshToken }: { refreshToken: number }) {
           ? new Date(pruneLoop).toLocaleTimeString()
           : t("memoryDebug.lampNoData");
 
-        const backupLoop = health.loops?.backup;
+        const backupLoop = health.loops?.["backup"];
         const backupTime = backupLoop ? new Date(backupLoop).getTime() : 0;
         const backupAge = now - backupTime;
         const backupColor = !backupLoop

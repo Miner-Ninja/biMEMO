@@ -65,26 +65,29 @@ export function EntitiesBrowsePanel({ refreshToken }: { refreshToken: number }) 
         </Card>
       ) : (
         <div className="space-y-1">
-          {entities.map((entity) => (
-            <Link
-              key={entity.id}
-              to={`/admin/memory-debug/entity/${encodeURIComponent(entity.id)}`}
-              className="flex items-center gap-3 rounded-md border border-border p-3 text-sm transition-colors hover:bg-muted/40"
-            >
-              <span className="font-medium">{displayName(entity.canonical_name)}</span>
-              <Badge variant="secondary">
-                {ENTITY_TYPE_KEYS[entity.entity_type]
-                  ? t(ENTITY_TYPE_KEYS[entity.entity_type])
-                  : entity.entity_type}
-              </Badge>
-              {typeof entity.active_assertions === "number" ? (
-                <span className="text-xs text-muted-foreground">
-                  {t("memory.factsCount", { count: entity.active_assertions })}
+          {entities.map((entity) => {
+            const typeKey = ENTITY_TYPE_KEYS[entity.entity_type];
+            return (
+              <Link
+                key={entity.id}
+                to={`/admin/memory-debug/entity/${encodeURIComponent(entity.id)}`}
+                className="flex items-center gap-3 rounded-md border border-border p-3 text-sm transition-colors hover:bg-muted/40"
+              >
+                <span className="font-medium">
+                  {displayName(entity.canonical_name)}
                 </span>
-              ) : null}
-              <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
-            </Link>
-          ))}
+                <Badge variant="secondary">
+                  {typeKey ? t(typeKey) : entity.entity_type}
+                </Badge>
+                {typeof entity.active_assertions === "number" ? (
+                  <span className="text-xs text-muted-foreground">
+                    {t("memory.factsCount", { count: entity.active_assertions })}
+                  </span>
+                ) : null}
+                <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

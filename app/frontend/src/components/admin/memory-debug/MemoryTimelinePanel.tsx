@@ -27,21 +27,19 @@ const TYPE_FILTERS: ReadonlyArray<{ value: string; labelKey: TranslationKey }> =
 
 function reorderMessagePairs(entries: TimelineEntry[]): TimelineEntry[] {
   const result: TimelineEntry[] = [];
-  let index = 0;
-  while (index < entries.length) {
+  for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
+    if (entry === undefined) continue;
+    const nextEntry = entries[index + 1];
     if (
       entry.type === "message" &&
-      entry.meta?.role === "assistant" &&
-      index + 1 < entries.length &&
-      entries[index + 1].type === "message" &&
-      entries[index + 1].meta?.role === "user"
+      entry.meta?.["role"] === "assistant" &&
+      nextEntry !== undefined &&
+      nextEntry.type === "message" &&
+      nextEntry.meta?.["role"] === "user"
     ) {
-      result.push(entries[index + 1], entry);
-      index += 2;
-    } else {
-      result.push(entry);
-      index += 1;
+      result.push(nextEntry, entry);
+      index++;
     }
   }
   return result;
@@ -136,14 +134,16 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
                       id: entry.id,
                       text: typeof entry.content === "string" ? entry.content : "",
                       relation:
-                        typeof meta.relation === "string" ? meta.relation : undefined,
+                        typeof meta["relation"] === "string"
+                          ? meta["relation"]
+                          : undefined,
                       trustLevel:
-                        typeof meta.trust_level === "string"
-                          ? meta.trust_level
+                        typeof meta["trust_level"] === "string"
+                          ? meta["trust_level"]
                           : undefined,
                       invalidFrom:
-                        typeof meta.invalid_from === "string"
-                          ? meta.invalid_from
+                        typeof meta["invalid_from"] === "string"
+                          ? meta["invalid_from"]
                           : null,
                       createdAt: entry.created_at,
                     }}
@@ -152,7 +152,8 @@ export function MemoryTimelinePanel({ refreshToken }: { refreshToken: number }) 
               </Card>
             );
           }
-          const role = entry.type === "message" ? entry.meta?.role || "message" : "";
+          const role =
+            entry.type === "message" ? entry.meta?.["role"] || "message" : "";
           const badgeType = role === "user" || role === "assistant" ? role : entry.type;
           return (
             <Card key={entry.id}>

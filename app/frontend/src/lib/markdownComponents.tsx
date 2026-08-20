@@ -76,11 +76,7 @@ export function buildMarkdownComponents(onCommandClick?: (command: string) => vo
 
       return <pre {...props}>{children}</pre>;
     },
-    code: ({
-      children,
-      className,
-      ...props
-    }: ComponentPropsWithoutRef<"code"> & { className?: string }) => {
+    code: ({ children, className, ...props }: ComponentPropsWithoutRef<"code">) => {
       if (className === "language-chart") {
         return (
           <code className={className} {...props}>
@@ -91,20 +87,22 @@ export function buildMarkdownComponents(onCommandClick?: (command: string) => vo
       const text = String(children).trim();
       if (onCommandClick && text.startsWith("/")) {
         const baseCommand = text.split(/\s/)[0];
-        return (
-          <code
-            {...props}
-            role="button"
-            tabIndex={0}
-            className="cursor-pointer rounded bg-primary/10 px-1.5 py-0.5 text-primary hover:bg-primary/20 transition-colors"
-            onClick={() => onCommandClick(baseCommand)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") onCommandClick(baseCommand);
-            }}
-          >
-            {children}
-          </code>
-        );
+        if (baseCommand) {
+          return (
+            <code
+              {...props}
+              role="button"
+              tabIndex={0}
+              className="cursor-pointer rounded bg-primary/10 px-1.5 py-0.5 text-primary hover:bg-primary/20 transition-colors"
+              onClick={() => onCommandClick(baseCommand)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onCommandClick(baseCommand);
+              }}
+            >
+              {children}
+            </code>
+          );
+        }
       }
       return (
         <code className={className} {...props}>

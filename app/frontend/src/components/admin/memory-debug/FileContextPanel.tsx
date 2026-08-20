@@ -88,10 +88,11 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
         const nextFiles = data.files || [];
         setFiles(nextFiles);
         setSelectedFileId((current) => {
-          if (!nextFiles.length) return "";
+          const firstFile = nextFiles[0];
+          if (!firstFile) return "";
           return nextFiles.some((entry) => entry.id === current)
             ? current
-            : nextFiles[0].id;
+            : firstFile.id;
         });
       })
       .catch((requestError) => {
@@ -142,7 +143,8 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
     );
   }
 
-  if (!files.length) {
+  const firstFile = files[0];
+  if (!firstFile) {
     return (
       <EmptyStateCard
         title={t("memoryDebug.noFileContextTitle")}
@@ -151,7 +153,7 @@ export function FileContextPanel({ refreshToken }: { refreshToken: number }) {
     );
   }
 
-  const selectedFile = files.find((entry) => entry.id === selectedFileId) || files[0];
+  const selectedFile = files.find((entry) => entry.id === selectedFileId) || firstFile;
   const selectedChunkIds = new Set(fileContext?.last_usage?.selected_chunk_ids || []);
   const selectedChunkIndexes = new Set(
     fileContext?.last_usage?.selected_chunk_indexes || []

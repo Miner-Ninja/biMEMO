@@ -176,6 +176,9 @@ export function runtimeBootstrapPausedEvent(
   const events = payload?.events ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
+    if (!event) {
+      continue;
+    }
     if (event.event_type === "run_paused") {
       return event;
     }
@@ -262,7 +265,7 @@ export function classifyPausedResumeEvent(
       event.data && typeof event.data === "object"
         ? (event.data as Record<string, unknown>)
         : null;
-    const eventRunId = typeof data?.run_id === "string" ? data.run_id : "";
+    const eventRunId = typeof data?.["run_id"] === "string" ? data["run_id"] : "";
     return eventRunId === pausedRun.runId ? "resync" : null;
   }
   return null;

@@ -69,8 +69,10 @@ export function useSlashCommands({ setValue, textareaRef }: UseSlashCommandsPara
       return true;
     }
     if (e.key === "Enter" || e.key === "Tab") {
+      const command = filteredCommands[selectedIndex];
+      if (command === undefined) return false;
       e.preventDefault();
-      handleSelectCommand(filteredCommands[selectedIndex]);
+      handleSelectCommand(command);
       return true;
     }
     if (e.key === "Escape") {

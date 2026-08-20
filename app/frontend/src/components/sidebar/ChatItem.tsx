@@ -17,7 +17,7 @@ import { getSidebarItemClassName } from "./sidebar-chrome";
 
 interface ChatItemProps {
   chat: Chat;
-  bridgeProvider?: string;
+  bridgeProvider?: string | undefined;
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;

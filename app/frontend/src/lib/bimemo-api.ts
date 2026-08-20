@@ -637,11 +637,11 @@ export async function uploadFile(file: File): Promise<FileUploadResponse> {
 export async function fetchFiles(): Promise<IndexedFile[]> {
   const data = await apiRequest<{ files: Array<Record<string, unknown>> }>("/files");
   return (data.files || []).map((f) => ({
-    file_id: f.id as string,
-    filename: f.original_name as string,
-    size: f.size as number,
-    mime_type: f.mime_type as string,
-    created_at: (f.created_at as string | null) ?? null,
+    file_id: f["id"] as string,
+    filename: f["original_name"] as string,
+    size: f["size"] as number,
+    mime_type: f["mime_type"] as string,
+    created_at: (f["created_at"] as string | null) ?? null,
   }));
 }
 
@@ -782,17 +782,19 @@ export interface ErrorInfo {
   message: string;
 }
 
+const UNKNOWN_ERROR_SUGGESTION = "Try repeating your request or start a new chat";
+
 const ERROR_SUGGESTIONS: Record<string, string> = {
   ai_unavailable: "Check that Ollama is running and try again in a minute",
   ai_timeout: "Try asking a shorter question or try again",
   db_error: "Try rephrasing your question",
   file_search_error: "Check that the file was uploaded and try again",
   mcp_unavailable: "Try refreshing the page or wait a minute",
-  unknown: "Try repeating your request or start a new chat",
+  unknown: UNKNOWN_ERROR_SUGGESTION,
 };
 
 export function getErrorSuggestion(category: string): string {
-  return ERROR_SUGGESTIONS[category] || ERROR_SUGGESTIONS.unknown;
+  return ERROR_SUGGESTIONS[category] ?? UNKNOWN_ERROR_SUGGESTION;
 }
 
 // ============================================================

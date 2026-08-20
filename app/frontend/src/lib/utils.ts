@@ -22,7 +22,7 @@ export function generateId(): string {
     let randomIndex = 0;
 
     return UUID_TEMPLATE.replace(/[018]/g, (character) => {
-      const randomValue = randomBytes[randomIndex] & UUID_RANDOM_MASK;
+      const randomValue = (randomBytes[randomIndex] ?? 0) & UUID_RANDOM_MASK;
       randomIndex += 1;
       const characterCode = Number(character);
       const maskedValue =

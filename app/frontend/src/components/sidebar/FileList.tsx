@@ -27,8 +27,8 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 interface FileListProps {
   activeFiles: string[];
   onActiveFilesChange: (fileIds: string[]) => void;
-  onFilesChange?: () => void;
-  refreshKey?: number;
+  onFilesChange?: (() => void) | undefined;
+  refreshKey?: number | undefined;
   searchQuery?: string;
 }
 
@@ -203,17 +203,24 @@ export function FileList({
 
     validFiles = confirmedFiles;
 
+    const firstFile = validFiles[0];
+    if (!firstFile) {
+      setUploading(false);
+      return;
+    }
+
     const results: Array<{ name: string; ok: boolean }> = [];
 
     setUploadProgress({
       current: 1,
       total: validFiles.length,
-      filename: validFiles[0].name,
+      filename: firstFile.name,
       results: [],
     });
 
     for (let i = 0; i < validFiles.length; i++) {
       const file = validFiles[i];
+      if (!file) continue;
 
       setUploadProgress({
         current: i + 1,
@@ -231,10 +238,11 @@ export function FileList({
     }
 
     // Show final completed state
+    const lastFile = validFiles[validFiles.length - 1];
     setUploadProgress({
       current: validFiles.length,
       total: validFiles.length,
-      filename: validFiles[validFiles.length - 1].name,
+      filename: lastFile ? lastFile.name : "",
       results: [...results],
     });
 

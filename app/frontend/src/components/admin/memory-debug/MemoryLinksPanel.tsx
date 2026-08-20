@@ -37,14 +37,14 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
     );
   if (!data) return <PanelSkeleton />;
 
-  const messageEntries = data.tiers?.recent_messages?.entries || [];
-  const recordEntries = data.tiers?.records?.entries || [];
-  const assertionEntries = data.tiers?.assertions?.entries || [];
+  const messageEntries = data.tiers?.["recent_messages"]?.entries || [];
+  const recordEntries = data.tiers?.["records"]?.entries || [];
+  const assertionEntries = data.tiers?.["assertions"]?.entries || [];
   const messagesById = new Map(
-    messageEntries.map((entry) => [String(entry.id || ""), entry])
+    messageEntries.map((entry) => [String(entry["id"] || ""), entry])
   );
   const recordsById = new Map(
-    recordEntries.map((entry) => [String(entry.id || ""), entry])
+    recordEntries.map((entry) => [String(entry["id"] || ""), entry])
   );
 
   return (
@@ -56,10 +56,10 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
         <CardContent className="space-y-4">
           {assertionEntries.map((summaryEntry, index) => {
             const recordRelations = normalizeStringArray(
-              summaryEntry.source_record_ids
+              summaryEntry["source_record_ids"]
             ).map((recordId) => ({
               record_id: recordId,
-              relation: String(summaryEntry.relation || "supports"),
+              relation: String(summaryEntry["relation"] || "supports"),
             }));
             const linkedRecords = recordRelations
               .map((link) => {
@@ -78,30 +78,30 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
 
             return (
               <Collapsible
-                key={String(summaryEntry.id)}
+                key={String(summaryEntry["id"])}
                 defaultOpen={index === 0}
                 className="rounded-xl border border-border bg-muted/10"
               >
                 <CollapsibleTrigger className="w-full p-4 text-left">
                   <AssertionCard
                     data={{
-                      id: String(summaryEntry.id),
+                      id: String(summaryEntry["id"]),
                       text: String(
-                        summaryEntry.assertion_text || summaryEntry.content || ""
+                        summaryEntry["assertion_text"] || summaryEntry["content"] || ""
                       ),
                       relation:
-                        typeof summaryEntry.relation === "string"
-                          ? summaryEntry.relation
+                        typeof summaryEntry["relation"] === "string"
+                          ? summaryEntry["relation"]
                           : undefined,
                       trustLevel:
-                        typeof summaryEntry.trust_level === "string"
-                          ? summaryEntry.trust_level
+                        typeof summaryEntry["trust_level"] === "string"
+                          ? summaryEntry["trust_level"]
                           : undefined,
                       invalidFrom:
-                        typeof summaryEntry.invalid_from === "string"
-                          ? summaryEntry.invalid_from
+                        typeof summaryEntry["invalid_from"] === "string"
+                          ? summaryEntry["invalid_from"]
                           : null,
-                      createdAt: String(summaryEntry.created_at || ""),
+                      createdAt: String(summaryEntry["created_at"] || ""),
                       linkedRecordCount: linkedRecords.length,
                     }}
                   />
@@ -110,41 +110,43 @@ export function MemoryLinksPanel({ refreshToken }: { refreshToken: number }) {
                   <div className="space-y-3 border-l border-border pl-4">
                     {linkedRecords.map(({ relation, entry: recordEntry }) => {
                       const sourceMessageIds = normalizeStringArray(
-                        recordEntry.source_message_ids
+                        recordEntry["source_message_ids"]
                       );
                       const linkedMessages = sourceMessageIds
                         .map((messageId) => messagesById.get(messageId))
                         .filter(Boolean) as Array<Record<string, unknown>>;
                       return (
-                        <div key={String(recordEntry.id)} className="space-y-2">
+                        <div key={String(recordEntry["id"])} className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <TypeBadge type="record" />
                             <RecordRelationBadge relation={relation} />
                             <span className="text-xs text-muted-foreground">
-                              {String(recordEntry.created_at || "")}
+                              {String(recordEntry["created_at"] || "")}
                             </span>
                           </div>
                           <div className="text-sm whitespace-pre-wrap">
-                            {String(recordEntry.summary || recordEntry.content || "")}
+                            {String(
+                              recordEntry["summary"] || recordEntry["content"] || ""
+                            )}
                           </div>
                           {linkedMessages.length > 0 ? (
                             <div className="space-y-2 border-l border-border/70 pl-4">
                               {linkedMessages.map((messageEntry) => (
                                 <div
-                                  key={String(messageEntry.id)}
+                                  key={String(messageEntry["id"])}
                                   className="space-y-1"
                                 >
                                   <div className="flex flex-wrap items-center gap-2">
                                     <TypeBadge
-                                      type={String(messageEntry.role || "message")}
+                                      type={String(messageEntry["role"] || "message")}
                                     />
                                     <span className="text-xs text-muted-foreground">
-                                      {String(messageEntry.created_at || "")}
+                                      {String(messageEntry["created_at"] || "")}
                                     </span>
                                   </div>
                                   <div className="text-sm text-foreground/90 whitespace-pre-wrap">
                                     <ContentDisplay
-                                      content={messageEntry.content || ""}
+                                      content={messageEntry["content"] || ""}
                                     />
                                   </div>
                                 </div>

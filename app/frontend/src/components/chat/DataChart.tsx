@@ -24,7 +24,7 @@ const COLORS = [
   "hsl(187, 85%, 43%)", // cyan
   "hsl(25, 95%, 53%)", // orange
   "hsl(330, 81%, 60%)", // pink
-];
+] as const;
 
 interface DataChartProps {
   chart: ChartData;
@@ -84,7 +84,7 @@ export function DataChart({ chart }: DataChartProps) {
               labelLine
             >
               {data.map((_, index) => (
-                <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                <Cell key={index} fill={COLORS[index % COLORS.length] ?? COLORS[0]} />
               ))}
             </Pie>
             <Tooltip />

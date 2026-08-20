@@ -349,7 +349,7 @@ export function CreateTaskModal({
 interface FieldProps {
   label: string;
   hint?: string;
-  error?: string;
+  error?: string | undefined;
   children: ReactNode;
 }
 

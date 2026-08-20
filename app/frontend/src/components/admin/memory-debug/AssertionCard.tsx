@@ -12,11 +12,11 @@ import { cn } from "@/lib/utils";
 export interface AssertionCardData {
   id: string;
   text: string;
-  relation?: string;
-  trustLevel?: string;
-  validFrom?: string | null;
-  invalidFrom?: string | null;
-  createdAt?: string | null;
+  relation?: string | undefined;
+  trustLevel?: string | undefined;
+  validFrom?: string | null | undefined;
+  invalidFrom?: string | null | undefined;
+  createdAt?: string | null | undefined;
   linkedRecordCount?: number;
 }
 

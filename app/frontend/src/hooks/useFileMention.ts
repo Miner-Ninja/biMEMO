@@ -4,7 +4,7 @@ interface UseFileMentionParams {
   value: string;
   setValue: (value: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
-  availableFiles?: string[];
+  availableFiles?: string[] | undefined;
 }
 
 export function useFileMention({
@@ -43,7 +43,7 @@ export function useFileMention({
     const atMatch = textBeforeCursor.match(/@([^\s]*)$/);
 
     if (atMatch) {
-      const query = atMatch[1].toLowerCase();
+      const query = (atMatch[1] ?? "").toLowerCase();
       const startPos = textBeforeCursor.length - atMatch[0].length;
       const matches = availableFiles.filter((f) => f.toLowerCase().includes(query));
       setMentionStart(startPos);
@@ -71,8 +71,10 @@ export function useFileMention({
       return true;
     }
     if (e.key === "Enter" || e.key === "Tab") {
+      const selectedFile = filteredFiles[fileSelectedIndex];
+      if (selectedFile === undefined) return false;
       e.preventDefault();
-      handleFileMentionSelect(filteredFiles[fileSelectedIndex]);
+      handleFileMentionSelect(selectedFile);
       return true;
     }
     if (e.key === "Escape") {

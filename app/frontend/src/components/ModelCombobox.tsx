@@ -61,8 +61,10 @@ export function ModelCombobox({
       e.preventDefault();
       setHighlighted((h) => Math.max(h - 1, 0));
     } else if (e.key === "Enter" && highlighted >= 0) {
+      const selected = filtered[highlighted];
+      if (!selected) return;
       e.preventDefault();
-      onChange(filtered[highlighted]);
+      onChange(selected);
       setOpen(false);
       setHighlighted(-1);
     } else if (e.key === "Escape") {

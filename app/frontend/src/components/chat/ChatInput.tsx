@@ -145,7 +145,7 @@ export const ChatInput = memo(
       bridgeProvidersLoading = false,
       bridgeDisabled = false,
       bridgeLoadingProvider = null,
-      onBridgeMenuOpenChange,
+      onBridgeMenuOpenChange = () => undefined,
       onToggleBridgeProvider,
       showThinking,
       onToggleThinking,
