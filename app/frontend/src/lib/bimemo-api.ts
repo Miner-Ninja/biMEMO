@@ -2,6 +2,8 @@
  * biMEMO unified API client.
  * CSRF token injection, 401 auto-refresh, file operations, streaming.
  */
+import { z } from "zod";
+import type { ZodType } from "zod";
 
 let csrfToken: string | null = null;
 const CSRF_PROBLEM_TYPE = "urn:bimemo:problem:csrf-failed";
@@ -136,7 +138,8 @@ export async function waitForApplicationReady(): Promise<void> {
  */
 export async function apiRequest<T>(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  schema?: ZodType<T>
 ): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers);
@@ -205,7 +208,24 @@ export async function apiRequest<T>(
     return null as T;
   }
 
-  return response.json();
+  const data: unknown = await response.json();
+  if (schema === undefined) {
+    return data as T;
+  }
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    if (issue === undefined) {
+      // Unreachable: a failed safeParse always carries at least one issue.
+      throw new ContractError("Unexpected response format");
+    }
+    const location =
+      issue.path.length > 0 ? issue.path.map((part) => String(part)).join(".") : "root";
+    throw new ContractError(
+      `Unexpected response format: ${issue.message} at ${location}`
+    );
+  }
+  return parsed.data;
 }
 
 /** API error with HTTP status code. */
@@ -217,6 +237,17 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.retryAfter = null;
+  }
+}
+
+/**
+ * Contract error: the HTTP request succeeded (2xx), but the response body
+ * did not match the expected schema. Has no HTTP status (0).
+ */
+export class ContractError extends ApiError {
+  constructor(message: string) {
+    super(0, message);
+    this.name = "ContractError";
   }
 }
 
@@ -253,28 +284,111 @@ function problemDetail(body: unknown, statusText: string): string {
   return statusText;
 }
 
-export interface StoredChatSettings {
-  show_thinking: boolean;
-  show_suggestions: boolean;
+/**
+ * Per-conversation display settings. The backend model defaults every
+ * flag (show_thinking false, show_suggestions true, thinking_enabled
+ * true), so a legacy/variant response may omit a key; consumers
+ * normalize absence to those same defaults.
+ */
+export const storedChatSettingsSchema = z.looseObject({
+  show_thinking: z.boolean().optional(),
+  show_suggestions: z.boolean().optional(),
   /** Reasoning generation on/off; also gates thinking-block display. */
-  thinking_enabled: boolean;
-}
+  thinking_enabled: z.boolean().optional(),
+});
 
-export interface StoredConversation {
-  id: string;
-  title: string;
-  bridge_provider?: string | null;
-  settings?: StoredChatSettings;
-  processing_status: string;
-  processing_stage: string;
-  processing_started_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type StoredChatSettings = z.infer<typeof storedChatSettingsSchema>;
 
-type StoredMessageContentPart =
-  { type: "text"; text?: string } | { type: "image_url"; image_url?: { url?: string } };
+/** One persisted conversation row as returned by the conversation routes. */
+export const storedConversationSchema = z.looseObject({
+  id: z.string(),
+  title: z.string(),
+  /** Always present; null when the conversation has no active bridge link. */
+  bridge_provider: z.string().nullable(),
+  // Backend defaults: settings is a default-constructed settings
+  // object, processing_status "idle", processing_stage "".
+  settings: storedChatSettingsSchema.optional(),
+  processing_status: z.string().optional(),
+  processing_stage: z.string().optional(),
+  processing_started_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 
+export type StoredConversation = z.infer<typeof storedConversationSchema>;
+
+/** One content part of a persisted message (text or image_url part). */
+const storedMessageContentPartSchema = z.looseObject({
+  type: z.string(),
+  text: z.string().optional(),
+  image_url: z.looseObject({ url: z.string().optional() }).optional(),
+});
+
+/**
+ * Wire shape of one persisted message. The backend declares `role` as a
+ * free-form string (the database check restricts it to
+ * user/assistant/system/tool) and content parts as free-form objects, so
+ * this schema stays as broad as the backend.
+ */
+export const storedConversationMessageSchema = z.looseObject({
+  id: z.string(),
+  role: z.string(),
+  content: z.string().or(z.array(storedMessageContentPartSchema)),
+  conversation_id: z.string(),
+  created_at: z.string(),
+  // Backend fields with defaults: present on the wire as null/[] when
+  // empty, accepted as absent as well (serialization can omit defaults).
+  meta: z.string().nullable().optional(),
+  structured_content: z
+    .looseObject({
+      answer: z.string(),
+      // Present whenever structured_content is: the backend model
+      // defaults thinking to null and suggestions to [].
+      thinking: z.string().nullable(),
+      suggestions: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
+  used_tools: z
+    .array(
+      z.looseObject({
+        name: z.string(),
+        permission_mode: z.string().optional(),
+        authorization_source: z.string().optional(),
+        duration_ms: z.number().nullable().optional(),
+        success: z.boolean(),
+      })
+    )
+    .optional(),
+  pending_confirmations: z
+    .array(
+      z.looseObject({
+        action_id: z.string(),
+        tool_name: z.string(),
+        parameters: z.record(z.string(), z.unknown()),
+        // Present whenever the item is: the backend model defaults
+        // grant_capable to false and url_host to null.
+        grant_capable: z.boolean(),
+        url_host: z.string().nullable(),
+      })
+    )
+    .optional(),
+});
+
+type StoredMessageContentPart = {
+  type: string;
+  text?: string;
+  image_url?: { url?: string };
+};
+
+/**
+ * One persisted conversation message in the shape the chat UI consumes.
+ * Consumer projection of storedConversationMessageSchema: the backend
+ * declares `role` as a free-form string (the db check allows
+ * user/assistant/system/tool) and content parts as free-form objects,
+ * while the UI only renders user/assistant text/image parts, so the
+ * narrow shapes stay here and fetchConversationMessages casts them.
+ */
 export interface StoredConversationMessage {
   id: string;
   role: "user" | "assistant";
@@ -282,111 +396,207 @@ export interface StoredConversationMessage {
   conversation_id: string;
   created_at: string;
   meta: string | null;
-  structured_content?: {
-    answer: string;
-    thinking?: string | null;
-    sql?: string | null;
-    suggestions?: string[];
-  } | null;
-  pending_confirmations?: {
-    action_id: string;
-    tool_name: string;
-    parameters: Record<string, unknown>;
-    grant_capable?: boolean;
-    url_host?: string | null;
-  }[];
-  used_tools?: {
-    name: string;
-    permission_mode: string;
-    authorization_source: string;
-    success: boolean;
-  }[];
+  // Explicit `| undefined`: with exactOptionalPropertyTypes the wire
+  // value passes through as-is (absent on the wire stays absent here).
+  structured_content?:
+    | {
+        answer: string;
+        thinking?: string | null;
+        suggestions?: string[];
+      }
+    | null
+    | undefined;
+  pending_confirmations?:
+    | {
+        action_id: string;
+        tool_name: string;
+        parameters: Record<string, unknown>;
+        grant_capable?: boolean;
+        url_host?: string | null;
+      }[]
+    | undefined;
+  used_tools?:
+    | {
+        name: string;
+        permission_mode: string;
+        authorization_source: string;
+        success: boolean;
+      }[]
+    | undefined;
 }
 
-export interface ConversationCreateResponse {
-  conversation_id: string;
-}
+/** Body of POST /chat/conversations. */
+export const conversationCreateResponseSchema = z.looseObject({
+  conversation_id: z.string(),
+});
 
-export interface ChatBridgeProviderItem {
-  provider: string;
-  default_persona_user_id: string;
-}
+export type ConversationCreateResponse = z.infer<
+  typeof conversationCreateResponseSchema
+>;
 
-export interface ChatBridgeLink {
-  id: string;
-  conversation_id: string;
-  provider: string;
-  external_space_id: string;
-  external_channel_id: string;
-  created_by: string;
-  sync_direction: string;
-  status: string;
-  delivery_mode: string;
-  persona_mode: string;
-  persona_user_id: string;
-  created_at: string;
-}
+/** One configured external bridge provider that can be chosen in the web UI. */
+export const chatBridgeProviderItemSchema = z.looseObject({
+  provider: z.string(),
+  // The backend builder defaults this to an empty string.
+  default_persona_user_id: z.string().optional(),
+});
 
-export interface ChatBridgeMessageLink {
-  id: string;
-  bridge_link_id: string;
-  message_id: string;
-  external_message_id: string;
-  direction: string;
-  created_at: string;
-}
+export type ChatBridgeProviderItem = z.infer<typeof chatBridgeProviderItemSchema>;
+
+/** One stored external chat bridge link. */
+export const chatBridgeLinkSchema = z.looseObject({
+  id: z.string(),
+  conversation_id: z.string(),
+  provider: z.string(),
+  external_space_id: z.string(),
+  external_channel_id: z.string(),
+  created_by: z.string(),
+  sync_direction: z.string(),
+  status: z.string(),
+  delivery_mode: z.string(),
+  persona_mode: z.string(),
+  persona_user_id: z.string(),
+  created_at: z.string(),
+});
+
+export type ChatBridgeLink = z.infer<typeof chatBridgeLinkSchema>;
+
+/** One stored bridge message mapping. */
+export const chatBridgeMessageLinkSchema = z.looseObject({
+  id: z.string(),
+  bridge_link_id: z.string(),
+  message_id: z.string(),
+  external_message_id: z.string(),
+  direction: z.string(),
+  created_at: z.string(),
+});
+
+export type ChatBridgeMessageLink = z.infer<typeof chatBridgeMessageLinkSchema>;
 
 /** Create one persisted conversation on the server. */
 export async function createConversation(
   title = ""
 ): Promise<ConversationCreateResponse> {
-  return apiRequest<ConversationCreateResponse>("/chat/conversations", {
-    method: "POST",
-    body: JSON.stringify({ title }),
-  });
+  return apiRequest(
+    "/chat/conversations",
+    {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    },
+    conversationCreateResponseSchema
+  );
 }
 
 /** Load the persisted conversation list from the server. */
 export async function fetchConversations(): Promise<StoredConversation[]> {
-  return apiRequest<StoredConversation[]>("/chat/conversations");
+  return apiRequest("/chat/conversations", {}, z.array(storedConversationSchema));
 }
 
 /** One recent run shown in the trace picker. */
-export interface TraceRunSummary {
-  id: string;
-  conversation_id: string;
-  conversation_title: string;
-  channel: string;
-  status: string;
-  created_at: string;
-  user_message: string;
-}
+export const traceRunSummarySchema = z.looseObject({
+  id: z.string(),
+  conversation_id: z.string(),
+  conversation_title: z.string(),
+  channel: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  /** The run's request text, truncated to 200 chars server-side. */
+  user_message: z.string(),
+});
+
+export type TraceRunSummary = z.infer<typeof traceRunSummarySchema>;
+
+/** One agent_runs row as returned by the db proxy. */
+export const agentRunRecordSchema = z.looseObject({
+  id: z.string(),
+  conversation_id: z.string(),
+  session_id: z.string(),
+  channel: z.string(),
+  status: z.string(),
+  current_step: z.string(),
+  request_id: z.string(),
+  // Stored as a JSON text column; parsed to an object by the db proxy.
+  resume_payload: z.looseObject({}),
+  tool_policy_version: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable(),
+});
+
+/** One agent_run_events row as returned by the db proxy. */
+export const agentRunEventRecordSchema = z.looseObject({
+  id: z.string(),
+  run_id: z.string(),
+  request_id: z.string(),
+  conversation_id: z.string(),
+  sequence: z.number(),
+  event_type: z.string(),
+  // Parsed JSON object; free-form per event type.
+  payload: z.looseObject({}),
+  created_at: z.string(),
+  delivered_at: z.string().nullable(),
+});
+
+/** One agent_confirmations row joined with its tool invocation. */
+export const agentConfirmationRecordSchema = z.looseObject({
+  confirmation_id: z.string(),
+  turn_id: z.string(),
+  invocation_id: z.string(),
+  status: z.string(),
+  title: z.string(),
+  description: z.string(),
+  expires_at: z.string(),
+  decided_at: z.string().nullable(),
+  created_at: z.string(),
+  tool_name: z.string(),
+  arguments: z.looseObject({}),
+});
 
 /** Full per-turn trace assembled from the persisted run tables. */
-export interface TurnTrace {
-  run: Record<string, unknown>;
-  conversation_id: string;
-  messages: {
-    user: { content: string; created_at: string } | null;
-    assistant: { content: string; created_at: string } | null;
-  };
-  signals: Record<string, unknown>;
-  tool_calls: Record<string, unknown>[];
-  confirmations: Record<string, unknown>[];
-  events: Record<string, unknown>[];
-}
+export const turnTraceSchema = z.looseObject({
+  run: agentRunRecordSchema,
+  conversation_id: z.string(),
+  messages: z.looseObject({
+    user: z
+      .looseObject({
+        content: z.string(),
+        created_at: z.string(),
+      })
+      .nullable(),
+    assistant: z
+      .looseObject({
+        content: z.string(),
+        created_at: z.string(),
+      })
+      .nullable(),
+  }),
+  // Map of signal event type to that event's parsed payload.
+  signals: z.record(z.string(), z.looseObject({})),
+  tool_calls: z.array(agentRunEventRecordSchema),
+  confirmations: z.array(agentConfirmationRecordSchema),
+  events: z.array(agentRunEventRecordSchema),
+});
+
+export type TurnTrace = z.infer<typeof turnTraceSchema>;
+
+/** Body of GET /admin/trace (recent runs for the picker). */
+export const recentTracesResponseSchema = z.looseObject({
+  runs: z.array(traceRunSummarySchema),
+});
 
 /** Load recent runs (newest first) with their request text for the picker. */
 export async function getRecentTraces(limit = 50): Promise<TraceRunSummary[]> {
-  const data = await apiRequest<{ runs: TraceRunSummary[] }>(
-    `/admin/trace?limit=${limit}`
+  const data = await apiRequest(
+    `/admin/trace?limit=${limit}`,
+    {},
+    recentTracesResponseSchema
   );
   return data.runs;
 }
 
 /** Load the full turn trace for one agent run id. */
 export async function getTurnTrace(runId: string): Promise<TurnTrace> {
-  return apiRequest<TurnTrace>(`/admin/trace/${encodePathSegment(runId)}`);
+  return apiRequest(`/admin/trace/${encodePathSegment(runId)}`, {}, turnTraceSchema);
 }
 
 /**
@@ -401,6 +611,17 @@ export interface ConversationMessagePage {
   has_more: boolean;
 }
 
+/**
+ * Wire body of GET /chat/conversations/{id}/messages. Items use
+ * storedConversationMessageSchema (backend shape); the wrapper converts
+ * them to the consumer page type above.
+ */
+export const conversationMessagePageSchema = z.looseObject({
+  messages: z.array(storedConversationMessageSchema),
+  next_cursor: z.string().nullable().optional(),
+  has_more: z.boolean().optional(),
+});
+
 /** Load one page of a persisted conversation history from the server. */
 export async function fetchConversationMessages(
   conversationId: string,
@@ -413,22 +634,49 @@ export async function fetchConversationMessages(
   if (cursor) {
     params.set("cursor", cursor);
   }
-  return apiRequest<ConversationMessagePage>(
-    `/chat/conversations/${encodePathSegment(conversationId)}/messages?${params.toString()}`
+  const page = await apiRequest(
+    `/chat/conversations/${encodePathSegment(conversationId)}/messages?${params.toString()}`,
+    {},
+    conversationMessagePageSchema
   );
+  return {
+    next_cursor: page.next_cursor ?? null,
+    has_more: page.has_more ?? false,
+    messages: page.messages.map((message) => ({
+      id: message.id,
+      // The backend role is a free-form string (the db check allows
+      // user/assistant/system/tool); the UI only renders user/assistant,
+      // so the narrow union is cast here.
+      role: message.role as StoredConversationMessage["role"],
+      // The backend content parts are free-form objects; the narrow part
+      // shape above is the one the chat UI renders.
+      content: message.content as StoredConversationMessage["content"],
+      conversation_id: message.conversation_id,
+      created_at: message.created_at,
+      meta: message.meta ?? null,
+      structured_content: message.structured_content,
+      pending_confirmations: message.pending_confirmations,
+      used_tools: message.used_tools?.map((tool) => ({
+        name: tool.name,
+        permission_mode: tool.permission_mode ?? "",
+        authorization_source: tool.authorization_source ?? "",
+        success: tool.success,
+      })),
+    })),
+  };
 }
 
-/** Rename one persisted conversation on the server. */
 export async function updateConversationTitle(
   conversationId: string,
   title: string
 ): Promise<StoredConversation> {
-  return apiRequest<StoredConversation>(
+  return apiRequest(
     `/chat/conversations/${encodePathSegment(conversationId)}`,
     {
       method: "PUT",
       body: JSON.stringify({ title }),
-    }
+    },
+    storedConversationSchema
   );
 }
 
@@ -444,26 +692,43 @@ export async function updateChatSettings(
   conversationId: string,
   settings: Partial<StoredChatSettings>
 ): Promise<StoredChatSettings> {
-  return apiRequest<StoredChatSettings>(
+  return apiRequest(
     `/chat/conversations/${encodePathSegment(conversationId)}/settings`,
     {
       method: "PATCH",
       body: JSON.stringify(settings),
-    }
+    },
+    storedChatSettingsSchema
   );
 }
 
 /** Load bridge providers that the web chat can connect to. */
 export async function fetchChatBridgeProviders(): Promise<ChatBridgeProviderItem[]> {
-  return apiRequest<ChatBridgeProviderItem[]>("/admin/chat-bridge-providers");
+  return apiRequest(
+    "/admin/chat-bridge-providers",
+    {},
+    z.array(chatBridgeProviderItemSchema)
+  );
 }
+
+/**
+ * Body of GET /admin/chat-bridges/conversations/{id} and
+ * PUT /admin/chat-bridges/{id}/settings: either the stored link or an
+ * explicit `chat_bridge_link: null` marker.
+ */
+export const chatBridgeLinkLookupSchema = z.union([
+  chatBridgeLinkSchema,
+  z.looseObject({ chat_bridge_link: z.null() }),
+]);
 
 /** Load the stored bridge link for one conversation, if it exists. */
 export async function fetchChatBridgeForConversation(
   conversationId: string
 ): Promise<ChatBridgeLink | null> {
-  const response = await apiRequest<ChatBridgeLink | { chat_bridge_link: null }>(
-    `/admin/chat-bridges/conversations/${encodePathSegment(conversationId)}`
+  const response = await apiRequest(
+    `/admin/chat-bridges/conversations/${encodePathSegment(conversationId)}`,
+    {},
+    chatBridgeLinkLookupSchema
   );
   if ("chat_bridge_link" in response) {
     return null;
@@ -483,7 +748,7 @@ export async function fetchChatBridgeLinks(
   const url = queryString
     ? `/admin/chat-bridges?${queryString}`
     : "/admin/chat-bridges";
-  return apiRequest<ChatBridgeLink[]>(url);
+  return apiRequest(url, {}, z.array(chatBridgeLinkSchema));
 }
 
 /** Load stored bridge message mappings for one bridge link. */
@@ -499,7 +764,7 @@ export async function fetchChatBridgeMessageLinks(
   const url = queryString
     ? `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/messages?${queryString}`
     : `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/messages`;
-  return apiRequest<ChatBridgeMessageLink[]>(url);
+  return apiRequest(url, {}, z.array(chatBridgeMessageLinkSchema));
 }
 
 type ChatBridgeMutationOptions = {
@@ -525,31 +790,45 @@ export async function createChatBridgeLink(
   options: ChatBridgeCreateOptions,
   title = ""
 ): Promise<ChatBridgeLink> {
-  return apiRequest<ChatBridgeLink>("/admin/chat-bridges", {
-    method: "POST",
-    headers: { "X-Reauth-Token": options.reauthToken },
-    body: JSON.stringify({
-      conversation_id: conversationId,
-      provider,
-      title,
-      delivery_mode: options.deliveryMode,
-      persona_mode: options.personaMode,
-      persona_user_id: options.personaUserId,
-    }),
-  });
+  return apiRequest(
+    "/admin/chat-bridges",
+    {
+      method: "POST",
+      headers: { "X-Reauth-Token": options.reauthToken },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        provider,
+        title,
+        delivery_mode: options.deliveryMode,
+        persona_mode: options.personaMode,
+        persona_user_id: options.personaUserId,
+      }),
+    },
+    chatBridgeLinkSchema
+  );
 }
+
+/**
+ * Body of POST /admin/chat-bridges/{id}/disable and /enable.
+ * `chat_bridge_link` is only present when the toggle changed the link.
+ */
+export const chatBridgeToggleResponseSchema = z.looseObject({
+  updated: z.boolean(),
+  chat_bridge_link: chatBridgeLinkSchema.optional(),
+});
 
 /** Disable one existing bridge link. */
 export async function disableChatBridgeLink(
   bridgeLinkId: string,
   options: ChatBridgeMutationOptions
 ): Promise<boolean> {
-  const response = await apiRequest<{ updated: boolean }>(
+  const response = await apiRequest(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/disable`,
     {
       method: "POST",
       headers: { "X-Reauth-Token": options.reauthToken },
-    }
+    },
+    chatBridgeToggleResponseSchema
   );
   return response.updated;
 }
@@ -559,12 +838,13 @@ export async function enableChatBridgeLink(
   bridgeLinkId: string,
   options: ChatBridgeMutationOptions
 ): Promise<boolean> {
-  const response = await apiRequest<{ updated: boolean }>(
+  const response = await apiRequest(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/enable`,
     {
       method: "POST",
       headers: { "X-Reauth-Token": options.reauthToken },
-    }
+    },
+    chatBridgeToggleResponseSchema
   );
   return response.updated;
 }
@@ -574,7 +854,7 @@ export async function updateChatBridgeLinkSettings(
   bridgeLinkId: string,
   options: ChatBridgeUpdateOptions
 ): Promise<ChatBridgeLink | null> {
-  const response = await apiRequest<ChatBridgeLink | { chat_bridge_link: null }>(
+  const response = await apiRequest(
     `/admin/chat-bridges/${encodePathSegment(bridgeLinkId)}/settings`,
     {
       method: "PUT",
@@ -584,7 +864,8 @@ export async function updateChatBridgeLinkSettings(
         persona_mode: options.personaMode,
         persona_user_id: options.personaUserId,
       }),
-    }
+    },
+    chatBridgeLinkLookupSchema
   );
   if ("chat_bridge_link" in response) {
     return null;
@@ -611,19 +892,42 @@ export interface IndexedFile {
   created_at: string | null;
 }
 
+/** Body of POST /files/upload (the stored file record). */
+export const uploadFileResponseSchema = z.looseObject({
+  id: z.string(),
+  original_name: z.string(),
+  size: z.number(),
+  mime_type: z.string(),
+});
+
+/** One row of the files table as returned by the db proxy. */
+export const fileMetadataRecordSchema = z.looseObject({
+  id: z.string(),
+  original_name: z.string(),
+  size: z.number(),
+  mime_type: z.string(),
+  // NOT NULL with a database default, so always a string.
+  created_at: z.string(),
+});
+
+/** Body of GET /files. */
+export const listFilesResponseSchema = z.looseObject({
+  files: z.array(fileMetadataRecordSchema),
+});
+
 /** Upload a file. */
 export async function uploadFile(file: File): Promise<FileUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const data = await apiRequest<{
-    id: string;
-    original_name: string;
-    size: number;
-  }>("/files/upload", {
-    method: "POST",
-    body: formData,
-  });
+  const data = await apiRequest(
+    "/files/upload",
+    {
+      method: "POST",
+      body: formData,
+    },
+    uploadFileResponseSchema
+  );
 
   return {
     file_id: data.id,
@@ -635,13 +939,13 @@ export async function uploadFile(file: File): Promise<FileUploadResponse> {
 
 /** Fetch list of uploaded files. */
 export async function fetchFiles(): Promise<IndexedFile[]> {
-  const data = await apiRequest<{ files: Array<Record<string, unknown>> }>("/files");
-  return (data.files || []).map((f) => ({
-    file_id: f["id"] as string,
-    filename: f["original_name"] as string,
-    size: f["size"] as number,
-    mime_type: f["mime_type"] as string,
-    created_at: (f["created_at"] as string | null) ?? null,
+  const data = await apiRequest("/files", {}, listFilesResponseSchema);
+  return data.files.map((file) => ({
+    file_id: file.id,
+    filename: file.original_name,
+    size: file.size,
+    mime_type: file.mime_type,
+    created_at: file.created_at,
   }));
 }
 
@@ -654,32 +958,45 @@ export async function deleteFileById(fileId: string): Promise<void> {
 // Workspace
 // ============================================================
 
-export interface WorkspaceItem {
-  name: string;
-  type: "file" | "directory";
-  path: string;
-  size?: number;
-}
+/** One entry of the workspace directory tree. */
+export const workspaceItemSchema = z.looseObject({
+  name: z.string(),
+  type: z.enum(["file", "directory"]),
+  path: z.string(),
+  // Present only for files.
+  size: z.number().optional(),
+});
 
-export interface WorkspaceTreeResponse {
-  items: WorkspaceItem[];
-  path: string;
-  parent: string | null;
-  workspace: string;
-}
+export type WorkspaceItem = z.infer<typeof workspaceItemSchema>;
+
+/** Body of GET /workspace/tree. */
+export const workspaceTreeSchema = z.looseObject({
+  items: z.array(workspaceItemSchema),
+  path: z.string(),
+  parent: z.string().nullable(),
+  // The backend omits this when no workspace directories are configured.
+  workspace: z.string().optional(),
+});
+
+export type WorkspaceTreeResponse = z.infer<typeof workspaceTreeSchema>;
 
 /** Fetch workspace directory tree. */
 export async function fetchWorkspaceTree(
   path: string = ""
 ): Promise<WorkspaceTreeResponse> {
   const params = path ? `?path=${encodeURIComponent(path)}` : "";
-  return apiRequest<WorkspaceTreeResponse>(`/workspace/tree${params}`);
+  return apiRequest(`/workspace/tree${params}`, {}, workspaceTreeSchema);
 }
+
+/** Body of GET /workspace/dirs. */
+export const workspaceDirsSchema = z.looseObject({
+  directories: z.array(z.string()),
+});
 
 /** Fetch configured workspace directories. */
 export async function fetchWorkspaceDirs(): Promise<string[]> {
-  const data = await apiRequest<{ directories: string[] }>("/workspace/dirs");
-  return data.directories || [];
+  const data = await apiRequest("/workspace/dirs", {}, workspaceDirsSchema);
+  return data.directories;
 }
 
 // ============================================================
@@ -801,14 +1118,22 @@ export function getErrorSuggestion(category: string): string {
 // RED zone tool confirmations
 // ============================================================
 
-export interface ConfirmResponse {
-  accepted: boolean;
-  action_id: string;
-  /** Turn outcome after the decision: final | paused | failed | cancelled. */
-  status?: string;
-  message_id?: string;
-  result_summary?: string;
-}
+/**
+ * Body of POST /confirm. `status`, `message_id` and `result_summary` are
+ * only present when the backend reports a non-empty value for them;
+ * `status` is the turn outcome after the decision:
+ * final | paused | failed | cancelled.
+ */
+export const confirmResponseSchema = z.looseObject({
+  accepted: z.boolean(),
+  detail: z.string(),
+  action_id: z.string(),
+  status: z.string().optional(),
+  message_id: z.string().optional(),
+  result_summary: z.string().optional(),
+});
+
+export type ConfirmResponse = z.infer<typeof confirmResponseSchema>;
 
 /** Approve a pending RED zone tool action. */
 export async function confirmAction(
@@ -816,15 +1141,19 @@ export async function confirmAction(
   scope: "once" | "domain" | "conversation",
   conversationId: string = ""
 ): Promise<ConfirmResponse> {
-  return apiRequest<ConfirmResponse>("/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      action_id: actionId,
-      decision: "approve",
-      scope: scope,
-      conversation_id: conversationId,
-    }),
-  });
+  return apiRequest(
+    "/confirm",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action_id: actionId,
+        decision: "approve",
+        scope: scope,
+        conversation_id: conversationId,
+      }),
+    },
+    confirmResponseSchema
+  );
 }
 
 /** Deny a pending RED zone tool action. */
@@ -832,14 +1161,18 @@ export async function denyAction(
   actionId: string,
   conversationId: string = ""
 ): Promise<ConfirmResponse> {
-  return apiRequest<ConfirmResponse>("/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      action_id: actionId,
-      decision: "deny",
-      conversation_id: conversationId,
-    }),
-  });
+  return apiRequest(
+    "/confirm",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action_id: actionId,
+        decision: "deny",
+        conversation_id: conversationId,
+      }),
+    },
+    confirmResponseSchema
+  );
 }
 
 // ============================================================

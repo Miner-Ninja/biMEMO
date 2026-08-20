@@ -292,7 +292,7 @@ export function ProfilePage() {
               {t("admin.timezone")}
             </label>
             <TimezoneCombobox
-              value={profile.timezone}
+              value={profile.timezone || ""}
               onChange={(timezone) => setProfile({ ...profile, timezone })}
             />
           </div>
@@ -326,7 +326,7 @@ export function ProfilePage() {
               }
             />
             <p className="text-xs text-muted-foreground">
-              {profile.custom_instructions.length} / 2000
+              {(profile.custom_instructions || "").length} / 2000
             </p>
           </div>
         </div>

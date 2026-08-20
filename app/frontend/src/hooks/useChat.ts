@@ -69,9 +69,9 @@ function parseMessageMeta(rawMeta: string | null): StoredMessageMeta | null {
 function mapSettings(
   raw:
     | {
-        show_thinking?: boolean;
-        show_suggestions?: boolean;
-        thinking_enabled?: boolean;
+        show_thinking?: boolean | undefined;
+        show_suggestions?: boolean | undefined;
+        thinking_enabled?: boolean | undefined;
       }
     | undefined
 ): ChatSettings {
