@@ -78,6 +78,7 @@ tmp/
 scripts/analyze_naming.py
 sandbox/
 openspec/
+docs/
 PROJECT_PROFILE.md
 CODE_REVIEW.md
 CODE_RULES.md

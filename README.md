@@ -176,8 +176,6 @@ masking, path traversal, numeric-IP block, tainted-memory respect)
 are always-on — they appear in the page as informational lock cards
 but cannot be edited.
 
-The page is documented under [`docs/security.md`](./docs/security.md).
-
 ## Configuration
 
 All configuration via environment variables with prefix `BIMEMO_`:
@@ -232,7 +230,6 @@ pull requests.
 
 ## Project Docs
 
-- [docs/README.md](docs/README.md) for the technical document index
 - [INSTALL.md](INSTALL.md) for installation details
 - [USAGE.md](USAGE.md) for user-facing workflows
 - [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request rules
