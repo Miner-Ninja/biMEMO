@@ -1,19 +1,20 @@
 """JSONL decision trace for the graph extractor.
 
-Mirrors the dialog-recorder/distiller trace pattern: one line per
-decision, written best-effort to the runtime directory.
+One line per decision, written best-effort to the runtime directory
+(``BIMEMO_RUNTIME_DIR``, default ``.runtime``). The file mechanics live
+in the shared JSONL trace; this module keeps the entry shape (millisecond
+timestamp + decision + detail fields) and the decision vocabulary.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
 from backend.constants import ENV_RUNTIME_DIR
+from backend.memory.trace import JsonlTrace
 
 
 logger = logging.getLogger(__name__)
@@ -29,14 +30,14 @@ TRACE_DECISION_FORBIDDEN_ENTITY = "entity_skipped_forbidden_name"
 TRACE_DECISION_PARSE_EMPTY = "extraction_empty_or_unparsed"
 TRACE_DECISION_UNSAFE_OUTPUT = "assertion_skipped_unsafe_output"
 
-DEFAULT_TRACE_LIMIT = 100
-MAX_TRACE_LIMIT = 500
-
 
 def _trace_path() -> str:
     """Return the trace file path inside the runtime directory."""
     runtime_dir = os.environ.get(ENV_RUNTIME_DIR, ".runtime")
     return os.path.join(runtime_dir, TRACE_FILE_NAME)
+
+
+_trace = JsonlTrace(_trace_path, label="graph extractor")
 
 
 def write_graph_extractor_trace(
@@ -49,17 +50,11 @@ def write_graph_extractor_trace(
         "decision": decision,
         **(detail or {}),
     }
-    try:
-        path = _trace_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as trace_file:
-            trace_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError:
-        logger.warning("Failed to write graph extractor trace", exc_info=True)
+    _trace.append(entry)
 
 
 def read_graph_extractor_trace(
-    limit: int = DEFAULT_TRACE_LIMIT,
+    limit: int = 100,
     decision: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read recent extractor trace entries, newest-first.
@@ -67,29 +62,4 @@ def read_graph_extractor_trace(
     Best-effort read of the local diagnostics JSONL file. A missing or
     unreadable file yields an empty list — the trace is diagnostic only.
     """
-    capped = max(1, min(limit, MAX_TRACE_LIMIT))
-    path = _trace_path()
-    if not os.path.exists(path):
-        return []
-    entries: deque[dict[str, Any]] = deque(maxlen=capped)
-    try:
-        with open(path, encoding="utf-8") as trace_file:
-            for line in trace_file:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    entry = json.loads(stripped)
-                except json.JSONDecodeError:
-                    logger.warning(
-                        "Skipping malformed graph extractor trace line: %.200s",
-                        stripped,
-                    )
-                    continue
-                if decision and str(entry.get("decision", "")) != decision:
-                    continue
-                entries.append(entry)
-    except OSError:
-        logger.warning("Failed to read graph extractor trace", exc_info=True)
-        return []
-    return list(reversed(entries))
+    return _trace.read(limit=limit, decision=decision)
