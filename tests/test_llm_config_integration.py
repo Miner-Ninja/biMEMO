@@ -1065,10 +1065,9 @@ class FakeAdminClient:
                     return {"chat_bridge_message_link": link}
             return {"chat_bridge_message_link": None}
         raise AssertionError(f"Unexpected operation: {operation}")
-
     async def get_user_profile(self) -> dict:
-        """Return the stored fake user profile."""
-        return dict(self._profile)
+        """Return the stored fake user profile, wrapped as the db-proxy handler does."""
+        return {"profile": dict(self._profile)}
 
     async def create_conversation(self, title: str = "") -> str:
         """Create and return one fake persisted conversation."""
@@ -3788,8 +3787,8 @@ class TestFileReplacement:
 class TestProfileContract:
     """Integration tests for the user profile route contract."""
 
-    def test_profile_returns_raw_profile_object(self) -> None:
-        """GET /admin/profile should return the profile object directly."""
+    def test_profile_returns_wrapped_profile_object(self) -> None:
+        """GET /admin/profile should return the handler's profile wrapper."""
         app, token, sm, sc, _ = _build_test_app()
         app.state.admin_client = FakeAdminClient()
         client, _ = _authed_client_with_csrf(app, token, sm, sc)
@@ -3798,10 +3797,12 @@ class TestProfileContract:
 
         assert resp.status_code == 200, resp.text
         assert resp.json() == {
-            "display_name": "Ada",
-            "timezone": "Europe/Vilnius",
-            "language": "lt",
-            "custom_instructions": "Be concise",
+            "profile": {
+                "display_name": "Ada",
+                "timezone": "Europe/Vilnius",
+                "language": "lt",
+                "custom_instructions": "Be concise",
+            }
         }
 
     def test_profile_save_persists_updated_fields(self) -> None:
@@ -3827,13 +3828,15 @@ class TestProfileContract:
         load_resp = client.get("/admin/profile")
         assert load_resp.status_code == 200, load_resp.text
         assert load_resp.json() == {
-            "first_name": "",
-            "last_name": "",
-            "display_name": "Grace",
-            "assistant_name": "",
-            "timezone": "UTC",
-            "language": "en",
-            "custom_instructions": "Prefer terse answers",
+            "profile": {
+                "first_name": "",
+                "last_name": "",
+                "display_name": "Grace",
+                "assistant_name": "",
+                "timezone": "UTC",
+                "language": "en",
+                "custom_instructions": "Prefer terse answers",
+            }
         }
 
 

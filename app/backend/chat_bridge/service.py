@@ -554,16 +554,16 @@ class ChatBridgeService:
         images: list[str],
     ) -> OutboundBridgeMessage:
         """Build one outbound user message with profile and persona settings."""
-        profile = await self._admin_client.get_user_profile()
+        profile = (await self._admin_client.get_user_profile() or {}).get(
+            "profile"
+        ) or {}
         display_name = str(profile.get("display_name", "")).strip()
-        avatar_url = str(profile.get("avatar_url", "")).strip()
         if not self._should_use_user_persona_delivery(bridge_link):
             return OutboundBridgeMessage(
                 role="user",
                 content=content,
                 images=images,
                 display_name=display_name or DEFAULT_WEB_DISPLAY_NAME,
-                avatar_url=avatar_url,
                 use_persona=False,
             )
         return OutboundBridgeMessage(
@@ -571,7 +571,6 @@ class ChatBridgeService:
             content=content,
             images=images,
             display_name=display_name or DEFAULT_WEB_DISPLAY_NAME,
-            avatar_url=avatar_url,
             use_persona=True,
             persona_user_id=self._outbound_persona_user_id(bridge_link),
         )
