@@ -75,6 +75,7 @@ a.out
 
 # --- Local analysis / scratch ---
 tmp/
+plans/
 scripts/analyze_naming.py
 sandbox/
 openspec/
