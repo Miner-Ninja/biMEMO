@@ -19,6 +19,7 @@ services:
       - ../pyproject.toml:/app/pyproject.toml
       - ../tests:/app/tests
       - ../scripts:/app/scripts
+      - ../.env.example:/app/.env.example:ro
       - ../secrets:/run/secrets:ro
       # Public CA root (read-only) so the admin connection page can offer it
       # for download. The CA PRIVATE key stays on the host, never mounted here.

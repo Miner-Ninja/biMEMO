@@ -1,0 +1,39 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Lint, Format, Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t bimemo:test .
+
+      - name: Ruff check
+        run: >
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/repo" -w /repo
+          -e PYTHONPATH=/repo/app -e HOME=/tmp
+          bimemo:test ruff check app/backend tests scripts
+
+      - name: Ruff format check
+        run: >
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/repo" -w /repo
+          -e PYTHONPATH=/repo/app -e HOME=/tmp
+          bimemo:test ruff format --check app/backend tests scripts
+
+      - name: Run tests
+        run: >
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/repo" -w /repo
+          -v "$GITHUB_WORKSPACE/.env.example:/app/.env.example:ro"
+          -e PYTHONPATH=/repo/app -e HOME=/tmp
+          bimemo:test python -m pytest tests/ -q

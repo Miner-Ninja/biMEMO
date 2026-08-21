@@ -30,12 +30,35 @@ docker-compose -f docker/docker-compose.yml up -d --build
 
 ## Tests and Checks
 
-Run checks from the repository root.
+Run the full pre-merge gate from the repository root:
 
 ```bash
-docker-compose -f docker/docker-compose.yml exec bimemo ruff check --fix .
-docker-compose -f docker/docker-compose.yml exec bimemo ruff format .
+./scripts/verify.py
+```
+
+It runs, in order: `image` (rebuild the bimemo image from the current
+tree), `python` (ruff check + ruff format --check + pytest in a
+disposable container that checks the current tree), `frontend` (npm ci
++ lint + build + unit tests in a disposable container from the image's
+frontend build stage), and `security` (gitleaks secret scan). Nothing is
+written to the host tree and no running stack is restarted. The stages
+mirror the GitHub CI workflows, so a green run means a green CI after
+the push. Run a single stage with, for example,
+`./scripts/verify.sh frontend`.
+
+Individual checks, if you only need one (these apply fixes and
+formatting rather than only checking). The ruff checks need the bimemo
+image built first (`./scripts/verify.py image`); the frontend check
+needs the development stack running:
+
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo -e PYTHONPATH=/repo/app \
+  docker-bimemo:latest ruff check --fix app/backend tests scripts
+docker run --rm -v "$PWD:/repo" -w /repo -e PYTHONPATH=/repo/app \
+  docker-bimemo:latest ruff format app/backend tests scripts
 docker-compose -f docker/docker-compose.yml exec bimemo python -m pytest tests/ -v
+docker-compose -f docker/docker-compose.yml exec -T frontend sh -c \
+  "npm ci && npm run lint && npm run build && npm run test"
 docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest \
   detect --source . --config .gitleaks.toml --redact --verbose
 ```

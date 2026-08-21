@@ -69,8 +69,9 @@ fixable = ["ALL"]
 "app/backend/processes/fastapi_app/routes/*.py" = ["B008"]
 "tests/**/*.py" = ["S101", "S105", "S106", "S108", "S603", "S607", "ANN", "ASYNC"]
 # S310 (use of random) and RUF001 (Cyrillic seed text): the seed/stress
-# scripts exist to generate randomized data.
-"scripts/**/*.py" = ["D", "ANN", "RUF001", "S310"]
+# scripts exist to generate randomized data. S603/S607 (subprocess) are
+# exempted like in tests: ops scripts run trusted, static commands.
+"scripts/**/*.py" = ["D", "ANN", "RUF001", "S310", "S603", "S607"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "backend"]
