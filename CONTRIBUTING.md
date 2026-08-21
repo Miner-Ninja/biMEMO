@@ -28,6 +28,25 @@ docker-compose -f docker/docker-compose.yml up -d --build
 - Add or update tests when behavior changes.
 - Do not commit secrets, local TLS files, or `.env` values.
 
+## Remotes and Pushing
+
+The repository is mirrored to two remotes: `origin` (Gitea, the primary
+remote) and `github` (the public mirror).
+
+- A push always means **both** remotes: after pushing `main` to one, push it
+  to the other in the same step.
+- The two remotes must never diverge: `main` on Gitea and `main` on GitHub
+  end at the same commit.
+- Verify after every push with, for example:
+
+```bash
+git fetch origin github
+git rev-list --left-right --count main...origin/main
+git rev-list --left-right --count main...github/main
+```
+
+Both counts must read `0 0`.
+
 ## Tests and Checks
 
 Run the full pre-merge gate from the repository root:
