@@ -44,7 +44,21 @@ frontend build stage), and `security` (gitleaks secret scan). Nothing is
 written to the host tree and no running stack is restarted. The stages
 mirror the GitHub CI workflows, so a green run means a green CI after
 the push. Run a single stage with, for example,
-`./scripts/verify.sh frontend`.
+`./scripts/verify.py frontend`.
+
+A pre-commit hook runs the fast subset of the gate at every commit
+(lint, formatting, and a secret scan of the staged content), in the
+same disposable containers. Activate it once per clone with:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+The hook never modifies files; findings block the commit. It needs
+the docker daemon, and if the daemon is not running it fails with a
+clear error. Bypass it deliberately (for example when docker is not
+available) with `git commit --no-verify` - the pre-merge gate and CI
+still apply on top.
 
 Individual checks, if you only need one (these apply fixes and
 formatting rather than only checking). The ruff checks need the bimemo

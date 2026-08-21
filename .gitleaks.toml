@@ -46,10 +46,12 @@ regexes = [
   '''sk-abc12345678901234567''',
   '''sk-abc123secretkey1234567890abcdef''',
   '''sk-abcdefghijklmnopqrstuv''',
-  # A bare PascalCase identifier extracted as a "key value" is a Python
-  # type annotation (e.g. `signing_key: Ed25519PrivateKey | None = None`
-  # in jwt_auth.py), not a secret. Real key values are hex/base64 strings.
-  '''^[A-Z][A-Za-z0-9]*$''',
+  # The type annotation `signing_key: Ed25519PrivateKey | None = None` in
+  # jwt_auth.py reads as a "key value" to the generic rule. Allowlist the
+  # exact known false positive only; a general identifier pattern is not
+  # safe here, it would also suppress real key IDs (AWS AKIA..., Google
+  # AIza...). A new false positive must be allowlisted explicitly.
+  '''^Ed25519PrivateKey$''',
 ]
 paths = [
   '''app/frontend/package-lock\.json''',
