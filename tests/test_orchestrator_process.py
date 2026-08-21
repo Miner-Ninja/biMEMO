@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.ipc.errors import ConfirmationNotFoundError
+from backend.ipc.errors import ConfirmationNotFoundError, OperationNotFoundError
 from backend.ipc.ipc_channel import IPCChannelError
 from backend.ipc.models import (
     ConfirmRequest,
@@ -479,3 +479,20 @@ class TestBackgroundTaskHelpers:
         await _cancel_background_tasks([first, second])
         assert first.cancelled()
         assert second.cancelled()
+
+
+class TestConfirmErrorTypes:
+    """The typed IPC error classes behind the confirm handler."""
+
+    def test_confirmation_not_found_is_a_value_error(self) -> None:
+        """The typed error keeps its historical ValueError compatibility."""
+        assert issubclass(ConfirmationNotFoundError, ValueError)
+        error = ConfirmationNotFoundError("confirmation 'x' not found")
+        assert error.code == "confirmation_unknown"
+        assert str(error) == "confirmation 'x' not found"
+
+    def test_operation_not_found_keeps_plain_exception_base(self) -> None:
+        """Operation errors stay plain exceptions; only the code is the contract."""
+        error = OperationNotFoundError("operation 'x' not found")
+        assert error.code == "operation_unknown"
+        assert not isinstance(error, ValueError)
