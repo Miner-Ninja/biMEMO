@@ -30,6 +30,14 @@ jobs:
           -e PYTHONPATH=/repo/app -e HOME=/tmp
           bimemo:test ruff format --check app/backend tests scripts
 
+      - name: OpenAPI drift check
+        run: >
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/repo" -w /repo
+          -v "$GITHUB_WORKSPACE/.env.example:/app/.env.example:ro"
+          -e PYTHONPATH=/repo/app -e HOME=/tmp
+          bimemo:test python scripts/openapi_check.py
+
       - name: Run tests
         run: >
           docker run --rm

@@ -8,6 +8,7 @@ Usage:
 Stages (default order):
     image     rebuild the bimemo image from the current tree
     python    ruff check + ruff format --check + pytest (disposable container)
+    openapi   spec/code drift check (disposable container)
     frontend  npm ci + lint + build + unit tests (disposable container)
     security  gitleaks secret scan
 
@@ -31,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPOSE_FILE = REPO_ROOT / "docker" / "docker-compose.yml"
 GITLEAKS_IMAGE = "ghcr.io/gitleaks/gitleaks:latest"
 
-ALL_STAGES = ("image", "python", "frontend", "security")
+ALL_STAGES = ("image", "python", "openapi", "frontend", "security")
 
 
 def note(message: str) -> None:
@@ -71,7 +72,7 @@ def stage_python() -> None:
     /app/.env.example for the env-validation test. Check scope
     (app/backend, tests, scripts) matches the project's ruff config.
     """
-    note("[2/4] python: ruff check/format + pytest (disposable container)")
+    note("[2/5] python: ruff check/format + pytest (disposable container)")
     image = f"{compose_project()}-bimemo:latest"
 
     sh(
@@ -136,6 +137,39 @@ def stage_python() -> None:
     )
 
 
+def stage_openapi() -> None:
+    """OpenAPI spec/code drift check in a disposable container.
+
+    Builds the application without starting the runtime, generates the
+    OpenAPI document it advertises, and compares it with the committed
+    api/openapi.json; any drift fails the stage. Same container and
+    environment as the pytest step.
+    """
+    note("[3/5] openapi: spec/code drift check (disposable container)")
+    image = f"{compose_project()}-bimemo:latest"
+
+    sh(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{REPO_ROOT}:/repo",
+            "-w",
+            "/repo",
+            "-v",
+            f"{REPO_ROOT}/.env.example:/app/.env.example:ro",
+            "-e",
+            "PYTHONPATH=/repo/app",
+            "-e",
+            "HOME=/tmp",
+            image,
+            "python",
+            "scripts/openapi_check.py",
+        ]
+    )
+
+
 def stage_frontend() -> None:
     """npm ci + lint + build + unit tests in a disposable container.
 
@@ -146,7 +180,7 @@ def stage_frontend() -> None:
     rebuilt first so the tested code matches the current tree (a cached
     no-op when nothing changed).
     """
-    note("[3/4] frontend: npm ci + lint + build + unit tests (disposable container)")
+    note("[4/5] frontend: npm ci + lint + build + unit tests (disposable container)")
     image = f"{compose_project()}-bimemo-frontend:latest"
 
     sh(
@@ -180,7 +214,7 @@ def stage_frontend() -> None:
 
 
 def stage_security() -> None:
-    note("[4/4] security: gitleaks secret scan")
+    note("[5/5] security: gitleaks secret scan")
     sh(
         [
             "docker",
@@ -205,6 +239,7 @@ def stage_security() -> None:
 STAGES = {
     "image": stage_image,
     "python": stage_python,
+    "openapi": stage_openapi,
     "frontend": stage_frontend,
     "security": stage_security,
 }

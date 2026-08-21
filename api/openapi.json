@@ -1,0 +1,5335 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_avatar_admin_avatars__avatar_type__put": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_avatar_admin_avatars__avatar_type__put",
+        "type": "object"
+      },
+      "Body_upload_file_files_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_file_files_upload_post",
+        "type": "object"
+      },
+      "ChatBridgeCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create external chat bridge request.\n\nAttributes:\n    conversation_id: Existing web conversation identifier.\n    provider: External messenger provider name.\n    sync_direction: Allowed bridge synchronization direction.\n    delivery_mode: How messages should be presented on the external side.\n    persona_mode: How user persona should be resolved for webhook delivery.\n    persona_user_id: Explicit provider-side user identifier for mapped persona mode.\n    title: Optional external room title override.",
+        "properties": {
+          "conversation_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "default": "bot_only",
+            "pattern": "^(bot_only|persona_user_and_bot_assistant)$",
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "persona_mode": {
+            "default": "neutral",
+            "pattern": "^(neutral|mapped_user)$",
+            "title": "Persona Mode",
+            "type": "string"
+          },
+          "persona_user_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Persona User Id",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "sync_direction": {
+            "default": "bidirectional",
+            "pattern": "^(web_to_external|external_to_web|bidirectional)$",
+            "title": "Sync Direction",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "provider"
+        ],
+        "title": "ChatBridgeCreateRequest",
+        "type": "object"
+      },
+      "ChatBridgeInboundMessageRequest": {
+        "additionalProperties": false,
+        "description": "Inbound external bridge message request.\n\nAttributes:\n    external_space_id: External server or parent scope identifier.\n    external_channel_id: External channel identifier.\n    external_message_id: Provider-side message identifier.\n    author_id: External author identifier.\n    author_name: External author display name.\n    content: Plain text message content.\n    images: Base64 data URLs of attached images.",
+        "properties": {
+          "author_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Author Id",
+            "type": "string"
+          },
+          "author_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Author Name",
+            "type": "string"
+          },
+          "content": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Content",
+            "type": "string"
+          },
+          "external_channel_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "External Channel Id",
+            "type": "string"
+          },
+          "external_message_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "External Message Id",
+            "type": "string"
+          },
+          "external_space_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "External Space Id",
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "external_space_id",
+          "external_channel_id",
+          "external_message_id",
+          "author_id",
+          "author_name"
+        ],
+        "title": "ChatBridgeInboundMessageRequest",
+        "type": "object"
+      },
+      "ChatBridgeInboundMessageResponse": {
+        "additionalProperties": false,
+        "description": "Inbound bridge synchronization response.\n\nAttributes:\n    message_id: Internal saved message identifier.\n    synced: Whether the inbound message was accepted and stored.",
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "synced": {
+            "title": "Synced",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "message_id",
+          "synced"
+        ],
+        "title": "ChatBridgeInboundMessageResponse",
+        "type": "object"
+      },
+      "ChatBridgeLinkItem": {
+        "additionalProperties": false,
+        "description": "External chat bridge link returned by admin routes.\n\nAttributes:\n    id: Internal bridge link identifier.\n    conversation_id: Linked web conversation identifier.\n    provider: External provider name.\n    external_space_id: Parent external room or guild scope identifier.\n    external_channel_id: External room or channel identifier.\n    created_by: Internal creator identifier.\n    sync_direction: Enabled synchronization direction.\n    status: Current bridge state.\n    delivery_mode: External delivery presentation mode.\n    persona_mode: User persona resolution mode.\n    persona_user_id: Explicit provider-side user identifier for mapped persona mode.\n    created_at: ISO 8601 creation timestamp.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "external_channel_id": {
+            "title": "External Channel Id",
+            "type": "string"
+          },
+          "external_space_id": {
+            "title": "External Space Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "persona_mode": {
+            "title": "Persona Mode",
+            "type": "string"
+          },
+          "persona_user_id": {
+            "title": "Persona User Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "sync_direction": {
+            "title": "Sync Direction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "conversation_id",
+          "provider",
+          "external_space_id",
+          "external_channel_id",
+          "created_by",
+          "sync_direction",
+          "status",
+          "delivery_mode",
+          "persona_mode",
+          "persona_user_id",
+          "created_at"
+        ],
+        "title": "ChatBridgeLinkItem",
+        "type": "object"
+      },
+      "ChatBridgeMessageLinkItem": {
+        "additionalProperties": false,
+        "description": "Stored bridge message mapping returned by admin routes.\n\nAttributes:\n    id: Internal mapping identifier.\n    bridge_link_id: Parent bridge link identifier.\n    message_id: Internal biMEMO message identifier.\n    external_message_id: Provider-side message identifier.\n    direction: Bridge direction of this mapping.\n    created_at: ISO 8601 creation timestamp.",
+        "properties": {
+          "bridge_link_id": {
+            "title": "Bridge Link Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "external_message_id": {
+            "title": "External Message Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bridge_link_id",
+          "message_id",
+          "external_message_id",
+          "direction",
+          "created_at"
+        ],
+        "title": "ChatBridgeMessageLinkItem",
+        "type": "object"
+      },
+      "ChatBridgeProviderItem": {
+        "additionalProperties": false,
+        "description": "Configured external bridge provider that can be chosen in the web UI.",
+        "properties": {
+          "default_persona_user_id": {
+            "default": "",
+            "title": "Default Persona User Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "ChatBridgeProviderItem",
+        "type": "object"
+      },
+      "ChatBridgeUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Update stored external chat bridge settings.",
+        "properties": {
+          "delivery_mode": {
+            "default": "bot_only",
+            "pattern": "^(bot_only|persona_user_and_bot_assistant)$",
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "persona_mode": {
+            "default": "neutral",
+            "pattern": "^(neutral|mapped_user)$",
+            "title": "Persona Mode",
+            "type": "string"
+          },
+          "persona_user_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Persona User Id",
+            "type": "string"
+          }
+        },
+        "title": "ChatBridgeUpdateRequest",
+        "type": "object"
+      },
+      "ChatRequest": {
+        "additionalProperties": false,
+        "description": "Chat message request.\n\nAttributes:\n    message: User message text.\n    conversation_id: Stable conversation identifier for episodic memory.\n    images: Optional list of base64 data URLs for image attachments.\n    file_ids: Optional list of active file IDs for context.",
+        "properties": {
+          "client_message_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Client Message Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "file_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "File Ids",
+            "type": "array"
+          },
+          "forced_tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Forced Tools",
+            "type": "array"
+          },
+          "images": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Images",
+            "type": "array"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Message",
+            "type": "string"
+          },
+          "pending_input_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Pending Input Id",
+            "type": "string"
+          },
+          "pending_input_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Input Value"
+          },
+          "pending_input_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Input Version"
+          },
+          "run_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          }
+        },
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatSettingsResponse": {
+        "additionalProperties": false,
+        "description": "Per-conversation display settings.",
+        "properties": {
+          "show_suggestions": {
+            "default": true,
+            "title": "Show Suggestions",
+            "type": "boolean"
+          },
+          "show_thinking": {
+            "default": false,
+            "title": "Show Thinking",
+            "type": "boolean"
+          },
+          "thinking_enabled": {
+            "default": true,
+            "title": "Thinking Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "ChatSettingsResponse",
+        "type": "object"
+      },
+      "ChatSettingsUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Update per-conversation display settings.",
+        "properties": {
+          "show_suggestions": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Suggestions"
+          },
+          "show_thinking": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Thinking"
+          },
+          "thinking_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Enabled"
+          }
+        },
+        "title": "ChatSettingsUpdateRequest",
+        "type": "object"
+      },
+      "ChatStartResponse": {
+        "additionalProperties": false,
+        "description": "Chat start acknowledgement.\n\nThe final assistant response is delivered by the stream `final` event.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stream_started": {
+            "default": true,
+            "title": "Stream Started",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "request_id"
+        ],
+        "title": "ChatStartResponse",
+        "type": "object"
+      },
+      "ConfirmRequest": {
+        "additionalProperties": false,
+        "description": "Trust confirmation decision request.\n\nAttributes:\n    action_id: Cryptographic action identifier.\n    decision: Either \"approve\" or \"deny\".\n    scope: Whether the approval applies once, to a domain, or to the\n        whole conversation.\n    conversation_id: Conversation the confirmed turn belongs to, used to\n        route resume stream events back to the right browser view.",
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "decision": {
+            "pattern": "^(approve|deny)$",
+            "title": "Decision",
+            "type": "string"
+          },
+          "scope": {
+            "default": "once",
+            "pattern": "^(once|domain|conversation)$",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "decision"
+        ],
+        "title": "ConfirmRequest",
+        "type": "object"
+      },
+      "ConfirmationItem": {
+        "additionalProperties": false,
+        "description": "Pending confirmation action.\n\nAttributes:\n    action_id: Cryptographic action identifier.\n    tool_name: Name of the tool awaiting confirmation.\n    parameters: Tool call parameters.\n    grant_capable: True when the permission mode allows a reusable\n        grant (conversation_capability or scoped).\n    url_host: Canonical server host derived for domain-scoped permissions.",
+        "properties": {
+          "action_id": {
+            "title": "Action Id",
+            "type": "string"
+          },
+          "grant_capable": {
+            "default": false,
+            "title": "Grant Capable",
+            "type": "boolean"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "url_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Host"
+          }
+        },
+        "required": [
+          "action_id",
+          "tool_name",
+          "parameters"
+        ],
+        "title": "ConfirmationItem",
+        "type": "object"
+      },
+      "ConversationCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create one new persisted conversation.",
+        "properties": {
+          "title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "ConversationCreateRequest",
+        "type": "object"
+      },
+      "ConversationItem": {
+        "additionalProperties": false,
+        "description": "Conversation list entry returned by chat read APIs.",
+        "properties": {
+          "bridge_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bridge Provider"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "processing_stage": {
+            "default": "",
+            "title": "Processing Stage",
+            "type": "string"
+          },
+          "processing_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Started At"
+          },
+          "processing_status": {
+            "default": "idle",
+            "title": "Processing Status",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ChatSettingsResponse",
+            "default": {
+              "show_suggestions": true,
+              "show_thinking": false,
+              "thinking_enabled": true
+            }
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationItem",
+        "type": "object"
+      },
+      "ConversationMessageItem": {
+        "additionalProperties": false,
+        "description": "One persisted message inside a conversation.",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "pending_confirmations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConfirmationItem"
+            },
+            "title": "Pending Confirmations",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "structured_content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StructuredAssistantContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used_tools": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UsedToolItem"
+            },
+            "title": "Used Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "conversation_id",
+          "created_at"
+        ],
+        "title": "ConversationMessageItem",
+        "type": "object"
+      },
+      "ConversationMessagePage": {
+        "additionalProperties": false,
+        "description": "One cursor page of persisted conversation messages.\n\nItems are ordered oldest to newest. ``next_cursor`` is an opaque\nstring (present only when ``has_more`` is true) that the client\nechoes back unmodified to fetch the next older page.",
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessageItem"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationMessagePage",
+        "type": "object"
+      },
+      "ConversationUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Update one persisted conversation.",
+        "properties": {
+          "title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "ConversationUpdateRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntegrationCreateRequest": {
+        "additionalProperties": false,
+        "description": "Add integration request.\n\nAttributes:\n    name: Integration name (unique identifier).\n    type: Integration type (e.g., \"email\", \"telegram\").\n    config: Integration-specific configuration.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "IntegrationCreateRequest",
+        "type": "object"
+      },
+      "IntegrationListItem": {
+        "additionalProperties": false,
+        "description": "Integration list entry.\n\nAttributes:\n    name: Integration name.\n    type: Integration type.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "IntegrationListItem",
+        "type": "object"
+      },
+      "ModelListRequest": {
+        "description": "Request body for listing provider models without persisting secrets.",
+        "properties": {
+          "api_key": {
+            "default": "",
+            "title": "Api Key",
+            "type": "string"
+          },
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "dialog_recorder_base_url": {
+            "default": "",
+            "title": "Dialog Recorder Base Url",
+            "type": "string"
+          },
+          "service_type": {
+            "default": "openrouter",
+            "title": "Service Type",
+            "type": "string"
+          }
+        },
+        "title": "ModelListRequest",
+        "type": "object"
+      },
+      "OllamaCapabilitiesRequest": {
+        "description": "Request body for probing Ollama runtime capabilities.",
+        "properties": {
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "service_type": {
+            "default": "ollama",
+            "title": "Service Type",
+            "type": "string"
+          }
+        },
+        "title": "OllamaCapabilitiesRequest",
+        "type": "object"
+      },
+      "PasswordAuthRequest": {
+        "additionalProperties": false,
+        "description": "Password-based auth request for login/setup flows.",
+        "properties": {
+          "password": {
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "PasswordAuthRequest",
+        "type": "object"
+      },
+      "ReauthRequest": {
+        "additionalProperties": false,
+        "description": "Re-authentication request for sensitive operations.\n\nAttributes:\n    password: Unlock password for verification.",
+        "properties": {
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "ReauthRequest",
+        "type": "object"
+      },
+      "ScheduledTaskCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create-task payload for the scheduler admin endpoint.",
+        "properties": {
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "conversation_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "repeat_limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Limit"
+          },
+          "schedule": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Schedule",
+            "type": "string"
+          },
+          "task_type": {
+            "pattern": "^(reminder|agent_task)$",
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "task_type",
+          "prompt",
+          "schedule"
+        ],
+        "title": "ScheduledTaskCreateRequest",
+        "type": "object"
+      },
+      "ScheduledTaskUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Update-task payload for the scheduler admin endpoint.\n\nAll fields are optional \u2014 only fields present in the body are updated.",
+        "properties": {
+          "allowed_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tools"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "repeat_limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat Limit"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "pattern": "^(active|paused|completed)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "ScheduledTaskUpdateRequest",
+        "type": "object"
+      },
+      "StopRequest": {
+        "additionalProperties": false,
+        "description": "Stop an in-progress chat request.",
+        "properties": {
+          "request_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "run_id"
+        ],
+        "title": "StopRequest",
+        "type": "object"
+      },
+      "StopResponse": {
+        "additionalProperties": false,
+        "description": "Stop endpoint response.\n\nAttributes:\n    stopped: Whether an active loop was stopped.",
+        "properties": {
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopped"
+        ],
+        "title": "StopResponse",
+        "type": "object"
+      },
+      "StructuredAssistantContent": {
+        "additionalProperties": false,
+        "description": "Structured assistant content extracted from one final response.",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "suggestions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "StructuredAssistantContent",
+        "type": "object"
+      },
+      "TTSRequest": {
+        "description": "Request body for text-to-speech synthesis.",
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TTSRequest",
+        "type": "object"
+      },
+      "UiSettingsRequest": {
+        "additionalProperties": false,
+        "description": "Web-tier UI settings blob replacement request.",
+        "properties": {
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "title": "UiSettingsRequest",
+        "type": "object"
+      },
+      "UsedToolItem": {
+        "additionalProperties": false,
+        "description": "Record of one tool execution.\n\nAttributes:\n    name: Tool name that was executed.\n    permission_mode: Registry permission mode used for execution.\n    duration_ms: Wall-clock execution time, when known.\n    success: Whether the tool executed successfully.",
+        "properties": {
+          "authorization_source": {
+            "default": "",
+            "title": "Authorization Source",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permission_mode": {
+            "default": "",
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "success"
+        ],
+        "title": "UsedToolItem",
+        "type": "object"
+      },
+      "UserProfileRequest": {
+        "additionalProperties": false,
+        "description": "User profile update payload.",
+        "properties": {
+          "assistant_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Assistant Name",
+            "type": "string"
+          },
+          "custom_instructions": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Custom Instructions",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "first_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "First Name",
+            "type": "string"
+          },
+          "language": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Language",
+            "type": "string"
+          },
+          "last_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "title": "UserProfileRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "biMEMO",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/agents/ca-root": {
+      "get": {
+        "description": "Return the public CA root certificate for download.\n\nServes only the public CA certificate \u2014 never the private key.\nThe private key lives on the host only, never in the web container.\n\nArgs:\n    request: FastAPI request (for auth guard).\n\nReturns:\n    Dict with the PEM-encoded public CA certificate.\n\nRaises:\n    HTTPException: 503 if CA root is not configured.",
+        "operationId": "download_ca_root_admin_agents_ca_root_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Download Ca Root Admin Agents Ca Root Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Download Ca Root"
+      }
+    },
+    "/admin/agents/config-block": {
+      "get": {
+        "description": "Generate a ready-to-paste connection configuration block.\n\nReturns the TLS MCP URL and the token label for an external agent\nto configure its connection.\n\nArgs:\n    request: FastAPI request (for auth guard).\n    label: The label of the agent token.\n    cred: Credential Proxy client.\n\nReturns:\n    Dict with \"url\" (TLS MCP endpoint) and \"label\".\n\nRaises:\n    HTTPException: 404 if the agent token does not exist.",
+        "operationId": "get_connection_config_admin_agents_config_block_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "title": "Label",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Connection Config Admin Agents Config Block Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Connection Config"
+      }
+    },
+    "/admin/agents/issue": {
+      "post": {
+        "description": "Issue a new MCP agent token.\n\nGenerates a high-entropy random token, stores only its SHA-256 hash,\nand returns the plaintext exactly once. The plaintext is never logged.\nIssuing an access credential requires a valid single-use\nre-authentication token, like the revoke path.\n\nArgs:\n    request: FastAPI request (for auth guard).\n    label: Human-readable label for the token (e.g. \"claude\").\n    capability: Token capability \u2014 \"read\" or \"read-write\".\n    reauth_token: Single-use reauth token from X-Reauth-Token header.\n    cred: Credential Proxy client.\n    reauth_mgr: Re-authentication manager.\n\nReturns:\n    Dict with \"label\" and \"token\" (plaintext, shown once).\n\nRaises:\n    HTTPException: 403 without a valid reauth token, 422 on invalid\n        capability, 409 if the label already exists.",
+        "operationId": "issue_agent_token_admin_agents_issue_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "title": "Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "capability",
+            "required": false,
+            "schema": {
+              "default": "read",
+              "title": "Capability",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Reauth-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Issue Agent Token Admin Agents Issue Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Agent Token"
+      }
+    },
+    "/admin/agents/list": {
+      "get": {
+        "description": "List all configured MCP agent tokens (metadata only).\n\nReturns label, capability, and created_at \u2014 never the plaintext token.\n\nArgs:\n    request: FastAPI request (for auth guard).\n    cred: Credential Proxy client.\n\nReturns:\n    List of agent token metadata dicts.",
+        "operationId": "list_agent_tokens_admin_agents_list_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Agent Tokens Admin Agents List Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agent Tokens"
+      }
+    },
+    "/admin/agents/revoke/{label}": {
+      "delete": {
+        "description": "Revoke an MCP agent token by label.\n\nDeletes the corresponding ``mcp_agent`` integration so the token no longer\nauthenticates. Requires a valid single-use re-authentication token, and\nonly ever deletes an ``mcp_agent`` integration \u2014 never a non-agent\nintegration that happens to share the same name.\n\nArgs:\n    request: FastAPI request (for auth guard).\n    label: The label of the token to revoke.\n    reauth_token: Single-use reauth token from X-Reauth-Token header.\n    cred: Credential Proxy client.\n    reauth_mgr: Re-authentication manager.\n\nReturns:\n    204 without a body.\n\nRaises:\n    HTTPException: 403 without a valid reauth token, 404 if no agent token\n        with that label exists.",
+        "operationId": "revoke_agent_token_admin_agents_revoke__label__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "title": "Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Reauth-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Agent Token"
+      }
+    },
+    "/admin/avatars/{avatar_type}": {
+      "delete": {
+        "description": "Delete an avatar image.\n\nArgs:\n    avatar_type: Avatar type (\"user\" or \"ai\").\n    claims: Authenticated user.\n    admin: DB Proxy client.",
+        "operationId": "delete_avatar_admin_avatars__avatar_type__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "avatar_type",
+            "required": true,
+            "schema": {
+              "title": "Avatar Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Avatar"
+      },
+      "put": {
+        "description": "Upload an avatar image.\n\nArgs:\n    avatar_type: Avatar type (\"user\" or \"ai\").\n    file: Uploaded image file.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Success message with avatar URL.",
+        "operationId": "upload_avatar_admin_avatars__avatar_type__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "avatar_type",
+            "required": true,
+            "schema": {
+              "title": "Avatar Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_admin_avatars__avatar_type__put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Avatar Admin Avatars  Avatar Type  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Avatar"
+      }
+    },
+    "/admin/backup": {
+      "post": {
+        "description": "Write consistent encrypted copies of every open database.\n\nUses VACUUM INTO through the DB proxy, so the copies are taken from\nthe live connections and cannot capture a torn WAL state. Limited to\n3 runs per hour.\n\nRaises:\n    HTTPException: 429 (with Retry-After) when the hourly backup limit is\n    exhausted.",
+        "operationId": "create_backup_admin_backup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Backup Admin Backup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Backup"
+      }
+    },
+    "/admin/chat-bridge-providers": {
+      "get": {
+        "description": "List configured external bridge providers available to the web UI.",
+        "operationId": "list_chat_bridge_providers_admin_chat_bridge_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatBridgeProviderItem"
+                  },
+                  "title": "Response List Chat Bridge Providers Admin Chat Bridge Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Chat Bridge Providers"
+      }
+    },
+    "/admin/chat-bridges": {
+      "get": {
+        "description": "List stored external chat bridge links.",
+        "operationId": "list_chat_bridge_links_admin_chat_bridges_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatBridgeLinkItem"
+                  },
+                  "title": "Response List Chat Bridge Links Admin Chat Bridges Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Chat Bridge Links"
+      },
+      "post": {
+        "description": "Create one external chat bridge link from the web conversation side.",
+        "operationId": "create_chat_bridge_link_admin_chat_bridges_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBridgeCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBridgeLinkItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Chat Bridge Link"
+      }
+    },
+    "/admin/chat-bridges/conversations/{conversation_id}": {
+      "get": {
+        "description": "Return the stored bridge link for one conversation, if it exists.",
+        "operationId": "get_chat_bridge_for_conversation_admin_chat_bridges_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ChatBridgeLinkItem"
+                    },
+                    {
+                      "additionalProperties": {
+                        "type": "null"
+                      },
+                      "type": "object"
+                    }
+                  ],
+                  "title": "Response Get Chat Bridge For Conversation Admin Chat Bridges Conversations  Conversation Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chat Bridge For Conversation"
+      }
+    },
+    "/admin/chat-bridges/{bridge_link_id}/disable": {
+      "post": {
+        "description": "Disable one stored external chat bridge link.",
+        "operationId": "disable_chat_bridge_link_admin_chat_bridges__bridge_link_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bridge_link_id",
+            "required": true,
+            "schema": {
+              "title": "Bridge Link Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Disable Chat Bridge Link Admin Chat Bridges  Bridge Link Id  Disable Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Chat Bridge Link"
+      }
+    },
+    "/admin/chat-bridges/{bridge_link_id}/enable": {
+      "post": {
+        "description": "Enable one stored external chat bridge link.",
+        "operationId": "enable_chat_bridge_link_admin_chat_bridges__bridge_link_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bridge_link_id",
+            "required": true,
+            "schema": {
+              "title": "Bridge Link Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enable Chat Bridge Link Admin Chat Bridges  Bridge Link Id  Enable Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Chat Bridge Link"
+      }
+    },
+    "/admin/chat-bridges/{bridge_link_id}/messages": {
+      "get": {
+        "description": "List stored bridge message mappings for one bridge link.",
+        "operationId": "list_chat_bridge_message_links_admin_chat_bridges__bridge_link_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bridge_link_id",
+            "required": true,
+            "schema": {
+              "title": "Bridge Link Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Direction",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatBridgeMessageLinkItem"
+                  },
+                  "title": "Response List Chat Bridge Message Links Admin Chat Bridges  Bridge Link Id  Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Chat Bridge Message Links"
+      }
+    },
+    "/admin/chat-bridges/{bridge_link_id}/settings": {
+      "put": {
+        "description": "Update one stored external chat bridge link settings.",
+        "operationId": "update_chat_bridge_link_settings_admin_chat_bridges__bridge_link_id__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bridge_link_id",
+            "required": true,
+            "schema": {
+              "title": "Bridge Link Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBridgeUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ChatBridgeLinkItem"
+                    },
+                    {
+                      "additionalProperties": {
+                        "type": "null"
+                      },
+                      "type": "object"
+                    }
+                  ],
+                  "title": "Response Update Chat Bridge Link Settings Admin Chat Bridges  Bridge Link Id  Settings Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Chat Bridge Link Settings"
+      }
+    },
+    "/admin/conversations/{conversation_id}": {
+      "delete": {
+        "description": "Delete a conversation via DB Proxy Socket B.\n\nRequires a valid re-authentication token.\n\nArgs:\n    conversation_id: ID of conversation to delete.\n    reauth_token: Single-use reauth token from X-Reauth-Token header.\n    request: FastAPI request.\n    claims: Authenticated token claims.\n    reauth_mgr: Re-authentication manager.\n    admin: DB Proxy Socket B client.",
+        "operationId": "delete_conversation_endpoint_admin_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Conversation Endpoint"
+      }
+    },
+    "/admin/integrations": {
+      "get": {
+        "description": "List configured integrations via Credential Proxy.\n\nArgs:\n    claims: Authenticated token claims.\n    cred: Credential Proxy client.\n\nReturns:\n    List of integration entries (names and types only).",
+        "operationId": "list_integrations_admin_integrations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationListItem"
+                  },
+                  "title": "Response List Integrations Admin Integrations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Integrations"
+      },
+      "post": {
+        "description": "Create a new integration via Credential Proxy.\n\nArgs:\n    body: Integration creation request.\n    claims: Authenticated token claims.\n    cred: Credential Proxy client.\n\nReturns:\n    Success message.",
+        "operationId": "create_integration_admin_integrations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Integration Admin Integrations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Integration"
+      }
+    },
+    "/admin/integrations/{name}": {
+      "delete": {
+        "description": "Delete an integration via Credential Proxy.\n\nRequires a valid re-authentication token.\n\nArgs:\n    name: Integration name to delete.\n    reauth_token: Single-use reauth token from X-Reauth-Token header.\n    request: FastAPI request.\n    claims: Authenticated token claims.\n    reauth_mgr: Re-authentication manager.\n    cred: Credential Proxy client.",
+        "operationId": "delete_integration_admin_integrations__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-reauth-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Integration"
+      }
+    },
+    "/admin/llm/capabilities": {
+      "post": {
+        "description": "Return runtime capabilities for an Ollama model.\n\nProvider and network failures surface as a 502 problem response; a\nmodel the host does not know surfaces as a 404 problem response.",
+        "operationId": "detect_llm_capabilities_admin_llm_capabilities_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaCapabilitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Detect Llm Capabilities Admin Llm Capabilities Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detect Llm Capabilities"
+      }
+    },
+    "/admin/llm/config": {
+      "get": {
+        "description": "Return current LLM provider configuration (no secrets).\n\nReturns provider type, model, dialog_recorder_model, base URLs, and num_ctx.\nNever returns API keys or credential values.",
+        "operationId": "get_llm_config_admin_llm_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Llm Config Admin Llm Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Llm Config"
+      },
+      "put": {
+        "description": "Save LLM provider configuration.\n\nRequires an active session. Atomically upserts the integration and all credentials.",
+        "operationId": "save_llm_config_admin_llm_config_put",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Save Llm Config Admin Llm Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Save Llm Config"
+      }
+    },
+    "/admin/llm/configs": {
+      "get": {
+        "description": "Return all saved LLM configurations (no secrets).",
+        "operationId": "list_llm_configs_admin_llm_configs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Llm Configs Admin Llm Configs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Llm Configs"
+      },
+      "post": {
+        "description": "Create a new LLM configuration (inactive by default).\n\nReturns 201 with the created configuration path in Location.",
+        "operationId": "create_llm_config_admin_llm_configs_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Llm Config"
+      }
+    },
+    "/admin/llm/configs/{config_id}": {
+      "delete": {
+        "description": "Delete an LLM configuration and its credentials.\n\nReturns 204 without a body; the runtime reload still runs as a side effect.",
+        "operationId": "delete_llm_config_admin_llm_configs__config_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Llm Config"
+      },
+      "patch": {
+        "description": "Update an existing LLM configuration.\n\nMerge semantics: absent fields keep their stored value; validation\napplies to the provided fields.",
+        "operationId": "update_llm_config_admin_llm_configs__config_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Llm Config Admin Llm Configs  Config Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Llm Config"
+      }
+    },
+    "/admin/llm/configs/{config_id}/activate": {
+      "post": {
+        "description": "Set an LLM configuration as active and reload the runtime when possible.",
+        "operationId": "activate_llm_config_admin_llm_configs__config_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Llm Config Admin Llm Configs  Config Id  Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Llm Config"
+      }
+    },
+    "/admin/llm/configs/{config_id}/test": {
+      "post": {
+        "description": "Test connectivity using stored credentials of a saved configuration.",
+        "operationId": "probe_saved_llm_config_admin_llm_configs__config_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "config_id",
+            "required": true,
+            "schema": {
+              "title": "Config Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Probe Saved Llm Config Admin Llm Configs  Config Id  Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe Saved Llm Config"
+      }
+    },
+    "/admin/llm/models": {
+      "post": {
+        "description": "Return available models from the LLM provider.\n\nAccepts credentials in the request body (never stored).\nFailures surface as RFC 9457 problem responses: 502 on transport or\nupstream-5xx failure, 400 (upstream-error) on an upstream 4xx response;\na custom provider without a model list returns 200 with a record.",
+        "operationId": "list_llm_models_admin_llm_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Llm Models Admin Llm Models Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Llm Models"
+      }
+    },
+    "/admin/llm/test": {
+      "post": {
+        "description": "Test connectivity to an LLM provider using credentials from the request body.\n\nAccepts service_type, api_key, model, and optional base_url directly from\nthe form \u2014 no need to save first. Sends a minimal chat completion request.\nReturns ok=True on success or ok=False with error message.",
+        "operationId": "probe_llm_connection_admin_llm_test_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Probe Llm Connection Admin Llm Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Probe Llm Connection"
+      }
+    },
+    "/admin/memory/assertions": {
+      "get": {
+        "description": "Return graph assertions for diagnostic tooling.\n\nWith a query \u2014 matching entry points; without \u2014 newest assertions\nvia the timeline report.",
+        "operationId": "get_assertions_view_admin_memory_assertions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Assertions View Admin Memory Assertions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assertions View"
+      }
+    },
+    "/admin/memory/assertions/{assertion_id}/invalidate": {
+      "post": {
+        "description": "Invalidate one assertion on user request.\n\nDestructive action: requires a valid single-use re-authentication\ntoken. The write itself is forwarded to the orchestrator over IPC \u2014\nthe web tier holds no memory-write operation (Socket-A invariant).",
+        "operationId": "invalidate_memory_assertion_admin_memory_assertions__assertion_id__invalidate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assertion_id",
+            "required": true,
+            "schema": {
+              "title": "Assertion Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": true,
+            "schema": {
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Reauth-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Reauth-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Invalidate Memory Assertion Admin Memory Assertions  Assertion Id  Invalidate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Invalidate Memory Assertion"
+      }
+    },
+    "/admin/memory/audit": {
+      "get": {
+        "description": "Return audit log entries with optional event_type filter.",
+        "operationId": "get_audit_log_admin_memory_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Event Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Audit Log Admin Memory Audit Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Audit Log"
+      }
+    },
+    "/admin/memory/context": {
+      "get": {
+        "description": "Return context assembly breakdown by tier.",
+        "operationId": "get_context_view_admin_memory_context_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Context View Admin Memory Context Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Context View"
+      }
+    },
+    "/admin/memory/dialog-recorder-trace": {
+      "get": {
+        "description": "Return recent record-processing diagnostics from diagnostics DB.",
+        "operationId": "get_dialog_recorder_trace_admin_memory_dialog_recorder_trace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Decision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Dialog Recorder Trace Admin Memory Dialog Recorder Trace Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dialog Recorder Trace"
+      }
+    },
+    "/admin/memory/distiller-trace": {
+      "get": {
+        "description": "Return recent summary-processing diagnostics from diagnostics DB.",
+        "operationId": "get_distiller_trace_admin_memory_distiller_trace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Decision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Distiller Trace Admin Memory Distiller Trace Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Distiller Trace"
+      }
+    },
+    "/admin/memory/events": {
+      "get": {
+        "description": "Stream memory-pipeline events to the browser as text/event-stream.\n\nRead-only live feed: the web tier already receives bus events over\nthe orchestrator IPC bridge; this drains one per-subscriber queue.\nThe queue is always removed when the client disconnects.",
+        "operationId": "stream_memory_events_admin_memory_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stream Memory Events"
+      }
+    },
+    "/admin/memory/extractor-trace": {
+      "get": {
+        "description": "Return recent graph-extractor decisions from the trace file.\n\nRead-only diagnostics artifact (a local JSONL file), so it does not\ngo through the DB channel; a missing file yields an empty list.",
+        "operationId": "get_extractor_trace_admin_memory_extractor_trace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Decision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Extractor Trace Admin Memory Extractor Trace Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Extractor Trace"
+      }
+    },
+    "/admin/memory/files": {
+      "get": {
+        "description": "Return uploaded files for file-context debugging.",
+        "operationId": "get_file_context_index_admin_memory_files_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get File Context Index Admin Memory Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get File Context Index"
+      }
+    },
+    "/admin/memory/files/{file_id}/context": {
+      "get": {
+        "description": "Return stored file context for one uploaded file.",
+        "operationId": "get_file_context_view_admin_memory_files__file_id__context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get File Context View Admin Memory Files  File Id  Context Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Context View"
+      }
+    },
+    "/admin/memory/graph/entities": {
+      "get": {
+        "description": "Search graph entities by name or alias; no query lists them all.",
+        "operationId": "search_graph_entities_admin_memory_graph_entities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Search Graph Entities Admin Memory Graph Entities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Graph Entities"
+      }
+    },
+    "/admin/memory/graph/entities/{entity_id}": {
+      "get": {
+        "description": "Return one entity, its assertions, and its resolved neighbors.\n\nEach assertion carries a subject/object entity id; the ``related``\nmap resolves those ids to name+type so the UI can label and link\nneighbors (graph traversal) without one round trip per edge.",
+        "operationId": "get_graph_entity_admin_memory_graph_entities__entity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Graph Entity Admin Memory Graph Entities  Entity Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Graph Entity"
+      }
+    },
+    "/admin/memory/health": {
+      "get": {
+        "description": "Return a unified memory subsystem health snapshot.",
+        "operationId": "get_memory_health_admin_memory_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Memory Health Admin Memory Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Memory Health"
+      }
+    },
+    "/admin/memory/messages": {
+      "get": {
+        "description": "Return raw message entries for diagnostic tooling.\n\nArgs:\n    admin: Database admin client.\n    limit: Maximum number of entries to return.\n    offset: Pagination offset.\n    conversation_id: Optional conversation filter.\n\nReturns:\n    Dict with raw message entries.",
+        "operationId": "get_messages_view_admin_memory_messages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Messages View Admin Memory Messages Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Messages View"
+      }
+    },
+    "/admin/memory/pipeline": {
+      "get": {
+        "description": "Return memory pipeline status (counts of entries).",
+        "operationId": "get_pipeline_status_admin_memory_pipeline_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Pipeline Status Admin Memory Pipeline Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Pipeline Status"
+      }
+    },
+    "/admin/memory/quality": {
+      "get": {
+        "description": "Return a quality report for the current memory graph.",
+        "operationId": "get_quality_view_admin_memory_quality_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Quality View Admin Memory Quality Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quality View"
+      }
+    },
+    "/admin/memory/record-queue": {
+      "get": {
+        "description": "Return pending record-queue contents (read-only, no pruning).",
+        "operationId": "get_record_queue_admin_memory_record_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Record Queue Admin Memory Record Queue Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Record Queue"
+      }
+    },
+    "/admin/memory/records": {
+      "get": {
+        "description": "Return full record entries for diagnostic tooling.\n\nArgs:\n    admin: Database admin client.\n    limit: Maximum number of entries to return.\n    offset: Pagination offset.\n\nReturns:\n    Dict with record entries.",
+        "operationId": "get_observations_view_admin_memory_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Observations View Admin Memory Records Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Observations View"
+      }
+    },
+    "/admin/memory/records/{record_id}": {
+      "get": {
+        "description": "Resolve one source record to its conversation reference.",
+        "operationId": "get_memory_record_admin_memory_records__record_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Memory Record Admin Memory Records  Record Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Memory Record"
+      }
+    },
+    "/admin/memory/route-diagnostics": {
+      "get": {
+        "description": "Return stored memory-route diagnostics for admin debugging.\n\nArgs:\n    admin: Database admin client.\n    limit: Maximum number of rows to return.\n    offset: Pagination offset.\n    final_intent: Optional final route intent filter.\n    mismatch_only: When true, only return rows where route changed.\n    fallback_only: When true, only return rows where fallback ran.\n\nReturns:\n    Dict with paginated diagnostics entries.",
+        "operationId": "get_route_diagnostics_admin_memory_route_diagnostics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "final_intent",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Final Intent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mismatch_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Mismatch Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fallback_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fallback Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Route Diagnostics Admin Memory Route Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Route Diagnostics"
+      }
+    },
+    "/admin/memory/route-diagnostics/summary": {
+      "get": {
+        "description": "Return aggregated route-diagnostics metrics for admin debugging.",
+        "operationId": "get_route_diagnostics_summary_admin_memory_route_diagnostics_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "recent_hours",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Recent Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Route Diagnostics Summary Admin Memory Route Diagnostics Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Route Diagnostics Summary"
+      }
+    },
+    "/admin/memory/timeline": {
+      "get": {
+        "description": "Return memory timeline with optional type filter and sort order.\n\nArgs:\n    admin: Admin client used to fetch memory entries.\n    entry_type: Optional timeline filter for message/record/summary.\n    limit: Maximum number of entries to return.\n    offset: Pagination offset.\n    sort: \"desc\" (newest first, default) or \"asc\" (oldest first).",
+        "operationId": "get_timeline_admin_memory_timeline_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Timeline Admin Memory Timeline Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Timeline"
+      }
+    },
+    "/admin/memory/vector-coverage": {
+      "get": {
+        "description": "Return embedding coverage over stored records.",
+        "operationId": "get_vector_coverage_admin_memory_vector_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Vector Coverage Admin Memory Vector Coverage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Vector Coverage"
+      }
+    },
+    "/admin/profile": {
+      "get": {
+        "description": "Get user profile from DB Proxy.\n\nArgs:\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Dict with profile data.",
+        "operationId": "get_user_profile_admin_profile_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get User Profile Admin Profile Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get User Profile"
+      },
+      "put": {
+        "description": "Store user profile via DB Proxy.\n\nArgs:\n    body: Profile payload.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Success message.",
+        "operationId": "store_user_profile_admin_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Store User Profile Admin Profile Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Store User Profile"
+      }
+    },
+    "/admin/reauth": {
+      "post": {
+        "description": "Issue a re-authentication token after password verification.\n\nArgs:\n    body: Request body containing password.\n    claims: Authenticated token claims.\n    reauth_mgr: Re-authentication manager.\n    signing_client: Signing Proxy client for password verification.\n\nReturns:\n    Dict with reauth_token for use in sensitive operations.\n\nRaises:\n    HTTPException: 401 if password invalid, 429 if rate limited.",
+        "operationId": "admin_reauth_admin_reauth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReauthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Reauth Admin Reauth Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Reauth"
+      }
+    },
+    "/admin/scheduled-tasks": {
+      "get": {
+        "description": "List scheduled tasks with optional status filter.\n\nArgs:\n    status: Filter by status \u2014 all, active, paused, completed.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Dict with key ``tasks`` holding the list of task records.",
+        "operationId": "list_scheduled_tasks_admin_scheduled_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Scheduled Tasks Admin Scheduled Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scheduled Tasks"
+      },
+      "post": {
+        "description": "Create a new scheduled task.\n\nArgs:\n    body: Task creation payload.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n    orchestrator: Runtime registry IPC client.\n\nReturns:\n    Dict with the created task_id and computed next_run_at.",
+        "operationId": "create_scheduled_task_admin_scheduled_tasks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduledTaskCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scheduled Task"
+      }
+    },
+    "/admin/scheduled-tasks/{task_id}": {
+      "delete": {
+        "description": "Delete a scheduled task.\n\nArgs:\n    task_id: Task identifier.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.",
+        "operationId": "delete_scheduled_task_admin_scheduled_tasks__task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scheduled Task"
+      },
+      "patch": {
+        "description": "Update a scheduled task.\n\nSupports partial updates: status (pause/resume), name, prompt,\nschedule (re-parsed and recomputes next_run_at), allowed_tools,\nrepeat_limit.\n\nArgs:\n    task_id: Task identifier.\n    body: Update payload.\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n    orchestrator: Runtime registry IPC client.\n\nReturns:\n    Dict with success indicator.",
+        "operationId": "update_scheduled_task_admin_scheduled_tasks__task_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduledTaskUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Scheduled Task Admin Scheduled Tasks  Task Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Scheduled Task"
+      }
+    },
+    "/admin/scheduled-tasks/{task_id}/runs": {
+      "get": {
+        "description": "List recent execution history for a scheduled task.\n\nArgs:\n    task_id: Task identifier.\n    limit: Maximum number of runs to return (default 20, max 100).\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Dict with key ``runs`` holding the run records (newest first).",
+        "operationId": "list_task_runs_admin_scheduled_tasks__task_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Task Runs Admin Scheduled Tasks  Task Id  Runs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Runs"
+      }
+    },
+    "/admin/settings/ui": {
+      "get": {
+        "description": "Return the persisted UI settings blob.",
+        "operationId": "get_ui_settings_admin_settings_ui_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Ui Settings Admin Settings Ui Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ui Settings"
+      },
+      "put": {
+        "description": "Replace the persisted UI settings blob.\n\nRaises:\n    HTTPException: 413 when the blob exceeds the server-side cap.",
+        "operationId": "store_ui_settings_admin_settings_ui_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UiSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Store Ui Settings Admin Settings Ui Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Store Ui Settings"
+      }
+    },
+    "/admin/skills": {
+      "get": {
+        "description": "List all saved skills.\n\nArgs:\n    request: Incoming request, used for SPA fallback and auth.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    List of skills with name, title, description, use_count.",
+        "operationId": "list_skills_admin_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response List Skills Admin Skills Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Skills"
+      }
+    },
+    "/admin/skills/{name}": {
+      "delete": {
+        "description": "Delete a skill by name.\n\nArgs:\n    name: Skill name to delete.\n    claims: Authenticated user.\n    admin: DB Proxy client.",
+        "operationId": "delete_skill_admin_skills__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Skill"
+      },
+      "get": {
+        "description": "Get a single skill with full data and usage log.\n\nArgs:\n    name: Skill name.\n    request: Incoming request, used for SPA fallback and auth.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Skill data with usage logs.",
+        "operationId": "get_skill_admin_skills__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Skill Admin Skills  Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill"
+      },
+      "put": {
+        "description": "Update a skill by name.\n\nArgs:\n    name: Skill name to update.\n    body: Partial update fields (title, description, content, enabled).\n    claims: Authenticated token claims.\n    admin: DB Proxy Socket B client.\n\nReturns:\n    Confirmation message.",
+        "operationId": "update_skill_admin_skills__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Update Skill Admin Skills  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Skill"
+      }
+    },
+    "/admin/tools": {
+      "get": {
+        "description": "Return the catalog of registered tool definitions.\n\nUsed by the scheduler UI to populate the allowlist multi-select.\nReturns presentation-only names and descriptions. Permission policy remains\nprivate to the orchestrator registry.",
+        "operationId": "list_available_tools_admin_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Available Tools Admin Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Available Tools"
+      }
+    },
+    "/admin/trace": {
+      "get": {
+        "description": "Return recent runs with request text for the trace picker.",
+        "operationId": "list_recent_traces_admin_trace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Recent Traces Admin Trace Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Recent Traces"
+      }
+    },
+    "/admin/trace/{run_id}": {
+      "get": {
+        "description": "Return the full assembled trace for one agent run.",
+        "operationId": "get_turn_trace_admin_trace__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Turn Trace Admin Trace  Run Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Turn Trace"
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Authenticate with password.\n\nArgs:\n    body: Request body containing password.\n    request: FastAPI request.\n    response: FastAPI response for cookies.\n    signing_client: Signing Proxy client.\n    audit_fn: Audit event callable.\n\nReturns:\n    Success status.",
+        "operationId": "auth_login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Auth Login Auth Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auth Login"
+      }
+    },
+    "/auth/setup": {
+      "post": {
+        "description": "Create the user password on first launch.\n\nArgs:\n    body: Request body containing password.\n    request: FastAPI request.\n    response: FastAPI response for cookies.\n    signing_client: Signing Proxy client.\n    audit_fn: Audit event callable.\n\nReturns:\n    Success status.",
+        "operationId": "auth_setup_auth_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Auth Setup Auth Setup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auth Setup"
+      }
+    },
+    "/auth/status": {
+      "get": {
+        "description": "Check authentication state: needs_setup and authenticated.\n\nArgs:\n    request: FastAPI request.\n    signing_client: Signing Proxy client.\n\nReturns:\n    Dict with needs_setup and authenticated booleans.",
+        "operationId": "auth_status_auth_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Auth Status Auth Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Status"
+      }
+    },
+    "/avatars/{avatar_type}": {
+      "get": {
+        "description": "Serve an avatar image from the database.\n\nArgs:\n    avatar_type: Avatar type (\"user\" or \"ai\").\n    request: HTTP request (provides the If-None-Match header).\n    admin: DB Proxy client.\n\nReturns:\n    Raw image response with correct Content-Type, an ETag derived\n    from the decoded BLOB and Cache-Control: private, max-age=300.\n    A 304 with an empty body when If-None-Match matches the ETag.\n\nRaises:\n    HTTPException: 404 if no avatar is set, 422 if invalid type.",
+        "operationId": "get_avatar_avatars__avatar_type__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "avatar_type",
+            "required": true,
+            "schema": {
+              "title": "Avatar Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Avatar"
+      }
+    },
+    "/bridge/providers/{provider}/messages": {
+      "post": {
+        "description": "Accept one inbound external bridge message for a linked web conversation.",
+        "operationId": "sync_bridge_inbound_message_bridge_providers__provider__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBridgeInboundMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBridgeInboundMessageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Bridge Inbound Message"
+      }
+    },
+    "/chat": {
+      "post": {
+        "description": "Process a chat message via Orchestrator IPC.\n\nReturns 202 when the Orchestrator is already processing.\n\nArgs:\n    body: Chat request with message text.\n    request: FastAPI request.\n    background_tasks: Background task scheduler for post-response work.\n    claims: Authenticated token claims.\n    orchestrator_client: Orchestrator IPC client.\n    admin_client: Database client for file metadata lookup.\n    chat_bridge_service: Optional chat bridge service for auto-created links.\n\nReturns:\n    ChatResponse or 202 accepted.",
+        "operationId": "chat_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ChatStartResponse"
+                    },
+                    {
+                      "additionalProperties": true,
+                      "type": "object"
+                    }
+                  ],
+                  "title": "Response Chat Chat Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chat"
+      }
+    },
+    "/chat/conversations": {
+      "get": {
+        "description": "List persisted conversations ordered by most recent activity.",
+        "operationId": "list_conversations_chat_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationItem"
+                  },
+                  "title": "Response List Conversations Chat Conversations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversations"
+      },
+      "post": {
+        "description": "Create one empty persisted conversation.\n\nReturns 201 with the created conversation path in Location.",
+        "operationId": "create_conversation_chat_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Conversation"
+      }
+    },
+    "/chat/conversations/{conversation_id}": {
+      "delete": {
+        "description": "Delete one persisted conversation and related data.",
+        "operationId": "delete_conversation_chat_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Conversation"
+      },
+      "put": {
+        "description": "Update one persisted conversation title.",
+        "operationId": "update_conversation_chat_conversations__conversation_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Conversation"
+      }
+    },
+    "/chat/conversations/{conversation_id}/messages": {
+      "get": {
+        "description": "Return one cursor page of persisted messages (oldest to newest).",
+        "operationId": "list_conversation_messages_chat_conversations__conversation_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMessagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversation Messages"
+      }
+    },
+    "/chat/conversations/{conversation_id}/settings": {
+      "patch": {
+        "description": "Update per-conversation display settings.",
+        "operationId": "update_conversation_settings_chat_conversations__conversation_id__settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatSettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Conversation Settings"
+      }
+    },
+    "/confirm": {
+      "post": {
+        "description": "Process trust confirmation decision via Orchestrator IPC.\n\nArgs:\n    body: Confirmation request with action_id and decision.\n    request: FastAPI request.\n    claims: Authenticated token claims.\n    orchestrator_client: Orchestrator IPC client.\n\nReturns:\n    Confirmation result.",
+        "operationId": "confirm_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm"
+      }
+    },
+    "/csrf-token": {
+      "get": {
+        "description": "Issue a CSRF token for the authenticated session.\n\nArgs:\n    request: FastAPI request.\n    claims: Authenticated token claims.\n\nReturns:\n    CSRF token string.",
+        "operationId": "csrf_token_csrf_token_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Csrf Token Csrf Token Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Csrf Token"
+      }
+    },
+    "/files": {
+      "get": {
+        "description": "List all uploaded files.\n\nArgs:\n    _claims: Authenticated user.\n    admin: DB Proxy client.\n\nReturns:\n    Dict with files array.",
+        "operationId": "list_files_files_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Files Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Files"
+      }
+    },
+    "/files/upload": {
+      "post": {
+        "description": "Upload a file with type and size validation.\n\nReturns 201 with the stored file path in Location.\n\nArgs:\n    file: Uploaded file.\n    _claims: Authenticated user.\n    admin: DB Proxy client.",
+        "operationId": "upload_file_files_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_files_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload File"
+      }
+    },
+    "/files/{file_id}": {
+      "delete": {
+        "description": "Delete a file from disk and database.\n\nArgs:\n    file_id: File UUID.\n    _claims: Authenticated user.\n    admin: DB Proxy client.",
+        "operationId": "delete_file_files__file_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete File"
+      }
+    },
+    "/files/{file_id}/content": {
+      "get": {
+        "description": "Read file content.\n\nStarlette's FileResponse does not evaluate If-None-Match, so the\nconditional check is explicit: the ETag is computed with the same\nstat-based formula FileResponse uses and set on the response\nitself, so a matching If-None-Match yields a 304 with an empty body.\n\nArgs:\n    file_id: File UUID.\n    request: HTTP request (provides the If-None-Match header).\n    _claims: Authenticated user.\n    admin: DB Proxy client.\n\nReturns:\n    File content with appropriate Content-Type and\n    Cache-Control: private, max-age=86400; 304 when the conditional\n    header matches the ETag.\n\nRaises:\n    HTTPException: 404 if the file is missing from the database or disk.",
+        "operationId": "get_file_content_files__file_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get File Content"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Return health check response.\n\nAlways returns status ok since the app is always READY\nin multi-process mode (no SETUP/LOCKED states).\n\nArgs:\n    request: FastAPI request.\n\nReturns:\n    Health status dict.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/logout": {
+      "post": {
+        "description": "Logout and revoke tokens.\n\nArgs:\n    response: FastAPI response for clearing cookies.\n    claims: Authenticated token claims.\n    session_mgr: Session manager.\n\nReturns:\n    Success message.",
+        "operationId": "logout_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Logout Logout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/refresh": {
+      "post": {
+        "description": "Refresh access token using refresh token.\n\nArgs:\n    request: FastAPI request.\n    response: FastAPI response for cookies.\n    session_mgr: Session manager.\n    signing_client: Signing Proxy client.\n\nReturns:\n    Success message.",
+        "operationId": "refresh_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Refresh Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh"
+      }
+    },
+    "/stop": {
+      "post": {
+        "description": "Stop the active agentic loop via Orchestrator IPC.\n\nArgs:\n    request: FastAPI request.\n    body: Optional stop payload with the active chat request ID.\n    claims: Authenticated token claims.\n    orchestrator_client: Orchestrator IPC client.\n\nReturns:\n    StopResponse indicating whether a loop was stopped.",
+        "operationId": "stop_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop"
+      }
+    },
+    "/tts": {
+      "post": {
+        "description": "Synthesize text to speech audio.\n\nReturns audio bytes with appropriate Content-Type header.",
+        "operationId": "synthesize_tts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Synthesize"
+      }
+    },
+    "/tts/status": {
+      "get": {
+        "description": "Check TTS availability.\n\nReturns 200 if TTS is configured, 503 if not.",
+        "operationId": "tts_status_tts_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tts Status Tts Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tts Status"
+      }
+    },
+    "/workspace/dirs": {
+      "get": {
+        "description": "List configured workspace directories.",
+        "operationId": "get_workspace_dirs_endpoint_workspace_dirs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Workspace Dirs Endpoint Workspace Dirs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Workspace Dirs Endpoint",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/tree": {
+      "get": {
+        "description": "List files and directories in the workspace.\n\nArgs:\n    path: Relative path within workspace (empty = root).\n    request: Authenticated request (validated by _require_auth).\n\nReturns:\n    List of items with name, type (file/dir), size, and path.",
+        "operationId": "get_workspace_tree_workspace_tree_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Workspace Tree Workspace Tree Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workspace Tree",
+        "tags": [
+          "workspace"
+        ]
+      }
+    }
+  }
+}
