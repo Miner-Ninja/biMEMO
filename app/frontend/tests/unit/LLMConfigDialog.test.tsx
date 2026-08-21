@@ -8,13 +8,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-vi.mock("@/api/llm", () => ({
+vi.mock("@/features/llm-config/api/llm", () => ({
   testLLMConnection: vi.fn(),
   getModelList: vi.fn().mockResolvedValue({ models: [] }),
 }));
 
-import { getModelList, testLLMConnection } from "@/api/llm";
-import { LLMConfigDialog } from "@/components/LLMConfigDialog";
+import { getModelList, testLLMConnection } from "@/features/llm-config/api/llm";
+import { LLMConfigDialog } from "@/features/llm-config/components/LLMConfigDialog";
 
 const openVectorsTab = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole("button", { name: /Vector Memory/ }));

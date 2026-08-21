@@ -11,7 +11,7 @@ import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
-import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
+import { AuthContext, type AuthContextValue } from "@/features/auth/hooks/useAuth";
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -55,7 +55,7 @@ window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   removeListener: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   apiRequest: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
@@ -66,10 +66,10 @@ vi.mock("@/lib/bimemo-api", () => ({
   },
 }));
 
-import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
-import { AssertionCard } from "@/components/admin/memory-debug/AssertionCard";
-import { ContextSnapshotPanel } from "@/components/admin/memory-debug/ContextSnapshotPanel";
-import { apiRequest } from "@/lib/bimemo-api";
+import { MemoryDebugPage } from "@/features/memory/MemoryDebugPage";
+import { AssertionCard } from "@/features/memory/components/AssertionCard";
+import { ContextSnapshotPanel } from "@/features/memory/components/ContextSnapshotPanel";
+import { apiRequest } from "@/services/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 

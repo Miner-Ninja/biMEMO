@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { PendingConfirmationPanel } from "@/components/chat/PendingConfirmationPanel";
-import type { PendingConfirmation } from "@/types/chat";
+import { PendingConfirmationPanel } from "@/features/chat/components/PendingConfirmationPanel";
+import type { PendingConfirmation } from "@/features/chat/model/chat";
 
 function confirmation(
   overrides: Partial<PendingConfirmation> = {}

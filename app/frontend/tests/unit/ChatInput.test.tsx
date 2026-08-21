@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatInput } from "@/features/chat/components/ChatInput";
 
 describe("ChatInput", () => {
   it("renders with default placeholder", () => {

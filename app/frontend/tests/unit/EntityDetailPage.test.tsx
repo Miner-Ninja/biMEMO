@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
+import { AuthContext, type AuthContextValue } from "@/features/auth/hooks/useAuth";
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -37,7 +37,7 @@ window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   removeListener: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => {
+vi.mock("@/services/bimemo-api", () => {
   class ApiError extends Error {
     status: number;
     retryAfter: string | null;
@@ -83,8 +83,8 @@ vi.mock("@/lib/bimemo-api", () => {
   return { apiRequest: vi.fn(), ApiError, normalizeApiError, errorToDisplayText };
 });
 
-import { EntityDetailPage } from "@/pages/admin/EntityDetailPage";
-import { apiRequest, ApiError } from "@/lib/bimemo-api";
+import { EntityDetailPage } from "@/features/memory/EntityDetailPage";
+import { apiRequest, ApiError } from "@/services/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 

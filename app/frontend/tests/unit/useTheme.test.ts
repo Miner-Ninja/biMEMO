@@ -3,7 +3,7 @@ import { renderHook, act } from "@testing-library/react";
 import { useTheme } from "@/hooks/useTheme";
 
 // Mock the settings store; matchMedia for the system-preference path.
-vi.mock("@/lib/ui-settings", () => ({
+vi.mock("@/utils/ui-settings", () => ({
   getUiSetting: vi.fn(() => "dark"),
   setUiSetting: vi.fn(),
 }));

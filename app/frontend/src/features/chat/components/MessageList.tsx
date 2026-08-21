@@ -1,0 +1,287 @@
+import { useEffect, useLayoutEffect, useRef, useMemo, memo } from "react";
+import { useTranslation } from "react-i18next";
+import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChatMessage } from "./ChatMessage";
+import type { Message } from "@/features/chat/model/chat";
+import { cn } from "@/utils/utils";
+
+const AUTO_SCROLL_THRESHOLD_PX = 80;
+// Scrolling the viewport within this distance from the top of the history
+// triggers loading the older page (cursor pagination).
+const LOAD_OLDER_THRESHOLD_PX = 80;
+interface MessageListProps {
+  conversationKey?: string | null;
+  autoScrollRequest?: number;
+  messages: Message[];
+  isLoading?: boolean;
+  className?: string;
+  assistantName?: string;
+  onCommandClick?: (command: string) => void;
+  showThinking?: boolean;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  ttsAvailable?: boolean;
+  onReachTop?: () => void;
+  prependSignal?: { conversationId: string; seq: number } | null;
+}
+
+function scrollViewportToBottom(
+  viewport: HTMLElement | null,
+  behavior: ScrollBehavior
+): void {
+  if (!viewport) {
+    return;
+  }
+  if (typeof viewport.scrollTo === "function") {
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior,
+    });
+    return;
+  }
+  viewport.scrollTop = viewport.scrollHeight;
+}
+
+function distanceFromBottom(viewport: HTMLElement): number {
+  return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+}
+
+function isNearBottom(viewport: HTMLElement): boolean {
+  return distanceFromBottom(viewport) <= AUTO_SCROLL_THRESHOLD_PX;
+}
+
+/**
+ * Scrollable list of chat messages.
+ * Memoized to prevent unnecessary re-renders during streaming.
+ */
+export const MessageList = memo(function MessageList({
+  conversationKey,
+  autoScrollRequest = 0,
+  messages,
+  isLoading = false,
+  className,
+  assistantName,
+  onCommandClick,
+  showThinking = true,
+  onEditMessage,
+  ttsAvailable = false,
+  onReachTop,
+  prependSignal = null,
+}: MessageListProps) {
+  const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  // Signature of the last rendered message set. Lets the auto-scroll effect
+  // skip reference-only changes (e.g. a reconnect refetch of identical content)
+  // and fire only on real changes (a new message, or the last message growing
+  // during streaming).
+  const lastMessagesSignatureRef = useRef("");
+
+  const getViewport = () =>
+    rootRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ??
+    null;
+  // Latest onReachTop callback; the scroll listener keeps a stable identity.
+  const onReachTopRef = useRef(onReachTop);
+  useEffect(() => {
+    onReachTopRef.current = onReachTop;
+  }, [onReachTop]);
+
+  // Scroll bookkeeping for prepend compensation: the last measured viewport
+  // height and the last consumed prepend signal. Both reset on a
+  // conversation switch — a previous conversation's height must never be
+  // compensated inside a new one.
+  const scrollMetaRef = useRef<{
+    conversationKey: string | null;
+    lastScrollHeight: number;
+    lastConsumedPrependSeq: number;
+  }>({
+    conversationKey: null,
+    lastScrollHeight: 0,
+    lastConsumedPrependSeq: 0,
+  });
+
+  // When an older page is PREPENDed above the visible content, the existing
+  // content shifts down by exactly the prepended block's height. Compensate
+  // the scroll position before the browser paints, so the viewport stays
+  // anchored on the same message instead of jumping.
+  useLayoutEffect(() => {
+    const viewport = getViewport();
+    const meta = scrollMetaRef.current;
+    const key = conversationKey ?? null;
+    if (key !== meta.conversationKey) {
+      meta.conversationKey = key;
+      meta.lastScrollHeight = 0;
+      meta.lastConsumedPrependSeq = 0;
+    }
+    if (
+      viewport !== null &&
+      prependSignal !== null &&
+      prependSignal.conversationId === (conversationKey ?? "") &&
+      prependSignal.seq > meta.lastConsumedPrependSeq
+    ) {
+      const heightDelta = viewport.scrollHeight - meta.lastScrollHeight;
+      if (heightDelta !== 0) {
+        viewport.scrollTop = viewport.scrollTop + heightDelta;
+      }
+      meta.lastConsumedPrependSeq = prependSignal.seq;
+    }
+    if (viewport) {
+      meta.lastScrollHeight = viewport.scrollHeight;
+    }
+  }, [conversationKey, messages, prependSignal]);
+
+  // Find the last user message ID (for edit button visibility)
+  const lastUserMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message && message.role === "user") return message.id;
+    }
+    return null;
+  }, [messages]);
+
+  useEffect(() => {
+    shouldStickToBottomRef.current = true;
+    lastMessagesSignatureRef.current = "";
+    const frameId = window.requestAnimationFrame(() => {
+      scrollViewportToBottom(getViewport(), "auto");
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [conversationKey]);
+
+  useEffect(() => {
+    if (autoScrollRequest === 0) {
+      return;
+    }
+    shouldStickToBottomRef.current = true;
+    scrollViewportToBottom(getViewport(), "auto");
+  }, [autoScrollRequest]);
+
+  // Whether the current render branch renders a scroll viewport: the
+  // empty-state branch does not. A fresh conversation load mounts the
+  // empty state first, so a key-only effect would bail while no viewport
+  // exists and never re-run — the pagination trigger would stay dead for
+  // that conversation. The branch in the deps below re-runs the effect
+  // the moment the viewport appears.
+  const viewportBranch = messages.length > 0 || isLoading;
+
+  useEffect(() => {
+    const nextViewport = getViewport();
+    if (!nextViewport) {
+      return undefined;
+    }
+
+    // Position-based: re-enable sticking once the user is back at the bottom
+    // (this also fires from our own programmatic scroll, which is fine).
+    const handleScroll = () => {
+      shouldStickToBottomRef.current = isNearBottom(nextViewport);
+      // The viewport reached the top of the loaded history: ask the page
+      // for the older page. The page-side guard (one load at a time, no
+      // more pages) makes repeated events at the top harmless.
+      if (nextViewport.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
+        onReachTopRef.current?.();
+      }
+    };
+
+    // Intent-based: a wheel-up, an upward touch drag, or an up/page/home key is
+    // produced ONLY by the user — never by programmatic auto-scroll. Releasing
+    // the stick here lets the user scroll up while a long answer streams,
+    // instead of being pulled back to the bottom.
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        shouldStickToBottomRef.current = false;
+      }
+    };
+    let lastTouchY = 0;
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? 0;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY ?? 0;
+      // Finger moving down drags the content up = the user is scrolling up.
+      if (y > lastTouchY) {
+        shouldStickToBottomRef.current = false;
+      }
+      lastTouchY = y;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+        shouldStickToBottomRef.current = false;
+      }
+    };
+
+    nextViewport.addEventListener("scroll", handleScroll, { passive: true });
+    nextViewport.addEventListener("wheel", handleWheel, { passive: true });
+    nextViewport.addEventListener("touchstart", handleTouchStart, {
+      passive: true,
+    });
+    nextViewport.addEventListener("touchmove", handleTouchMove, {
+      passive: true,
+    });
+    nextViewport.addEventListener("keydown", handleKeyDown);
+    return () => {
+      nextViewport.removeEventListener("scroll", handleScroll);
+      nextViewport.removeEventListener("wheel", handleWheel);
+      nextViewport.removeEventListener("touchstart", handleTouchStart);
+      nextViewport.removeEventListener("touchmove", handleTouchMove);
+      nextViewport.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [conversationKey, viewportBranch]);
+
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    const signature = `${messages.length}:${last?.id ?? ""}:${
+      last?.content?.length ?? 0
+    }:${last?.pendingConfirmations?.length ?? 0}`;
+    if (signature === lastMessagesSignatureRef.current) {
+      // No real change (e.g. a reconnect refetch of identical content) — do
+      // not force-scroll, so the user's scroll position is preserved.
+      return;
+    }
+    lastMessagesSignatureRef.current = signature;
+    if (!shouldStickToBottomRef.current) {
+      return;
+    }
+    scrollViewportToBottom(getViewport(), "auto");
+  }, [messages]);
+
+  if (messages.length === 0 && !isLoading) {
+    return (
+      <>
+        <div className={cn("flex-1", className)} />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Card className="pointer-events-auto w-full max-w-sm shadow-none">
+            <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+              <h2 className="text-xl font-semibold">biMEMO</h2>
+              <p className="text-muted-foreground">{t("chat.personalAssistant")}</p>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <ScrollArea
+      ref={rootRef}
+      className={cn("flex-1 min-h-0 message-scroll-area", className)}
+    >
+      {/* Container with max-width and horizontal padding for large screens */}
+      <div className="mx-auto w-full max-w-[1920px] sm:px-4 2xl:px-[10%]">
+        <div className="divide-y divide-border">
+          {messages.map((message) => (
+            <ChatMessage
+              key={message.id}
+              message={message}
+              assistantName={assistantName}
+              onCommandClick={onCommandClick}
+              showThinking={showThinking}
+              isEditable={message.id === lastUserMessageId && !isLoading}
+              onEdit={onEditMessage}
+              ttsAvailable={ttsAvailable}
+            />
+          ))}
+        </div>
+      </div>
+    </ScrollArea>
+  );
+});

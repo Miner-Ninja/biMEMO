@@ -39,9 +39,9 @@ export default defineConfig([
     // component. react-refresh's "export only components" rule is an HMR-only
     // hint, not a correctness concern, so it does not apply here.
     files: [
-      "src/components/admin/memory-debug/shared.tsx",
+      "src/features/memory/components/shared.tsx",
       "src/components/layout/ThemeProvider.tsx",
-      "src/components/scheduler/ScheduleBuilder.tsx",
+      "src/features/scheduler/components/ScheduleBuilder.tsx",
       "src/components/sidebar/sidebar-chrome.tsx",
     ],
     rules: {
@@ -52,10 +52,10 @@ export default defineConfig([
     // Standard data-loading / reset / timer effects that set state on mount or
     // when their inputs change — the intended pattern in these components.
     files: [
-      "src/components/admin/memory-debug/FileContextPanel.tsx",
-      "src/components/admin/memory-debug/RoutingDiagnosticsPanel.tsx",
-      "src/components/chat/LiveTimer.tsx",
-      "src/components/scheduler/TaskDetailsModal.tsx",
+      "src/features/memory/components/FileContextPanel.tsx",
+      "src/features/memory/components/RoutingDiagnosticsPanel.tsx",
+      "src/features/chat/components/LiveTimer.tsx",
+      "src/features/scheduler/components/TaskDetailsModal.tsx",
     ],
     rules: {
       "react-hooks/set-state-in-effect": "off",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldUseStructuredPseudoStream } from "@/lib/pseudo-stream";
+import { shouldUseStructuredPseudoStream } from "@/features/chat/model/pseudo-stream";
 
 describe("shouldUseStructuredPseudoStream", () => {
   const structured = { answer: "Hello", thinking: null, sql: null };

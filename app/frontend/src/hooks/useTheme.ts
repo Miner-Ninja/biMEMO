@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Theme } from "@/types/chat";
-import { getUiSetting, setUiSetting } from "@/lib/ui-settings";
+import type { Theme } from "@/features/chat/model/chat";
+import { getUiSetting, setUiSetting } from "@/utils/ui-settings";
 
 const FADE_DURATION_MS = 200;
 

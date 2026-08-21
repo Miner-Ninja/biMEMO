@@ -4,7 +4,7 @@ import {
   humanizeMismatchLabel,
   humanizeRecorderDecision,
   humanizeExtractorDecision,
-} from "@/components/admin/memory-debug/humanize";
+} from "@/features/memory/components/humanize";
 import en from "@/i18n/locales/en";
 
 import type { TFunction } from "i18next";

@@ -4,7 +4,7 @@ import { CheckCircle2, XCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn, generateId } from "@/lib/utils";
+import { cn, generateId } from "@/utils/utils";
 
 export interface Toast {
   id: string;

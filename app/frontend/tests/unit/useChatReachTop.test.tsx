@@ -1,8 +1,8 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useChat } from "@/hooks/useChat";
-import type { ConversationMessagePage } from "@/lib/bimemo-api";
+import { useChat } from "@/features/chat/hooks/useChat";
+import type { ConversationMessagePage } from "@/services/bimemo-api";
 
 const {
   fetchConversations,
@@ -18,7 +18,7 @@ const {
   updateConversationTitle: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   createConversation,
   deleteConversation,
   fetchConversationMessages,

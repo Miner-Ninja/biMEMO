@@ -1,8 +1,8 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { MessageList } from "@/components/chat/MessageList";
-import type { Message } from "@/types/chat";
+import { MessageList } from "@/features/chat/components/MessageList";
+import type { Message } from "@/features/chat/model/chat";
 
 function buildMessage(
   id: string,

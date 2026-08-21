@@ -4,7 +4,7 @@
  * error → display-text mapping.
  */
 import type { TFunction } from "i18next";
-import { normalizeApiError } from "@/lib/bimemo-api";
+import { normalizeApiError } from "@/services/bimemo-api";
 
 /**
  * Canonical query keys. A parameterized resource (an entity, a

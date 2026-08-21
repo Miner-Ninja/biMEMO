@@ -7,8 +7,8 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-import { ChatMessage } from "@/components/chat/ChatMessage";
-import type { Message } from "@/types/chat";
+import { ChatMessage } from "@/features/chat/components/ChatMessage";
+import type { Message } from "@/features/chat/model/chat";
 
 const MESSAGE: Message = {
   id: "m1",

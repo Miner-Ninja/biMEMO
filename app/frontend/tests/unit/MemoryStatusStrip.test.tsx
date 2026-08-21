@@ -6,12 +6,12 @@
 import { render, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   apiRequest: vi.fn(),
 }));
 
-import { apiRequest } from "@/lib/bimemo-api";
-import { MemoryStatusStrip } from "@/components/admin/memory-debug/MemoryStatusStrip";
+import { apiRequest } from "@/services/bimemo-api";
+import { MemoryStatusStrip } from "@/features/memory/components/MemoryStatusStrip";
 
 const mockApiRequest = vi.mocked(apiRequest);
 

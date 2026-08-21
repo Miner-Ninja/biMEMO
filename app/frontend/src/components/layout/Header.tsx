@@ -4,7 +4,7 @@ import { BridgeProviderIcon } from "@/components/icons/BridgeProviderIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils/utils";
 
 interface HeaderProps {
   title?: string;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import { ChatMessage } from "../../src/components/chat/ChatMessage";
-import type { Message } from "../../src/types/chat";
+import { ChatMessage } from "../../src/features/chat/components/ChatMessage";
+import type { Message } from "../../src/features/chat/model/chat";
 
 const IMAGE_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WnR6R4AAAAASUVORK5CYII=";

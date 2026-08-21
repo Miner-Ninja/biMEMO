@@ -29,10 +29,10 @@ Object.defineProperty(globalThis, "localStorage", {
   value: localStorageMock,
 });
 
-import { getUiSetting, setUiSetting, syncUiSettings } from "@/lib/ui-settings";
-import { apiRequest } from "@/lib/bimemo-api";
+import { getUiSetting, setUiSetting, syncUiSettings } from "@/utils/ui-settings";
+import { apiRequest } from "@/services/bimemo-api";
 
-vi.mock("@/lib/bimemo-api", () => {
+vi.mock("@/services/bimemo-api", () => {
   class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -119,7 +119,7 @@ describe("ui-settings store", () => {
   });
 
   it("S5.2 — a 413 push drops the history and retries once", async () => {
-    const { ApiError } = await import("@/lib/bimemo-api");
+    const { ApiError } = await import("@/services/bimemo-api");
     apiRequestMock
       .mockRejectedValueOnce(new ApiError(413, "blob exceeds cap"))
       .mockResolvedValueOnce({ ok: true });

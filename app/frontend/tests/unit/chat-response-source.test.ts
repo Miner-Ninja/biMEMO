@@ -10,7 +10,7 @@ import {
   shouldFinalizeAssistantStream,
   type ActiveAssistantStreamState,
   type PausedRunBinding,
-} from "@/lib/chat-response-source";
+} from "@/features/chat/model/chat-response-source";
 
 describe("shouldApplyHttpChatResponse", () => {
   it("applies HTTP chat response when no stream final arrived", () => {

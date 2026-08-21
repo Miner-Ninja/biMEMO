@@ -16,8 +16,8 @@ import {
   CalendarClock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/utils/utils";
+import { useAuth } from "@/features/auth/hooks/useAuth";
 import { UserMenu } from "./UserMenu";
 import { ChatSearch } from "./ChatSearch";
 import {

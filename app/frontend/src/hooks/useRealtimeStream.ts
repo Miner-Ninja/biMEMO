@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { authStatus, refreshAccessToken } from "@/lib/bimemo-api";
+import { authStatus, refreshAccessToken } from "@/services/bimemo-api";
 
 const MIN_BACKOFF = 1000;
 const MAX_BACKOFF = 30000;

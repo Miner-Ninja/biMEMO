@@ -2,10 +2,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ToolMenu } from "@/components/chat/ToolMenu";
-import { listToolCatalog } from "@/api/scheduled-tasks";
+import { ToolMenu } from "@/features/chat/components/ToolMenu";
+import { listToolCatalog } from "@/features/scheduler/api/scheduled-tasks";
 
-vi.mock("@/api/scheduled-tasks", () => ({
+vi.mock("@/features/scheduler/api/scheduled-tasks", () => ({
   listToolCatalog: vi.fn(),
 }));
 

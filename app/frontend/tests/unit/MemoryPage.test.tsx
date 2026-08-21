@@ -12,7 +12,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
-import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
+import { AuthContext, type AuthContextValue } from "@/features/auth/hooks/useAuth";
 
 // Node's experimental bare `localStorage` global shadows jsdom's — give
 // the theme/settings chain one real in-memory implementation.
@@ -50,7 +50,7 @@ window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   removeListener: vi.fn(),
 }));
 
-vi.mock("@/api/memory", () => ({
+vi.mock("@/features/memory/api/memory", () => ({
   listMemoryEntities: vi.fn(),
   searchMemoryEntities: vi.fn(),
   getMemoryEntity: vi.fn(),
@@ -58,7 +58,7 @@ vi.mock("@/api/memory", () => ({
   invalidateMemoryAssertion: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => {
+vi.mock("@/services/bimemo-api", () => {
   class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -101,13 +101,13 @@ vi.mock("@/lib/bimemo-api", () => {
   return { apiRequest: vi.fn(), ApiError, normalizeApiError, errorToDisplayText };
 });
 
-import { MemoryPage } from "@/pages/admin/MemoryPage";
+import { MemoryPage } from "@/features/memory/MemoryPage";
 import {
   getMemoryEntity,
   invalidateMemoryAssertion,
   listMemoryEntities,
-} from "@/api/memory";
-import { apiRequest } from "@/lib/bimemo-api";
+} from "@/features/memory/api/memory";
+import { apiRequest } from "@/services/bimemo-api";
 
 const listMock = vi.mocked(listMemoryEntities);
 const getEntityMock = vi.mocked(getMemoryEntity);

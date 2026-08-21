@@ -4,7 +4,7 @@ import {
   fetchConversationMessages,
   type ConversationMessagePage,
   type StoredConversationMessage,
-} from "@/lib/bimemo-api";
+} from "@/services/bimemo-api";
 
 // R11 wire contract: GET /chat/conversations/{id}/messages is a cursor
 // paginated page {messages, next_cursor, has_more}. The cursor is an

@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRealtimeStream } from "@/hooks/useRealtimeStream";
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   authStatus: vi.fn(async () => ({ authenticated: true })),
   refreshAccessToken: vi.fn(async () => true),
 }));

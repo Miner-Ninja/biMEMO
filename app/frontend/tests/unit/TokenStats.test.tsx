@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { TokenStats } from "@/components/chat/TokenStats";
+import { TokenStats } from "@/features/chat/components/TokenStats";
 
 describe("TokenStats", () => {
   it("renders token, timing, and context details when context usage exists", () => {

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isBrowserNetworkFetchError,
   shouldKeepStreamedAssistantResponseAfterRequestError,
-} from "@/lib/chat-request-errors";
-import { apiRequest } from "@/lib/bimemo-api";
+} from "@/features/chat/model/chat-request-errors";
+import { apiRequest } from "@/services/bimemo-api";
 
 describe("isBrowserNetworkFetchError", () => {
   it("matches Firefox fetch failures", () => {

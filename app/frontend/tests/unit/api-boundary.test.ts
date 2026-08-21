@@ -10,7 +10,7 @@
 import { z } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiRequest, ApiError, ContractError } from "@/lib/bimemo-api";
+import { apiRequest, ApiError, ContractError } from "@/services/bimemo-api";
 
 const itemSchema = z.looseObject({
   id: z.string(),

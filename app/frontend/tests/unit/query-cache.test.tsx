@@ -17,9 +17,9 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 
-vi.mock("@/lib/bimemo-api", () => ({ apiRequest: vi.fn() }));
+vi.mock("@/services/bimemo-api", () => ({ apiRequest: vi.fn() }));
 
-import { apiRequest } from "@/lib/bimemo-api";
+import { apiRequest } from "@/services/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 

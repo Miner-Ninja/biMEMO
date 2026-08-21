@@ -3,7 +3,7 @@
  * public surface no longer exposes them.
  */
 import { describe, expect, it } from "vitest";
-import * as bimemoApi from "@/lib/bimemo-api";
+import * as bimemoApi from "@/services/bimemo-api";
 
 describe("dead error helpers (S7.1)", () => {
   it.each([

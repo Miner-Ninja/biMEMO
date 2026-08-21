@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider } from "../../src/components/layout/ThemeProvider";
-import { MarkdownCodeBlock } from "../../src/components/chat/MarkdownCodeBlock";
+import { MarkdownCodeBlock } from "../../src/features/chat/components/MarkdownCodeBlock";
 
 beforeAll(() => {
   Object.defineProperty(window, "localStorage", {

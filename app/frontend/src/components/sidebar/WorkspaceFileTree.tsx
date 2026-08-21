@@ -10,8 +10,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { fetchWorkspaceTree, type WorkspaceItem } from "@/lib/bimemo-api";
+import { cn } from "@/utils/utils";
+import { fetchWorkspaceTree, type WorkspaceItem } from "@/services/bimemo-api";
 import { SidebarSectionLabel } from "./sidebar-chrome";
 
 interface WorkspaceFileTreeProps {

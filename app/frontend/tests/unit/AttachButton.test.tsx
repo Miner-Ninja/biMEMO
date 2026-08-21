@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { AttachButton } from "@/components/chat/AttachButton";
+import { AttachButton } from "@/features/chat/components/AttachButton";
 
 describe("AttachButton", () => {
   it("rejects file types unsupported by the backend contract", () => {

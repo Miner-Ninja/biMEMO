@@ -11,7 +11,7 @@ import type { ParseKeys } from "i18next";
 import { initReactI18next } from "react-i18next";
 import { enUS as dateFnsEn, ru as dateFnsRu } from "date-fns/locale";
 import type { Locale } from "date-fns";
-import { getUiSetting, setUiSetting } from "@/lib/ui-settings";
+import { getUiSetting, setUiSetting } from "@/utils/ui-settings";
 import en from "./locales/en";
 import ru from "./locales/ru";
 

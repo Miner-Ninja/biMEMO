@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/ui-settings", () => ({
+vi.mock("@/utils/ui-settings", () => ({
   getUiSetting: vi.fn(),
   setUiSetting: vi.fn(),
 }));
@@ -18,7 +18,7 @@ import i18n, {
   resolveInitialLanguage,
   setUiLanguage,
 } from "@/i18n";
-import { getUiSetting, setUiSetting } from "@/lib/ui-settings";
+import { getUiSetting, setUiSetting } from "@/utils/ui-settings";
 import en from "@/i18n/locales/en";
 import ru from "@/i18n/locales/ru";
 

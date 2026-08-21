@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveChatSendIds, type FailedChatSend } from "@/lib/chat-response-source";
+import {
+  resolveChatSendIds,
+  type FailedChatSend,
+} from "@/features/chat/model/chat-response-source";
 
 // Retry-after-failure semantics (R6): the client remembers the identifiers
 // of a send that failed on the wire, and resending the same text in the

@@ -14,11 +14,14 @@ import {
 } from "@/components/ui/empty";
 import { UploadProgressPanel } from "@/components/ui/UploadProgressPanel";
 import type { UploadProgressData } from "@/components/ui/UploadProgressPanel";
-import { cn } from "@/lib/utils";
-import { fetchFiles, deleteFileById, uploadFile } from "@/lib/bimemo-api";
-import type { IndexedFile } from "@/lib/bimemo-api";
+import { cn } from "@/utils/utils";
+import { fetchFiles, deleteFileById, uploadFile } from "@/services/bimemo-api";
+import type { IndexedFile } from "@/services/bimemo-api";
 import { useConfirm } from "@/hooks/useConfirm";
-import { FILE_INPUT_ACCEPT, isAllowedUploadFilename } from "@/lib/file-upload-contract";
+import {
+  FILE_INPUT_ACCEPT,
+  isAllowedUploadFilename,
+} from "@/utils/file-upload-contract";
 import { FileListSkeleton } from "@/components/ui/skeletons";
 import { SidebarSectionLabel } from "./sidebar-chrome";
 

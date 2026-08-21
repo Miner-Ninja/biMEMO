@@ -8,7 +8,7 @@ import { FileList } from "./FileList";
 import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import { UserMenu } from "./UserMenu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Chat } from "@/types/chat";
+import type { Chat } from "@/features/chat/model/chat";
 import { SidebarPanel, SidebarShell } from "./sidebar-chrome";
 
 type TabKey = "chats" | "files" | "workspace";

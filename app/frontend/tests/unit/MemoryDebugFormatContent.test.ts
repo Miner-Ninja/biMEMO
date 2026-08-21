@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { formatContent } from "@/components/admin/memory-debug/shared";
+import { formatContent } from "@/features/memory/components/shared";
 
 describe("formatContent", () => {
   it("undefined content yields an empty string, not undefined", () => {

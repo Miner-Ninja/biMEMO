@@ -33,7 +33,7 @@ class FakeEventSource {
 
 vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
 
-import { useMemoryEvents } from "@/hooks/useMemoryEvents";
+import { useMemoryEvents } from "@/features/memory/hooks/useMemoryEvents";
 
 describe("useMemoryEvents", () => {
   beforeEach(() => {

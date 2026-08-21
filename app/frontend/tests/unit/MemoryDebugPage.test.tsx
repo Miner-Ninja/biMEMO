@@ -8,14 +8,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
-import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
+import { AuthContext, type AuthContextValue } from "@/features/auth/hooks/useAuth";
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   apiRequest: vi.fn(),
 }));
 
-import { apiRequest } from "@/lib/bimemo-api";
-import { MemoryDebugPage } from "@/pages/admin/MemoryDebugPage";
+import { apiRequest } from "@/services/bimemo-api";
+import { MemoryDebugPage } from "@/features/memory/MemoryDebugPage";
 
 const mockApiRequest = vi.mocked(apiRequest);
 

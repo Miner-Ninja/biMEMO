@@ -24,14 +24,14 @@ const localStorageMock = (() => {
 Object.defineProperty(window, "localStorage", { value: localStorageMock });
 Object.defineProperty(globalThis, "localStorage", { value: localStorageMock });
 
-vi.mock("@/lib/bimemo-api", () => ({
+vi.mock("@/services/bimemo-api", () => ({
   apiRequest: vi.fn(),
   ApiError: class ApiError extends Error {},
 }));
 
-import { ExtractorTracePanel } from "@/components/admin/memory-debug/ExtractorTracePanel";
-import { RecordQueuePanel } from "@/components/admin/memory-debug/RecordQueuePanel";
-import { apiRequest } from "@/lib/bimemo-api";
+import { ExtractorTracePanel } from "@/features/memory/components/ExtractorTracePanel";
+import { RecordQueuePanel } from "@/features/memory/components/RecordQueuePanel";
+import { apiRequest } from "@/services/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 

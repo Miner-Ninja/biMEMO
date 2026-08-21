@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { ChatMessage } from "../../src/components/chat/ChatMessage";
+import { ChatMessage } from "../../src/features/chat/components/ChatMessage";
 import { ThemeProvider } from "../../src/components/layout/ThemeProvider";
-import type { Message } from "../../src/types/chat";
+import type { Message } from "../../src/features/chat/model/chat";
 
 beforeAll(() => {
   Object.defineProperty(window, "localStorage", {

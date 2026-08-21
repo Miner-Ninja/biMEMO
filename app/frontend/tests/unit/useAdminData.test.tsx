@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-vi.mock("@/lib/bimemo-api", () => {
+vi.mock("@/services/bimemo-api", () => {
   class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -53,8 +53,8 @@ vi.mock("@/lib/bimemo-api", () => {
   return { apiRequest: vi.fn(), ApiError, normalizeApiError, errorToDisplayText };
 });
 
-import { ApiError, apiRequest } from "@/lib/bimemo-api";
-import { useAdminData } from "@/hooks/useAdminData";
+import { ApiError, apiRequest } from "@/services/bimemo-api";
+import { useAdminData } from "@/features/integrations/hooks/useAdminData";
 
 const apiRequestMock = vi.mocked(apiRequest);
 

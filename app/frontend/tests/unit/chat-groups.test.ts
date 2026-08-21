@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { groupChatsByDate, GROUP_ORDER, type ChatGroup } from "@/lib/chat-groups";
-import type { Chat } from "@/types/chat";
+import {
+  groupChatsByDate,
+  GROUP_ORDER,
+  type ChatGroup,
+} from "@/features/chat/model/chat-groups";
+import type { Chat } from "@/features/chat/model/chat";
 
 // Helper to create a chat with specific date
 function createChat(id: string, updatedAt: Date): Chat {

@@ -11,8 +11,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Chat } from "@/types/chat";
-import { cn, truncate } from "@/lib/utils";
+import type { Chat } from "@/features/chat/model/chat";
+import { cn, truncate } from "@/utils/utils";
 import { getSidebarItemClassName } from "./sidebar-chrome";
 
 interface ChatItemProps {

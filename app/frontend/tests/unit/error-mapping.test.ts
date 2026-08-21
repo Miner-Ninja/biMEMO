@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import i18n from "i18next";
-import { ApiError, ContractError, normalizeApiError } from "@/lib/bimemo-api";
+import { ApiError, ContractError, normalizeApiError } from "@/services/bimemo-api";
 import { errorToDisplayText, QUERY_KEYS } from "@/hooks/use-server-state";
 
 const t = i18n.t;
