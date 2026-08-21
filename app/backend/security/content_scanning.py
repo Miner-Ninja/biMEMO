@@ -66,7 +66,7 @@ _CREDENTIAL_COMPILED = [
     for pattern, description in _CREDENTIAL_PATTERNS
 ]
 
-# --- Strict prompt-injection patterns: direct jailbreak attempts ---
+# --- Strict prompt-injection patterns: jailbreaks and credential-disclosure probes ---
 STRICT_INJECTION_PATTERN_STRINGS: list[str] = [
     r"ignore\s+(all\s+)?(?:previous|prior|above)\s+instructions?",
     (
@@ -78,7 +78,24 @@ STRICT_INJECTION_PATTERN_STRINGS: list[str] = [
     r"ignore\s+any\s+(?:previous|prior|system)\s+(?:rules|prompts|instructions)",
     r"(?:you\s+have|no\s+longer)\s+to\s+follow\s+(?:any\s+)?(?:rules?|instructions)",
     r"output\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:the\s+)?(?:system\s+)?prompt",
-    r"(?:show|print|reveal)\s+(?:me\s+)?your\s+(?:system\s+)?prompt",
+    r"(?:show|print|reveal)(?:\s+me)?\s+your\s+(?:system\s+)?prompt",
+    # Credential-disclosure probes: requests to extract the assistant's own
+    # secrets, environment, or secret-bearing files (the "show me your ..."
+    # form; "my ..." requests about the user's own material stay allowed)
+    (
+        r"(?:what\s+(?:are|is)|whats?|show|print|list|dump|reveal|display|output"
+        r"|give\s+me|tell\s+me|send\s+me)(?:\s+me)?\s+your\s+env(?:ironment)?\s+vars?"
+    ),
+    (
+        r"(?:what\s+(?:are|is)|whats?|show|print|list|dump|reveal|display|output"
+        r"|give\s+me|tell\s+me|send\s+me)(?:\s+me)?\s+your\s+(?:api\s+keys?|secrets?"
+        r"|access\s+tokens?|auth(?:orization)?\s+tokens?|credentials?|passwords?"
+        r"|private\s+keys?|signing\s+keys?|client\s+secrets?)"
+    ),
+    (
+        r"(?:show|print|read|cat|dump|open|reveal|display|output|give\s+me|send\s+me)"
+        r"(?:\s+me)?\s+(?:the\s+)?\.(?:env|local|secrets?)(?:\s+(?:file|config|contents))?"
+    ),
 ]
 
 # --- Role-play injection patterns: act-as / system: / pretend ---
