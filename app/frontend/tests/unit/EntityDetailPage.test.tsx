@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
 
 const localStorageMock = (() => {
@@ -36,9 +37,8 @@ window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   removeListener: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => ({
-  apiRequest: vi.fn(),
-  ApiError: class ApiError extends Error {
+vi.mock("@/lib/bimemo-api", () => {
+  class ApiError extends Error {
     status: number;
     retryAfter: string | null;
     constructor(status: number, message: string) {
@@ -47,14 +47,48 @@ vi.mock("@/lib/bimemo-api", () => ({
       this.status = status;
       this.retryAfter = null;
     }
-  },
-}));
+  }
+  type NormalizedError = {
+    kind: "http" | "contract" | "network";
+    status: number | null;
+    message: string;
+  };
+  const normalizeApiError = (err: unknown): NormalizedError => {
+    if (err instanceof ApiError) {
+      return {
+        kind: "http" as const,
+        status: err.status,
+        message: err.message,
+      };
+    }
+    if (err instanceof Error) {
+      return {
+        kind: "network" as const,
+        status: null,
+        message: err.message,
+      };
+    }
+    return { kind: "network" as const, status: null, message: String(err) };
+  };
+  const errorToDisplayText = (err: unknown, t: (key: string) => string) => {
+    const n = normalizeApiError(err);
+    if (n.kind === "contract") {
+      return t("errors.contract");
+    }
+    if (n.kind === "network") {
+      return t("errors.network");
+    }
+    return n.message || t("errors.http");
+  };
+  return { apiRequest: vi.fn(), ApiError, normalizeApiError, errorToDisplayText };
+});
 
 import { EntityDetailPage } from "@/pages/admin/EntityDetailPage";
 import { apiRequest, ApiError } from "@/lib/bimemo-api";
 
 const apiRequestMock = vi.mocked(apiRequest);
 
+let queryClient: QueryClient;
 const AUTH: AuthContextValue = {
   authenticated: true,
   loading: false,
@@ -67,6 +101,9 @@ const AUTH: AuthContextValue = {
 describe("EntityDetailPage", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
   });
 
   it("renders the entity, its assertion, and a resolved neighbor link", async () => {
@@ -99,16 +136,18 @@ describe("EntityDetailPage", () => {
     });
 
     render(
-      <AuthContext.Provider value={AUTH}>
-        <MemoryRouter initialEntries={["/admin/memory-debug/entity/e1"]}>
-          <Routes>
-            <Route
-              path="/admin/memory-debug/entity/:entityId"
-              element={<EntityDetailPage />}
-            />
-          </Routes>
-        </MemoryRouter>
-      </AuthContext.Provider>
+      <QueryClientProvider client={queryClient}>
+        <AuthContext.Provider value={AUTH}>
+          <MemoryRouter initialEntries={["/admin/memory-debug/entity/e1"]}>
+            <Routes>
+              <Route
+                path="/admin/memory-debug/entity/:entityId"
+                element={<EntityDetailPage />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </QueryClientProvider>
     );
 
     await waitFor(() =>
@@ -122,16 +161,18 @@ describe("EntityDetailPage", () => {
   it("shows a not-found state on 404", async () => {
     apiRequestMock.mockRejectedValue(new ApiError(404, "Entity not found"));
     render(
-      <AuthContext.Provider value={AUTH}>
-        <MemoryRouter initialEntries={["/admin/memory-debug/entity/missing"]}>
-          <Routes>
-            <Route
-              path="/admin/memory-debug/entity/:entityId"
-              element={<EntityDetailPage />}
-            />
-          </Routes>
-        </MemoryRouter>
-      </AuthContext.Provider>
+      <QueryClientProvider client={queryClient}>
+        <AuthContext.Provider value={AUTH}>
+          <MemoryRouter initialEntries={["/admin/memory-debug/entity/missing"]}>
+            <Routes>
+              <Route
+                path="/admin/memory-debug/entity/:entityId"
+                element={<EntityDetailPage />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </QueryClientProvider>
     );
     await waitFor(() =>
       expect(screen.getByText("Entity not found.")).toBeInTheDocument()

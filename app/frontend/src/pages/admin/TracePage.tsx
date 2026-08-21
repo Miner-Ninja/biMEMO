@@ -1,14 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
-import {
-  ApiError,
-  getRecentTraces,
-  getTurnTrace,
-  type TraceRunSummary,
-  type TurnTrace,
-} from "@/lib/bimemo-api";
+import { getRecentTraces, getTurnTrace, type TurnTrace } from "@/lib/bimemo-api";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 import { cn } from "@/lib/utils";
 
 function statusClass(status: string): string {
@@ -82,41 +79,35 @@ function TraceDetail({ trace }: { trace: TurnTrace }) {
 
 /** Admin turn-trace: pick a recent run to see its full per-turn trace. */
 export function TracePage() {
-  const [runs, setRuns] = useState<TraceRunSummary[]>([]);
+  const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState("");
-  const [trace, setTrace] = useState<TurnTrace | null>(null);
-  const [error, setError] = useState("");
-  const [loadingList, setLoadingList] = useState(false);
-  const [loadingTrace, setLoadingTrace] = useState(false);
 
-  const loadList = async () => {
-    setLoadingList(true);
-    setError("");
-    try {
-      setRuns(await getRecentTraces(80));
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Failed to load runs");
-    } finally {
-      setLoadingList(false);
-    }
-  };
+  const {
+    data: runs = [],
+    isInitialLoading: loadingList,
+    error: listError,
+    refetch,
+  } = useQuery({
+    queryKey: QUERY_KEYS.traces,
+    queryFn: () => getRecentTraces(80),
+  });
 
-  useEffect(() => {
-    void loadList();
-  }, []);
+  const {
+    data: trace,
+    isInitialLoading: loadingTrace,
+    error: traceError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.trace(selectedId),
+    queryFn: () => getTurnTrace(selectedId),
+    enabled: selectedId !== "",
+  });
 
-  const openRun = async (id: string) => {
+  const error =
+    (listError ? errorToDisplayText(listError, t) : "") ||
+    (traceError ? errorToDisplayText(traceError, t) : "");
+
+  const openRun = (id: string) => {
     setSelectedId(id);
-    setLoadingTrace(true);
-    setTrace(null);
-    setError("");
-    try {
-      setTrace(await getTurnTrace(id));
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Failed to load trace");
-    } finally {
-      setLoadingTrace(false);
-    }
   };
 
   return (
@@ -125,7 +116,7 @@ export function TracePage() {
         <p className="text-sm text-muted-foreground">
           Recent turns, newest first. Click one to see its full trace.
         </p>
-        <Button variant="outline" size="sm" onClick={() => void loadList()}>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
           Refresh
         </Button>
       </div>

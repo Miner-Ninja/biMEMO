@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,22 @@ import {
   testSavedLLMConfig,
 } from "@/api/llm";
 import type { LLMConfigEntry, ProviderType } from "@/api/llm";
+import { queryClient } from "@/lib/query-client";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 
 export function LLMConfigPage() {
   const { t } = useTranslation();
-  const [configs, setConfigs] = useState<LLMConfigEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [manualError, setManualError] = useState("");
+  const {
+    data: configsData,
+    isInitialLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.llmConfig,
+    queryFn: listLLMConfigs,
+  });
+  const configs = configsData?.configs ?? [];
+  const error = manualError || (queryError ? errorToDisplayText(queryError, t) : "");
   const [success, setSuccess] = useState("");
 
   // Dialog state
@@ -36,28 +47,32 @@ export function LLMConfigPage() {
   >({});
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
 
-  const reload = useCallback(async () => {
-    try {
-      const data = await listLLMConfigs();
-      setConfigs(data.configs);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("admin.loadConfigsFailed"));
-    }
-  }, [t]);
-
-  useEffect(() => {
-    void reload().finally(() => setLoading(false));
-  }, [reload]);
-
-  const handleCreate = () => {
-    setEditConfig(null);
-    setDialogOpen(true);
-  };
-
-  const handleEdit = (config: LLMConfigEntry) => {
-    setEditConfig(config);
-    setDialogOpen(true);
-  };
+  const saveMutation = useMutation({
+    mutationFn: async (data: {
+      service_type: ProviderType;
+      api_key?: string;
+      model?: string;
+      dialog_recorder_model?: string;
+      base_url?: string;
+      dialog_recorder_base_url?: string;
+    }) => {
+      // Both responses are unused here (the success message depends only
+      // on whether this is an edit); normalize to a single void type.
+      if (editConfig) {
+        await updateLLMConfig(editConfig.id, data);
+      } else {
+        await createLLMConfig(data);
+      }
+    },
+    onSuccess: () => {
+      if (editConfig) setSuccess(t("admin.configUpdated"));
+      else setSuccess(t("admin.configCreated"));
+      setDialogOpen(false);
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.llmConfig });
+    },
+    onError: (err) =>
+      setManualError(err instanceof Error ? err.message : t("admin.saveConfigFailed")),
+  });
 
   const handleSave = async (data: {
     service_type: ProviderType;
@@ -67,46 +82,42 @@ export function LLMConfigPage() {
     base_url?: string;
     dialog_recorder_base_url?: string;
   }) => {
-    setError("");
+    setManualError("");
     setSuccess("");
     try {
-      if (editConfig) {
-        await updateLLMConfig(editConfig.id, data);
-        setSuccess(t("admin.configUpdated"));
-      } else {
-        await createLLMConfig(data);
-        setSuccess(t("admin.configCreated"));
-      }
-      setDialogOpen(false);
-      await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("admin.saveConfigFailed"));
+      await saveMutation.mutateAsync(data);
+    } catch {
+      // display handled by the mutation's onError
     }
   };
 
-  const handleDelete = async (config: LLMConfigEntry) => {
-    setDeleteTarget(config);
-  };
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteLLMConfig(id),
+    onSuccess: () => {
+      setSuccess(t("admin.configDeleted"));
+      setDeleteTarget(null);
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.llmConfig });
+    },
+    onError: (err) =>
+      setManualError(
+        err instanceof Error ? err.message : t("admin.deleteConfigFailed")
+      ),
+  });
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setError("");
+    setManualError("");
     setSuccess("");
     try {
-      await deleteLLMConfig(deleteTarget.id);
-      setSuccess(t("admin.configDeleted"));
-      setDeleteTarget(null);
-      await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("admin.deleteConfigFailed"));
+      await deleteMutation.mutateAsync(deleteTarget.id);
+    } catch {
+      // display handled by the mutation's onError
     }
   };
 
-  const handleActivate = async (config: LLMConfigEntry) => {
-    setError("");
-    setSuccess("");
-    try {
-      const result = await activateLLMConfig(config.id);
+  const activateMutation = useMutation({
+    mutationFn: (id: string) => activateLLMConfig(id),
+    onSuccess: (result) => {
       if (result.reload?.success) {
         const provider = result.reload.active_provider ?? t("admin.unknown");
         const model = result.reload.model ?? "";
@@ -118,10 +129,36 @@ export function LLMConfigPage() {
       } else {
         setSuccess(t("admin.configActivated"));
       }
-      await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("admin.activateConfigFailed"));
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.llmConfig });
+    },
+    onError: (err) =>
+      setManualError(
+        err instanceof Error ? err.message : t("admin.activateConfigFailed")
+      ),
+  });
+
+  const handleActivate = async (config: LLMConfigEntry) => {
+    setManualError("");
+    setSuccess("");
+    try {
+      await activateMutation.mutateAsync(config.id);
+    } catch {
+      // display handled by the mutation's onError
     }
+  };
+
+  const handleCreate = () => {
+    setEditConfig(null);
+    setDialogOpen(true);
+  };
+
+  const handleEdit = (config: LLMConfigEntry) => {
+    setEditConfig(config);
+    setDialogOpen(true);
+  };
+
+  const handleDelete = async (config: LLMConfigEntry) => {
+    setDeleteTarget(config);
   };
 
   const handleTest = async (config: LLMConfigEntry) => {

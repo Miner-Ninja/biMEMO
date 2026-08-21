@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   Download,
@@ -20,23 +21,50 @@ import {
   listAgentTokens,
   issueAgentToken,
   revokeAgentToken,
-  type AgentTokenEntry,
   type IssueAgentTokenResponse,
   type CaRootResponse,
 } from "@/api/agents";
-import { apiRequest, ApiError } from "@/lib/bimemo-api";
+import { apiRequest, normalizeApiError } from "@/lib/bimemo-api";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 
 export function AgentConnectionPage() {
   const { t } = useTranslation();
-  // ── CA root download ────────────────────────────────────────────
-  const [caCert, setCaCert] = useState<string | null>(null);
-  const [caLoading, setCaLoading] = useState(false);
-  const [caError, setCaError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // ── CA root ─────────────────────────────────────────────────────
+  // A 503 is the page's one documented special case: the server has no CA
+  // root configured at all. Every other failure goes through the closed
+  // error mapping.
+  const {
+    data: caData,
+    isInitialLoading: caLoading,
+    error: caQueryError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.caRoot,
+    queryFn: () => apiRequest<CaRootResponse>("/admin/agents/ca-root"),
+  });
+  const caCert = caData?.certificate ?? null;
+  const normalizedCa = caQueryError ? normalizeApiError(caQueryError) : null;
+  const caError =
+    caQueryError === null
+      ? null
+      : normalizedCa !== null &&
+          normalizedCa.kind === "http" &&
+          normalizedCa.status === 503
+        ? t("admin.caRootNotConfigured")
+        : errorToDisplayText(caQueryError, t);
 
   // ── Token list ──────────────────────────────────────────────────
-  const [tokens, setTokens] = useState<AgentTokenEntry[]>([]);
-  const [tokensLoading, setTokensLoading] = useState(true);
-  const [tokensError, setTokensError] = useState<string | null>(null);
+  const {
+    data: tokenEntries,
+    isInitialLoading: tokensLoading,
+    error: tokensQueryError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.agentTokens,
+    queryFn: listAgentTokens,
+  });
+  const tokens = tokenEntries ?? [];
+  const tokensError = tokensQueryError ? errorToDisplayText(tokensQueryError, t) : null;
 
   // ── Issue form ──────────────────────────────────────────────────
   const [showIssue, setShowIssue] = useState(false);
@@ -58,42 +86,52 @@ export function AgentConnectionPage() {
   // ── Global error ────────────────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
 
-  const loadTokens = useCallback(async () => {
-    setTokensLoading(true);
-    setTokensError(null);
-    try {
-      const data = await listAgentTokens();
-      setTokens(data);
-    } catch (err) {
-      setTokensError(err instanceof Error ? err.message : t("admin.loadTokensFailed"));
-    } finally {
-      setTokensLoading(false);
-    }
-  }, [t]);
-
-  const loadCaRoot = useCallback(async () => {
-    setCaLoading(true);
-    setCaError(null);
-    try {
-      const data: CaRootResponse = await apiRequest("/admin/agents/ca-root");
-      setCaCert(data.certificate);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 503) {
-        setCaError(t("admin.caRootNotConfigured"));
+  const issueMutation = useMutation({
+    mutationFn: ({
+      label,
+      capability,
+      reauthToken,
+    }: {
+      label: string;
+      capability: string;
+      reauthToken: string;
+    }) => issueAgentToken(label, capability, reauthToken),
+    onSuccess: (result) => {
+      setIssuedToken(result);
+      setIssueLabel("");
+      setShowIssue(false);
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agentTokens });
+    },
+    onSettled: () => setIssuing(false),
+    onError: (err) => {
+      const normalized = normalizeApiError(err);
+      if (normalized.kind === "http" && normalized.status === 403) {
+        setError(t("admin.reauthRequired"));
       } else {
-        setCaError(err instanceof Error ? err.message : t("admin.loadCaRootFailed"));
+        setError(errorToDisplayText(err, t));
       }
-    } finally {
-      setCaLoading(false);
-    }
-  }, [t]);
+    },
+  });
 
-  // Load tokens and the CA cert on mount (and on language change, so
-  // load-error texts follow the interface language).
-  useEffect(() => {
-    void loadTokens();
-    void loadCaRoot();
-  }, [loadTokens, loadCaRoot]);
+  const revokeMutation = useMutation({
+    mutationFn: ({ label, reauthToken }: { label: string; reauthToken: string }) =>
+      revokeAgentToken(label, reauthToken),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.agentTokens });
+    },
+    onSettled: () => {
+      setDeleteTarget(null);
+      setPendingDelete(null);
+    },
+    onError: (err) => {
+      const normalized = normalizeApiError(err);
+      if (normalized.kind === "http" && normalized.status === 403) {
+        setError(t("admin.reauthRequired"));
+      } else {
+        setError(errorToDisplayText(err, t));
+      }
+    },
+  });
 
   async function handleDownloadCa() {
     if (!caCert) return;
@@ -151,7 +189,7 @@ export function AgentConnectionPage() {
     setShowReauth(true);
   }
 
-  async function handleReauthSuccess(reauthToken?: string) {
+  function handleReauthSuccess(reauthToken?: string) {
     setShowReauth(false);
     if (!reauthToken) {
       setPendingDelete(null);
@@ -164,39 +202,13 @@ export function AgentConnectionPage() {
       setPendingIssue(null);
       setIssuing(true);
       setError(null);
-      try {
-        const result = await issueAgentToken(label, capability, reauthToken);
-        setIssuedToken(result);
-        setIssueLabel("");
-        setShowIssue(false);
-        await loadTokens();
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 403) {
-          setError(t("admin.reauthRequired"));
-        } else {
-          setError(err instanceof Error ? err.message : t("admin.issueTokenFailed"));
-        }
-      } finally {
-        setIssuing(false);
-      }
+      issueMutation.mutate({ label, capability, reauthToken });
       return;
     }
 
     if (pendingDelete) {
       setDeleteTarget(pendingDelete);
-      try {
-        await revokeAgentToken(pendingDelete, reauthToken);
-        await loadTokens();
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 403) {
-          setError(t("admin.reauthRequired"));
-        } else {
-          setError(err instanceof Error ? err.message : t("admin.revokeFailed"));
-        }
-      } finally {
-        setDeleteTarget(null);
-        setPendingDelete(null);
-      }
+      revokeMutation.mutate({ label: pendingDelete, reauthToken });
     }
   }
 

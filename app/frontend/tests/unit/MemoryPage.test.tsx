@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { AuthContext, type AuthContextValue } from "@/hooks/useAuth";
 
@@ -57,16 +58,48 @@ vi.mock("@/api/memory", () => ({
   invalidateMemoryAssertion: vi.fn(),
 }));
 
-vi.mock("@/lib/bimemo-api", () => ({
-  apiRequest: vi.fn(),
-  ApiError: class ApiError extends Error {
+vi.mock("@/lib/bimemo-api", () => {
+  class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
       super(message);
       this.status = status;
     }
-  },
-}));
+  }
+  type NormalizedError = {
+    kind: "http" | "contract" | "network";
+    status: number | null;
+    message: string;
+  };
+  const normalizeApiError = (err: unknown): NormalizedError => {
+    if (err instanceof ApiError) {
+      return {
+        kind: "http" as const,
+        status: err.status,
+        message: err.message,
+      };
+    }
+    if (err instanceof Error) {
+      return {
+        kind: "network" as const,
+        status: null,
+        message: err.message,
+      };
+    }
+    return { kind: "network" as const, status: null, message: String(err) };
+  };
+  const errorToDisplayText = (err: unknown, t: (key: string) => string) => {
+    const n = normalizeApiError(err);
+    if (n.kind === "contract") {
+      return t("errors.contract");
+    }
+    if (n.kind === "network") {
+      return t("errors.network");
+    }
+    return n.message || t("errors.http");
+  };
+  return { apiRequest: vi.fn(), ApiError, normalizeApiError, errorToDisplayText };
+});
 
 import { MemoryPage } from "@/pages/admin/MemoryPage";
 import {
@@ -80,6 +113,8 @@ const listMock = vi.mocked(listMemoryEntities);
 const getEntityMock = vi.mocked(getMemoryEntity);
 const invalidateMock = vi.mocked(invalidateMemoryAssertion);
 const apiRequestMock = vi.mocked(apiRequest);
+
+let queryClient: QueryClient;
 
 const ENTITY = {
   id: "e1",
@@ -120,13 +155,15 @@ const AUTH: AuthContextValue = {
 
 function renderPage() {
   return render(
-    <MemoryRouter>
-      <ThemeProvider>
-        <AuthContext.Provider value={AUTH}>
-          <MemoryPage />
-        </AuthContext.Provider>
-      </ThemeProvider>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ThemeProvider>
+          <AuthContext.Provider value={AUTH}>
+            <MemoryPage />
+          </AuthContext.Provider>
+        </ThemeProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -139,6 +176,9 @@ async function openEntityFacts(user: ReturnType<typeof userEvent.setup>) {
 describe("MemoryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     listMock.mockResolvedValue({ entities: [ENTITY], total: 1 });
     getEntityMock.mockResolvedValue({
       entity: ENTITY,

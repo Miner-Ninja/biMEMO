@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { TranslationKey } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -7,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminCardSkeleton } from "@/components/ui/skeletons";
 import { apiRequest, encodePathSegment } from "@/lib/bimemo-api";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 import { cn } from "@/lib/utils";
 
 interface SkillListItem {
@@ -103,19 +105,20 @@ function formatDate(iso: string | null): string {
  */
 export function SkillsPage() {
   const { t } = useTranslation();
-  const [skills, setSkills] = useState<SkillListItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
   const [sort, setSort] = useState<SortKey>("usage");
   const [view, setView] = useState<ViewMode>("list");
-
-  useEffect(() => {
-    apiRequest<{ skills: SkillListItem[] }>("/admin/skills")
-      .then((d) => setSkills(d.skills || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const {
+    data: skillsData,
+    isInitialLoading: loading,
+    error: skillsError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.skills,
+    queryFn: async () =>
+      (await apiRequest<{ skills: SkillListItem[] }>("/admin/skills")).skills ?? [],
+  });
+  const skills = useMemo(() => skillsData ?? [], [skillsData]);
 
   const filtered = useMemo(() => {
     let result = skills;
@@ -262,8 +265,15 @@ export function SkillsPage() {
         {/* Loading */}
         {loading && <AdminCardSkeleton count={4} />}
 
+        {/* Error (previously swallowed; now surfaced via the closed mapping) */}
+        {!loading && skillsError && (
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            {errorToDisplayText(skillsError, t)}
+          </div>
+        )}
+
         {/* Empty */}
-        {!loading && skills.length === 0 && (
+        {!loading && !skillsError && skills.length === 0 && (
           <p className="text-center text-muted-foreground py-12">
             {t("admin.noSkillsSaved")}
           </p>

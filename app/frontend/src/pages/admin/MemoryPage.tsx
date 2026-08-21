@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Brain, ExternalLink, Search } from "lucide-react";
@@ -46,6 +47,8 @@ import {
   type MemoryEntity,
   type MemoryRecordRef,
 } from "@/api/memory";
+import { queryClient } from "@/lib/query-client";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 import { formatAbsoluteTime } from "@/lib/scheduler-format";
 import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -80,6 +83,7 @@ function displayName(entity: MemoryEntity): string {
 }
 
 interface PendingInvalidation {
+  entityId: string;
   assertion: MemoryAssertion;
   reason: InvalidateReason;
 }
@@ -180,18 +184,83 @@ function FactCard({
   );
 }
 
+interface EntityRowProps {
+  entity: MemoryEntity;
+  showHistory: boolean;
+  sourceRefs: Record<string, MemoryRecordRef | "unavailable">;
+  onResolveSource: (assertion: MemoryAssertion) => void;
+  onInvalidate: (
+    entityId: string,
+    assertion: MemoryAssertion,
+    reason: InvalidateReason
+  ) => void;
+  onFactLoadError: () => void;
+}
+
+function EntityRow({
+  entity,
+  showHistory,
+  sourceRefs,
+  onResolveSource,
+  onInvalidate,
+  onFactLoadError,
+}: EntityRowProps) {
+  const { t } = useTranslation();
+  // The accordion panel unmounts its children while closed, so this row
+  // only mounts when its entity is opened: the query is lazy by
+  // construction, and the shared cache keeps the facts across
+  // close/reopen and navigation (staleTime controls refetch).
+  const { data, isPending, errorUpdateCount } = useQuery({
+    queryKey: QUERY_KEYS.memoryEntity(entity.id),
+    queryFn: () => getMemoryEntity(entity.id),
+  });
+  // Toast once per failed attempt made while this row is mounted; the
+  // baseline ref suppresses toasts for errors already in the cache
+  // when the row (re)mounts.
+  const errorCountRef = useRef(errorUpdateCount);
+  useEffect(() => {
+    if (errorUpdateCount > errorCountRef.current) {
+      errorCountRef.current = errorUpdateCount;
+      onFactLoadError();
+    }
+  }, [errorUpdateCount, onFactLoadError]);
+
+  const facts = data?.assertions;
+  const visibleFacts =
+    facts === undefined
+      ? undefined
+      : showHistory
+        ? facts
+        : facts.filter((a) => a.invalid_from === null);
+
+  return (
+    <div className="space-y-2 pb-3">
+      {isPending || visibleFacts === undefined ? (
+        <Skeleton className="h-16 w-full" />
+      ) : visibleFacts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("memory.noEntityFacts")}</p>
+      ) : (
+        visibleFacts.map((assertion) => (
+          <FactCard
+            key={assertion.id}
+            assertion={assertion}
+            sourceRef={sourceRefs[assertion.id]}
+            onResolveSource={onResolveSource}
+            onInvalidate={(a, reason) => onInvalidate(entity.id, a, reason)}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 export function MemoryPage() {
   const { t } = useTranslation();
   const { toasts, addToast, dismissToast } = useToasts();
 
-  const [entities, setEntities] = useState<MemoryEntity[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const [assertionsByEntity, setAssertionsByEntity] = useState<
-    Record<string, MemoryAssertion[] | "loading">
-  >({});
   const [sourceRefs, setSourceRefs] = useState<
     Record<string, MemoryRecordRef | "unavailable">
   >({});
@@ -199,63 +268,27 @@ export function MemoryPage() {
   const [reauthFor, setReauthFor] = useState<PendingInvalidation | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadEntities = useCallback(async (query: string) => {
-    setLoading(true);
-    setLoadError(false);
-    try {
-      const result = query
-        ? await searchMemoryEntities(query)
+  const {
+    data: entityList,
+    isInitialLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.memory(debouncedQuery),
+    queryFn: async () => {
+      const result = debouncedQuery
+        ? await searchMemoryEntities(debouncedQuery)
         : await listMemoryEntities();
-      setEntities(result.entities);
-    } catch {
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadEntities("");
-  }, [loadEntities]);
+      return result.entities;
+    },
+  });
+  const entities = entityList ?? [];
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     if (searchTimer.current !== null) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
-      void loadEntities(value.trim());
+      setDebouncedQuery(value.trim());
     }, SEARCH_DEBOUNCE_MS);
-  };
-
-  const loadEntityFacts = useCallback(
-    async (entityId: string) => {
-      setAssertionsByEntity((prev) =>
-        prev[entityId] ? prev : { ...prev, [entityId]: "loading" }
-      );
-      try {
-        const result = await getMemoryEntity(entityId);
-        setAssertionsByEntity((prev) => ({
-          ...prev,
-          [entityId]: result.assertions,
-        }));
-      } catch {
-        setAssertionsByEntity((prev) => {
-          const next = { ...prev };
-          delete next[entityId];
-          return next;
-        });
-        addToast({ type: "error", message: t("memory.loadFailed") });
-      }
-    },
-    [addToast, t]
-  );
-
-  const handleAccordionChange = (value: unknown) => {
-    const opened = Array.isArray(value) ? value : [value];
-    for (const entityId of opened) {
-      if (typeof entityId === "string" && !assertionsByEntity[entityId]) {
-        void loadEntityFacts(entityId);
-      }
-    }
   };
 
   const handleResolveSource = useCallback(async (assertion: MemoryAssertion) => {
@@ -269,43 +302,43 @@ export function MemoryPage() {
     }
   }, []);
 
-  const handleReauthSuccess = async (token?: string) => {
-    const target = reauthFor;
-    setReauthFor(null);
-    if (!target) return;
-    try {
-      const result = await invalidateMemoryAssertion(
-        target.assertion.id,
-        target.reason,
-        token
-      );
+  const invalidateMutation = useMutation({
+    mutationFn: ({
+      assertion,
+      reason,
+      token,
+    }: {
+      entityId: string;
+      assertion: MemoryAssertion;
+      reason: InvalidateReason;
+      token?: string | undefined;
+    }) => invalidateMemoryAssertion(assertion.id, reason, token),
+    onSuccess: (result, vars) => {
       if (!result.invalidated) {
         addToast({ type: "error", message: t("memory.invalidateFailed") });
         return;
       }
-      const invalidatedAt = new Date().toISOString();
-      setAssertionsByEntity((prev) => {
-        const next: typeof prev = {};
-        for (const [entityId, list] of Object.entries(prev)) {
-          next[entityId] =
-            list === "loading"
-              ? list
-              : list.map((a) =>
-                  a.id === target.assertion.id
-                    ? { ...a, invalid_from: invalidatedAt }
-                    : a
-                );
-        }
-        return next;
-      });
       addToast({ type: "success", message: t("memory.invalidated") });
-    } catch {
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.memoryEntity(vars.entityId),
+      });
+    },
+    onError: () => {
       addToast({ type: "error", message: t("memory.invalidateFailed") });
-    }
-  };
+    },
+  });
 
-  const visibleFacts = (list: MemoryAssertion[]): MemoryAssertion[] =>
-    showHistory ? list : list.filter((a) => a.invalid_from === null);
+  const handleReauthSuccess = (token?: string) => {
+    const target = reauthFor;
+    setReauthFor(null);
+    if (!target) return;
+    invalidateMutation.mutate({
+      entityId: target.entityId,
+      assertion: target.assertion,
+      reason: target.reason,
+      token,
+    });
+  };
 
   return (
     <AdminLayout title={t("memory.title")}>
@@ -343,15 +376,15 @@ export function MemoryPage() {
             </div>
           )}
 
-          {!loading && loadError && (
+          {!loading && queryError !== null && (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>{t("memory.loadFailed")}</EmptyTitle>
+                <EmptyTitle>{errorToDisplayText(queryError, t)}</EmptyTitle>
               </EmptyHeader>
             </Empty>
           )}
 
-          {!loading && !loadError && entities.length === 0 && (
+          {!loading && queryError === null && entities.length === 0 && (
             <Empty>
               <EmptyHeader>
                 <Brain className="h-8 w-8 text-muted-foreground" />
@@ -367,11 +400,10 @@ export function MemoryPage() {
             </Empty>
           )}
 
-          {!loading && !loadError && entities.length > 0 && (
-            <Accordion onValueChange={handleAccordionChange}>
+          {!loading && queryError === null && entities.length > 0 && (
+            <Accordion>
               {entities.map((entity) => {
                 const typeKey = ENTITY_TYPE_KEYS[entity.entity_type];
-                const facts = assertionsByEntity[entity.id];
                 return (
                   <AccordionItem key={entity.id} value={entity.id}>
                     <AccordionTrigger>
@@ -390,27 +422,21 @@ export function MemoryPage() {
                       </span>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <div className="space-y-2 pb-3">
-                        {facts === "loading" || facts === undefined ? (
-                          <Skeleton className="h-16 w-full" />
-                        ) : visibleFacts(facts).length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            {t("memory.noEntityFacts")}
-                          </p>
-                        ) : (
-                          visibleFacts(facts).map((assertion) => (
-                            <FactCard
-                              key={assertion.id}
-                              assertion={assertion}
-                              sourceRef={sourceRefs[assertion.id]}
-                              onResolveSource={(a) => void handleResolveSource(a)}
-                              onInvalidate={(assertion, reason) =>
-                                setPending({ assertion, reason })
-                              }
-                            />
-                          ))
-                        )}
-                      </div>
+                      <EntityRow
+                        entity={entity}
+                        showHistory={showHistory}
+                        sourceRefs={sourceRefs}
+                        onResolveSource={handleResolveSource}
+                        onInvalidate={(entityId, assertion, reason) =>
+                          setPending({ entityId, assertion, reason })
+                        }
+                        onFactLoadError={() =>
+                          addToast({
+                            type: "error",
+                            message: t("memory.loadFailed"),
+                          })
+                        }
+                      />
                     </AccordionContent>
                   </AccordionItem>
                 );
@@ -462,7 +488,7 @@ export function MemoryPage() {
 
       {reauthFor && (
         <ReauthModal
-          onSuccess={(token) => void handleReauthSuccess(token)}
+          onSuccess={(token) => handleReauthSuccess(token)}
           onClose={() => setReauthFor(null)}
         />
       )}

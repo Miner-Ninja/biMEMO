@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TranslationKey } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { CalendarClock, Plus, RefreshCw } from "lucide-react";
@@ -21,11 +22,14 @@ import {
 import {
   type ScheduledTask,
   type ScheduledTaskFilter,
+  type ScheduledTaskStatus,
   deleteScheduledTask,
   listScheduledTasks,
   updateScheduledTaskStatus,
 } from "@/api/scheduled-tasks";
 import { cn } from "@/lib/utils";
+import { queryClient } from "@/lib/query-client";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 
 const FILTERS: Array<{ key: ScheduledTaskFilter; labelKey: TranslationKey }> = [
   { key: "all", labelKey: "scheduler.filterAll" },
@@ -36,9 +40,7 @@ const FILTERS: Array<{ key: ScheduledTaskFilter; labelKey: TranslationKey }> = [
 
 export function ScheduledTasksPage() {
   const { t } = useTranslation();
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [filter, setFilter] = useState<ScheduledTaskFilter>("all");
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTask, setEditTask] = useState<ScheduledTask | null>(null);
@@ -46,28 +48,28 @@ export function ScheduledTasksPage() {
   const [pendingDelete, setPendingDelete] = useState<ScheduledTask | null>(null);
   const { toasts, addToast, dismissToast } = useToasts();
 
-  const loadTasks = useCallback(
-    async (currentFilter: ScheduledTaskFilter, silent = false) => {
-      if (!silent) setRefreshing(true);
-      try {
-        const result = await listScheduledTasks(currentFilter);
-        setTasks(result);
-      } catch (err) {
-        addToast({
-          type: "error",
-          message: err instanceof Error ? err.message : t("scheduler.loadTasksFailed"),
-        });
-      } finally {
-        if (!silent) setRefreshing(false);
-        setLoading(false);
-      }
-    },
-    [addToast, t]
-  );
-
+  const {
+    data: tasksData,
+    isInitialLoading,
+    refetch,
+    error: queryError,
+    errorUpdateCount,
+  } = useQuery({
+    queryKey: QUERY_KEYS.scheduledTasks(filter),
+    queryFn: () => listScheduledTasks(filter),
+  });
+  const loading = isInitialLoading;
+  const tasks = useMemo(() => tasksData ?? [], [tasksData]);
+  // Toast once per new failure of the active filter's list; the
+  // baseline ref suppresses toasts for errors already in the cache
+  // when the page (re)mounts.
+  const errorCountRef = useRef(errorUpdateCount);
   useEffect(() => {
-    void loadTasks(filter);
-  }, [filter, loadTasks]);
+    if (errorUpdateCount > errorCountRef.current && queryError !== null) {
+      errorCountRef.current = errorUpdateCount;
+      addToast({ type: "error", message: errorToDisplayText(queryError, t) });
+    }
+  }, [errorUpdateCount, queryError, addToast, t]);
 
   // Listen for scheduled_task_result realtime events to refresh the list
   // and show a toast when a task fires.
@@ -95,9 +97,9 @@ export function ScheduledTasksPage() {
             : t("scheduler.taskResultToast", { name: taskName, summary }),
       });
       // Refresh the task list so last_run_at, status, history update live.
-      void loadTasks(filter, true);
+      void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
     },
-    [addToast, filter, loadTasks, t]
+    [addToast, t]
   );
 
   const { connect, disconnect } = useRealtimeStream(handleRealtimeEvent, null);
@@ -113,54 +115,56 @@ export function ScheduledTasksPage() {
     };
   }, [tasks]);
 
-  const handlePauseToggle = useCallback(
-    async (task: ScheduledTask) => {
-      const nextStatus = task.status === "paused" ? "active" : "paused";
-      try {
-        await updateScheduledTaskStatus(task.id, nextStatus);
-        addToast({
-          type: "success",
-          message:
-            nextStatus === "paused"
-              ? t("scheduler.taskPaused")
-              : t("scheduler.taskResumed"),
-        });
-        void loadTasks(filter, true);
-      } catch (err) {
-        addToast({
-          type: "error",
-          message: err instanceof Error ? err.message : t("scheduler.updateTaskFailed"),
-        });
-      }
+  const pauseMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ScheduledTaskStatus }) =>
+      updateScheduledTaskStatus(id, status),
+    onSuccess: (_result, vars) => {
+      addToast({
+        type: "success",
+        message:
+          vars.status === "paused"
+            ? t("scheduler.taskPaused")
+            : t("scheduler.taskResumed"),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
     },
-    [addToast, filter, loadTasks, t]
+    onError: (err) => addToast({ type: "error", message: errorToDisplayText(err, t) }),
+  });
+
+  const handlePauseToggle = useCallback(
+    (task: ScheduledTask) => {
+      const nextStatus: ScheduledTaskStatus =
+        task.status === "paused" ? "active" : "paused";
+      pauseMutation.mutate({ id: task.id, status: nextStatus });
+    },
+    [pauseMutation]
   );
 
-  const handleDelete = useCallback(async () => {
+  const deleteMutation = useMutation({
+    mutationFn: ({ id }: { id: string; name: string }) => deleteScheduledTask(id),
+    onSuccess: (_result, vars) => {
+      addToast({
+        type: "success",
+        message: t("scheduler.taskDeleted", { name: vars.name }),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
+    },
+    onError: (err) => addToast({ type: "error", message: errorToDisplayText(err, t) }),
+  });
+
+  const handleDelete = useCallback(() => {
     if (!pendingDelete) return;
     const target = pendingDelete;
     setPendingDelete(null);
-    try {
-      await deleteScheduledTask(target.id);
-      addToast({
-        type: "success",
-        message: t("scheduler.taskDeleted", { name: target.name }),
-      });
-      void loadTasks(filter, true);
-    } catch (err) {
-      addToast({
-        type: "error",
-        message: err instanceof Error ? err.message : t("scheduler.deleteTaskFailed"),
-      });
-    }
-  }, [addToast, filter, loadTasks, pendingDelete, t]);
+    deleteMutation.mutate({ id: target.id, name: target.name });
+  }, [pendingDelete, deleteMutation]);
 
   const handleCreated = useCallback(
     (_taskId: string, name: string) => {
       addToast({ type: "success", message: t("scheduler.taskCreated", { name }) });
-      void loadTasks(filter, true);
+      void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
     },
-    [addToast, filter, loadTasks, t]
+    [addToast, t]
   );
 
   return (
@@ -212,14 +216,20 @@ export function ScheduledTasksPage() {
               </span>
               <button
                 type="button"
-                onClick={() => loadTasks(filter)}
-                disabled={refreshing}
+                onClick={() => {
+                  setRefreshing(true);
+                  void refetch().finally(() => setRefreshing(false));
+                }}
+                disabled={refreshing || loading}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 title={t("scheduler.refresh")}
                 aria-label={t("scheduler.refresh")}
               >
                 <RefreshCw
-                  className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+                  className={cn(
+                    "h-3.5 w-3.5",
+                    (refreshing || loading) && "animate-spin"
+                  )}
                 />
               </button>
             </div>
@@ -260,7 +270,7 @@ export function ScheduledTasksPage() {
         onClose={() => setEditTask(null)}
         onCreated={(_id, name) => {
           addToast({ type: "success", message: t("scheduler.taskUpdated", { name }) });
-          void loadTasks(filter, true);
+          void queryClient.invalidateQueries({ queryKey: ["scheduled-tasks"] });
         }}
         onError={(message) => addToast({ type: "error", message })}
       />

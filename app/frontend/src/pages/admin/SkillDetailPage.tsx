@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TranslationKey } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -23,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminCardSkeleton } from "@/components/ui/skeletons";
 import { apiRequest, encodePathSegment } from "@/lib/bimemo-api";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 import { cn } from "@/lib/utils";
 
 interface ProcedureStep {
@@ -159,11 +161,10 @@ export function SkillDetailPage() {
   const { t } = useTranslation();
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [skill, setSkill] = useState<Skill | null>(null);
-  const [logs, setLogs] = useState<UsageLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [dismissedLoadError, setDismissedLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("logic");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Skill>>({});
@@ -172,18 +173,72 @@ export function SkillDetailPage() {
   const [panelMinHeight, setPanelMinHeight] = useState(200);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!name) return;
-    apiRequest<{ skill: Skill; logs: UsageLog[] }>(
-      `/admin/skills/${encodePathSegment(name)}`
-    )
-      .then((d) => {
-        setSkill(d.skill);
-        setLogs(d.logs || []);
-      })
-      .catch((e) => setError(e.message || t("admin.loadSkillFailed")))
-      .finally(() => setLoading(false));
-  }, [name, t]);
+  const {
+    data,
+    isInitialLoading,
+    error: queryError,
+  } = useQuery({
+    queryKey: QUERY_KEYS.skill(name ?? ""),
+    queryFn: () =>
+      apiRequest<{ skill: Skill; logs: UsageLog[] }>(
+        `/admin/skills/${encodePathSegment(name ?? "")}`
+      ),
+    enabled: !!name,
+  });
+
+  // The load error is derived from the query state rather than synced
+  // into state: the displayed text always comes from the closed mapping,
+  // and dismissal records the dismissed text, so a repeated identical
+  // failure stays hidden while a different one shows again.
+  const loadError = queryError ? errorToDisplayText(queryError, t) : null;
+  const error = mutationError ?? (loadError === dismissedLoadError ? null : loadError);
+
+  const skill = data?.skill ?? null;
+  const logs = data?.logs || [];
+  const loading = isInitialLoading;
+
+  const saveEditMutation = useMutation({
+    mutationFn: (skillName: string) =>
+      apiRequest(`/admin/skills/${encodePathSegment(skillName)}`, {
+        method: "PUT",
+        body: JSON.stringify(editData),
+      }),
+    onSuccess: () => {
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.skill(name ?? ""),
+      });
+    },
+    onError: (err) => setMutationError(errorToDisplayText(err, t)),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ skillName, enabled }: { skillName: string; enabled: boolean }) =>
+      apiRequest(`/admin/skills/${encodePathSegment(skillName)}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: enabled ? 1 : 0 }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.skill(name ?? ""),
+      });
+    },
+    onError: (err) => setMutationError(errorToDisplayText(err, t)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (skillName: string) =>
+      apiRequest(`/admin/skills/${encodePathSegment(skillName)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.skills });
+      navigate("/admin/skills");
+    },
+    onError: (err) => setMutationError(errorToDisplayText(err, t)),
+  });
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -218,46 +273,19 @@ export function SkillDetailPage() {
     setEditData({});
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     if (!skill) return;
-    try {
-      await apiRequest(`/admin/skills/${encodePathSegment(skill.name)}`, {
-        method: "PUT",
-        body: JSON.stringify(editData),
-      });
-      setSkill({ ...skill, ...editData } as Skill);
-      setEditing(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("admin.saveFailed"));
-    }
+    saveEditMutation.mutate(skill.name);
   };
 
-  const handleToggle = async () => {
+  const handleToggle = () => {
     if (!skill) return;
-    const next = !skill.enabled;
-    try {
-      await apiRequest(`/admin/skills/${encodePathSegment(skill.name)}`, {
-        method: "PUT",
-        body: JSON.stringify({ enabled: next ? 1 : 0 }),
-      });
-      setSkill({ ...skill, enabled: next });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("admin.updateSkillStatusFailed"));
-    }
+    toggleMutation.mutate({ skillName: skill.name, enabled: !skill.enabled });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!skill) return;
-    try {
-      await apiRequest(`/admin/skills/${encodePathSegment(skill.name)}`, {
-        method: "DELETE",
-      });
-      navigate("/admin/skills");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("admin.deleteFailed"));
-    }
+    deleteMutation.mutate(skill.name);
   };
 
   const updateStep = (i: number, key: keyof ProcedureStep, val: string) => {
@@ -441,7 +469,13 @@ export function SkillDetailPage() {
             <button
               type="button"
               className="ml-2 underline"
-              onClick={() => setError(null)}
+              onClick={() => {
+                if (mutationError !== null) {
+                  setMutationError(null);
+                } else if (loadError !== null) {
+                  setDismissedLoadError(loadError);
+                }
+              }}
             >
               {t("admin.dismiss")}
             </button>

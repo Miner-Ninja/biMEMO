@@ -251,6 +251,41 @@ export class ContractError extends ApiError {
   }
 }
 
+/** The closed set of failure kinds the UI can receive. */
+export type ErrorKind = "http" | "contract" | "network";
+
+/**
+ * A normalized failure: the closed kind, the HTTP status when a
+ * response arrived (0 for contract errors), and the message.
+ */
+export interface NormalizedApiError {
+  kind: ErrorKind;
+  status: number | null;
+  message: string;
+}
+
+/**
+ * Classify any thrown value into the closed error union. A 2xx
+ * response that failed schema validation is a contract error, a
+ * response that carried an error status is an http error, and a
+ * failure with no HTTP response at all (the fetch rejected) is a
+ * network error. `ContractError` is checked before `ApiError`
+ * because it extends it.
+ */
+export function normalizeApiError(err: unknown): NormalizedApiError {
+  if (err instanceof ContractError) {
+    return { kind: "contract", status: 0, message: err.message };
+  }
+  if (err instanceof ApiError) {
+    return { kind: "http", status: err.status, message: err.message };
+  }
+  return {
+    kind: "network",
+    status: null,
+    message: err instanceof Error ? err.message : String(err),
+  };
+}
+
 /**
  * Extract the user-facing message from one error response body.
  *
@@ -1091,27 +1126,6 @@ export async function checkConnection(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export interface ErrorInfo {
-  category: string;
-  detail: string;
-  message: string;
-}
-
-const UNKNOWN_ERROR_SUGGESTION = "Try repeating your request or start a new chat";
-
-const ERROR_SUGGESTIONS: Record<string, string> = {
-  ai_unavailable: "Check that Ollama is running and try again in a minute",
-  ai_timeout: "Try asking a shorter question or try again",
-  db_error: "Try rephrasing your question",
-  file_search_error: "Check that the file was uploaded and try again",
-  mcp_unavailable: "Try refreshing the page or wait a minute",
-  unknown: UNKNOWN_ERROR_SUGGESTION,
-};
-
-export function getErrorSuggestion(category: string): string {
-  return ERROR_SUGGESTIONS[category] ?? UNKNOWN_ERROR_SUGGESTION;
 }
 
 // ============================================================

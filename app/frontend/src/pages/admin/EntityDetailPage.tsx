@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AssertionCard } from "@/components/admin/memory-debug/AssertionCard";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { PanelSkeleton } from "@/components/ui/skeletons";
-import { ApiError, apiRequest } from "@/lib/bimemo-api";
+import { apiRequest, normalizeApiError } from "@/lib/bimemo-api";
+import { QUERY_KEYS, errorToDisplayText } from "@/hooks/use-server-state";
 import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -61,45 +62,32 @@ function displayName(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-interface LoadState {
-  entityId: string;
-  detail: EntityDetail | null;
-  notFound: boolean;
-  error: string;
-}
-
 export function EntityDetailPage() {
   const { t } = useTranslation();
   const { entityId } = useParams<{ entityId: string }>();
-  const [state, setState] = useState<LoadState | null>(null);
 
-  useEffect(() => {
-    if (!entityId) return undefined;
-    let cancelled = false;
-    const settle = (partial: Omit<LoadState, "entityId">): void => {
-      if (!cancelled) setState({ entityId, ...partial });
-    };
-    apiRequest<EntityDetail>(
-      `/admin/memory/graph/entities/${encodeURIComponent(entityId)}`
-    )
-      .then((detail) => settle({ detail, notFound: false, error: "" }))
-      .catch((requestError) => {
-        if (requestError instanceof ApiError && requestError.status === 404) {
-          settle({ detail: null, notFound: true, error: "" });
-        } else {
-          settle({ detail: null, notFound: false, error: String(requestError) });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [entityId]);
+  // The query is keyed by the route id, so a result for a previous id
+  // (mid-navigation) never leaks in: a new id starts as a fresh pending
+  // query and the page shows the skeleton until it settles.
+  const { data, error: queryError } = useQuery({
+    queryKey: QUERY_KEYS.entityDetail(entityId ?? ""),
+    queryFn: () =>
+      apiRequest<EntityDetail>(
+        `/admin/memory/graph/entities/${encodeURIComponent(entityId ?? "")}`
+      ),
+    enabled: !!entityId,
+  });
 
-  // Treat a result for a previous id (mid-navigation) as still loading.
-  const current = state && state.entityId === entityId ? state : null;
-  const detail = current?.detail ?? null;
-  const notFound = current?.notFound ?? false;
-  const error = current?.error ?? "";
+  // A 404 means the entity is gone: show the not-found view, not an error.
+  // Every other failure goes through the closed error mapping. The derived
+  // locals keep the LoadState shape (detail / notFound / error), so the
+  // render tree below is unchanged.
+  const normalized = queryError ? normalizeApiError(queryError) : null;
+  const notFound =
+    normalized !== null && normalized.kind === "http" && normalized.status === 404;
+  const detail = notFound ? null : (data ?? null);
+  const error =
+    normalized !== null && !notFound ? errorToDisplayText(queryError, t) : "";
 
   const typeLabel = (type: string): string => {
     const key = ENTITY_TYPE_KEYS[type];

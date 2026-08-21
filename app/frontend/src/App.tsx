@@ -1,9 +1,11 @@
 import { useEffect, type ReactNode } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthContext, useAuthState, useAuth } from "@/hooks/useAuth";
 import { syncUiSettings } from "@/lib/ui-settings";
+import { queryClient } from "@/lib/query-client";
 import { applyStoredLanguage } from "@/i18n";
 import { AppSkeleton } from "@/components/ui/skeletons";
 import { ChatPage } from "@/pages/ChatPage";
@@ -102,7 +104,9 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
+          <QueryClientProvider client={queryClient}>
+            <AppRoutes />
+          </QueryClientProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

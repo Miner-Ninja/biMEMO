@@ -377,6 +377,11 @@ const en = {
     zoneRestricted: "Restricted",
     zoneSafe: "Safe",
   },
+  errors: {
+    contract: "The server response was unexpected.",
+    http: "Request failed. Please try again.",
+    network: "No connection to the server. Check your network.",
+  },
   admin: {
     activate: "Activate",
     activateConfigFailed: "Failed to activate configuration",
