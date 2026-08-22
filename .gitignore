@@ -80,6 +80,7 @@ scripts/analyze_naming.py
 sandbox/
 openspec/
 docs/
+documentation/
 PROJECT_PROFILE.md
 CODE_REVIEW.md
 CODE_RULES.md
