@@ -11,7 +11,7 @@ dependencies = [
     "httpx==0.28.1",                # Verified 2026-02-14
     "aiogram==3.25.0",              # Verified 2026-02-14
     "ollama==0.6.1",                # Verified 2026-02-14
-    "cryptography==46.0.5",         # Verified 2026-02-14
+    "cryptography==50.0.1",         # Verified 2026-02-14
     "PyJWT==2.11.0",                # Verified 2026-02-14
     "argon2-cffi==25.1.0",          # Verified 2026-02-14
     "sqlcipher3-binary==0.6.0",     # Verified 2026-02-14
