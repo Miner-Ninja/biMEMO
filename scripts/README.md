@@ -13,6 +13,7 @@ This directory contains local development and diagnostic helpers.
   biMEMO instance.
 - `file_context_api_test.py` uploads files and checks the file-context API path.
 - `memory_health_test.py` captures memory health before and after a chat run.
+- `smoke_chat_websocket.py` checks the authenticated WebSocket chat path.
 
 ## Memory Evaluation
 
@@ -26,10 +27,13 @@ This directory contains local development and diagnostic helpers.
 
 ## Maintenance
 
+- `validate_env.py` validates deployment configuration before startup.
+- `verify.py` runs the repository's standard local verification suite.
+- `openapi_check.py` detects drift between FastAPI routes and
+  `api/openapi.json`.
+- `analyze_naming.py` reports naming inconsistencies in Python source files.
 - `prepare_db_reset.py` creates a backup before deleting a local development
   database.
-- `migrate_clear_num_ctx_4000.py` clears old `num_ctx = 4000` overrides from a
-  live encrypted database.
 
 These scripts are intended for development and diagnostics. Most of them expect
 a running biMEMO instance and may create, modify, or delete test data.

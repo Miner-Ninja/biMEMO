@@ -9,7 +9,8 @@ published release.
 
 Do not open a public GitHub issue for a security problem.
 
-Report security issues privately by email to `security@bimemo.dev`.
+Report security issues through
+[GitHub Private Vulnerability Reporting](https://github.com/Miner-Ninja/biMEMO/security/advisories/new).
 
 Include the following details when possible:
 

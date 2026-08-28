@@ -23,7 +23,7 @@
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/<owner>/biMEMO.git
+git clone https://github.com/Miner-Ninja/biMEMO.git
 cd biMEMO
 ```
 
@@ -166,16 +166,10 @@ BIMEMO_OPENROUTER_DIALOG_RECORDER_MODEL=qwen/qwen3-4b
 
 ---
 
-## Telegram Bot Setup
+## Telegram Bot
 
-Bot tokens are configured via the Admin panel (stored encrypted in the database).
-
-1. Create bot via @BotFather on Telegram
-2. Get bot token
-3. Start chat with bot
-4. Get your user ID (use @userinfobot)
-5. Open Admin panel → Integrations → Create
-6. Add Telegram integration with your bot token and allowed user IDs
+Telegram support is planned but is not available in the current beta. Discord
+is the supported messenger integration for now.
 
 ---
 

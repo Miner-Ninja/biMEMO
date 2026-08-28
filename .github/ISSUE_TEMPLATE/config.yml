@@ -3,9 +3,8 @@ blank_issues_enabled: false
 contact_links:
   - name: 🔒 Report a security vulnerability
     # Private reporting — never open a public issue for a vulnerability.
-    # Replace OWNER once the GitHub repo exists (or point to SECURITY.md).
-    url: https://github.com/OWNER/biMEMO/security/advisories/new
+    url: https://github.com/Miner-Ninja/biMEMO/security/advisories/new
     about: Report privately via GitHub Security Advisories. See SECURITY.md.
   - name: 💬 Questions & discussion
-    url: https://github.com/OWNER/biMEMO/discussions
-    about: Ask questions, share setups, and discuss ideas.
+    url: https://discord.com/invite/z5kJJeaTeS
+    about: Join the biMEMO Discord server to ask questions, share setups, and discuss ideas.

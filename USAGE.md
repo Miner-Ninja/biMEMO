@@ -14,9 +14,7 @@ password from a local secret file at startup.
 
 ### Telegram Bot
 
-1. Configure Telegram integration via Admin panel (see [INSTALL.md](INSTALL.md))
-2. Message your bot: `/start`
-3. Chat naturally
+Telegram support is planned but is not available in the current beta.
 
 ### Discord Bot
 
@@ -24,7 +22,7 @@ password from a local secret file at startup.
 2. Send a DM to your bot
 3. Chat naturally
 
-All three channels (Web, Telegram, Discord) share the same conversation context and memory.
+Web and Discord share the same conversation context and memory.
 
 ---
 
@@ -79,7 +77,8 @@ Confirmation required
 [Confirm] [Deny]
 ```
 
-On Telegram: inline keyboard buttons. On Discord: discord.ui.View buttons. On Web: ConfirmationCard component.
+On Discord, confirmations use interactive buttons. The Web UI shows a
+confirmation card.
 
 ### Memory System
 
@@ -190,4 +189,4 @@ User: /status
 1. **Be specific** — "Read file X" works better than "read my file"
 2. **Use tools wisely** — GREEN tools are fast, RED need confirmation
 3. **Memory works automatically** — No need to explicitly save
-4. **All channels share context** — Web + Telegram + Discord share the same conversation and memory
+4. **Channels share context** — Web and Discord use the same conversation memory

@@ -1,251 +1,147 @@
 # biMEMO
 
-Self-hosted personal AI assistant with encrypted storage, local-first runtime,
-and isolated tool execution.
+**A self-hosted AI assistant with long-term memory, practical tools, and clear
+control over where your data and model requests go.**
 
-biMEMO is built for people who want their own assistant stack instead of a
-hosted black box. It combines a web chat, messenger integrations, encrypted
-memory, local or remote LLM providers, and strict execution boundaries inside a
-single self-hosted system.
+biMEMO brings web chat, Discord, persistent memory, scheduled tasks, and
+workspace tools into one system you operate yourself. Use a local Ollama model
+for a fully local model runtime, connect through OpenRouter, or configure
+another OpenAI-compatible provider.
 
 ## Why biMEMO
 
-- **Private by design** — encrypted local storage and self-hosted deployment
-- **Provider-flexible** — run with local Ollama or a remote provider
-- **Operationally explicit** — multi-process architecture with clear trust
-  boundaries
-- **Useful beyond web chat** — Telegram, Discord, memory tools, and admin UI in
-  one stack
+- **Encrypted memory, not plaintext notes** — biMEMO's primary memory store is
+  an encrypted SQLCipher database, not a folder of readable Markdown files. It
+  is designed for the deeply personal context a long-running assistant can
+  accumulate over time.
+- **Memory that stays useful** — biMEMO turns conversations into searchable
+  records and a knowledge graph of entities, relationships, and dated facts,
+  then retrieves the relevant context when it is needed.
+- **More than chat** — search the web, work with files and Git repositories,
+  run approved commands, create reusable skills, and schedule reminders or
+  background tasks (some capabilities are still being completed and refined).
+- **Use the model you prefer** — choose local Ollama, OpenRouter, or a custom
+  OpenAI-compatible endpoint.
+- **Built around explicit boundaries** — sensitive actions require scoped or
+  per-action approval, while database, signing, credential, and orchestration
+  responsibilities are separated.
 
-## What You Get
+## What is included
 
-- personal assistant web UI,
-- encrypted memory and diagnostics,
-- local HTTPS for development,
-- Telegram and Discord integrations,
-- security scanning in CI before public release.
+- Responsive web chat with file and image input, voice transcription, chat
+  history, and English/Russian UI
+- Discord integration with a user allowlist; Telegram support is planned
+- Long-term memory combining full-text search, vector similarity, and
+  knowledge-graph retrieval
+- File, web, email, workspace, Git, command, scheduling, and skill tools
+- Admin pages for providers, integrations, memory, scheduled tasks, backups,
+  diagnostics, and execution traces
+- MCP access so external agents can search, add, and query biMEMO memory
+- Docker Compose stack with Caddy, SearXNG, and faster-whisper
 
-## Features
+**Project status.** biMEMO is an independent, single-developer project in
+active beta. Its core workflows are built and tested, but updates may still
+introduce breaking changes, so it is not yet intended for production-critical
+use. Development is moving toward a dependable, production-ready release.
 
-- **End-to-end encryption** — All data encrypted at rest with SQLCipher AES-256
-- **Local LLM** — Runs locally via Ollama (no data leaves your machine)
-- **Observational memory** — Automatic context compression via Dialog Recorder/Summary Distiller
-- **Tool execution** — File operations, web search, with trust zone enforcement
-- **Multi-channel** — Telegram bot + Discord bot + Web UI
-- **Multi-process isolation** — Supervisor spawns isolated processes communicating via HMAC-authenticated Unix sockets
-- **Worker isolation** — FS/Net tools run in separate workers with IPC
+## Security model
 
-## Quick Start
+Unlike file-based memory designs, biMEMO keeps conversations, distilled memory
+records, knowledge-graph entities and relationships, settings, and credentials
+in SQLCipher databases. The database master key is wrapped using the
+application password with Argon2id and AES-256-GCM. Internal services use
+authenticated Unix sockets, and the web API adds JWT authentication, CSRF
+protection, rate limiting, output redaction, and SSRF/path validation.
 
-### Prerequisites
+Tool access is policy-driven: read access can be granted for a conversation or
+workspace, while writes, email, commands, Git mutations, and other sensitive
+operations can require explicit approval.
 
-- Docker + Docker Compose
-- 8GB+ RAM
-- GPU recommended (RTX 3070+) for local Ollama, or use OpenRouter API
+Self-hosting does not automatically make every request local. OpenRouter,
+custom cloud providers, web search, URL fetching, email, and messenger
+integrations send the data required for those features to their configured
+services. Uploaded files and local diagnostic traces are stored outside the
+encrypted memory database and may contain sensitive content; protect the
+instance storage with host or disk encryption and do not share its `.runtime`
+directory.
 
-If you want the full installation guide instead of the short path below, see
-[INSTALL.md](INSTALL.md).
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-### 1. Clone and Configure
+## Quick start
+
+### Requirements
+
+- Docker with Docker Compose
+- 4 GB RAM for a cloud-model setup; 8 GB or more recommended for local models
+- A running Ollama instance, an OpenRouter key, or another compatible provider
 
 ```bash
-git clone https://github.com/<owner>/biMEMO.git
+git clone https://github.com/Miner-Ninja/biMEMO.git
 cd biMEMO
 cp .env.example .env
-```
-
-### 2. Generate Local TLS Certificate
-
-biMEMO uses HTTPS even for local development. Generate a local self-signed
-certificate before starting Docker Compose:
-
-```bash
 ./scripts/generate_dev_tls.sh
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-The generated `docker/caddy/certs/cert.pem` and `docker/caddy/certs/key.pem`
-files stay local and must not be committed.
+Open **https://localhost**, accept the locally generated development
+certificate, create the application password, and configure an LLM provider in
+**Admin → LLM**.
 
-### 3. Configure .env
+The development frontend is also exposed directly at
+<http://localhost:5273>. Ollama is not included in the default Compose stack;
+run it separately and point biMEMO to its endpoint.
 
-Review `.env` before starting the stack. The default development compose file
-starts the application, frontend, Caddy, SearXNG, and speech-to-text service.
-It uses manual unlock by default: you enter the application password in the
-browser when setup or unlock is required.
+For automatic unlock, platform-specific notes, and provider setup, follow
+[INSTALL.md](INSTALL.md).
 
-LLM providers can be configured after first login in the Admin UI at
-`/admin/llm`. If you prefer environment-based setup, uncomment the matching
-`BIMEMO_LLM_PROVIDER` block in `.env`; these values are copied into the
-encrypted database on startup.
+## How it is structured
 
-### 4. Start
+The default Compose stack runs five services: biMEMO, the React frontend,
+Caddy, SearXNG, and faster-whisper. Inside the biMEMO container, a supervisor
+manages separate database, signing, credential, orchestrator, and FastAPI
+processes. File-system, network, and command tools execute through dedicated
+workers instead of receiving direct database or credential access.
 
-```bash
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-### 5. Access
-
-- **Web UI**: http://localhost:5273
-- **Backend via Caddy**: https://localhost
-- **Telegram**: Configure a Telegram integration in the Admin panel, then start a chat with your bot
-- **Discord**: Configure a Discord integration in the Admin panel, then start a chat with your bot
-
-### 6. First Setup
-
-1. Open the Web UI
-2. Create the first application password
-3. Configure an LLM provider in the Admin UI
-4. Start chatting
-
-## Architecture
-
-biMEMO runs as a multi-process system inside a single container. The Supervisor process spawns and monitors all other processes, communicating via HMAC-authenticated Unix domain sockets.
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Supervisor                          │
-│                                                         │
-│  ┌──────────┐   ┌───────────┐   ┌──────────────────┐   │
-│  │ DB Proxy │   │  Signing  │   │   Credential     │   │
-│  │(SQLCipher)│   │   Proxy   │   │     Proxy        │   │
-│  └─────┬────┘   └─────┬─────┘   └──────┬───────────┘   │
-│        │  Socket A,B,C │ Socket D       │ Socket E      │
-│  ┌─────▼──────────────▼───────────────▼─────────────┐   │
-│  │              Orchestrator                         │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │   │
-│  │  │ FS Worker│  │Net Worker│  │ Dialog Recorder/│  │   │
-│  │  │(in-proc) │  │(in-proc) │  │ Summary Distiller│  │   │
-│  │  └──────────┘  └──────────┘  │ Re-embed loops │  │   │
-│  │                              └────────────────┘  │   │
-│  │  ┌──────────────┐  ┌────────────────┐            │   │
-│  │  │ Telegram Bot │  │  Discord Bot   │            │   │
-│  │  └──────────────┘  └────────────────┘            │   │
-│  └──────────────────────┬───────────────────────────┘   │
-│                         │ Socket F                      │
-│  ┌──────────────────────▼───────────────────────────┐   │
-│  │              FastAPI Application                  │   │
-│  │  Middleware → Routes → Gateway → SSE Streaming    │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Processes:**
-
-| Process | Role | IPC |
-|---------|------|-----|
-| Supervisor | Spawns, monitors, restarts child processes | — |
-| DB Proxy | SQLCipher database access (3 socket servers) | Socket A, B, C |
-| Signing Proxy | JWT signing, Argon2id verification | Socket D |
-| Credential Proxy | Integration credential management | Socket E |
-| Orchestrator | LLM agentic loop, tool workers, bots, memory loops | Socket F (server) |
-| FastAPI | HTTP API, Web UI, SSE streaming | Connects to all sockets |
-
-## Trust Zones
-
-Tools are classified by risk level:
-
-| Zone | Tools | Behavior |
-|------|-------|----------|
-| GREEN | `file_read`, `file_search` | Executes silently |
-| YELLOW | `file_write`, `web_search` | Executes, notifies after |
-| RED | `email_send`, `http_fetch` | Requires user confirmation |
-
-The exact zone for each tool comes from the active **security profile** —
-see below.
-
-## Security Profiles
-
-Settings → Security exposes a typed catalog of every defense parameter
-(content filter patterns, path/URL allowlists, agent loop limits,
-trust zones, memory toggles, audit retention) and three built-in
-profiles:
-
-| Profile | Use case |
-|---------|----------|
-| `paranoid` | Maximum safety — everything blocks, narrow allowlists, short timeouts |
-| `personal` | Default — balanced for the personal-assistant use case |
-| `developer` | Coding assistant — pasted `subprocess`/code is allowed, `http://localhost` resolves, larger limits and quotas |
-
-Built-in profiles are read-only; clone any of them to start a custom
-profile. Activation reloads the in-memory `ProfileResolver` so every
-defense module picks up the new values without restarting. Critical
-defenses (master-key memory protection, HMAC IPC, parameterised SQL,
-cloud-metadata IP block, DNS-resolve SSRF, JWT, CSRF, log secret
-masking, path traversal, numeric-IP block, tainted-memory respect)
-are always-on — they appear in the page as informational lock cards
-but cannot be edited.
-
-## Configuration
-
-All configuration via environment variables with prefix `BIMEMO_`:
-
-| Variable | Description |
-|----------|-------------|
-| `BIMEMO_DEBUG` | Enable debug mode |
-| `BIMEMO_HOST` | Bind address |
-| `BIMEMO_PORT` | Bind port |
-| `BIMEMO_LLM_PROVIDER` | `ollama` or `openrouter` |
-| `BIMEMO_KEY_SOURCE` | Key source type (`password` for public installs) |
-| `BIMEMO_ENCRYPTED_KEY_FILE_PATH` | Path to encrypted master-key file |
-| `BIMEMO_AUTOMATIC_UNLOCK` | `false` for manual unlock, `true` for automatic unlock |
-| `BIMEMO_UNLOCK_PASSWORD_FILE` | Automatic unlock password secret file |
-| `BIMEMO_DATABASE_PATH` | Path to encrypted DB |
-
-Bot integrations (Telegram, Discord) are configured via the Admin panel and stored in the encrypted database.
+This separation limits which component can read keys, credentials, memory, or
+perform external actions; it is a trust boundary, not a substitute for host and
+container hardening.
 
 ## Development
 
 ```bash
-# Build and start dev environment
-docker-compose -f docker/docker-compose.yml up -d --build
+# Backend checks and tests
+docker compose -f docker/docker-compose.yml exec bimemo \
+  python -m pytest tests/ -q
 
-# Run tests
-docker-compose -f docker/docker-compose.yml exec bimemo \
-  python -m pytest tests/ -v
-
-# Lint
-docker-compose -f docker/docker-compose.yml exec bimemo \
-  ruff check --fix . && ruff format .
+# Frontend checks
+cd app/frontend
+npm ci
+npm run lint
+npm run build
+npm run test
 ```
 
-## Security
+GitHub Actions also run backend tests, frontend lint/build/tests, OpenAPI drift
+checks, secret scanning, dependency audits, and static security analysis.
 
-- **Database**: Encrypted with SQLCipher (AES-256)
-- **Keys**: Master key encrypted by the application password with Argon2id + AES-256-GCM
-- **Workers**: Isolated in-process workers with HMAC verification
-- **Processes**: Separate processes for DB, signing, credentials — each with own IPC socket
-- **API**: JWT authentication (Ed25519) + CSRF + rate limiting
+## Community
 
-### Secret Scanning
+Questions, feedback, and project discussion are welcome on the
+[biMEMO Discord server](https://discord.com/invite/z5kJJeaTeS).
 
-Run Gitleaks before publishing changes:
+## Documentation
 
-```bash
-gitleaks detect --source . --config .gitleaks.toml --redact --verbose
-```
+- [Installation](INSTALL.md)
+- [User guide](USAGE.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Development and diagnostic scripts](scripts/README.md)
 
-The GitHub Actions security workflow runs the same secret scan on pushes and
-pull requests.
+## Technology
 
-## Project Docs
-
-- [INSTALL.md](INSTALL.md) for installation details
-- [USAGE.md](USAGE.md) for user-facing workflows
-- [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request rules
-- [SECURITY.md](SECURITY.md) for private security disclosure
-- [scripts/README.md](scripts/README.md) for local diagnostic helper scripts
-- [LICENSE](LICENSE) for the project license
-
-## Tech Stack
-
-- **Backend**: Python 3.14.4, FastAPI, Pydantic
-- **Database**: SQLite + SQLCipher + sqlite-vec
-- **LLM**: Ollama, OpenRouter
-- **Bots**: aiogram (Telegram), discord.py (Discord)
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS
-- **Container**: Docker, Caddy
+Python 3.14 · FastAPI · React 19 · TypeScript · SQLCipher · sqlite-vec ·
+Ollama · OpenRouter · Docker · Caddy
 
 ## License
 
-MIT
+[MIT](LICENSE)
