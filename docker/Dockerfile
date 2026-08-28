@@ -10,7 +10,7 @@ COPY app/frontend/ .
 RUN npm run build
 
 # Stage 2: Install Python dependencies
-FROM python:3.14-slim@sha256:71b358f8bff55413f4a6b95af80acb07ab97b5636cd3b869f35c3680d31d1650 AS builder
+FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS builder
 
 WORKDIR /build
 COPY pyproject.toml .
@@ -19,7 +19,7 @@ COPY app/backend/ ./app/backend/
 RUN pip install --no-cache-dir ".[dev]"
 
 # Stage 3: Runtime
-FROM python:3.14-slim@sha256:71b358f8bff55413f4a6b95af80acb07ab97b5636cd3b869f35c3680d31d1650
+FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5
 
 RUN useradd --create-home --shell /bin/bash appuser \
     && apt-get update \
