@@ -81,11 +81,6 @@ export const DIAGNOSTICS_VIEWS: Array<{
     labelKey: "memoryDebug.viewAudit",
     descriptionKey: "memoryDebug.viewAuditDescription",
   },
-  {
-    id: "extractor",
-    labelKey: "memoryDebug.viewExtractor",
-    descriptionKey: "memoryDebug.viewExtractorDescription",
-  },
 ];
 
 export const MEMORY_DATA_VIEWS: Array<{

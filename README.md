@@ -60,10 +60,9 @@ operations can require explicit approval.
 Self-hosting does not automatically make every request local. OpenRouter,
 custom cloud providers, web search, URL fetching, email, and messenger
 integrations send the data required for those features to their configured
-services. Uploaded files and local diagnostic traces are stored outside the
-encrypted memory database and may contain sensitive content; protect the
-instance storage with host or disk encryption and do not share its `.runtime`
-directory.
+services. Uploaded files are stored outside the encrypted memory database and
+may contain sensitive content; protect the instance storage with host or disk
+encryption.
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 

@@ -2873,116 +2873,6 @@
         "summary": "Get Context View"
       }
     },
-    "/admin/memory/dialog-recorder-trace": {
-      "get": {
-        "description": "Return recent record-processing diagnostics from diagnostics DB.",
-        "operationId": "get_dialog_recorder_trace_admin_memory_dialog_recorder_trace_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "decision",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Decision",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Dialog Recorder Trace Admin Memory Dialog Recorder Trace Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Dialog Recorder Trace"
-      }
-    },
-    "/admin/memory/distiller-trace": {
-      "get": {
-        "description": "Return recent summary-processing diagnostics from diagnostics DB.",
-        "operationId": "get_distiller_trace_admin_memory_distiller_trace_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "decision",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Decision",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Distiller Trace Admin Memory Distiller Trace Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Distiller Trace"
-      }
-    },
     "/admin/memory/events": {
       "get": {
         "description": "Stream memory-pipeline events to the browser as text/event-stream.\n\nRead-only live feed: the web tier already receives bus events over\nthe orchestrator IPC bridge; this drains one per-subscriber queue.\nThe queue is always removed when the client disconnects.",
@@ -2998,61 +2888,6 @@
           }
         },
         "summary": "Stream Memory Events"
-      }
-    },
-    "/admin/memory/extractor-trace": {
-      "get": {
-        "description": "Return recent graph-extractor decisions from the trace file.\n\nRead-only diagnostics artifact (a local JSONL file), so it does not\ngo through the DB channel; a missing file yields an empty list.",
-        "operationId": "get_extractor_trace_admin_memory_extractor_trace_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "decision",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Decision",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Extractor Trace Admin Memory Extractor Trace Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Extractor Trace"
       }
     },
     "/admin/memory/files": {
@@ -3342,6 +3177,61 @@
         "summary": "Get Quality View"
       }
     },
+    "/admin/memory/record-processing-diagnostics": {
+      "get": {
+        "description": "Return recent record-processing diagnostics from diagnostics DB.",
+        "operationId": "get_record_processing_diagnostics_admin_memory_record_processing_diagnostics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Decision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Record Processing Diagnostics Admin Memory Record Processing Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Record Processing Diagnostics"
+      }
+    },
     "/admin/memory/record-queue": {
       "get": {
         "description": "Return pending record-queue contents (read-only, no pruning).",
@@ -3620,6 +3510,61 @@
           }
         },
         "summary": "Get Route Diagnostics Summary"
+      }
+    },
+    "/admin/memory/summary-processing-diagnostics": {
+      "get": {
+        "description": "Return recent summary-processing diagnostics from diagnostics DB.",
+        "operationId": "get_summary_processing_diagnostics_admin_memory_summary_processing_diagnostics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Decision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Summary Processing Diagnostics Admin Memory Summary Processing Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Summary Processing Diagnostics"
       }
     },
     "/admin/memory/timeline": {

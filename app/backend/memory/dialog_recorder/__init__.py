@@ -2,7 +2,7 @@
 
 from backend.memory.dialog_recorder.runtime import (
     _build_synthetic_action_items,
-    _compress_messages_with_trace,
+    _compress_messages_with_diagnostics,
     _enrich_observation,
     _infer_memory_kinds,
     _is_duplicate_memory,
@@ -20,7 +20,7 @@ from backend.memory.dialog_recorder.runtime import (
 
 __all__ = [
     "_build_synthetic_action_items",
-    "_compress_messages_with_trace",
+    "_compress_messages_with_diagnostics",
     "_enrich_observation",
     "_infer_memory_kinds",
     "_is_duplicate_memory",

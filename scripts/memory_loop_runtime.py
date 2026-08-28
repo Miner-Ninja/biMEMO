@@ -136,12 +136,12 @@ def fetch_scenario_state_impl(
         "summaries",
     )
     quality_report = client.get("/admin/memory/quality")
-    dialog_recorder_trace_entries = client.get(
-        "/admin/memory/dialog-recorder-trace",
+    record_processing_diagnostics = client.get(
+        "/admin/memory/record-processing-diagnostics",
         params={"limit": 500},
     ).get("entries", [])
-    distiller_trace_entries = client.get(
-        "/admin/memory/distiller-trace",
+    summary_processing_diagnostics = client.get(
+        "/admin/memory/summary-processing-diagnostics",
         params={"limit": 500},
     ).get("entries", [])
 
@@ -170,14 +170,14 @@ def fetch_scenario_state_impl(
         for summary in summaries
         if scenario_record_ids.intersection(extract_reflected_record_ids(summary))
     ]
-    conversation_dialog_recorder_trace_entries = [
+    conversation_record_processing_diagnostics = [
         entry
-        for entry in dialog_recorder_trace_entries
+        for entry in record_processing_diagnostics
         if str(entry.get("conversation_id", "")).strip() == conversation_id
     ]
-    conversation_distiller_trace_entries = [
+    conversation_summary_processing_diagnostics = [
         entry
-        for entry in distiller_trace_entries
+        for entry in summary_processing_diagnostics
         if scenario_record_ids.intersection(
             normalize_string_list(entry.get("source_record_ids", []))
         )
@@ -185,18 +185,18 @@ def fetch_scenario_state_impl(
     duplication_report = {
         "duplicate_observation_count": sum(
             1
-            for entry in conversation_dialog_recorder_trace_entries
+            for entry in conversation_record_processing_diagnostics
             if str(entry.get("decision", "")).strip() == "duplicate_memory"
         ),
         "distillation_merge_count": sum(
             1
-            for entry in conversation_distiller_trace_entries
+            for entry in conversation_summary_processing_diagnostics
             if str(entry.get("decision", "")).strip()
             == "summary_merged_by_existing_main_point_match"
         ),
         "stored_distillation_count": sum(
             1
-            for entry in conversation_distiller_trace_entries
+            for entry in conversation_summary_processing_diagnostics
             if str(entry.get("decision", "")).strip()
             == "summary_stored_by_llm_synthesis"
         ),

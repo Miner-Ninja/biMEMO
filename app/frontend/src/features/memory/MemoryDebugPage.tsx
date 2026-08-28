@@ -16,7 +16,6 @@ import { ContextSnapshotPanel } from "@/features/memory/components/ContextSnapsh
 import { ProblemsPanel } from "@/features/memory/components/ProblemsPanel";
 import { QualityDiagnosticsPanel } from "@/features/memory/components/QualityDiagnosticsPanel";
 import { AuditDiagnosticsPanel } from "@/features/memory/components/AuditDiagnosticsPanel";
-import { ExtractorTracePanel } from "@/features/memory/components/ExtractorTracePanel";
 import { RecordsLogPanel } from "@/features/memory/components/RecordsLogPanel";
 import { MEMORY_DEBUG_QUESTION_TABS } from "@/features/memory/components/constants";
 import type { MemoryDebugQuestionTab } from "@/features/memory/components/types";
@@ -64,11 +63,6 @@ const BROKEN_SUB_TABS: readonly SubTab[] = [
     Component: QualityDiagnosticsPanel,
   },
   { id: "audit", labelKey: "memoryDebug.viewAudit", Component: AuditDiagnosticsPanel },
-  {
-    id: "extractor",
-    labelKey: "memoryDebug.viewExtractor",
-    Component: ExtractorTracePanel,
-  },
   {
     id: "recorder",
     labelKey: "memoryDebug.viewRecordsLog",

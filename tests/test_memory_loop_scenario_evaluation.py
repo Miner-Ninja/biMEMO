@@ -431,9 +431,9 @@ class TestScenarioEvaluation:
                     }
                 if path == "/admin/memory/quality":
                     return {"quality_score": 82}
-                if path == "/admin/memory/dialog-recorder-trace":
+                if path == "/admin/memory/record-processing-diagnostics":
                     return {"entries": []}
-                if path == "/admin/memory/distiller-trace":
+                if path == "/admin/memory/summary-processing-diagnostics":
                     return {"entries": []}
                 raise AssertionError(path)
 
@@ -506,9 +506,9 @@ class TestScenarioEvaluation:
                     }
                 if path == "/admin/memory/quality":
                     return {"quality_score": 82}
-                if path == "/admin/memory/dialog-recorder-trace":
+                if path == "/admin/memory/record-processing-diagnostics":
                     return {"entries": []}
-                if path == "/admin/memory/distiller-trace":
+                if path == "/admin/memory/summary-processing-diagnostics":
                     return {"entries": []}
                 raise AssertionError(path)
 

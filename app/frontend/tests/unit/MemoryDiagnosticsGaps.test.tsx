@@ -1,6 +1,5 @@
 /**
- * Tests for the memory diagnostics-gaps panels (stage 3, PR-A):
- * extractor trace, record queue, and vector coverage.
+ * Tests for the memory diagnostics-gaps panels (stage 3, PR-A).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +28,6 @@ vi.mock("@/services/bimemo-api", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-import { ExtractorTracePanel } from "@/features/memory/components/ExtractorTracePanel";
 import { RecordQueuePanel } from "@/features/memory/components/RecordQueuePanel";
 import { apiRequest } from "@/services/bimemo-api";
 
@@ -38,23 +36,6 @@ const apiRequestMock = vi.mocked(apiRequest);
 describe("memory diagnostics gaps", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
-  });
-
-  it("extractor trace renders a decision with its detail", async () => {
-    apiRequestMock.mockResolvedValue({
-      entries: [
-        {
-          timestamp: "2026-08-09T10:00:00.000",
-          decision: "assertion_stored",
-          assertion_id: "a1",
-          relation: "prefers",
-        },
-      ],
-    });
-    render(<ExtractorTracePanel refreshToken={0} />);
-    // The decision-specific detail is shown (first entry opens by default).
-    await waitFor(() => expect(screen.getByText(/prefers/)).toBeInTheDocument());
-    expect(screen.getByText(/a1/)).toBeInTheDocument();
   });
 
   it("record queue shows a pending item and never calls a pruning op", async () => {

@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { DIAGNOSTICS_VIEWS } from "@/features/memory/components/constants";
 import { AuditDiagnosticsPanel } from "@/features/memory/components/AuditDiagnosticsPanel";
-import { ExtractorTracePanel } from "@/features/memory/components/ExtractorTracePanel";
 import { QualityDiagnosticsPanel } from "@/features/memory/components/QualityDiagnosticsPanel";
 import { RoutingDiagnosticsPanel } from "@/features/memory/components/RoutingDiagnosticsPanel";
 import { SubsectionNav } from "@/features/memory/components/SubsectionNav";
@@ -27,9 +26,6 @@ export function MemoryDiagnosticsSection({ refreshToken }: { refreshToken: numbe
       ) : null}
       {activeView === "audit" ? (
         <AuditDiagnosticsPanel refreshToken={refreshToken} />
-      ) : null}
-      {activeView === "extractor" ? (
-        <ExtractorTracePanel refreshToken={refreshToken} />
       ) : null}
     </div>
   );

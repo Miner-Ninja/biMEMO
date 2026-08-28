@@ -3,7 +3,6 @@ import {
   humanizeRouteIntent,
   humanizeMismatchLabel,
   humanizeRecorderDecision,
-  humanizeExtractorDecision,
 } from "@/features/memory/components/humanize";
 import en from "@/i18n/locales/en";
 
@@ -51,17 +50,6 @@ describe("humanizeRecorderDecision", () => {
   });
 });
 
-describe("humanizeExtractorDecision", () => {
-  it("known codes return translation keys", () => {
-    expect(humanizeExtractorDecision(t, "assertion_stored")).toEqual({
-      text: "memoryDebug.phraseExtStored",
-    });
-    expect(humanizeExtractorDecision(t, "entity_skipped_forbidden_name")).toEqual({
-      text: "memoryDebug.phraseExtForbiddenName",
-    });
-  });
-});
-
 describe("i18n key completeness (R7)", () => {
   it("all humanize keys exist in en.ts", () => {
     const enKeys = Object.keys(en.memoryDebug);
@@ -81,14 +69,6 @@ describe("i18n key completeness (R7)", () => {
       "phraseRecParseFailed",
       "phraseRecLlmError",
       "phraseRecRateLimited",
-      "phraseExtStored",
-      "phraseExtInvalidated",
-      "phraseExtKeptBoth",
-      "phraseExtDuplicate",
-      "phraseExtSubjectUndeclared",
-      "phraseExtForbiddenName",
-      "phraseExtEmpty",
-      "phraseExtUnsafe",
     ];
     humanizeKeys.forEach((key) => {
       expect(enKeys).toContain(key);

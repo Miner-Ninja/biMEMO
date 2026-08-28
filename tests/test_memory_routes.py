@@ -385,7 +385,7 @@ class TestMemoryTimeline:
         assert resp.status_code == 200, resp.text
         assert resp.json()["recent_hours"] == 24
 
-    def test_dialog_recorder_trace_route_returns_record_entries(self) -> None:
+    def test_record_processing_diagnostics_route_returns_record_entries(self) -> None:
         """Recorder trace route exposes recent record-processing entries."""
         app, token, session_manager, signing_client, _ = _build_test_app()
         app.state.admin_client = FakeAdminClient()
@@ -396,7 +396,7 @@ class TestMemoryTimeline:
             signing_client,
         )
 
-        resp = client.get("/admin/memory/dialog-recorder-trace?limit=1")
+        resp = client.get("/admin/memory/record-processing-diagnostics?limit=1")
 
         assert resp.status_code == 200, resp.text
         assert resp.json() == {

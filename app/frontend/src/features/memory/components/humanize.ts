@@ -46,17 +46,6 @@ const RECORDER_DECISION_KEYS: Record<string, TranslationKey> = {
   rate_limited: "memoryDebug.phraseRecRateLimited",
 };
 
-const EXTRACTOR_DECISION_KEYS: Record<string, TranslationKey> = {
-  assertion_stored: "memoryDebug.phraseExtStored",
-  assertion_invalidated_previous: "memoryDebug.phraseExtInvalidated",
-  assertion_conflict_kept_both: "memoryDebug.phraseExtKeptBoth",
-  assertion_skipped_duplicate: "memoryDebug.phraseExtDuplicate",
-  assertion_skipped_subject_undeclared: "memoryDebug.phraseExtSubjectUndeclared",
-  entity_skipped_forbidden_name: "memoryDebug.phraseExtForbiddenName",
-  extraction_empty_or_unparsed: "memoryDebug.phraseExtEmpty",
-  assertion_skipped_unsafe_output: "memoryDebug.phraseExtUnsafe",
-};
-
 export function humanizeRouteIntent(t: TFunction, code: string): HumanizedCode {
   return humanize(t, ROUTE_INTENT_KEYS, code);
 }
@@ -67,8 +56,4 @@ export function humanizeMismatchLabel(t: TFunction, code: string): HumanizedCode
 
 export function humanizeRecorderDecision(t: TFunction, code: string): HumanizedCode {
   return humanize(t, RECORDER_DECISION_KEYS, code);
-}
-
-export function humanizeExtractorDecision(t: TFunction, code: string): HumanizedCode {
-  return humanize(t, EXTRACTOR_DECISION_KEYS, code);
 }

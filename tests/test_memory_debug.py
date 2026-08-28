@@ -3,21 +3,15 @@
 import json
 import sqlite3
 import uuid
-from typing import TYPE_CHECKING
 
 import pytest
 
-from backend.memory.dialog_recorder import trace as dialog_recorder_trace
 from backend.memory.runtime.event_bus import MemoryEventBus
 from backend.processes.db_proxy.handlers.admin import (
     make_count_memory_entries_handler,
     make_list_messages_handler,
     make_list_records_handler,
 )
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 # --- Helpers ---
@@ -182,81 +176,6 @@ async def test_count_memory_entries(db: FakeDB) -> None:
     assert result["messages"] == 1
     assert result["records"] == 1
     assert result["assertions"] == 0
-
-
-def test_dialog_recorder_trace_roundtrip_reads_newest_first(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Dialog recorder trace should append entries and return newest-first slices."""
-    trace_path = tmp_path / "dialog-recorder-trace.jsonl"
-    monkeypatch.setattr(dialog_recorder_trace, "TRACE_FILE_PATH", trace_path)
-
-    dialog_recorder_trace.append_dialog_recorder_trace(
-        {
-            "decision": "record_stored_by_llm_memory_judgment",
-            "conversation_id": "conversation-1",
-            "session_id": "session-1",
-            "messages": ["first"],
-            "source_message_ids": ["m1"],
-            "message_count": 1,
-        }
-    )
-    dialog_recorder_trace.append_dialog_recorder_trace(
-        {
-            "decision": "record_rejected_by_duplicate_check",
-            "conversation_id": "conversation-1",
-            "session_id": "session-1",
-            "messages": ["second"],
-            "source_message_ids": ["m2"],
-            "message_count": 1,
-        }
-    )
-
-    entries = dialog_recorder_trace.read_dialog_recorder_trace(limit=2)
-
-    assert [entry["decision"] for entry in entries] == [
-        "record_rejected_by_duplicate_check",
-        "record_stored_by_llm_memory_judgment",
-    ]
-    assert all("timestamp" in entry for entry in entries)
-
-
-def test_dialog_recorder_trace_filters_by_decision(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Dialog recorder trace reader should filter entries by decision."""
-    trace_path = tmp_path / "dialog-recorder-trace.jsonl"
-    monkeypatch.setattr(dialog_recorder_trace, "TRACE_FILE_PATH", trace_path)
-    dialog_recorder_trace.append_dialog_recorder_trace(
-        {
-            "decision": "record_stored_by_llm_memory_judgment",
-            "conversation_id": "conversation-1",
-            "session_id": "session-1",
-            "messages": ["keep"],
-            "source_message_ids": ["m1"],
-            "message_count": 1,
-        }
-    )
-    dialog_recorder_trace.append_dialog_recorder_trace(
-        {
-            "decision": "record_skipped_by_rate_limit",
-            "conversation_id": "conversation-1",
-            "session_id": "session-1",
-            "messages": ["skip"],
-            "source_message_ids": ["m2"],
-            "message_count": 1,
-        }
-    )
-
-    entries = dialog_recorder_trace.read_dialog_recorder_trace(
-        limit=10,
-        decision="record_stored_by_llm_memory_judgment",
-    )
-
-    assert len(entries) == 1
-    assert entries[0]["decision"] == "record_stored_by_llm_memory_judgment"
 
 
 async def test_event_bus_publish_subscribe() -> None:

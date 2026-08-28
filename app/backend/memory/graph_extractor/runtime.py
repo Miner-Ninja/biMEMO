@@ -26,17 +26,6 @@ from .rules import (
     normalize_relation,
     resolve_conflict_action,
 )
-from .trace import (
-    TRACE_DECISION_CONFLICT_KEPT,
-    TRACE_DECISION_DUPLICATE,
-    TRACE_DECISION_FORBIDDEN_ENTITY,
-    TRACE_DECISION_INVALIDATED,
-    TRACE_DECISION_PARSE_EMPTY,
-    TRACE_DECISION_STORED,
-    TRACE_DECISION_SUBJECT_UNDECLARED,
-    TRACE_DECISION_UNSAFE_OUTPUT,
-    write_graph_extractor_trace,
-)
 
 
 if TYPE_CHECKING:
@@ -69,16 +58,8 @@ async def _store_assertion(
     """Store one extracted assertion after conflict resolution."""
     subject_id = entity_ids.get(assertion.subject_name.strip().casefold())
     if subject_id is None:
-        write_graph_extractor_trace(
-            TRACE_DECISION_SUBJECT_UNDECLARED,
-            {"subject": assertion.subject_name, "text": assertion.text},
-        )
         return None
     if filter_output(assertion.text).injection_flagged:
-        write_graph_extractor_trace(
-            TRACE_DECISION_UNSAFE_OUTPUT,
-            {"text": assertion.text[:200]},
-        )
         return None
     relation = normalize_relation(assertion.relation)
     object_entity_id = None
@@ -109,10 +90,6 @@ async def _store_assertion(
         existing_valid=subject_side,
     )
     if action == CONFLICT_SKIP_DUPLICATE:
-        write_graph_extractor_trace(
-            TRACE_DECISION_DUPLICATE,
-            {"text": assertion.text, "existing": existing_id},
-        )
         return None
     assertion_id = await db_client.save_assertion(
         subject_entity_id=subject_id,
@@ -126,20 +103,6 @@ async def _store_assertion(
     )
     if action == CONFLICT_INVALIDATE and existing_id is not None:
         await db_client.invalidate_assertion(existing_id, assertion_id)
-        write_graph_extractor_trace(
-            TRACE_DECISION_INVALIDATED,
-            {"new": assertion_id, "invalidated": existing_id},
-        )
-    elif existing_id is not None:
-        write_graph_extractor_trace(
-            TRACE_DECISION_CONFLICT_KEPT,
-            {"new": assertion_id, "existing": existing_id},
-        )
-    else:
-        write_graph_extractor_trace(
-            TRACE_DECISION_STORED,
-            {"assertion_id": assertion_id, "relation": relation},
-        )
     return assertion_id
 
 
@@ -169,22 +132,11 @@ async def process_graph_extraction(
     )
     extraction = parse_graph_extraction(response.content or "")
     if not extraction.entities and not extraction.assertions:
-        write_graph_extractor_trace(
-            TRACE_DECISION_PARSE_EMPTY,
-            {
-                "raw_output": (response.content or "")[:500],
-                "discarded": extraction.discarded_lines[:10],
-            },
-        )
         return 0
 
     entity_ids: dict[str, str] = {}
     for entity in extraction.entities:
         if is_forbidden_entity_name(entity.name):
-            write_graph_extractor_trace(
-                TRACE_DECISION_FORBIDDEN_ENTITY,
-                {"name": entity.name},
-            )
             continue
         entity_id = await db_client.save_entity(
             entity.entity_type,

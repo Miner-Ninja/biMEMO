@@ -42,7 +42,6 @@ from backend.memory.dialog_recorder.rules import (
     _normalize_string_list,
     build_record_payload_text,
 )
-from backend.memory.dialog_recorder.trace import append_dialog_recorder_trace
 from backend.memory.models import Record
 from backend.security.content_filter import filter_input, filter_output
 from backend.security.policy import get_policy
@@ -134,12 +133,12 @@ def _dialog_recorder_prompt_messages(messages: list[str]) -> list[ChatMessage]:
     ]
 
 
-def _dialog_recorder_trace_context(
+def _dialog_recorder_diagnostic_context(
     *,
     model: str,
     chat_messages: list[ChatMessage],
 ) -> dict[str, object]:
-    """Build the initial dialog recorder LLM trace context."""
+    """Build metadata for the encrypted recorder diagnostic."""
     return {
         "model": model,
         "prompt": [
@@ -150,20 +149,20 @@ def _dialog_recorder_trace_context(
     }
 
 
-def _dialog_recorder_trace_entry(
+def _dialog_recorder_diagnostic_entry(
     *,
     decision: str,
     messages: list[str],
     conversation_id: str,
     session_id: str,
     source_message_ids: list[str] | None,
-    trace_context: dict[str, object] | None = None,
+    diagnostic_context: dict[str, object] | None = None,
     record: Record | None = None,
     record_id: str | None = None,
     injection_flagged: bool = False,
     detail: str | None = None,
 ) -> dict[str, object]:
-    """Build one structured dialog recorder trace entry."""
+    """Build one structured recorder diagnostic entry."""
     entry: dict[str, object] = {
         "decision": decision,
         "conversation_id": conversation_id,
@@ -173,8 +172,8 @@ def _dialog_recorder_trace_entry(
         "message_count": len(messages),
         "injection_flagged": injection_flagged,
     }
-    if trace_context:
-        entry.update(trace_context)
+    if diagnostic_context:
+        entry.update(diagnostic_context)
     if record is not None:
         entry.update(
             {
@@ -193,11 +192,11 @@ def _dialog_recorder_trace_entry(
     return entry
 
 
-async def _compress_messages_with_trace(
+async def _compress_messages_with_diagnostics(
     provider: OllamaProvider,
     messages: list[str],
 ) -> tuple[Record | None, dict[str, object]]:
-    """Compress messages into a structured record with trace metadata.
+    """Compress messages into a structured record with diagnostic metadata.
 
     Calls the dialog recorder model to generate a plain-text record.
     Returns None if the LLM output fails validation.
@@ -210,10 +209,10 @@ async def _compress_messages_with_trace(
         messages: List of message texts to compress.
 
     Returns:
-        Tuple of parsed record and trace metadata.
+        Tuple of parsed record and diagnostic metadata.
     """
     chat_messages = _dialog_recorder_prompt_messages(messages)
-    trace_context = _dialog_recorder_trace_context(
+    diagnostic_context = _dialog_recorder_diagnostic_context(
         model=provider.dialog_recorder_model,
         chat_messages=chat_messages,
     )
@@ -230,16 +229,16 @@ async def _compress_messages_with_trace(
             enable_thinking=False,
         )
         logger.debug("Dialog recorder raw response: %.2000s", response.content)
-        trace_context["raw_output"] = response.content
+        diagnostic_context["raw_output"] = response.content
         record = _parse_observation(response.content)
         if record is None:
-            trace_context["decision"] = TRACE_DECISION_PARSE_FAILED
-        return record, trace_context
+            diagnostic_context["decision"] = TRACE_DECISION_PARSE_FAILED
+        return record, diagnostic_context
     except Exception as error:
         logger.exception("Dialog recorder LLM call failed")
-        trace_context["decision"] = TRACE_DECISION_LLM_ERROR
-        trace_context["error"] = str(error)
-        return None, trace_context
+        diagnostic_context["decision"] = TRACE_DECISION_LLM_ERROR
+        diagnostic_context["error"] = str(error)
+        return None, diagnostic_context
 
 
 async def compress_messages(
@@ -247,40 +246,39 @@ async def compress_messages(
     messages: list[str],
 ) -> Record | None:
     """Compress messages into a structured record."""
-    record, _trace_context = await _compress_messages_with_trace(
+    record, _diagnostic_context = await _compress_messages_with_diagnostics(
         provider,
         messages,
     )
     return record
 
 
-async def _write_dialog_recorder_trace(
+async def _write_record_processing_diagnostic(
     decision: str,
     db_client: DBProxyClient,
     messages: list[str],
     conversation_id: str,
     session_id: str,
     source_message_ids: list[str] | None,
-    trace_context: dict[str, object] | None = None,
+    diagnostic_context: dict[str, object] | None = None,
     record: Record | None = None,
     record_id: str | None = None,
     injection_flagged: bool = False,
     detail: str | None = None,
 ) -> None:
-    """Write a structured dialog recorder trace entry for diagnostics."""
-    entry = _dialog_recorder_trace_entry(
+    """Write a recorder diagnostic to encrypted diagnostics storage."""
+    entry = _dialog_recorder_diagnostic_entry(
         decision=decision,
         messages=messages,
         conversation_id=conversation_id,
         session_id=session_id,
         source_message_ids=source_message_ids,
-        trace_context=trace_context,
+        diagnostic_context=diagnostic_context,
         record=record,
         record_id=record_id,
         injection_flagged=injection_flagged,
         detail=detail,
     )
-    append_dialog_recorder_trace(entry)
     try:
         await db_client.write_record_processing_diagnostic(
             decision=decision,
@@ -318,7 +316,7 @@ def _dialog_recorder_text_messages(messages: list[str]) -> tuple[list[str], bool
     return text_messages, input_result.injection_flagged
 
 
-async def _write_skip_trace(
+async def _write_skip_diagnostic(
     *,
     decision: str,
     db_client: DBProxyClient,
@@ -326,19 +324,19 @@ async def _write_skip_trace(
     conversation_id: str,
     session_id: str,
     source_message_ids: list[str] | None,
-    trace_context: dict[str, object] | None = None,
+    diagnostic_context: dict[str, object] | None = None,
     record: Record | None = None,
     injection_flagged: bool = False,
 ) -> None:
-    """Write one dialog recorder trace for a skipped record path."""
-    await _write_dialog_recorder_trace(
+    """Write one encrypted diagnostic for a skipped record path."""
+    await _write_record_processing_diagnostic(
         decision,
         db_client,
         text_messages,
         conversation_id,
         session_id,
         source_message_ids,
-        trace_context=trace_context,
+        diagnostic_context=diagnostic_context,
         record=record,
         injection_flagged=injection_flagged,
     )
@@ -352,19 +350,19 @@ async def _skip_record(
     conversation_id: str,
     session_id: str,
     source_message_ids: list[str] | None,
-    trace_context: dict[str, object] | None = None,
+    diagnostic_context: dict[str, object] | None = None,
     record: Record | None = None,
     injection_flagged: bool = False,
 ) -> None:
-    """Write the skip trace for one rejected dialog recorder path."""
-    await _write_skip_trace(
+    """Write the diagnostic for one rejected dialog recorder path."""
+    await _write_skip_diagnostic(
         decision=decision,
         db_client=db_client,
         text_messages=text_messages,
         conversation_id=conversation_id,
         session_id=session_id,
         source_message_ids=source_message_ids,
-        trace_context=trace_context,
+        diagnostic_context=diagnostic_context,
         record=record,
         injection_flagged=injection_flagged,
     )
@@ -466,12 +464,12 @@ async def process_record(
         )
         return None
 
-    record, trace_context = await _compress_messages_with_trace(
+    record, diagnostic_context = await _compress_messages_with_diagnostics(
         provider,
         text_messages,
     )
     if record is None:
-        decision = str(trace_context.get("decision", TRACE_DECISION_PARSE_FAILED))
+        decision = str(diagnostic_context.get("decision", TRACE_DECISION_PARSE_FAILED))
         if event_bus is not None:
             await event_bus.publish(
                 {
@@ -487,7 +485,7 @@ async def process_record(
             conversation_id=conversation_id,
             session_id=session_id,
             source_message_ids=source_message_ids,
-            trace_context=trace_context,
+            diagnostic_context=diagnostic_context,
             injection_flagged=injection_flagged,
         )
         if decision == TRACE_DECISION_LLM_ERROR:
@@ -495,7 +493,7 @@ async def process_record(
             # dialog step is still recoverable. Raise so the recorder loop
             # can retry the queued item instead of dropping it forever.
             raise DialogRecorderTransientError(
-                str(trace_context.get("error", "dialog recorder LLM error"))
+                str(diagnostic_context.get("error", "dialog recorder LLM error"))
             )
         return None
     record = _enrich_observation(record, text_messages)
@@ -508,7 +506,7 @@ async def process_record(
             conversation_id=conversation_id,
             session_id=session_id,
             source_message_ids=source_message_ids,
-            trace_context=trace_context,
+            diagnostic_context=diagnostic_context,
             record=record,
             injection_flagged=injection_flagged,
         )
@@ -531,7 +529,7 @@ async def process_record(
             conversation_id=conversation_id,
             session_id=session_id,
             source_message_ids=source_message_ids,
-            trace_context=trace_context,
+            diagnostic_context=diagnostic_context,
             record=record,
             injection_flagged=injection_flagged,
         )
@@ -547,7 +545,7 @@ async def process_record(
             conversation_id=conversation_id,
             session_id=session_id,
             source_message_ids=source_message_ids,
-            trace_context=trace_context,
+            diagnostic_context=diagnostic_context,
             record=record,
             injection_flagged=True,
         )
@@ -570,14 +568,14 @@ async def process_record(
             "Dialog Recorder skipped memory write for deleted conversation_id=%s",
             conversation_id,
         )
-        await _write_dialog_recorder_trace(
+        await _write_record_processing_diagnostic(
             TRACE_DECISION_DELETED_CONVERSATION,
             db_client,
             text_messages,
             conversation_id,
             session_id,
             source_message_ids,
-            trace_context=trace_context,
+            diagnostic_context=diagnostic_context,
             record=filtered_observation,
             injection_flagged=injection_flagged,
         )
@@ -605,14 +603,14 @@ async def process_record(
             record=filtered_observation,
         )
 
-    await _write_dialog_recorder_trace(
+    await _write_record_processing_diagnostic(
         TRACE_DECISION_STORED,
         db_client,
         text_messages,
         conversation_id,
         session_id,
         source_message_ids,
-        trace_context=trace_context,
+        diagnostic_context=diagnostic_context,
         record=filtered_observation,
         record_id=record_id,
         injection_flagged=injection_flagged,

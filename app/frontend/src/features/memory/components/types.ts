@@ -3,7 +3,7 @@ export type MemoryDebugSection =
 
 export type MemoryDebugQuestionTab = "happening" | "remembered" | "answers" | "broken";
 
-export type DiagnosticsView = "routing" | "quality" | "audit" | "extractor";
+export type DiagnosticsView = "routing" | "quality" | "audit";
 
 export type MemoryDataView =
   "context" | "timeline" | "links" | "files" | "queue" | "entities";

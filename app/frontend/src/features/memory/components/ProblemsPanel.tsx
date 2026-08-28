@@ -1,22 +1,16 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { apiRequest } from "@/services/bimemo-api";
-import { humanizeRecorderDecision, humanizeExtractorDecision } from "./humanize";
+import { humanizeRecorderDecision } from "./humanize";
 
 const PRUNING_STALE_MS = 2 * 3600 * 1000;
 const BACKUP_STALE_MS = 25 * 3600 * 1000;
 
-const BAD_DECISIONS = [
-  "llm_error",
-  "parse_failed",
-  "unsafe_output",
-  "extraction_empty_or_unparsed",
-  "assertion_skipped_unsafe_output",
-];
+const BAD_DECISIONS = ["llm_error", "parse_failed", "unsafe_output"];
 
 interface Problem {
   text: string;
-  view?: "quality" | "audit" | "extractor" | "recorder";
+  view?: "quality" | "audit" | "recorder";
 }
 
 export function ProblemsPanel({
@@ -34,7 +28,7 @@ export function ProblemsPanel({
 
     async function loadData() {
       try {
-        const [health, quality, extractor, recorder] = await Promise.all([
+        const [health, quality, recorder] = await Promise.all([
           apiRequest<{
             loops: Record<string, string | null>;
           }>("/admin/memory/health"),
@@ -45,10 +39,7 @@ export function ProblemsPanel({
           }>("/admin/memory/quality"),
           apiRequest<{
             entries: Array<{ timestamp: string; decision: string }>;
-          }>("/admin/memory/extractor-trace?limit=50"),
-          apiRequest<{
-            entries: Array<{ timestamp: string; decision: string }>;
-          }>("/admin/memory/dialog-recorder-trace?limit=50"),
+          }>("/admin/memory/record-processing-diagnostics?limit=50"),
         ]);
 
         if (cancelled) return;
@@ -123,16 +114,6 @@ export function ProblemsPanel({
             results.push({
               text: `${new Date(entry.timestamp).toLocaleTimeString()} ${humanized.text}`,
               view: "recorder",
-            });
-          }
-        }
-
-        for (const entry of extractor.entries ?? []) {
-          if (BAD_DECISIONS.includes(entry.decision)) {
-            const humanized = humanizeExtractorDecision(t, entry.decision);
-            results.push({
-              text: `${new Date(entry.timestamp).toLocaleTimeString()} ${humanized.text}`,
-              view: "extractor",
             });
           }
         }

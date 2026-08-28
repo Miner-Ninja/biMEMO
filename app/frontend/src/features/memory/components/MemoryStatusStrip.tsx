@@ -40,7 +40,7 @@ export function MemoryStatusStrip({ refreshToken }: { refreshToken: number }) {
 
     async function loadData() {
       try {
-        const [health, coverage, trace] = await Promise.all([
+        const [health, coverage, diagnostics] = await Promise.all([
           apiRequest<{
             pipeline: { messages: number; records: number; assertions: number };
             zones: Record<string, unknown> | null;
@@ -53,13 +53,13 @@ export function MemoryStatusStrip({ refreshToken }: { refreshToken: number }) {
           ),
           apiRequest<{
             entries: Array<{ timestamp: string; decision: string }>;
-          }>("/admin/memory/dialog-recorder-trace?limit=1"),
+          }>("/admin/memory/record-processing-diagnostics?limit=1"),
         ]);
 
         if (cancelled) return;
 
         const now = Date.now();
-        const recEntry = trace.entries?.[0];
+        const recEntry = diagnostics.entries?.[0];
         const recTime = recEntry?.timestamp
           ? new Date(recEntry.timestamp).getTime()
           : 0;

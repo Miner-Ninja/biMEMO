@@ -265,7 +265,7 @@ class TestProcessRecord:
         side_effect=_passthrough_filter_result,
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(_make_observation(), {}),
     )
@@ -319,7 +319,7 @@ class TestProcessRecord:
         side_effect=_passthrough_filter_result,
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(_make_observation(), {}),
     )
@@ -388,7 +388,7 @@ class TestProcessRecord:
         return_value=_injection_filter_result(),
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(_make_observation(), {}),
     )
@@ -427,7 +427,7 @@ class TestProcessRecord:
         ],
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(
             _make_observation(
@@ -470,7 +470,7 @@ class TestProcessRecord:
         side_effect=_passthrough_filter_result,
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(_make_observation(), {}),
     )
@@ -508,7 +508,7 @@ class TestProcessRecord:
         side_effect=_passthrough_filter_result,
     )
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(_make_observation(), {}),
     )
@@ -542,7 +542,7 @@ class TestProcessRecord:
         mock_db_client.save_record.assert_awaited_once()
 
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(
             Record(
@@ -793,7 +793,7 @@ class TestMemoryWorthiness:
         assert _is_duplicate_memory(candidate, [], summaries) is True
 
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(
             Record(
@@ -849,7 +849,7 @@ class TestMemoryWorthiness:
         db_client.save_record.assert_not_called()
 
     @patch(
-        "backend.memory.dialog_recorder.runtime._compress_messages_with_trace",
+        "backend.memory.dialog_recorder.runtime._compress_messages_with_diagnostics",
         new_callable=AsyncMock,
         return_value=(
             Record(

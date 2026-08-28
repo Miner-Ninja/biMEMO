@@ -33,7 +33,7 @@ export function RecordsLogPanel({ refreshToken }: { refreshToken: number }) {
     if (filter) params.set("decision", filter);
     try {
       const data = await apiRequest<{ entries: RecordsLogEntry[] }>(
-        `/admin/memory/dialog-recorder-trace?${params}`
+        `/admin/memory/record-processing-diagnostics?${params}`
       );
       setEntries(data.entries || []);
     } finally {

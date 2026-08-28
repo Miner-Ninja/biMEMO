@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 
 from backend.files import FileContextManager
 from backend.files import paths as files_paths
-from backend.memory.graph_extractor.trace import read_graph_extractor_trace
 from backend.tools.handlers.registration import get_recall_stats
 
 from ..deps import (
@@ -381,8 +380,8 @@ async def get_route_diagnostics_summary(
     )
 
 
-@memory_router.get("/dialog-recorder-trace")
-async def get_dialog_recorder_trace(
+@memory_router.get("/record-processing-diagnostics")
+async def get_record_processing_diagnostics(
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(
@@ -400,28 +399,6 @@ async def get_dialog_recorder_trace(
             limit=limit,
             decision=_optional_filter(decision),
         ),
-    )
-
-
-@memory_router.get("/extractor-trace")
-async def get_extractor_trace(
-    _claims: TokenClaims = Depends(_require_auth),
-    limit: int = Query(
-        default=100,
-        ge=1,
-        le=500,
-    ),
-    decision: str = Query(default=""),
-) -> dict:
-    """Return recent graph-extractor decisions from the trace file.
-
-    Read-only diagnostics artifact (a local JSONL file), so it does not
-    go through the DB channel; a missing file yields an empty list.
-    """
-    del _claims
-    return _memory_list_response(
-        "entries",
-        read_graph_extractor_trace(limit=limit, decision=_optional_filter(decision)),
     )
 
 
@@ -450,8 +427,8 @@ async def get_vector_coverage(
     return await admin.get_vector_coverage()
 
 
-@memory_router.get("/distiller-trace")
-async def get_distiller_trace(
+@memory_router.get("/summary-processing-diagnostics")
+async def get_summary_processing_diagnostics(
     _claims: TokenClaims = Depends(_require_auth),
     admin: AdminDBClient = Depends(_get_admin_client),
     limit: int = Query(

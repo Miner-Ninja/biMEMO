@@ -712,14 +712,6 @@ const en = {
     phraseRecParseFailed: "Failed — unparseable model reply",
     phraseRecLlmError: "Failed — model error",
     phraseRecRateLimited: "Skipped — rate limited",
-    phraseExtStored: "Fact stored",
-    phraseExtInvalidated: "Fact stored, previous invalidated",
-    phraseExtKeptBoth: "Conflict — both kept",
-    phraseExtDuplicate: "Skipped — duplicate fact",
-    phraseExtSubjectUndeclared: "Skipped — unknown subject",
-    phraseExtForbiddenName: "Skipped — forbidden entity name",
-    phraseExtEmpty: "Extraction empty or unparsed",
-    phraseExtUnsafe: "Rejected — unsafe output",
     sectionsAriaLabel: "Memory debug sections",
     sectionOverview: "Overview",
     sectionOverviewDescription:
@@ -758,15 +750,8 @@ const en = {
     viewRecordsLog: "Records log",
     viewRecordsLogDescription:
       "Detailed records for record creation, skips, and failures.",
-    viewExtractor: "Extractor",
-    viewExtractorDescription:
-      "What the graph extractor decided for each batch of records.",
     viewQueue: "Record queue",
     viewQueueDescription: "Records waiting to be turned into graph knowledge.",
-    extractorTraceIntro:
-      "Every decision the graph extractor made — what it stored, skipped, invalidated, or could not parse.",
-    extractorNoDetail: "No extra detail for this decision.",
-    noExtractorTrace: "No extractor decisions have been recorded yet.",
     recordQueueIntro:
       "Pending items waiting for the extractor. This is a read-only view and does not prune anything.",
     recordQueueEmpty: "The record queue is empty.",
