@@ -19,7 +19,7 @@ dependencies = [
     "discord.py==2.6.4",             # Verified 2026-02-24
     "psutil==7.2.2",                # Verified 2026-02-14
     "structlog==24.4.0",            # Verified 2026-02-22
-    "fastmcp==3.4.5",               # MCP Streamable HTTP transport for external agents
+    "fastmcp==4.0.0",               # MCP Streamable HTTP transport for external agents
     "snowballstemmer==3.0.1",       # Verified 2026-02-23
     "python-multipart==0.0.32",     # Required for FastAPI UploadFile; fastmcp needs >=0.0.26
     "trafilatura==2.0.0",           # Verified 2026-03-30
