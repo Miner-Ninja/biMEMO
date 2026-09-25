@@ -1,7 +1,7 @@
 # biMEMO application container.
 
 # Stage 1: Build frontend
-FROM node:22-slim AS frontend
+FROM node:25-slim AS frontend
 
 WORKDIR /frontend
 COPY app/frontend/package.json app/frontend/package-lock.json* ./
